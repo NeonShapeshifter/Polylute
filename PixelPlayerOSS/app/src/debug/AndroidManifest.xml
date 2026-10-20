@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Development-only escape hatch required by `adb shell dpm remove-active-admin`. -->
+    <application android:testOnly="true">
+        <!--
+          Button reference sheet (frontend/motion session). Debug-only; DUMP means only the shell
+          can start it: `adb shell am start -n <pkg>/com.lostf1sh.pixelplayeross.ui.ds.DapButtonSheetActivity`.
+        -->
+        <activity
+            android:name="com.lostf1sh.pixelplayeross.ui.ds.DapButtonSheetActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+        <receiver
+            android:name=".dap.admin.DapDebugPolicyReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.lostf1sh.pixelplayeross.debug.APPLY_PERSISTENT_HOME" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DUMP_DAC_VOLUME_CONTROLS" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.PROBE_DAC_HID" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_HID_LISTEN" />
+                <!--
+                  B30: the DAC's own EQ. READ and BACKUP only ask (GETs); DISCOVER_SLOT, ROUNDTRIP, SET_BAND and RESTORE write, through the gate, and only
+                  after SET_DAC_EQ_WRITES_ALLOWED (extra: allowed = true or false; persisted, debug builds only) has lifted "verified".
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_READ" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_BACKUP" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_DISCOVER_SLOT" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_ROUNDTRIP" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_SET_BAND" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_RESTORE" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_DAC_EQ_WRITES_ALLOWED" />
+                <!--
+                  B31: the app takes USER 3 over (DAC_EQ_TAKE_OVER), reads every preset (DAC_EQ_INVENTORY), gives the factory curve back
+                  (DAC_EQ_RESTORE_FACTORY), runs the listening check (DAC_EQ_LISTEN_CHECK, extra: low_level = true) and records its answer
+                  (SET_DAC_EQ_PRE_GAIN_SENSE, extra: sense = boost, attenuation or unconfirmed; persisted, debug builds only).
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_INVENTORY" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_TAKE_OVER" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_LISTEN_CHECK" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DAC_EQ_RESTORE_FACTORY" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_DAC_EQ_PRE_GAIN_SENSE" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.CLEAR_PERSISTENT_HOME" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.ENABLE_CONTAINMENT" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.DISABLE_CONTAINMENT" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.RESTORE_OWNER_POLICY" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.START_USB_PAYLOAD_VALIDATION" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.STOP_USB_PAYLOAD_VALIDATION" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.USB_PAYLOAD_VALIDATION_STATUS" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.REQUEST_USB_AUDIO_PERMISSION" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.USB_AUDIO_PERMISSION_RESULT" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.REPORT_AUDIO_ROUTE" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.REPORT_HARDWARE_EVENTS" />
+                <!--
+                  Direct-path capture. These must be declared here and sent implicitly: on this
+                  appliance an explicit `-n <component>` broadcast reports success and is silently
+                  never delivered, while the same action sent implicitly reaches the receiver.
+                  Guarded by this receiver's android.permission.DUMP, which only shell and system
+                  hold, so the filter is not an access-control boundary.
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.START_DIRECT_PATH_CAPTURE" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SNAPSHOT_DIRECT_PATH_CAPTURE" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.STOP_DIRECT_PATH_CAPTURE" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_HEADPHONE_EQ" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.RESET_PCM_LEVEL" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_VOLUME" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_REPLAY_GAIN_FACTOR" />
+                <!-- B9-4: read the Pure Direct lock as off in this process only (extra: ignore = true or false). -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_PRISTINE_LOCK_OVERRIDE" />
+                <!--
+                  B12a plan B: the ExoPlayer pipeline is the PRISTINE producer by default; this brings the native
+                  FLAC engine back (extra: enabled = true or false). Persisted, off by default, debug builds only.
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_FORCE_NATIVE_ENGINE" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.REPORT_FORCE_NATIVE_ENGINE" />
+                <!-- Retired by B12a (nothing left to force): handled as a logged warning so an old script is not silent. -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_PRISTINE_EXOPLAYER_PIPELINE" />
+                <action android:name="com.lostf1sh.pixelplayeross.debug.REPORT_PRISTINE_EXOPLAYER_PIPELINE" />
+                <!-- AUD-145: how the USB writer waits for a URB completion (extra: mode = poll or sleep). -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_USB_WAIT_MODE" />
+                <!--
+                  B10-2 (AUD-124 "shh"): what the USB output does with the DAC's feedback (extra: mode = follow,
+                  nominal, clamp or auto). Process-only, not persisted; since B12a-2 a new process starts in auto
+                  (debug and release) and `follow` is the override to diagnose with.
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_FEEDBACK_POLICY" />
+                <!--
+                  B27-A5 (N-07): "I heard noise just now" - writes the last 30 s of the USB output's one-second summaries and the stream's
+                  state to files/noise-marks/ (extra: seconds = 1..128). The More menu's row does the same.
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.MARK_NOISE" />
+                <!--
+                  B12a-3 (F-10): the silent track that makes Android see USB Direct playing (extra: enabled = true or
+                  false). Process-only override, not persisted; on by default. Applies from the next play/pause.
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_DIRECT_PRESENCE" />
+                <!--
+                  B12a-4: ms of silence ahead of an item's first frame after a sample-rate change (extra: ms = 0, 250,
+                  500 or 1000). Persisted, 0 (off) by default; applies from the next stream rebuild. The experiment for
+                  "some songs eat their first second".
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_RATE_SWITCH_PREROLL" />
+            </intent-filter>
+        </receiver>
+        <!--
+          B27-A5: registers the More menu's "mark noise" row (DebugHooks) when the process starts. Debug only; not exported.
+        -->
+        <provider
+            android:name=".dap.admin.DebugHooksProvider"
+            android:authorities="${applicationId}.debughooks"
+            android:exported="false" />
+    </application>
+</manifest>

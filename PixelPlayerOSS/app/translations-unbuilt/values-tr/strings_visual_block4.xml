@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">Bant özeti. Seçmek için dokunun; seçili bant düzenleyicisinde ayarlayın.</string>
+    <string name="eq_band_position">%2$d banttan %1$d. bant · %3$s</string>
+    <string name="eq_band_previous">Önceki bandı seç</string>
+    <string name="eq_band_next">Sonraki bandı seç</string>
+    <string name="eq_frequency_select">Frekans seç</string>
+    <string name="eq_gain_label">Kazanç · 1 dB adımlar</string>
+    <string name="eq_gain_decrease">%1$s kazancını 1 dB azalt</string>
+    <string name="eq_gain_increase">%1$s kazancını 1 dB artır</string>
+    <string name="eq_gain_readout">%1$+d dB</string>
+    <string name="eq_gain_accessible">%1$s kazancı</string>
+    <string name="eq_band_reset">Seçili bandı 0 dB değerine sıfırla</string>
+    <string name="timer_off">Kapalı</string>
+    <string name="timer_end_track">Bu şarkının sonunda</string>
+    <string name="timer_repeat_current">Bu şarkıyı tekrarla</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d çalma</item>
+        <item quantity="other">%1$d çalma</item>
+    </plurals>
+    <string name="timer_repeat_hint">Devam eden çalma dahildir. Bu şarkıyı tekrarlar, ardından duraklatır. Şarkıyı veya tekrar modunu değiştirmek sayacı iptal eder.</string>
+    <string name="timer_active">Etkin: %1$s</string>
+    <string name="timer_durations">Şu süreden sonra duraklat</string>
+    <string name="timer_custom">Özel aralık</string>
+    <string name="timer_interval_hint">Onaydan itibaren geçen süre; günün bir saati değildir.</string>
+    <string name="timer_hours">Saat (0–23)</string>
+    <string name="timer_minutes">Dakika (0–59)</string>
+    <string name="timer_interval_error">0–23 saat ve 0–59 dakika girin. Toplam sıfırdan büyük olmalıdır.</string>
+    <string name="timer_pending_hint">Seçim onay bekliyor. Etkin zamanlayıcı yalnızca onaydan sonra değişir.</string>
+    <string name="timer_close">Kapat</string>
+    <string name="timer_start">Başlat</string>
+    <string name="timer_confirm_off">Devre dışı bırak</string>
+    <string name="timer_repeat_less">Bir çalma azalt</string>
+    <string name="timer_repeat_more">Bir çalma artır</string>
+</resources>

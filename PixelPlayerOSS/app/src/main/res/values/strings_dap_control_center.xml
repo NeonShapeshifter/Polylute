@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dap_device_admin_label">Polylute DAP administration</string>
+    <string name="dap_device_admin_description">Manages only the policies required for dedicated DAP mode and owner recovery.</string>
+    <string name="settings_category_wireless_title">Wireless</string>
+    <string name="settings_category_wireless_subtitle">Wi-Fi and Bluetooth audio</string>
+    <string name="settings_category_display_title">Display</string>
+    <string name="settings_category_display_subtitle">Brightness and screen timeout</string>
+    <string name="settings_category_storage_title">Storage</string>
+    <string name="settings_category_storage_subtitle">Music sources and available space</string>
+
+    <string name="dap_controls_title">Device controls</string>
+    <string name="dap_brightness_title">Brightness</string>
+    <string name="dap_volume_output_title">Volume / Output</string>
+    <string name="dap_battery_title">Battery</string>
+    <string name="dap_battery_charging">Charging</string>
+    <string name="dap_battery_not_charging">Not charging</string>
+    <string name="dap_battery_plug_ac">AC power</string>
+    <string name="dap_battery_plug_usb">USB power</string>
+    <string name="dap_battery_plug_wireless">Wireless power</string>
+    <string name="dap_battery_plug_other">External power</string>
+    <string name="dap_battery_plug_none">On battery</string>
+
+    <string name="dap_output_usb_direct">USB Direct</string>
+    <string name="dap_output_bluetooth">Bluetooth</string>
+    <string name="dap_output_android_usb">Android USB audio</string>
+    <string name="dap_output_wired">Wired audio</string>
+    <string name="dap_output_speaker">Speaker</string>
+    <string name="dap_output_android">Android Audio</string>
+    <string name="dap_output_no_usb_dac">No USB DAC</string>
+    <string name="dap_volume_title">Volume</string>
+    <string name="dap_volume_dac_own_not_reflected">The DAC\'s own volume buttons are not shown here, and Safety Max does not limit them.</string>
+    <string name="dap_volume_db">%1$s dB</string>
+    <string name="dap_volume_row_dac">DAC</string>
+    <string name="dap_volume_row_digital">Digital</string>
+    <string name="dap_direct_digital_unchanged">Digital level unchanged</string>
+    <string name="dap_direct_failed_short">USB Direct failed; using Android Audio</string>
+    <string name="dap_rate_khz">%1$s kHz</string>
+    <string name="dap_bits">%1$d-bit</string>
+
+    <string name="dap_screen_timeout_title">Screen timeout</string>
+    <string name="dap_timeout_30_seconds">30 seconds</string>
+    <string name="dap_timeout_1_minute">1 minute</string>
+    <string name="dap_timeout_2_minutes">2 minutes</string>
+    <string name="dap_timeout_5_minutes">5 minutes</string>
+    <string name="dap_timeout_10_minutes">10 minutes</string>
+    <string name="dap_timeout_never_while_playing">Never while playing</string>
+    <string name="dap_timeout_never_while_playing_desc">Keeps the screen on only during active playback. Pausing or stopping restores normal screen off.</string>
+    <string name="dap_write_settings_required">Android requires one-time permission to change the system screen timeout.</string>
+    <string name="dap_authorize_timeout">Authorize timeout control</string>
+    <!-- F-05: shown when the system's own timeout is "never"; nothing is changed until the user taps. -->
+    <string name="dap_timeout_system_never_title">The screen never turns off by itself</string>
+    <string name="dap_timeout_system_never_body">Android\'s screen timeout is set to \u201cnever\u201d. The screen stays on until you press power, the lock screen does not appear and the device does not go to rest. Playback is not affected.</string>
+    <string name="dap_timeout_system_never_action">Set to 1 minute</string>
+    <string name="dap_timeout_system_never_review">Review</string>
+    <!-- B11-fix FIX-2: the system's real timeout is not the one that was chosen. -->
+    <string name="dap_timeout_value_never">never</string>
+    <string name="dap_timeout_value_seconds">%1$d s</string>
+    <string name="dap_timeout_value_minutes">%1$d min</string>
+    <string name="dap_timeout_drift_note">The system screen timeout is %1$s, not the %2$s you chose.</string>
+    <string name="dap_timeout_drift_reapply">The app puts it back when you return to it.</string>
+
+    <string name="dap_wireless_wifi_title">Wi-Fi</string>
+    <string name="dap_wireless_bluetooth_title">Bluetooth</string>
+    <string name="dap_wireless_on">On</string>
+    <string name="dap_wireless_off">Off</string>
+    <string name="dap_wireless_connected">Connected</string>
+    <string name="dap_wireless_not_connected">Not connected</string>
+    <string name="dap_manage_wifi">Manage Wi-Fi</string>
+    <string name="dap_enable_bluetooth">Enable Bluetooth</string>
+    <string name="dap_manage_bluetooth">Pair / manage devices</string>
+    <string name="dap_wireless_platform_note">Android handles network security, confirmation and pairing.</string>
+    <string name="dap_bluetooth_permission_required">Nearby devices permission is required to enable Bluetooth.</string>
+    <string name="dap_bluetooth_confirmation_unavailable">Bluetooth confirmation could not be opened safely.</string>
+    <string name="dap_managed_radio_rejected">Android rejected the %1$s change.</string>
+
+    <string name="dap_storage_internal_title">Internal storage</string>
+    <string name="dap_storage_free_of_total">%1$s free of %2$s</string>
+    <string name="dap_storage_sources_title">Music storage sources</string>
+    <string name="dap_storage_internal">Internal storage</string>
+    <string name="dap_storage_sd">SD card</string>
+    <string name="dap_storage_usb">USB storage</string>
+    <string name="dap_storage_no_external">No external music storage detected</string>
+    <string name="dap_library_scan">Scan library</string>
+    <string name="dap_library_scan_desc">Check for new or changed local music</string>
+    <string name="dap_library_full_rescan">Full rescan</string>
+    <string name="dap_library_full_rescan_desc">Re-read the complete local music library</string>
+    <string name="dap_library_scanning">Library scan running…</string>
+    <string name="dap_pssd_future_note">External PSSD support will appear here only after physical storage validation.</string>
+
+    <string name="dap_audio_current_output">Current output</string>
+    <string name="dap_audio_android_volume">Android media volume</string>
+    <string name="dap_audio_direct_volume_note">USB Direct sends unscaled PCM. Adjust listening level on the DAC or amplifier.</string>
+    <string name="dap_audio_diagnostics_title">Technical USB diagnostics</string>
+
+    <string name="dac_settings_title">DAC</string>
+    <string name="dac_no_connected">No DAC connected</string>
+    <string name="dac_more">More DACs</string>
+    <string name="dac_none_known">No known DAC profiles</string>
+    <string name="dac_profile_title">DAC profile</string>
+    <string name="dac_profile_not_found">This DAC profile is no longer available.</string>
+    <string name="dac_status_label">Status</string>
+    <string name="dac_status_active">Active</string>
+    <string name="dac_status_connected">Connected</string>
+    <string name="dac_status_not_connected">Not connected</string>
+    <string name="dac_usb_audio">USB Audio</string>
+    <string name="dac_device_title">Device</string>
+    <string name="dac_name">Name</string>
+    <string name="dac_manufacturer">Manufacturer</string>
+    <string name="dac_product">Product</string>
+    <string name="dac_vid">USB Vendor ID</string>
+    <string name="dac_pid">USB Product ID</string>
+    <string name="dac_serial">Serial number</string>
+    <string name="dac_identity">Profile identity</string>
+    <string name="dac_identity_model_scoped">Shared by this model (no stable serial available)</string>
+    <string name="dac_capabilities">Advertised capabilities</string>
+    <string name="dac_own_volume_not_controllable">If this DAC has its own volume (buttons or a wheel), the app cannot read or limit it: USB does not expose it.</string>
+    <string name="dac_advertised_rates">Sample rates</string>
+    <string name="dac_advertised_depth">Maximum bit depth</string>
+    <string name="dac_rename">Rename</string>
+    <string name="dac_forget">Forget DAC</string>
+    <string name="dac_forget_title">Forget this DAC?</string>
+    <string name="dac_forget_message">Only the local Polylute profile will be removed. USB permissions and routing will not change.</string>
+
+    <string name="headphone_settings_title">Headphone</string>
+    <string name="headphone_no_selected">No headphone selected</string>
+    <string name="headphone_more">More Headphones</string>
+    <string name="headphone_none_known">No headphone profiles yet</string>
+    <string name="headphone_new">New Headphone</string>
+    <string name="headphone_create">Create</string>
+    <string name="headphone_name">Name</string>
+    <string name="headphone_profile_title">Headphone profile</string>
+    <string name="headphone_profile_not_found">This headphone profile is no longer available.</string>
+    <string name="headphone_status_selected">Selected</string>
+    <string name="headphone_status_selected_for">Selected for %1$s</string>
+    <string name="headphone_select">Select Headphone</string>
+    <string name="headphone_equalizer_summary_on">On · %1$s</string>
+    <string name="headphone_equalizer_summary_off">Off · %1$s</string>
+    <string name="headphone_dac_section">DAC</string>
+    <string name="headphone_rename">Rename</string>
+    <string name="headphone_forget">Forget Headphone</string>
+    <string name="headphone_forget_title">Forget this headphone?</string>
+    <string name="headphone_forget_message">The local profile and its remembered DAC associations will be removed. DAC profiles and system audio will not change.</string>
+</resources>

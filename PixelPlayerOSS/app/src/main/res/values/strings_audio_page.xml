@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      B22: the Audio page (`Audio.dc.html`). Section headers, the rows' own words, and the words of the one status
+      line. The Pure Direct sentences are in strings_pristine_mode.xml; the lock's name is `pristine_lock_name`.
+    -->
+    <string name="audio_section_output">Output</string>
+    <string name="audio_section_pure">@string/pristine_lock_name</string>
+    <string name="audio_section_sound">Sound</string>
+    <string name="audio_section_transitions">Transitions</string>
+    <string name="audio_section_queue">Queue</string>
+    <!-- Two parts of one line: "Active · FiiO", "4 s · smart crossfade". -->
+    <string name="audio_row_join">%1$s · %2$s</string>
+    <!-- With no DAC connected: where the sound goes. -->
+    <string name="audio_output_speaker">Output: the device\'s speaker</string>
+    <string name="audio_output_wired">Output: wired audio</string>
+    <string name="audio_output_bluetooth">Output: Bluetooth</string>
+    <string name="audio_output_android">Output: Android audio</string>
+    <string name="audio_digital_warning">Digital volume at %1$d %%: the signal is modified.</string>
+    <string name="audio_eq_title">Equalizer</string>
+    <string name="audio_eq_no_headphones">Select headphones to adjust their equalizer</string>
+    <!-- %1$s = the headphones, %2$s = "10 bands · ROCK" or "Off". -->
+    <string name="audio_eq_sub">%1$s · %2$s</string>
+    <string name="audio_eq_sub_saved">%1$s · saved: %2$s</string>
+    <string name="audio_replaygain_title">ReplayGain</string>
+    <string name="audio_replaygain_sub">Normalizes using the file\'s tags</string>
+    <!-- "Gain from: Track | Album" -->
+    <string name="audio_gain_of">Gain from</string>
+    <!-- %1$s = the headphones, %2$s = "step 17", %3$s = the output ("USB Direct", "Speaker"). -->
+    <string name="audio_safety_sub">%1$s · %2$s on %3$s</string>
+    <string name="audio_speed_title">Speed</string>
+    <string name="audio_crossfade_off">Off</string>
+    <string name="audio_crossfade_on">On</string>
+    <string name="audio_crossfade_style_none">Style: none</string>
+    <string name="audio_crossfade_seconds">%1$s s</string>
+    <string name="audio_smart_crossfade_name">smart crossfade</string>
+    <string name="audio_gapless_title">Gapless</string>
+    <string name="audio_gapless_sub">Songs join with no gap</string>
+    <string name="audio_gapless_yes">Yes</string>
+    <string name="audio_gapless_yes_direct">Yes · USB Direct</string>
+    <string name="audio_gapless_crossfade">With crossfade</string>
+    <string name="audio_persistent_mix_title">Persistent mix</string>
+    <string name="audio_persistent_mix_sub">Keeps the shuffled order when the app closes</string>
+    <!-- The status line, everywhere it appears (Audio, equalizer). %1$s = the lock's name. -->
+    <string name="audio_status_applied">Applied</string>
+    <string name="audio_status_frozen">Frozen · %1$s</string>
+    <string name="audio_status_off">Off</string>
+    <string name="audio_status_android_route">Android route</string>
+    <string name="audio_status_bypassed_maintenance">Bypassed · maintenance</string>
+    <string name="audio_status_other_profile">Other headphones in use</string>
+    <string name="audio_status_safety_rescaled">Applied · adapted limit</string>
+    <string name="audio_status_safety_override">Limit overridden for now</string>
+    <string name="audio_status_safety_not_set">No limit saved</string>
+    <string name="audio_status_safety_unavailable">Not applied on this output</string>
+    <!-- B22: the battery on the DAP lock screen's footer. -->
+    <string name="lock_battery_percent">%1$d%%</string>
+</resources>

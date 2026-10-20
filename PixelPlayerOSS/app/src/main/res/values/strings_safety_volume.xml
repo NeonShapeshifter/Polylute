@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="safety_max_title">Safety Max Volume</string>
+    <string name="safety_max_not_set">Not set</string>
+    <string name="safety_max_configured">100% = configured ceiling</string>
+    <string name="safety_max_other_output">Not set for this output</string>
+    <string name="safety_max_disabled">Disabled</string>
+    <string name="safety_max_explanation">Safety Max is your personal volume ceiling. It does not measure sound pressure or guarantee a safe listening level.</string>
+    <string name="safety_max_current_output">Current output</string>
+    <string name="safety_max_unavailable_output">Safety Max is unavailable on this output.</string>
+    <string name="safety_max_recalibrate">The output range changed. Recalibration is required.</string>
+    <string name="safety_max_not_set_output">No ceiling is configured for this output.</string>
+    <string name="safety_max_current_status">%1$d%% · raw step %2$d of %3$d</string>
+    <string name="safety_max_use_current">Use current volume as Safety Max</string>
+    <string name="safety_max_zero_rejected">Raise the volume above zero before setting a ceiling.</string>
+    <!-- RT-01: a level the DAC did not confirm is never saved as a ceiling. -->
+    <string name="safety_max_level_unconfirmed">The DAC has not confirmed its volume level. The button reads it again; nothing is saved until it can be confirmed.</string>
+    <string name="safety_max_not_saved_unconfirmed">Nothing was saved: the DAC’s level could not be read. Check the connection and try again.</string>
+    <string name="safety_max_not_saved_output_changed">Nothing was saved: the output changed while its level was being read. Try again.</string>
+    <string name="safety_max_enabled">Safety Max enabled</string>
+    <string name="safety_max_enabled_summary">Normal volume changes stop at your configured ceiling.</string>
+    <string name="safety_max_reached_title">Safety Max reached</string>
+    <string name="safety_max_reached_message">You’re at the configured maximum for %1$s. Going higher will exceed your Safety Max.</string>
+    <string name="safety_max_temporary_override">Temporary override</string>
+    <!-- FIX-4: the confirmation says how long the override lasts. %1$d is the idle window in minutes. -->
+    <!-- FIX-5: the confirmation was asked for with the screen off. %1$d is the seconds it waits. -->
+    <string name="safety_max_override_closes_soon">This closes in %1$d s if you do not answer.</string>
+    <string name="safety_max_override_lasts">The override lasts until you lower the volume to your maximum, or after %1$d min without playing. Changing headphones or output also ends it.</string>
+    <string name="safety_max_disable">Disable for this headphone</string>
+
+    <!--
+      The app-owned volume readout. These are state words, not sentences: the readout is a bar and
+      a pair of numbers that is on screen for about a second, and a sentence in that space is
+      unreadable. Each one says what is true of the volume right now.
+    -->
+    <string name="volume_hud_state_limit">LIMIT</string>
+    <string name="volume_hud_state_blocked">LIMIT</string>
+    <string name="volume_hud_state_override">OVERRIDE</string>
+    <!-- FIX-4: what ends the temporary override. %1$d is the idle window in minutes. -->
+    <string name="volume_hud_override_detail">Ends when you lower the volume or after %1$d min without playing</string>
+    <string name="volume_hud_state_maximum">MAX</string>
+    <string name="volume_hud_level">%1$d / %2$d</string>
+    <string name="volume_hud_cd">Volume %1$d of %2$d</string>
+    <string name="safety_max_dac_own_volume_note">On a USB DAC, the DAC\'s own volume buttons are not reflected in the app and Safety Max does not limit them.</string>
+    <string name="safety_max_calibrate_dac_at_max">If your DAC has its own volume (buttons or a wheel), turn it all the way up first — the worst case — and then calibrate. The app cannot read that volume, so a ceiling set with it lower stops protecting you once it is raised.</string>
+    <string name="safety_max_calibrate_dac_notice">No Safety Max ceiling is set for this DAC, so nothing limits its volume. Calibrate Safety Max for it.</string>
+    <!-- F-07: the volume keys reached the ceiling with the phone locked or the screen off, where the override gesture does not exist. -->
+    <string name="safety_max_refused_notice">Safety Max · unlock to go higher</string>
+    <!-- B27-A3: the DAC did not take a volume reduction (or would not say what level it holds). -->
+    <string name="safety_max_volume_write_failed">The DAC did not confirm the lower volume. Its level may be higher than shown.</string>
+    <string name="safety_max_notice_channel">Volume limit</string>
+    <!-- B27-A5 (N-07): debug builds only, in the Now Playing More menu. -->
+    <string name="more_group_debug">Debug</string>
+    <string name="debug_mark_noise">Mark noise now</string>
+    <string name="debug_mark_noise_supporting">Saves the last 30 s of the USB output\'s feedback and packets, and the stream\'s state, to a file</string>
+    <string name="debug_mark_noise_done">Saved</string>
+    <string name="debug_mark_noise_failed">Could not save the noise mark</string>
+</resources>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  All remaining network use is optional enrichment over HTTPS (lyrics, artist artwork,
+  MusicBrainz-style metadata lookups). Playback, indexing, playlists, favorites and lyrics
+  never touch the network, and no remaining endpoint uses cleartext, so it is off by default.
+  The loopback exemption that existed for the removed cloud stream proxies went with them.
+  This is now the only network security config in the build: the debug source set used to
+  override it with `cleartextTrafficPermitted="true"`, which existed solely to reach a
+  self-hosted server over plain HTTP, and nothing left in the app speaks cleartext.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

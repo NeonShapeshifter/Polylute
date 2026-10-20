@@ -1,0 +1,1 @@
+The third-party notices are in [app/src/main/assets/licenses/THIRD_PARTY_NOTICES.md](app/src/main/assets/licenses/THIRD_PARTY_NOTICES.md); the app shows the same file under Settings, About, Licences and open-source notices.

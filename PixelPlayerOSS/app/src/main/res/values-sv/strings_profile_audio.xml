@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Sparad i profilen</string>
+    <string name="profile_audio_current_effect">Effekt på aktuell utgång</string>
+    <string name="profile_audio_not_selected">Tillämpas inte · profilen är inte vald</string>
+    <string name="profile_audio_applied">Tillämpas</string>
+    <string name="eq_output_pure_direct">Förbikopplad av Purity</string>
+    <string name="eq_output_usb_direct">Förbikopplad av USB Direct</string>
+    <string name="eq_output_maintenance">Förbikopplad av underhåll</string>
+    <string name="safety_max_saved_enabled">Safety Max aktiverat i profilen</string>
+    <string name="safety_max_saved_summary">Sparad inställning. Den aktuella utgången avgör om gränsen tillämpas.</string>
+    <string name="safety_max_saved_unavailable">Sparad i profilen; tillämpas inte på den här utgången.</string>
+    <string name="safety_max_saved_unavailable_usb">Sparad i profilen; tillämpas inte med den här USB Direct-utgången.</string>
+    <string name="safety_max_output_rescaled">Tillämpas med anpassad gräns · utgångens omfång har ändrats</string>
+    <string name="safety_max_output_override">Gränsen är tillfälligt överstyrd</string>
+    <string name="safety_max_saved_limit">Sparad gräns för den här utgången</string>
+    <string name="safety_max_calibration_unavailable">Kalibrering är inte tillgänglig på den här utgången.</string>
+    <string name="profile_audio_saved_eq_summary">Sparad: %1$s · %2$s</string>
+    <!-- B21: the profile row when the EQ is off. Said once: the mode and the effect used to both say "off". -->
+    <string name="profile_audio_saved_eq_off">Sparad: Av</string>
+    <string name="profile_audio_route_note">Läget och kurvan förblir sparade. Purity förbikopplar EQ endast när USB Direct är den aktuella utgången.</string>
+</resources>

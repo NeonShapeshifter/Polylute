@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B22: Ljud-sidan (`Audio.dc.html`). Se values/. -->
+    <string name="audio_section_output">Utgång</string>
+    <string name="audio_section_pure">@string/pristine_lock_name</string>
+    <string name="audio_section_sound">Ljud</string>
+    <string name="audio_section_transitions">Övergångar</string>
+    <string name="audio_section_queue">Kö</string>
+    <string name="audio_row_join">%1$s · %2$s</string>
+    <string name="audio_output_speaker">Utgång: enhetens högtalare</string>
+    <string name="audio_output_wired">Utgång: kabelanslutet ljud</string>
+    <string name="audio_output_bluetooth">Utgång: Bluetooth</string>
+    <string name="audio_output_android">Utgång: Android-ljud</string>
+    <string name="audio_digital_warning">Digital volym på %1$d %%: signalen ändras.</string>
+    <string name="audio_eq_title">Equalizer</string>
+    <string name="audio_eq_no_headphones">Välj hörlurar för att justera deras equalizer</string>
+    <string name="audio_eq_sub">%1$s · %2$s</string>
+    <string name="audio_eq_sub_saved">%1$s · sparad: %2$s</string>
+    <string name="audio_replaygain_title">ReplayGain</string>
+    <string name="audio_replaygain_sub">Normaliserar med filernas taggar</string>
+    <string name="audio_gain_of">Förstärkning från</string>
+    <string name="audio_safety_sub">%1$s · %2$s på %3$s</string>
+    <string name="audio_speed_title">Hastighet</string>
+    <string name="audio_crossfade_off">Av</string>
+    <string name="audio_crossfade_on">På</string>
+    <string name="audio_crossfade_style_none">Stil: ingen</string>
+    <string name="audio_crossfade_seconds">%1$s s</string>
+    <string name="audio_smart_crossfade_name">smart övertoning</string>
+    <string name="audio_gapless_title">Utan avbrott</string>
+    <string name="audio_gapless_sub">Låtarna följer direkt på varandra</string>
+    <string name="audio_gapless_yes">Ja</string>
+    <string name="audio_gapless_yes_direct">Ja · USB Direct</string>
+    <string name="audio_gapless_crossfade">Med övertoning</string>
+    <string name="audio_persistent_mix_title">Bestående blandning</string>
+    <string name="audio_persistent_mix_sub">Behåller den blandade ordningen när appen stängs</string>
+    <string name="audio_status_applied">Används</string>
+    <string name="audio_status_frozen">Fryst · %1$s</string>
+    <string name="audio_status_off">Av</string>
+    <string name="audio_status_android_route">Android-väg</string>
+    <string name="audio_status_bypassed_maintenance">Förbigås · underhåll</string>
+    <string name="audio_status_other_profile">Andra hörlurar används</string>
+    <string name="audio_status_safety_rescaled">Används · anpassad gräns</string>
+    <string name="audio_status_safety_override">Gränsen åsidosatt just nu</string>
+    <string name="audio_status_safety_not_set">Ingen gräns sparad</string>
+    <string name="audio_status_safety_unavailable">Tillämpas inte på denna utgång</string>
+    <!-- B22: the battery on the DAP lock screen's footer. -->
+    <string name="lock_battery_percent">%1$d %%</string>
+</resources>

@@ -1,0 +1,5 @@
+Polylute 1.0.0: the first release.
+
+* A music player for the files on your device, with Purity (bit-perfect USB DAC output) and Resonance (per-headphone profiles, equalizer and volume limits).
+* DAP mode: Launcher, Pinned or Dedicated, for a phone used only as a player.
+* Listening statistics, optional lyrics and artist pictures (off by default), backups. English, Spanish and Swedish.

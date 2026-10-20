@@ -1,0 +1,30 @@
+# Machine-local tooling and credentials
+.agents/
+.codex/
+.aws/
+.env
+.env.*
+!.env.example
+**/local.properties
+**/keystore.properties
+**/debug-secrets.properties
+**/*.jks
+**/*.keystore
+
+# Generated Android / Gradle files
+**/.gradle/
+**/.gradle-local/
+**/.gradle-temp/
+**/.kotlin/
+**/.cxx/
+**/.externalNativeBuild/
+**/build/
+**/*.apk
+**/*.aab
+**/__pycache__/
+
+# Editor and OS state
+**/.idea/
+**/.vscode/
+.DS_Store
+Thumbs.db

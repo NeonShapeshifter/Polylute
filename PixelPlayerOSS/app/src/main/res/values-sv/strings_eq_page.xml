@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B22: equalizern (`Equalizer.dc.html`). -->
+    <string name="eq_subtitle_with">%1$s · med %2$s</string>
+    <string name="eq_frozen_hint">Du kan redigera kurvan; den tillämpas när %1$s är av.</string>
+    <string name="eq_route_resonance">Resonans</string>
+    <string name="eq_route_usb_android">USB Android</string>
+    <string name="eq_route_android">%1$s · Android</string>
+    <string name="eq_mode_saved_in">Läge · sparat i %1$s</string>
+    <string name="eq_preset_row">Förinställning</string>
+    <string name="eq_save_preset">Spara som förinställning</string>
+    <string name="eq_section_response">Respons</string>
+    <string name="eq_section_bands">Band · ±15 dB</string>
+    <string name="eq_saved_note">Läget och kurvan sparas i %1$s.</string>
+    <string name="eq_off_note">Ingen equalizer. Signalen passerar oförändrad.</string>
+    <string name="eq_response_description">Frekvensrespons för den sparade kurvan</string>
+    <string name="eq_band_accessible">%1$s, %2$s dB</string>
+</resources>

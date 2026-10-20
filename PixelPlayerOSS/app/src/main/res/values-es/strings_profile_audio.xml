@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Guardado en el perfil</string>
+    <string name="profile_audio_current_effect">Efecto en la salida actual</string>
+    <string name="profile_audio_not_selected">No se aplica · perfil no seleccionado</string>
+    <string name="profile_audio_applied">Se aplica</string>
+    <string name="eq_output_pure_direct">Omitido por Purity</string>
+    <string name="eq_output_usb_direct">Omitido por USB Direct</string>
+    <string name="eq_output_maintenance">Omitido por mantenimiento</string>
+    <string name="safety_max_saved_enabled">Safety Max activado en el perfil</string>
+    <string name="safety_max_saved_summary">Preferencia guardada. La salida actual determina si se aplica el límite.</string>
+    <string name="safety_max_saved_unavailable">Guardado en el perfil; no se aplica en esta salida.</string>
+    <string name="safety_max_saved_unavailable_usb">Guardado en el perfil; no se aplica con esta salida USB Direct.</string>
+    <string name="safety_max_output_rescaled">Se aplica con un límite adaptado · cambió el rango de la salida</string>
+    <string name="safety_max_output_override">Límite superado temporalmente</string>
+    <string name="safety_max_saved_limit">Límite guardado para esta salida</string>
+    <string name="safety_max_calibration_unavailable">La calibración no está disponible en esta salida.</string>
+    <string name="profile_audio_saved_eq_summary">Guardado: %1$s · %2$s</string>
+    <!-- B21: the profile row when the EQ is off. Said once: the mode and the effect used to both say "off". -->
+    <string name="profile_audio_saved_eq_off">Guardado: Desactivado</string>
+    <string name="profile_audio_route_note">El modo y la curva se conservan. Purity omite el EQ solo mientras la salida actual es USB Direct.</string>
+</resources>

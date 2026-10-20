@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">Résumé des bandes. Touchez pour sélectionner ; réglez dans l’éditeur de la bande.</string>
+    <string name="eq_band_position">Bande %1$d sur %2$d · %3$s</string>
+    <string name="eq_band_previous">Sélectionner la bande précédente</string>
+    <string name="eq_band_next">Sélectionner la bande suivante</string>
+    <string name="eq_frequency_select">Choisir la fréquence</string>
+    <string name="eq_gain_label">Gain · pas de 1 dB</string>
+    <string name="eq_gain_decrease">Réduire le gain à %1$s de 1 dB</string>
+    <string name="eq_gain_increase">Augmenter le gain à %1$s de 1 dB</string>
+    <string name="eq_gain_readout">%1$+d dB</string>
+    <string name="eq_gain_accessible">Gain à %1$s</string>
+    <string name="eq_band_reset">Réinitialiser la bande sélectionnée à 0 dB</string>
+    <string name="timer_off">Désactivé</string>
+    <string name="timer_end_track">À la fin de ce morceau</string>
+    <string name="timer_repeat_current">Répéter ce morceau</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d lecture</item>
+        <item quantity="many">%1$d lectures</item>
+        <item quantity="other">%1$d lectures</item>
+    </plurals>
+    <string name="timer_repeat_hint">La lecture en cours compte. Répète ce morceau, puis met en pause. Changer de morceau ou de mode de répétition annule le compteur.</string>
+    <string name="timer_active">Actif : %1$s</string>
+    <string name="timer_durations">Mettre en pause après</string>
+    <string name="timer_custom">Intervalle personnalisé</string>
+    <string name="timer_interval_hint">Durée à partir de la confirmation, pas une heure de la journée.</string>
+    <string name="timer_hours">Heures (0–23)</string>
+    <string name="timer_minutes">Minutes (0–59)</string>
+    <string name="timer_interval_error">Saisissez 0 à 23 heures et 0 à 59 minutes. Le total doit être supérieur à zéro.</string>
+    <string name="timer_pending_hint">Sélection en attente. Le minuteur actif ne change qu’après confirmation.</string>
+    <string name="timer_close">Fermer</string>
+    <string name="timer_start">Démarrer</string>
+    <string name="timer_confirm_off">Désactiver</string>
+    <string name="timer_repeat_less">Une lecture de moins</string>
+    <string name="timer_repeat_more">Une lecture de plus</string>
+</resources>

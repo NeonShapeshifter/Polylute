@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_cd_back">Kembali</string>
+    <string name="auth_web_retry">Coba lagi</string>
+    <string name="toast_welcome_user">Selamat datang, %1$s!</string>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B22: el reproductor (`Player.dc.html`, `LyricsMenu.dc.html`, `Queue.dc.html`). -->
+    <string name="player_header_collapse">Cerrar reproductor</string>
+    <string name="player_header_lyrics">Letras</string>
+    <string name="player_header_details">Detalles de la pista</string>
+    <string name="player_add_bookmark">Añadir marcador</string>
+    <string name="lyrics_options">Opciones de letras</string>
+    <string name="lyrics_menu_title">Letras</string>
+    <string name="lyrics_menu_section_song">Esta canción</string>
+    <string name="lyrics_menu_section_reading">Lectura</string>
+    <string name="lyrics_menu_section_file">Archivo</string>
+    <string name="lyrics_menu_sync">Sincronía</string>
+    <string name="lyrics_menu_sync_sub">Adelanta o retrasa las líneas</string>
+    <string name="lyrics_menu_sync_earlier">Retrasar 0,1 s</string>
+    <string name="lyrics_menu_sync_later">Adelantar 0,1 s</string>
+    <string name="lyrics_menu_alignment">Alineación</string>
+    <string name="lyrics_menu_align_left">Izquierda</string>
+    <string name="lyrics_menu_align_center">Centro</string>
+    <string name="lyrics_menu_translation">Traducción</string>
+    <string name="lyrics_menu_romanization">Romanización</string>
+    <string name="lyrics_menu_keep_screen_on">Mantener la pantalla encendida</string>
+    <string name="lyrics_menu_search">Buscar letras</string>
+    <string name="lyrics_menu_import">Importar .lrc</string>
+    <string name="lyrics_menu_save">Guardar en archivo</string>
+    <string name="queue_title_next">A continuación</string>
+    <!-- B32-Q4: the peek of the queue at the foot of the full player -->
+    <string name="player_queue_peek_open">Abrir la cola</string>
+</resources>

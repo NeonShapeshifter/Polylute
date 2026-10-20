@@ -1,0 +1,1 @@
+Music player with bit-perfect USB DAC output and a dedicated DAP mode.

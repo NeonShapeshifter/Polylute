@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B22: spelaren (`Player.dc.html`, `LyricsMenu.dc.html`, `Queue.dc.html`). -->
+    <string name="player_header_collapse">Stäng spelaren</string>
+    <string name="player_header_lyrics">Låttext</string>
+    <string name="player_header_details">Spårinformation</string>
+    <string name="player_add_bookmark">Lägg till bokmärke</string>
+    <string name="lyrics_options">Alternativ för låttext</string>
+    <string name="lyrics_menu_title">Låttext</string>
+    <string name="lyrics_menu_section_song">Den här låten</string>
+    <string name="lyrics_menu_section_reading">Läsning</string>
+    <string name="lyrics_menu_section_file">Fil</string>
+    <string name="lyrics_menu_sync">Synk</string>
+    <string name="lyrics_menu_sync_sub">Flytta raderna tidigare eller senare</string>
+    <string name="lyrics_menu_sync_earlier">Fördröj 0,1 s</string>
+    <string name="lyrics_menu_sync_later">Tidigarelägg 0,1 s</string>
+    <string name="lyrics_menu_alignment">Justering</string>
+    <string name="lyrics_menu_align_left">Vänster</string>
+    <string name="lyrics_menu_align_center">Mitten</string>
+    <string name="lyrics_menu_translation">Översättning</string>
+    <string name="lyrics_menu_romanization">Romanisering</string>
+    <string name="lyrics_menu_keep_screen_on">Håll skärmen tänd</string>
+    <string name="lyrics_menu_search">Sök låttext</string>
+    <string name="lyrics_menu_import">Importera .lrc</string>
+    <string name="lyrics_menu_save">Spara till fil</string>
+    <string name="queue_title_next">Nästa</string>
+    <!-- B32-Q4: the peek of the queue at the foot of the full player -->
+    <string name="player_queue_peek_open">Öppna kön</string>
+</resources>

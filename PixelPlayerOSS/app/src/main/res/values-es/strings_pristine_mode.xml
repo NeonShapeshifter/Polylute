@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- F-02 modo Pristine y AUD-120 -->
+    <!-- B11-3. Todo el texto del bloqueo sale de aquí; el nombre, de `pristine_lock_name`. Ver values/. -->
+    <string name="pristine_lock_name">Purity</string>
+    <string name="pristine_lock_change">Cambiar</string>
+    <string name="pristine_lock_notice_eq">%1$s activo · el EQ no se aplica</string>
+    <string name="pristine_lock_notice_replaygain">%1$s activo · ReplayGain no se aplica</string>
+    <string name="pristine_lock_notice_digital">%1$s activo · el volumen digital no se aplica</string>
+    <string name="pristine_lock_notice_eq_pending">%1$s activo · el EQ no se aplicará en USB Direct</string>
+    <string name="pristine_lock_notice_replaygain_pending">%1$s activo · ReplayGain no se aplicará en USB Direct</string>
+    <string name="pristine_lock_notice_digital_pending">%1$s activo · el volumen digital no se aplicará en USB Direct</string>
+    <!-- Con un DAC conectado el bloqueo desactiva el fundido cruzado y la velocidad sea cual sea la ruta. Sin DAC no está en vigor y se aplican: las formas "pendiente". -->
+    <string name="pristine_lock_notice_crossfade">%1$s activo · no disponible: las canciones enlazan sin cortes ni huecos</string>
+    <string name="pristine_lock_notice_speed">%1$s activo · no disponible: la reproducción se mantiene a 1,0×</string>
+    <string name="pristine_lock_notice_crossfade_pending">%1$s activo · con un DAC USB conectado, el fundido cruzado no se aplicará</string>
+    <string name="pristine_lock_notice_speed_pending">%1$s activo · con un DAC USB conectado, la velocidad no se aplicará</string>
+    <!-- Bloqueo desactivado y un DAC USB conectado: el fundido cruzado y la velocidad funcionan, y sacan la reproducción de USB Direct. -->
+    <string name="setcat_crossfade_android_route_note">Con un DAC USB sale por la ruta Android</string>
+    <string name="setcat_speed_android_route_note">Distinta de 1,0× sale por la ruta Android</string>
+    <string name="pristine_status_off">Desactivado</string>
+    <string name="pristine_status_active">Activo — señal intacta hasta el DAC.</string>
+    <string name="pristine_status_only_direct">Activo — solo en USB Direct</string>
+    <string name="pristine_status_not_pristine">Activo — pero la señal se está modificando ahora</string>
+    <!-- Estado del bloqueo y, después, por qué la reproducción no va por USB Direct. %1$s = estado, %2$s = motivo -->
+    <string name="pristine_status_with_reason">%1$s — %2$s.</string>
+    <string name="pristine_reason_starting">iniciando</string>
+    <string name="pristine_reason_no_dac">no hay ningún DAC USB conectado</string>
+    <string name="pristine_reason_permission">falta el permiso USB</string>
+    <string name="pristine_reason_source">esta pista no puede ir por USB Direct</string>
+    <string name="pristine_reason_deferred">esperando un momento seguro para pasar a USB Direct</string>
+    <string name="pristine_reason_failed">USB Direct ha fallado y suena por Android</string>
+    <string name="pristine_reason_maintenance">un ajuste de mantenimiento mantiene la reproducción en Android</string>
+    <string name="pristine_reason_crossfade">el fundido cruzado usa la ruta Android</string>
+    <string name="pristine_reason_speed">la velocidad usa la ruta Android</string>
+    <string name="pristine_reason_effect">un efecto de Android (refuerzo de graves, virtualizador, sonoridad) usa la ruta Android</string>
+    <string name="digital_reset_full">Restablecer a 100 %</string>
+    <string name="pristine_rise_title">El nivel subiría</string>
+    <string name="pristine_rise_body">%1$s deja el volumen digital al 100 %%. El nivel subiría unos %2$s dB: %3$s. Baja el volumen del DAC antes de seguir.</string>
+    <string name="pristine_rise_reason_outside_direct">fuera de USB Direct la atenuación no se puede pasar al DAC, así que sube al entrar en Direct</string>
+    <string name="pristine_rise_reason_no_hardware">este DAC no tiene un volumen que la app pueda fijar y verificar</string>
+    <string name="pristine_rise_reason_range">el volumen del DAC no puede bajar más</string>
+    <string name="pristine_rise_confirm">Activar de todos modos</string>
+    <string name="pristine_rise_cancel">Cancelar</string>
+    <string name="pristine_status_waiting">En espera — sin DAC USB todo se aplica. Con un DAC congelará EQ, ReplayGain, volumen digital, fundido y velocidad.</string>
+    <string name="pristine_reason_resonance">Resonancia: USB Direct con el DSP de la app</string>
+</resources>

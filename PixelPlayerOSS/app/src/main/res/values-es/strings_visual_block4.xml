@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="timer_off">Desactivado</string>
+    <string name="timer_end_track">Al terminar esta canción</string>
+    <string name="timer_repeat_current">Repetir esta canción</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d reproducción</item>
+        <item quantity="many">%1$d reproducciones</item>
+        <item quantity="other">%1$d reproducciones</item>
+    </plurals>
+    <string name="timer_repeat_hint">Incluye la reproducción en curso. Repite esta canción y después pausa. Cambiar la canción o la repetición lo cancela.</string>
+    <string name="timer_active">Activo: %1$s</string>
+    <string name="timer_durations">Pausar después de</string>
+    <string name="timer_custom">Intervalo personalizado</string>
+    <string name="timer_interval_hint">Duración desde la confirmación; no es una hora del día.</string>
+    <string name="timer_hours">Horas (0–23)</string>
+    <string name="timer_minutes">Minutos (0–59)</string>
+    <string name="timer_interval_error">Introduce de 0 a 23 horas y de 0 a 59 minutos. El total debe ser mayor que cero.</string>
+    <string name="timer_pending_hint">Selección pendiente. El temporizador activo solo cambia al confirmar.</string>
+    <string name="timer_close">Cerrar</string>
+    <string name="timer_start">Iniciar</string>
+    <string name="timer_confirm_off">Desactivar</string>
+    <string name="timer_repeat_less">Una reproducción menos</string>
+    <string name="timer_repeat_more">Una reproducción más</string>
+</resources>

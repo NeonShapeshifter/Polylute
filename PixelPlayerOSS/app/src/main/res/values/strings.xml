@@ -1,0 +1,510 @@
+<resources>
+    <string name="app_name" translatable="false">Polylute</string>
+    <string name="app_name_change_title">App Name Change</string>
+    <string name="do_not_show_again">Do not show again</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="all_files_access_title">Special Permission Required</string>
+    <string name="grant_permission_button">Grant Permission</string>
+    <string name="error">Error</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="import_file">Import</string>
+    <string name="search">Search</string>
+
+    <string name="lyrics">Lyrics</string>
+    <string name="loading_lyrics">Loading lyrics…</string>
+    <string name="lyrics_provided_by">Lyrics provided by</string>
+    <string name="lrclib_uri" translatable="false">https://lrclib.net/</string>
+    <string name="lyrics_not_found">Lyrics not found</string>
+    <string name="search_lyrics_online_prompt">Would you like to search for lyrics online?</string>
+    <!--
+      The lyrics destination's own states. These replace a modal that used to be forced open
+      whenever a resolve came back empty.
+    -->
+    <string name="dap_lyrics_empty_title">No lyrics</string>
+    <string name="dap_lyrics_empty_message">There are no embedded or saved lyrics for this track, and no local lyrics file beside it.</string>
+    <string name="dap_lyrics_error_title">Lyrics could not be loaded</string>
+    <string name="dap_lyrics_online_disabled">Online lyrics are turned off in Settings, so searching is not offered here.</string>
+    <string name="dap_lyrics_search_online">Search online</string>
+    <string name="lyrics_custom_search_hint">We couldn\'t find lyrics automatically. You can edit the title or artist and try searching manually.</string>
+    <string name="failed_to_search_for_lyrics">Failed to search for lyrics</string>
+    <string name="failed_to_fetch_lyrics_from_remote">Failed to fetch lyrics from remote</string>
+    <string name="lyrics_fetch_timeout">Connection timed out. Please check your internet connection.</string>
+    <string name="lyrics_network_error">Network error. Please check your internet connection.</string>
+    <string name="lyrics_server_error">Server error (code %d). Please try again later.</string>
+    <string name="lyrics_remote_disabled">Online lyrics are disabled in settings.</string>
+    <string name="found_n_matches_format">Found %d match(es)</string>
+    <string name="searched_for_x_format">Searched for \"%s\"</string>
+    <string name="searching_lyrics">Searching for lyrics…</string>
+    <string name="lyrics_already_available">Lyrics already available. Online fetch skipped.</string>
+    <string name="lyrics_embedded_already_available">Embedded lyrics already found. Online fetch skipped.</string>
+    <string name="local_lrc_already_available">Local (.lrc) lyrics already found. Online fetch skipped.</string>
+    <string name="fetch_lyrics_show_options_title">Show lyric options</string>
+    <string name="fetch_lyrics_show_options_subtitle">Always open the picker instead of auto-applying the first match</string>
+    <string name="save_lyrics_dialog_title">Save Lyrics</string>
+    <string name="save_lyrics_dialog_message">Choose which version to save:</string>
+    <string name="save_synced_lyrics">Synced (with timestamps)</string>
+    <string name="save_plain_lyrics">Plain (text only)</string>
+    <string name="lyrics_saved_successfully">Lyrics saved successfully</string>
+    <string name="lyrics_save_failed">Failed to save lyrics</string>
+    <string name="no_lyrics_to_save">No lyrics available to save</string>
+    <string name="reset_imported_lyrics">Reset lyrics for this song</string>
+
+    <string name="sync_scanning">Scanning music files…</string>
+    <string name="sync_processing">Processing files…</string>
+    <string name="sync_files_progress">%1$d of %2$d files</string>
+    <string name="sync_in_progress">Syncing library…</string>
+    <string name="sync_complete">Sync complete</string>
+    <string name="sync_pending">Waiting…</string>
+    <string name="syncing_library">Syncing library…</string>
+    <string name="sync_preparing_library">Preparing your library…</string>
+    <string name="sync_scanned_count">Scanned %1$d of %2$d songs</string>
+    <string name="library_background_sync_lyrics">Scanning lyrics…</string>
+    <string name="library_background_sync_cache">Cleaning album art cache…</string>
+    <string name="unknown_song_title">Unknown track</string>
+    <string name="unknown_artist">Unknown artist</string>
+    <string name="unknown_album">Unknown album</string>
+    <string name="artist_picker_title">Pick an Artist</string>
+    <string name="artist_picker_count_single">1 artist</string>
+    <string name="artist_picker_count_multiple">%1$d artists</string>
+    <string name="artist_picker_primary_label">Primary artist</string>
+    <string name="artist_picker_shortcut_label">Artist page</string>
+    <string name="external_queue_label">Quick play</string>
+    <string name="external_playback_error">Unable to open that audio file.</string>
+    <string name="open_full_player">Open full player</string>
+    <string name="close_notification_player">Close player</string>
+    <string name="previous_track">Previous track</string>
+    <string name="next_track">Next track</string>
+    <string name="play_playback">Play</string>
+    <string name="playlist_not_found">Playlist not found.</string>
+    <string name="disc_number_header">Disc %d</string>
+
+    <string name="shortcut_shuffle_short">Shuffle</string>
+    <string name="shortcut_shuffle_long">Shuffle all songs</string>
+    <string name="shortcut_playlist_short">Playlist</string>
+
+    <string name="tile_shuffle_all">Shuffle All</string>
+    <string name="tile_last_playlist">Last Playlist</string>
+    <string name="tile_last_playlist_unavailable">No playlist available to open</string>
+
+    <string name="invalid_album_id">Invalid album ID</string>
+    <string name="album_id_not_found">Album ID not found</string>
+    <string name="error_loading_album">Error loading album data: %s</string>
+    <string name="album_not_found">Album not found</string>
+    <string name="invalid_artist_id">Invalid artist ID</string>
+    <string name="artist_id_not_found">Artist ID not found</string>
+    <string name="error_loading_artist">Error loading artist data: %s</string>
+    <string name="could_not_find_artist">Could not find the artist</string>
+    <string name="no_valid_songs">No valid songs found to play</string>
+
+    <string name="glance_widget_description">Responsive widget that adapts to its size</string>
+    <string name="widget_bar_4x1_desc">Compact player bar</string>
+    <string name="widget_control_4x2_desc">Full controls with shuffle and repeat</string>
+    <string name="widget_grid_2x2_desc">Minimalist square player</string>
+    <string name="service_processing_action">Processing playback action…</string>
+
+    <string name="playlist_none_to_share">No playlists to share</string>
+    <string name="playlist_share_chooser_title">Share playlists</string>
+    <string name="playlist_share_failed">Share failed: %1$s</string>
+    <string name="playlist_none_to_export">No playlists to export</string>
+    <string name="playlist_export_failed">Export failed: %1$s</string>
+    <string name="playlist_export_folder_display" translatable="false">Music/Polylute Exports</string>
+    <string name="error_unknown">Unknown error</string>
+
+    <string name="backup_invalid_format">Invalid backup: %1$s</string>
+    <string name="backup_progress_preparing_restore">Preparing restore</string>
+    <string name="backup_progress_starting_task">Starting restore task.</string>
+    <string name="backup_progress_preparing_backup">Preparing backup</string>
+    <string name="backup_progress_starting_backup_task">Starting backup task.</string>
+    <string name="restore_completed_success">Backup restored successfully</string>
+    <string name="restore_completed_partial_issues">Restore completed with some unresolved issues.</string>
+    <string name="restore_could_not_complete">Restore could not be completed: %1$s</string>
+    <string name="restore_failed_format">Restore failed: %1$s</string>
+    <string name="data_exported_successfully">Data exported successfully</string>
+    <string name="export_failed_format">Export failed: %1$s</string>
+    <string name="data_restored_successfully">Data restored successfully</string>
+    <string name="restore_partial_unresolved_format">Restore completed with unresolved issues. Failed: %1$s</string>
+    <string name="dev_test_crash_message">Test crash triggered from Developer Options - This is intentional for testing the crash reporting system</string>
+
+    <string name="player_song_not_found_in_list">Song not found in current list</string>
+    <string name="player_could_not_locate_song">Could not locate song</string>
+    <string name="player_no_songs_in_library_toast">No songs found in library</string>
+    <string name="player_playback_stopped_eot">Playback stopped: %1$s finished (End of Track).</string>
+    <string name="player_default_track_title">Track</string>
+    <string name="player_no_songs_to_shuffle">No songs to shuffle.</string>
+    <string name="player_queue_name_selected_albums">Selected Albums</string>
+    <string name="player_no_playable_songs_in_albums">No playable songs found in selected albums</string>
+    <string name="player_only_first_n_albums_queued">Only the first %1$d albums were queued</string>
+    <string name="player_albums_queued_format">%1$d albums queued (%2$d songs)</string>
+    <string name="player_could_not_queue_albums">Could not queue selected albums</string>
+    <string name="player_only_first_n_albums_next">Only the first %1$d albums were added as next</string>
+    <string name="player_albums_will_play_next_format">%1$d albums will play next</string>
+    <string name="player_could_not_add_albums_next">Could not add selected albums as next</string>
+    <string name="player_only_first_n_albums_added_queue">Only the first %1$d albums were added to queue</string>
+    <string name="player_albums_added_to_queue_format">%1$d albums added to queue</string>
+    <string name="player_could_not_add_albums_queue">Could not add selected albums to queue</string>
+    <string name="player_all_songs_already_in_favorites">All songs already in favorites</string>
+    <string name="player_no_songs_were_in_favorites">No songs were in favorites</string>
+    <string name="player_creating_zip">Creating ZIP file…</string>
+    <string name="player_share_zip_failed_format">Failed to share: %1$s</string>
+    <string name="player_cannot_delete_currently_playing">Cannot delete currently playing song</string>
+    <string name="player_batch_delete_files_deleted_skipped_format">%1$d files deleted (%2$d skipped - playing)</string>
+    <string name="player_batch_delete_partial_format">%1$d of %2$d files deleted</string>
+    <string name="player_delete_files_failed">Failed to delete files</string>
+    <string name="player_file_deleted">File deleted</string>
+    <string name="player_delete_file_not_found">Can\'t delete the file or file not found</string>
+    <string name="player_deletion_cancelled">Deletion cancelled</string>
+    <string name="player_permission_denied_edit_files">Permission denied – cannot edit files</string>
+    <string name="player_permission_denied_save_lyrics">Permission denied – cannot save lyrics</string>
+    <string name="player_permission_denied_edit_this_file">Permission denied – cannot edit this file</string>
+    <string name="metadata_updated_successfully">Metadata updated successfully</string>
+    <string name="player_updating_n_songs">Updating %1$d songs…</string>
+    <string name="player_batch_genre_updated_all">Successfully updated %1$d songs!</string>
+    <string name="player_batch_genre_updated_partial">Updated %1$d songs. Failed: %2$d</string>
+    <string name="delete_songs_permanent_message">These songs will be permanently deleted from your device and cannot be recovered.</string>
+    <string name="delete_action">Delete</string>
+
+    <string name="sleep_timer_n_minutes_format">%1$d minutes</string>
+    <string name="sleep_timer_display_eot">End of track</string>
+    <string name="sleep_timer_set_for_minutes_toast">Timer set for %1$d minutes.</string>
+    <string name="sleep_timer_cancelled_toast">Timer cancelled.</string>
+    <string name="sleep_timer_eot_no_song_toast">Cannot enable end of track: no active song.</string>
+    <string name="sleep_timer_eot_song_changed_toast">End of track timer deactivated: song changed from %1$s to %2$s.</string>
+    <string name="sleep_timer_eot_stop_at_end_toast">Playback will stop at end of track.</string>
+    <string name="sleep_timer_label_previous_track">Previous track</string>
+    <string name="sleep_timer_label_current_track">Current track</string>
+    <string name="sleep_timer_ui_title">Sleep timer</string>
+    <string name="sleep_timer_ui_slider_label_timer">Timer</string>
+    <string name="sleep_timer_ui_end_of_current_track">End of current track</string>
+    <string name="sleep_timer_ui_custom_time">Custom time</string>
+    <string name="sleep_timer_ui_cancel_timer">Cancel timer</string>
+    <string name="sleep_timer_ui_set_custom_duration">Set custom duration</string>
+    <string name="sleep_timer_ui_play_count_label">Play count: %1$s</string>
+    <string name="sleep_timer_ui_play_count_one_time">1 time</string>
+    <string name="cd_switch_on">Switch on</string>
+    <string name="ui_format_percent_d">%1$d%%</string>
+    <string name="backup_manifest_schema_v">v%1$d</string>
+    <string name="backup_manifest_device_line">%1$s %2$s</string>
+
+    <string name="batch_edit_toolbar_title">Edit %d Songs</string>
+    <string name="batch_edit_info_message">Only modified fields will be updated. Leave fields empty to keep existing values.</string>
+    <string name="batch_edit_mixed_values">(Mixed values)</string>
+    <string name="batch_edit_optional">(Optional - leave empty to skip)</string>
+    <string name="batch_edit_success">Successfully updated %d songs</string>
+    <string name="batch_edit_partial_success">Updated %1$d of %2$d songs. Some files could not be edited.</string>
+    <string name="batch_edit_failed">Failed to update songs</string>
+
+    <string name="batch_edit_cover_art_heading">Batch Cover Art</string>
+    <string name="batch_edit_cover_art_hint">This will replace the cover art for all %d selected songs</string>
+    <string name="batch_edit_set_cover_art">Set Cover Art for All</string>
+    <string name="batch_edit_remove_all_art">Remove All Cover Art</string>
+    <string name="batch_edit_multiple_covers">(Multiple different covers)</string>
+
+    <string name="player_error_skipping">Couldn\'t play this track — skipping</string>
+    <string name="sync_failed_toast">Library sync failed. Pull down to refresh and try again.</string>
+
+    <string name="a11y_toggle_on">On</string>
+    <string name="a11y_toggle_off">Off</string>
+
+
+    <string name="duplicates_title">Duplicate tracks</string>
+    <string name="duplicates_none">No duplicate tracks found.</string>
+    <string name="duplicates_summary">%1$d groups · %2$d tracks</string>
+    <string name="duplicates_group_count">%1$d copies</string>
+    <string name="duplicates_group_title_format">%1$s — %2$s</string>
+    <string name="setcat_find_duplicates_title">Duplicate tracks</string>
+    <string name="setcat_find_duplicates_subtitle">Scans your library and reports tracks that appear more than once.</string>
+
+    <string name="musicbrainz_retry">Retry</string>
+    <string name="musicbrainz_lookup">Find on MusicBrainz</string>
+    <string name="musicbrainz_searching">Searching for recording matches…</string>
+    <string name="musicbrainz_lookup_failed">MusicBrainz lookup failed</string>
+    <string name="musicbrainz_search_failed_fallback">MusicBrainz search failed</string>
+    <string name="musicbrainz_save_failed_fallback">MusicBrainz metadata could not be saved</string>
+    <string name="musicbrainz_choose_match">Choose a MusicBrainz match</string>
+    <string name="musicbrainz_no_results">No suitable recordings were found.</string>
+    <string name="musicbrainz_match_score">Match confidence: %1$d%%</string>
+    <string name="musicbrainz_applied">MusicBrainz identifiers saved. Missing year and placeholder names were enriched.</string>
+
+    <string name="usb_diag_section">USB audio diagnostics</string>
+    <string name="usb_diag_audio_output">Audio output</string>
+    <string name="usb_diag_output_android">Android Audio</string>
+    <string name="usb_diag_output_direct">USB Direct</string>
+    <string name="usb_diag_dac">USB DAC</string>
+    <string name="usb_diag_permission">USB permission</string>
+    <string name="usb_diag_source">Source</string>
+    <string name="usb_diag_dac_rates">DAC supported rates</string>
+    <string name="usb_diag_direct_state">Direct-path state</string>
+    <string name="usb_diag_route_transition">Route transition</string>
+    <string name="usb_diag_route_reason">Selection reason</string>
+    <string name="usb_diag_none">None</string>
+    <string name="usb_diag_unknown">Unknown</string>
+    <string name="usb_diag_not_applicable">Not applicable</string>
+    <string name="usb_diag_permission_granted">Granted</string>
+    <string name="usb_diag_permission_required">Required</string>
+    <string name="usb_diag_state_inactive">Inactive</string>
+    <string name="usb_diag_state_ready">Ready</string>
+    <string name="usb_diag_state_active">Active</string>
+    <string name="usb_diag_state_error">Error</string>
+    <string name="maintenance_title">DAP maintenance</string>
+    <string name="maintenance_exit">Return to DAP</string>
+    <string name="maintenance_system_section">Android settings</string>
+    <string name="maintenance_open_settings">Open Android Settings</string>
+    <string name="maintenance_open_usb">Open USB preferences</string>
+    <string name="maintenance_open_wifi">Open Wi-Fi settings</string>
+    <string name="maintenance_open_bluetooth">Open Bluetooth settings</string>
+    <string name="maintenance_not_available">Not available on this device</string>
+    <string name="maintenance_status_section">Device status</string>
+    <string name="maintenance_current_home">Current HOME</string>
+    <string name="maintenance_package_version">Polylute package / version</string>
+    <string name="maintenance_device_owner">Device Owner</string>
+    <string name="maintenance_device_owner_active">Active</string>
+    <string name="maintenance_device_owner_inactive">Inactive</string>
+    <string name="maintenance_persistent_home">Persistent HOME</string>
+    <string name="maintenance_persistent_home_pixelplayer">Polylute selected</string>
+    <string name="maintenance_persistent_home_other">Another HOME selected</string>
+    <string name="maintenance_lock_task_readiness">Lock Task readiness</string>
+    <string name="maintenance_lock_task_ready">Allowed by policy</string>
+    <string name="maintenance_lock_task_not_configured">Not configured</string>
+    <string name="maintenance_dedicated_mode">Dedicated DAP</string>
+    <string name="maintenance_dedicated_mode_active">Active</string>
+    <string name="maintenance_dedicated_mode_inactive">Inactive</string>
+    <string name="maintenance_lock_task_state">Lock Task</string>
+    <string name="maintenance_lock_task_locked">LOCKED</string>
+    <string name="maintenance_lock_task_none">NONE</string>
+    <string name="maintenance_lock_task_exit_failed">Could not leave dedicated mode safely. The device stays locked to the app.</string>
+    <string name="maintenance_lock_task_entry_failed">Could not restore dedicated mode. Check the Device Owner policy.</string>
+    <string name="maintenance_audio_section">DAP audio route</string>
+    <string name="maintenance_internal_tools_section">Internal tools</string>
+    <string name="maintenance_device_diagnostics">Device diagnostics</string>
+    <string name="maintenance_device_diagnostics_subtitle">Audio, codec, decoder and renderer report</string>
+    <string name="maintenance_continue">Continue</string>
+    <string name="maintenance_unresolved">Unresolved</string>
+    <string name="music_access_prompt_title">Your local music</string>
+    <string name="music_access_prompt_body">Allow music access when you are ready to build the local library.</string>
+    <string name="music_access_prompt_action">Allow music access</string>
+    <string name="dap_capability_unavailable">Not available on this device</string>
+    <!-- DAC profile record. -->
+    <string name="dac_usb_id">USB ID</string>
+    <string name="dac_first_seen">First seen</string>
+    <plurals name="song_count">
+        <item quantity="one">%1$d Song</item>
+        <item quantity="other">%1$d Songs</item>
+    </plurals>
+    <string name="search_filter_all">All</string>
+    <string name="search_filter_songs">Songs</string>
+    <string name="search_filter_albums">Albums</string>
+    <string name="search_filter_artists">Artists</string>
+    <string name="search_filter_playlists">Playlists</string>
+    <string name="player_shuffle">Shuffle</string>
+<string name="track_details_section_metadata">Metadata</string>
+    <string name="track_details_meta_title">Title</string>
+    <string name="track_details_mb_recording">MusicBrainz recording</string>
+    <string name="track_details_mb_release">MusicBrainz release</string>
+    <string name="track_details_mb_artist">MusicBrainz artist</string>
+    <string name="player_preparing_playback">Preparing playback…</string>
+    <string name="player_loading_audio">Loading audio…</string>
+    <string name="lyrics_import_read_error">Error reading file.</string>
+    <string name="lyrics_import_no_song">No song selected for lyrics import.</string>
+
+    <!-- ===== Frontend pass 1 (idioma): cadenas que estaban hardcodeadas en inglés ===== -->
+
+    <!-- Mantenimiento -->
+    <string name="maintenance_section_track_identity">Track identity</string>
+    <string name="maintenance_section_metadata">Metadata</string>
+    <string name="maintenance_section_smart_collections">Smart collections</string>
+    <string name="maintenance_no_track_to_describe">No track to describe yet.</string>
+    <string name="maintenance_no_track_to_diagnose">No track to diagnose yet.</string>
+    <string name="maintenance_note_inactive_library_item">This track is not an active library item, so no collection can contain it.</string>
+    <string name="maintenance_note_no_collections">No collections are defined.</string>
+    <string name="maintenance_rules_unreadable">  — rules this version cannot read, so it returns nothing</string>
+    <string name="maintenance_rule_actual_format">    actual: %1$s</string>
+    <string name="maintenance_collection_member_in">IN</string>
+    <string name="maintenance_collection_not_in">NOT IN</string>
+    <string name="maintenance_collection_built_in"> (built-in)</string>
+
+    <!-- Marcadores -->
+    <string name="bookmarks_empty_title">No bookmarked audio yet</string>
+    <string name="bookmarks_empty_title_filtered">No bookmark folders found</string>
+    <string name="bookmarks_empty_subtitle">Open a track in the full player and choose “Save bookmark” at the position you want to keep. Enter a name or, if synced lyrics are available, use the current line, then tap “Save”. Saved moments appear here grouped by track.</string>
+    <string name="bookmarks_empty_subtitle_filtered">Try searching by song, artist, album, cue, or bookmark tag.</string>
+    <string name="bookmarks_empty_folder_title">No moments in this folder</string>
+    <string name="bookmarks_empty_folder_subtitle">Bookmarks for this track may have been deleted.</string>
+    <string name="bookmarks_toast_file_not_found">Audio file not found</string>
+    <string name="bookmarks_toast_cue_copied">Cue copied</string>
+    <string name="bookmarks_section_saved_moments">Saved moments</string>
+    <string name="bookmarks_sort_most_moments">Most moments</string>
+    <string name="bookmarks_sort_recent">Recent</string>
+    <string name="bookmarks_sort_alpha">A-Z</string>
+    <string name="bookmarks_search_placeholder">Search bookmarks</string>
+    <string name="bookmarks_cue_label_format">Cue %1$s</string>
+    <string name="bookmarks_action_copy_cue">Copy cue</string>
+    <string name="bookmarks_rename_title">Rename bookmark</string>
+    <string name="bookmarks_rename_subtitle">Update the label for this saved cue.</string>
+    <string name="bookmarks_cd_sort_most">Sort bookmarks by most moments</string>
+    <string name="bookmarks_cd_sort_recent">Sort bookmarks by recent moments</string>
+    <string name="bookmarks_cd_sort_alpha">Sort bookmarks alphabetically</string>
+    <string name="bookmarks_cd_clear_search">Clear bookmark search</string>
+    <string name="bookmarks_title">Bookmarks</string>
+    <string name="bookmarks_cd_actions">Bookmark actions</string>
+    <string name="bookmarks_cd_open_actions">Open bookmark actions</string>
+    <string name="bookmarks_cd_close_actions">Close bookmark actions</string>
+    <string name="bookmarks_cd_delete">Delete bookmark</string>
+    <plurals name="bookmarks_moments_count">
+        <item quantity="one">%1$d moment</item>
+        <item quantity="other">%1$d moments</item>
+    </plurals>
+
+    <!-- Diálogo de marcador nuevo -->
+    <string name="bookmark_dialog_title">Save bookmark</string>
+    <string name="bookmark_default_title_format">Bookmark @ %1$s</string>
+    <string name="bookmark_option_saved_point">Saved playback point</string>
+    <string name="bookmark_option_lyric_line">Use lyric line</string>
+
+    <!-- Reproductor: etiqueta de accesibilidad del seek -->
+    <string name="cd_playback_position">Playback position</string>
+
+    <!-- Widgets de inicio -->
+
+    <!-- Pantalla de bloqueo (Modo Dedicado): palabras de estado del transporte -->
+    <string name="lock_transport_state_on">On</string>
+    <string name="lock_transport_state_off">Off</string>
+    <string name="lock_transport_repeat_one">One</string>
+    <string name="lock_transport_repeat_all">All</string>
+
+    <!-- Colecciones inteligentes -->
+    <string name="smart_collections_title">Collections</string>
+    <string name="smart_collections_new_title">New collection</string>
+    <string name="smart_collections_new_subtitle">Save a rule-based view of your library</string>
+    <string name="smart_collections_empty">No collections yet.</string>
+    <string name="smart_collections_match_all">Match all</string>
+    <string name="smart_collections_match_any">Match any</string>
+    <string name="smart_collections_max_format"> · max %1$d</string>
+    <string name="smart_collections_needs_attention"> · needs attention</string>
+    <string name="smart_collections_result_count_format">%1$d of %2$d tracks</string>
+    <string name="smart_collections_limit_applied_format"> · limit %1$d</string>
+    <string name="smart_collections_play_all">Play all</string>
+    <string name="smart_collections_all_collections">All collections</string>
+    <string name="smart_collections_unreadable_rules">This collection has rules this version cannot read, so it is not being run.</string>
+    <string name="smart_collections_nothing_matches">Nothing matches these rules right now.</string>
+    <string name="smart_collections_edit_title">Edit collection</string>
+    <string name="smart_collections_edit">Edit</string>
+    <string name="smart_collections_name_label">Name</string>
+    <string name="smart_collections_add_rule">Add rule</string>
+    <string name="smart_collections_match_label">Match</string>
+    <string name="smart_collections_sort_by_label">Sort by</string>
+    <string name="smart_collections_direction_label">Direction</string>
+    <string name="smart_collections_ascending">Ascending</string>
+    <string name="smart_collections_descending">Descending</string>
+    <string name="smart_collections_limit_label">Limit (optional)</string>
+    <string name="smart_collections_value_label">Value</string>
+    <!-- Colecciones inteligentes: etiquetas de campo y de operador (los enums de data/ no las localizan) -->
+    <string name="smart_collections_field_title">Title</string>
+    <string name="smart_collections_field_track_artist">Track artist</string>
+    <string name="smart_collections_field_album_artist">Album artist</string>
+    <string name="smart_collections_field_album">Album</string>
+    <string name="smart_collections_field_genre">Genre</string>
+    <string name="smart_collections_field_play_count">Play count</string>
+    <string name="smart_collections_field_completion_count">Completion count</string>
+    <string name="smart_collections_field_skip_count">Skip count</string>
+    <string name="smart_collections_field_duration">Duration</string>
+    <string name="smart_collections_field_track_number">Track number</string>
+    <string name="smart_collections_field_disc_number">Disc number</string>
+    <string name="smart_collections_field_release_year">Release year</string>
+    <string name="smart_collections_field_bitrate">Bitrate</string>
+    <string name="smart_collections_field_sample_rate">Sample rate</string>
+    <string name="smart_collections_field_first_seen">First seen</string>
+    <string name="smart_collections_field_date_added">Date added</string>
+    <string name="smart_collections_field_last_played">Last played</string>
+    <string name="smart_collections_field_last_completed">Last completed</string>
+    <string name="smart_collections_field_last_skipped">Last skipped</string>
+    <string name="smart_collections_field_favourite">Favourite</string>
+    <string name="smart_collections_field_compilation">Compilation</string>
+    <string name="smart_collections_field_probable_duplicate">Probable duplicate</string>
+    <string name="smart_collections_field_album_order">Album order</string>
+
+    <string name="smart_collections_op_is">is</string>
+    <string name="smart_collections_op_is_not">is not</string>
+    <string name="smart_collections_op_contains">contains</string>
+    <string name="smart_collections_op_does_not_contain">does not contain</string>
+    <string name="smart_collections_op_starts_with">starts with</string>
+    <string name="smart_collections_op_ends_with">ends with</string>
+    <string name="smart_collections_op_equals">equals</string>
+    <string name="smart_collections_op_not_equals">does not equal</string>
+    <string name="smart_collections_op_greater_than">is greater than</string>
+    <string name="smart_collections_op_at_least">is at least</string>
+    <string name="smart_collections_op_less_than">is less than</string>
+    <string name="smart_collections_op_at_most">is at most</string>
+    <string name="smart_collections_op_between">is between</string>
+    <string name="smart_collections_op_before">is before</string>
+    <string name="smart_collections_op_after">is after</string>
+    <string name="smart_collections_op_in_last_days">is in the last N days</string>
+    <string name="smart_collections_op_not_in_last_days">is not in the last N days</string>
+    <string name="smart_collections_op_is_true">is true</string>
+    <string name="smart_collections_op_is_false">is false</string>
+    <string name="smart_collections_op_is_known">is known</string>
+    <string name="smart_collections_op_is_unknown">is unknown</string>
+    <string name="smart_collections_cd_duplicate">Duplicate</string>
+    <string name="smart_collections_cd_remove_rule">Remove rule</string>
+    <plurals name="smart_collections_rule_count">
+        <item quantity="one">%1$d rule</item>
+        <item quantity="other">%1$d rules</item>
+    </plurals>
+
+    <!-- Mix Detail / listas de mixes -->
+
+    <!-- Nombres e intenciones de los seis mixes (la capa de datos no los localiza) -->
+
+    <!-- Búsqueda: cabeceras de resultados -->
+    <string name="search_results_songs">Songs</string>
+    <string name="search_results_albums">Albums</string>
+    <string name="search_results_artists">Artists</string>
+    <string name="search_results_playlists">Playlists</string>
+    <string name="search_results_other">Results</string>
+    <string name="search_toast_empty_playlist">Empty playlist</string>
+    <string name="search_queue_name">Search Results</string>
+    <string name="search_queue_prefix">Search: %1$s</string>
+
+    <!-- Daily Mix: tarjeta de colecciones y encabezado -->
+    <string name="daily_mix_smart_collections">Smart Collections</string>
+    <string name="daily_mix_smart_collections_subtitle">Saved queries over your library</string>
+
+    <!-- Orden de listas: etiqueta del método (el enum de datos no la localiza) -->
+    <string name="sort_method_default_order">Default Order</string>
+    <string name="sort_method_title">Title</string>
+    <string name="sort_method_artist">Artist</string>
+    <string name="sort_method_album">Album</string>
+    <string name="sort_method_date_added">Date Added</string>
+    <string name="sort_method_duration">Duration</string>
+    <string name="sort_method_release_year">Release Year</string>
+    <string name="sort_method_song_count">Song Count</string>
+    <string name="sort_method_number_of_songs">Number of Songs</string>
+    <string name="sort_method_name">Name</string>
+    <string name="sort_method_date_created">Date Created</string>
+    <string name="sort_method_date_liked">Date Liked</string>
+    <string name="sort_method_subfolder_count">Subfolder Count</string>
+
+    <!-- Géneros por defecto cuyo nombre en español difiere del canónico en inglés -->
+    <string name="genre_classical">Classical</string>
+    <string name="genre_electronic">Electronic</string>
+    <string name="genre_alternative">Alternative</string>
+    <string name="genre_reggaeton">Reggaeton</string>
+    <string name="genre_oldies">Oldies</string>
+    <string name="genre_soundtrack">Soundtrack</string>
+    <string name="genre_gaming">Gaming</string>
+    <string name="genre_sleep">Sleep</string>
+    <string name="genre_workout">Workout</string>
+    <string name="genre_party">Party</string>
+    <string name="genre_focus">Focus</string>
+    <string name="genre_gospel">Gospel</string>
+    <string name="genre_children">Children\'s</string>
+    <string name="genre_world">World</string>
+    <string name="genre_dance">Dance</string>
+    <string name="genre_easy_listening">Easy Listening</string>
+    <!-- Full player header: the three sibling views. Shown in capitals by the header. -->
+    <string name="action_view_history">View history</string>
+    <string name="appearance_preview">Preview</string>
+    <string name="playlist_select_hint">Select a playlist</string>
+    <string name="bookmark_name_label">Bookmark name</string>
+    <string name="library_menu_options">Library options</string>
+</resources>

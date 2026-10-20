@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">ملخص النطاقات. اضغط للاختيار؛ واضبط في محرر النطاق المحدد.</string>
+    <string name="eq_band_position">النطاق %1$d من %2$d · %3$s</string>
+    <string name="eq_band_previous">اختيار النطاق السابق</string>
+    <string name="eq_band_next">اختيار النطاق التالي</string>
+    <string name="eq_frequency_select">اختيار التردد</string>
+    <string name="eq_gain_label">الكسب · خطوات بمقدار 1 ديسيبل</string>
+    <string name="eq_gain_decrease">خفض كسب %1$s بمقدار 1 ديسيبل</string>
+    <string name="eq_gain_increase">زيادة كسب %1$s بمقدار 1 ديسيبل</string>
+    <string name="eq_gain_readout">%1$+d ديسيبل</string>
+    <string name="eq_gain_accessible">الكسب عند %1$s</string>
+    <string name="eq_band_reset">إعادة النطاق المحدد إلى 0 ديسيبل</string>
+    <string name="timer_off">معطل</string>
+    <string name="timer_end_track">عند نهاية هذه الأغنية</string>
+    <string name="timer_repeat_current">تكرار هذه الأغنية</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="zero">%1$d تشغيل</item>
+        <item quantity="one">%1$d تشغيل</item>
+        <item quantity="two">%1$d تشغيل</item>
+        <item quantity="few">%1$d تشغيل</item>
+        <item quantity="many">%1$d تشغيل</item>
+        <item quantity="other">%1$d تشغيل</item>
+    </plurals>
+    <string name="timer_repeat_hint">يشمل التشغيل الجاري. يكرر هذه الأغنية ثم يوقفها مؤقتًا. تغيير الأغنية أو وضع التكرار يلغي العداد.</string>
+    <string name="timer_active">نشط: %1$s</string>
+    <string name="timer_durations">إيقاف مؤقت بعد</string>
+    <string name="timer_custom">مدة مخصصة</string>
+    <string name="timer_interval_hint">مدة تبدأ عند التأكيد وليست وقتًا من اليوم.</string>
+    <string name="timer_hours">الساعات (0–23)</string>
+    <string name="timer_minutes">الدقائق (0–59)</string>
+    <string name="timer_interval_error">أدخل من 0 إلى 23 ساعة ومن 0 إلى 59 دقيقة. يجب أن يكون المجموع أكبر من صفر.</string>
+    <string name="timer_pending_hint">الاختيار معلق. يتغير المؤقت النشط فقط بعد التأكيد.</string>
+    <string name="timer_close">إغلاق</string>
+    <string name="timer_start">بدء</string>
+    <string name="timer_confirm_off">تعطيل</string>
+    <string name="timer_repeat_less">تشغيل واحد أقل</string>
+    <string name="timer_repeat_more">تشغيل واحد إضافي</string>
+</resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Transcribed verbatim from the approved Fable export. Do not redraw by hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="18dp"
+    android:viewportWidth="20"
+    android:viewportHeight="18">
+    <path
+        android:fillColor="#00000000" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:strokeLineCap="butt" android:strokeLineJoin="round"
+        android:pathData="M10 17S1 11.5 1 5.5A4.6 4.6 0 0 1 10 4a4.6 4.6 0 0 1 9 1.5C19 11.5 10 17 10 17z" />
+</vector>

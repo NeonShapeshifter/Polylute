@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">频段概览。点按可选择，在所选频段编辑器中调整。</string>
+    <string name="eq_band_position">第 %1$d 个频段，共 %2$d 个 · %3$s</string>
+    <string name="eq_band_previous">选择上一频段</string>
+    <string name="eq_band_next">选择下一频段</string>
+    <string name="eq_frequency_select">选择频率</string>
+    <string name="eq_gain_label">增益 · 每步 1 dB</string>
+    <string name="eq_gain_decrease">将 %1$s 的增益降低 1 dB</string>
+    <string name="eq_gain_increase">将 %1$s 的增益提高 1 dB</string>
+    <string name="eq_gain_readout">%1$+d dB</string>
+    <string name="eq_gain_accessible">%1$s 的增益</string>
+    <string name="eq_band_reset">将所选频段重置为 0 dB</string>
+    <string name="timer_off">已关闭</string>
+    <string name="timer_end_track">本曲结束时</string>
+    <string name="timer_repeat_current">重复本曲</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="other">播放 %1$d 次</item>
+    </plurals>
+    <string name="timer_repeat_hint">包括当前播放。重复本曲，然后暂停。切换歌曲或重复模式将取消计数。</string>
+    <string name="timer_active">已启用：%1$s</string>
+    <string name="timer_durations">在以下时长后暂停</string>
+    <string name="timer_custom">自定义间隔</string>
+    <string name="timer_interval_hint">从确认时开始计时，并非一天中的具体时刻。</string>
+    <string name="timer_hours">小时（0–23）</string>
+    <string name="timer_minutes">分钟（0–59）</string>
+    <string name="timer_interval_error">请输入 0–23 小时和 0–59 分钟。总时长必须大于零。</string>
+    <string name="timer_pending_hint">选择待确认。只有确认后才会更改当前计时器。</string>
+    <string name="timer_close">关闭</string>
+    <string name="timer_start">启动</string>
+    <string name="timer_confirm_off">停用</string>
+    <string name="timer_repeat_less">减少一次播放</string>
+    <string name="timer_repeat_more">增加一次播放</string>
+</resources>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Phase 13 — hardware / device integration strings.
+
+  These belong to the Maintenance hardware diagnostic and the Maintenance override panel. They are
+  deliberately explicit about consequence: an override that a user cannot reason about is a trap,
+  and a diagnostic row that does not say whether it knows the answer is worse than no row.
+-->
+<resources>
+    <string name="maintenance_hardware_section">Hardware / device</string>
+    <string name="maintenance_hardware_loading">Reading device state…</string>
+    <string name="maintenance_hardware_event_log">Hardware event log</string>
+    <string name="maintenance_hardware_events_none">No hardware events recorded</string>
+    <string name="maintenance_hardware_events_dropped">%1$d older events were dropped (bounded log)</string>
+
+    <string name="maintenance_overrides_section">Maintenance overrides</string>
+    <string name="maintenance_overrides_feature_kills">Feature kills — supported configuration</string>
+    <string name="maintenance_overrides_diagnostic">Diagnostic overrides — temporary instruments</string>
+    <string name="maintenance_overrides_none">No overrides active</string>
+    <string name="maintenance_overrides_summary">%1$d active · %2$d diagnostic</string>
+    <string name="maintenance_overrides_clear_all">Clear all</string>
+    <string name="maintenance_overrides_persistence_note">Overrides are stored separately from your settings and are never written into them. Removing an override restores exactly the behaviour your settings already describe. They persist across restart until cleared.</string>
+
+    <string name="maintenance_override_lock_screen_label">DAP Lock Screen integration</string>
+    <string name="maintenance_override_lock_screen_consequence">Stops the app owning the wake surface and reconciling the Lock Task keyguard policy. Use on an OEM build whose lock screen misbehaves.</string>
+    <string name="maintenance_override_force_android_label">Force Android audio</string>
+    <string name="maintenance_override_force_android_consequence">Routes everything through the Android audio path. Isolates a Direct-path fault from a playback fault.</string>
+    <string name="maintenance_override_disable_transition_label">Disable Direct transition</string>
+    <string name="maintenance_override_disable_transition_consequence">Keeps Direct reachable but blocks the automatic switch to it. Separates a transition fault from a sink fault.</string>
+    <string name="maintenance_override_disable_dsp_label">Disable DSP graph</string>
+    <string name="maintenance_override_disable_dsp_consequence">Removes the headphone DSP graph from the Android path without editing your equalizer profile.</string>
+</resources>

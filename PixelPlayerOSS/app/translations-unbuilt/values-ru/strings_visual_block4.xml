@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">Обзор полос. Нажмите для выбора; настройте выбранную полосу в редакторе.</string>
+    <string name="eq_band_position">Полоса %1$d из %2$d · %3$s</string>
+    <string name="eq_band_previous">Выбрать предыдущую полосу</string>
+    <string name="eq_band_next">Выбрать следующую полосу</string>
+    <string name="eq_frequency_select">Выбрать частоту</string>
+    <string name="eq_gain_label">Усиление · шаг 1 дБ</string>
+    <string name="eq_gain_decrease">Уменьшить усиление на %1$s на 1 дБ</string>
+    <string name="eq_gain_increase">Увеличить усиление на %1$s на 1 дБ</string>
+    <string name="eq_gain_readout">%1$+d дБ</string>
+    <string name="eq_gain_accessible">Усиление на %1$s</string>
+    <string name="eq_band_reset">Сбросить выбранную полосу до 0 дБ</string>
+    <string name="timer_off">Выключено</string>
+    <string name="timer_end_track">В конце этой песни</string>
+    <string name="timer_repeat_current">Повторять эту песню</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d воспроизведение</item>
+        <item quantity="few">%1$d воспроизведения</item>
+        <item quantity="many">%1$d воспроизведений</item>
+        <item quantity="other">%1$d воспроизведений</item>
+    </plurals>
+    <string name="timer_repeat_hint">Учитывается текущее воспроизведение. Повторяет эту песню, затем ставит на паузу. Смена песни или режима повтора отменяет счётчик.</string>
+    <string name="timer_active">Активно: %1$s</string>
+    <string name="timer_durations">Пауза через</string>
+    <string name="timer_custom">Свой интервал</string>
+    <string name="timer_interval_hint">Длительность с момента подтверждения, а не время суток.</string>
+    <string name="timer_hours">Часы (0–23)</string>
+    <string name="timer_minutes">Минуты (0–59)</string>
+    <string name="timer_interval_error">Введите от 0 до 23 часов и от 0 до 59 минут. Общая длительность должна быть больше нуля.</string>
+    <string name="timer_pending_hint">Выбор ожидает подтверждения. Активный таймер изменится только после подтверждения.</string>
+    <string name="timer_close">Закрыть</string>
+    <string name="timer_start">Начать</string>
+    <string name="timer_confirm_off">Выключить</string>
+    <string name="timer_repeat_less">На одно воспроизведение меньше</string>
+    <string name="timer_repeat_more">На одно воспроизведение больше</string>
+</resources>

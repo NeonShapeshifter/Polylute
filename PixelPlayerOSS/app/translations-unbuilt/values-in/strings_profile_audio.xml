@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Disimpan di profil</string>
+    <string name="profile_audio_current_effect">Efek pada output saat ini</string>
+    <string name="profile_audio_not_selected">Tidak diterapkan · profil tidak dipilih</string>
+    <string name="profile_audio_applied">Diterapkan</string>
+    <string name="eq_output_pure_direct">Dilewati oleh Pure Direct</string>
+    <string name="eq_output_usb_direct">Dilewati oleh USB Direct</string>
+    <string name="eq_output_maintenance">Dilewati oleh pemeliharaan</string>
+    <string name="eq_saved_curve_note">Mode yang dipilih dan kurva disimpan di profil ini.</string>
+    <string name="safety_max_saved_enabled">Safety Max diaktifkan di profil</string>
+    <string name="safety_max_saved_summary">Preferensi tersimpan. Output saat ini menentukan apakah batas diterapkan.</string>
+    <string name="safety_max_saved_unavailable">Disimpan di profil; tidak diterapkan pada output ini.</string>
+    <string name="safety_max_saved_unavailable_usb">Disimpan di profil; tidak diterapkan pada output USB Direct ini.</string>
+    <string name="safety_max_output_rescaled">Diterapkan dengan batas yang disesuaikan · rentang output berubah</string>
+    <string name="safety_max_output_override">Batas dilewati sementara</string>
+    <string name="safety_max_saved_limit">Batas tersimpan untuk output ini</string>
+    <string name="safety_max_calibration_unavailable">Kalibrasi tidak tersedia pada output ini.</string>
+    <string name="profile_audio_saved_eq_summary">Disimpan: %1$s · %2$s</string>
+    <string name="profile_audio_route_note">Mode dan kurva tetap disimpan. Pure Direct melewati EQ hanya saat output saat ini adalah USB Direct.</string>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_cd_back">Atrás</string>
+    <string name="auth_web_retry">Reintentar</string>
+    <string name="toast_welcome_user">¡Bienvenido, %1$s!</string>
+</resources>

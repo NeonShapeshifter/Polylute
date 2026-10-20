@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Lagret i profilen</string>
+    <string name="profile_audio_current_effect">Effekt på gjeldende utgang</string>
+    <string name="profile_audio_not_selected">Brukes ikke · profilen er ikke valgt</string>
+    <string name="profile_audio_applied">Brukes</string>
+    <string name="eq_output_pure_direct">Forbigått av Pure Direct</string>
+    <string name="eq_output_usb_direct">Forbigått av USB Direct</string>
+    <string name="eq_output_maintenance">Forbigått av vedlikehold</string>
+    <string name="eq_saved_curve_note">Valgt modus og kurve lagres i denne profilen.</string>
+    <string name="safety_max_saved_enabled">Safety Max aktivert i profilen</string>
+    <string name="safety_max_saved_summary">Lagret innstilling. Gjeldende utgang avgjør om grensen brukes.</string>
+    <string name="safety_max_saved_unavailable">Lagret i profilen; brukes ikke på denne utgangen.</string>
+    <string name="safety_max_saved_unavailable_usb">Lagret i profilen; brukes ikke med denne USB Direct-utgangen.</string>
+    <string name="safety_max_output_rescaled">Brukes med en tilpasset grense · utgangsområdet er endret</string>
+    <string name="safety_max_output_override">Grensen er midlertidig overstyrt</string>
+    <string name="safety_max_saved_limit">Lagret grense for denne utgangen</string>
+    <string name="safety_max_calibration_unavailable">Kalibrering er ikke tilgjengelig på denne utgangen.</string>
+    <string name="profile_audio_saved_eq_summary">Lagret: %1$s · %2$s</string>
+    <string name="profile_audio_route_note">Modus og kurve beholdes. Pure Direct forbigår EQ bare når USB Direct er gjeldende utgang.</string>
+</resources>

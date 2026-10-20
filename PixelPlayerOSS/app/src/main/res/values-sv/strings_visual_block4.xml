@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="timer_off">Av</string>
+    <string name="timer_end_track">Vid slutet av den här låten</string>
+    <string name="timer_repeat_current">Upprepa den här låten</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d uppspelning</item>
+        <item quantity="other">%1$d uppspelningar</item>
+    </plurals>
+    <string name="timer_repeat_hint">Inkluderar den pågående uppspelningen. Upprepar låten och pausar sedan. Byter du låt eller upprepningsläge avbryts det.</string>
+    <string name="timer_active">Aktiv: %1$s</string>
+    <string name="timer_durations">Pausa efter</string>
+    <string name="timer_custom">Eget intervall</string>
+    <string name="timer_interval_hint">Längd från bekräftelsen, inte en tid på dygnet.</string>
+    <string name="timer_hours">Timmar (0–23)</string>
+    <string name="timer_minutes">Minuter (0–59)</string>
+    <string name="timer_interval_error">Ange 0–23 timmar och 0–59 minuter. Summan måste vara större än noll.</string>
+    <string name="timer_pending_hint">Ditt val väntar. Den aktiva timern ändras först när du bekräftar.</string>
+    <string name="timer_close">Stäng</string>
+    <string name="timer_start">Starta</string>
+    <string name="timer_confirm_off">Stäng av</string>
+    <string name="timer_repeat_less">En uppspelning färre</string>
+    <string name="timer_repeat_more">En uppspelning till</string>
+</resources>

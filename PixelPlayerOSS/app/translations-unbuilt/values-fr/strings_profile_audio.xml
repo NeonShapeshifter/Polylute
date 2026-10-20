@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Enregistré dans le profil</string>
+    <string name="profile_audio_current_effect">Effet sur la sortie actuelle</string>
+    <string name="profile_audio_not_selected">Non appliqué · profil non sélectionné</string>
+    <string name="profile_audio_applied">Appliqué</string>
+    <string name="eq_output_pure_direct">Ignoré par Pure Direct</string>
+    <string name="eq_output_usb_direct">Ignoré par USB Direct</string>
+    <string name="eq_output_maintenance">Ignoré par la maintenance</string>
+    <string name="eq_saved_curve_note">Le mode sélectionné et la courbe sont enregistrés dans ce profil.</string>
+    <string name="safety_max_saved_enabled">Safety Max activé dans le profil</string>
+    <string name="safety_max_saved_summary">Préférence enregistrée. La sortie actuelle détermine si la limite est appliquée.</string>
+    <string name="safety_max_saved_unavailable">Enregistré dans le profil ; non appliqué sur cette sortie.</string>
+    <string name="safety_max_saved_unavailable_usb">Enregistré dans le profil ; non appliqué avec cette sortie USB Direct.</string>
+    <string name="safety_max_output_rescaled">Appliqué avec une limite adaptée · la plage de sortie a changé</string>
+    <string name="safety_max_output_override">Limite temporairement dépassée</string>
+    <string name="safety_max_saved_limit">Limite enregistrée pour cette sortie</string>
+    <string name="safety_max_calibration_unavailable">Le calibrage est indisponible sur cette sortie.</string>
+    <string name="profile_audio_saved_eq_summary">Enregistré : %1$s · %2$s</string>
+    <string name="profile_audio_route_note">Le mode et la courbe sont conservés. Pure Direct ignore l\'EQ uniquement lorsque la sortie actuelle est USB Direct.</string>
+</resources>

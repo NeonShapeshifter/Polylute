@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B29-L6 / B33-U4: en genres sida listar dess låtar; räkneraden anger också hur många album och artister de kommer från. -->
+    <string name="genre_empty_title">Inget här</string>
+    <string name="genre_empty_body">Ingen låt i biblioteket har den här genren.</string>
+    <plurals name="genre_count_songs">
+        <item quantity="one">%1$d låt</item>
+        <item quantity="other">%1$d låtar</item>
+    </plurals>
+    <plurals name="genre_count_albums">
+        <item quantity="one">%1$d album</item>
+        <item quantity="other">%1$d album</item>
+    </plurals>
+    <plurals name="genre_count_artists">
+        <item quantity="one">%1$d artist</item>
+        <item quantity="other">%1$d artister</item>
+    </plurals>
+    <!-- B33-U5: Sök visar en hopfälld sektion «Genre · X» längst ned i Alla när sökningen matchar en genre. -->
+    <string name="search_genre_section_title">Genre · %1$s</string>
+    <string name="search_genre_section_folded">Hopfälld</string>
+    <string name="search_genre_section_unfolded">Utfälld</string>
+    <string name="search_genre_section_unfold">Fäll ut</string>
+    <string name="search_genre_section_fold">Fäll ihop</string>
+    <string name="search_genre_see_all">Visa alla</string>
+    <string name="search_genre_see_all_cd">Visa alla låtar i %1$s</string>
+    <string name="search_genre_load_failed">Genren kunde inte läsas in</string>
+</resources>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B22: la página Audio (`Audio.dc.html`). Ver values/. -->
+    <string name="audio_section_output">Salida</string>
+    <string name="audio_section_pure">@string/pristine_lock_name</string>
+    <string name="audio_section_sound">Sonido</string>
+    <string name="audio_section_transitions">Transiciones</string>
+    <string name="audio_section_queue">Cola</string>
+    <string name="audio_row_join">%1$s · %2$s</string>
+    <string name="audio_output_speaker">Salida: altavoz del equipo</string>
+    <string name="audio_output_wired">Salida: audio por cable</string>
+    <string name="audio_output_bluetooth">Salida: Bluetooth</string>
+    <string name="audio_output_android">Salida: audio de Android</string>
+    <string name="audio_digital_warning">Volumen digital al %1$d %%: la señal se modifica.</string>
+    <string name="audio_eq_title">Ecualizador</string>
+    <string name="audio_eq_no_headphones">Selecciona unos auriculares para ajustar su ecualizador</string>
+    <string name="audio_eq_sub">%1$s · %2$s</string>
+    <string name="audio_eq_sub_saved">%1$s · guardado: %2$s</string>
+    <string name="audio_replaygain_title">ReplayGain</string>
+    <string name="audio_replaygain_sub">Normaliza con las etiquetas del archivo</string>
+    <string name="audio_gain_of">Ganancia de</string>
+    <string name="audio_safety_sub">%1$s · %2$s en %3$s</string>
+    <string name="audio_speed_title">Velocidad</string>
+    <string name="audio_crossfade_off">Desactivado</string>
+    <string name="audio_crossfade_on">Activado</string>
+    <string name="audio_crossfade_style_none">Estilo: ninguno</string>
+    <string name="audio_crossfade_seconds">%1$s s</string>
+    <string name="audio_smart_crossfade_name">fundido inteligente</string>
+    <string name="audio_gapless_title">Sin cortes</string>
+    <string name="audio_gapless_sub">Las canciones enlazan sin huecos</string>
+    <string name="audio_gapless_yes">Sí</string>
+    <string name="audio_gapless_yes_direct">Sí · USB Direct</string>
+    <string name="audio_gapless_crossfade">Con fundido cruzado</string>
+    <string name="audio_persistent_mix_title">Mezcla persistente</string>
+    <string name="audio_persistent_mix_sub">Conserva el orden aleatorio al cerrar la app</string>
+    <string name="audio_status_applied">Se aplica</string>
+    <string name="audio_status_frozen">Congelado · %1$s</string>
+    <string name="audio_status_off">Desactivado</string>
+    <string name="audio_status_android_route">Ruta Android</string>
+    <string name="audio_status_bypassed_maintenance">Omitido · mantenimiento</string>
+    <string name="audio_status_other_profile">Otros auriculares en uso</string>
+    <string name="audio_status_safety_rescaled">Se aplica · límite adaptado</string>
+    <string name="audio_status_safety_override">Límite anulado por ahora</string>
+    <string name="audio_status_safety_not_set">Sin límite guardado</string>
+    <string name="audio_status_safety_unavailable">No se aplica en esta salida</string>
+    <!-- B22: the battery on the DAP lock screen's footer. -->
+    <string name="lock_battery_percent">%1$d %%</string>
+</resources>

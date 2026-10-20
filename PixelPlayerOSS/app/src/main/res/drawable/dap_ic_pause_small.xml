@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Transcribed verbatim from the approved Fable export. Do not redraw by hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="12dp"
+    android:height="14dp"
+    android:viewportWidth="12"
+    android:viewportHeight="14">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M1 0h3.5v14h-3.5z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7.5 0h3.5v14h-3.5z" />
+</vector>

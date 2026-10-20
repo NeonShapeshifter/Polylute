@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_cd_back">Tilbake</string>
+    <string name="auth_web_retry">Prøv igjen</string>
+    <string name="toast_welcome_user">Velkommen, %1$s!</string>
+</resources>

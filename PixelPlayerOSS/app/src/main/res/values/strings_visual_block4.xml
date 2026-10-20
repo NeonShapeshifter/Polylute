@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="timer_off">Off</string>
+    <string name="timer_end_track">At the end of this song</string>
+    <string name="timer_repeat_current">Repeat this song</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d playback</item>
+        <item quantity="other">%1$d playbacks</item>
+    </plurals>
+    <string name="timer_repeat_hint">Includes the current playback. Repeats this song, then pauses. Changing the song or repeat mode cancels it.</string>
+    <string name="timer_active">Active: %1$s</string>
+    <string name="timer_durations">Pause after</string>
+    <string name="timer_custom">Custom interval</string>
+    <string name="timer_interval_hint">Duration from confirmation, not a time of day.</string>
+    <string name="timer_hours">Hours (0–23)</string>
+    <string name="timer_minutes">Minutes (0–59)</string>
+    <string name="timer_interval_error">Enter 0–23 hours and 0–59 minutes. The total must be greater than zero.</string>
+    <string name="timer_pending_hint">Your selection is pending. The active timer changes only when you confirm.</string>
+    <string name="timer_close">Close</string>
+    <string name="timer_start">Start</string>
+    <string name="timer_confirm_off">Turn off</string>
+    <string name="timer_repeat_less">One fewer playback</string>
+    <string name="timer_repeat_more">One more playback</string>
+</resources>

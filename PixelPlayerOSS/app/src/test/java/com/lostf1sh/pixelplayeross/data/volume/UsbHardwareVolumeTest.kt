@@ -1,0 +1,137 @@
+package com.lostf1sh.pixelplayeross.data.volume
+
+import com.decent.usbaudio.UacFeatureUnitParser
+import com.decent.usbaudio.UacVolumeTopology
+import com.decent.usbaudio.UsbVolumeRange
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+class UsbHardwareVolumeTest {
+
+    @Test
+    fun `Fosi DS2 exposes per-channel volume on Feature Unit 10`() {
+        // FU 10: master bmaControls 0x03 (mute only), channels 1 and 2 0x0C (volume programmable).
+        assertEquals(UacVolumeTopology(unitId = 10, channels = listOf(1, 2)), UacFeatureUnitParser.findOutputVolume(DS2))
+    }
+
+    @Test
+    fun `a master volume control is preferred over per-channel`() {
+        val raw = DS2.copyOf()
+        val fu = featureUnitOffset(raw)
+        raw[fu + 5] = 0x0F // master: mute + volume programmable
+        assertEquals(listOf(0), UacFeatureUnitParser.findOutputVolume(raw)?.channels)
+    }
+
+    @Test
+    fun `a Feature Unit without programmable volume yields no hardware volume`() {
+        val raw = DS2.copyOf()
+        val fu = featureUnitOffset(raw)
+        raw[fu + 9] = 0x04  // ch1 volume read-only (0b01)
+        raw[fu + 13] = 0x00 // ch2 no volume
+        assertNull(UacFeatureUnitParser.findOutputVolume(raw))
+    }
+
+    @Test
+    fun `truncated descriptors never throw`() {
+        for (length in DS2.indices) UacFeatureUnitParser.findOutputVolume(DS2.copyOf(length))
+    }
+
+    private val range = UsbVolumeRange(minUnits = -127 * 256, maxUnits = 0, resolutionUnits = 256)
+
+    @Test
+    fun `steps are about two decibels and round-trip onto levels the DAC can hold`() {
+        assertEquals(512, UsbHardwareVolumePolicy.stepUnits(range))
+        assertEquals(63, UsbHardwareVolumePolicy.maxStep(range))
+        for (step in 0..UsbHardwareVolumePolicy.maxStep(range)) {
+            val units = UsbHardwareVolumePolicy.unitsFor(step, range)
+            assertEquals(0, units % range.resolutionUnits)
+            assertEquals(step, UsbHardwareVolumePolicy.stepFor(units, range))
+        }
+    }
+
+    @Test
+    fun `a level between steps is shown as the quieter step`() {
+        val between = UsbHardwareVolumePolicy.unitsFor(10, range) + 256
+        assertEquals(10, UsbHardwareVolumePolicy.stepFor(between, range))
+    }
+
+    @Test
+    fun `step size respects a coarse DAC resolution`() {
+        val coarse = UsbVolumeRange(-60 * 256, 0, 768) // 3 dB steps
+        assertEquals(768, UsbHardwareVolumePolicy.stepUnits(coarse))
+    }
+
+    @Test
+    fun `opening never raises the level`() {
+        val quiet = -40 * 256
+        assertNull(UsbHardwareVolumePolicy.openTarget(quiet, savedUnits = -20 * 256, ceilingUnits = -25 * 256))
+        assertNull(UsbHardwareVolumePolicy.openTarget(quiet, savedUnits = null, ceilingUnits = null))
+    }
+
+    @Test
+    fun `opening a loud DAC lowers it to the quietest known limit`() {
+        val loud = 0
+        assertEquals(-25 * 256, UsbHardwareVolumePolicy.openTarget(loud, savedUnits = -20 * 256, ceilingUnits = -25 * 256))
+        assertEquals(-20 * 256, UsbHardwareVolumePolicy.openTarget(loud, savedUnits = -20 * 256, ceilingUnits = null))
+    }
+
+    @Test
+    fun `every open target is at or below the current level`() {
+        for (current in -60..0 step 3) for (saved in -60..0 step 7) {
+            val target = UsbHardwareVolumePolicy.openTarget(current * 256, saved * 256, null)
+            assertTrue(target == null || target < current * 256)
+        }
+    }
+
+    private fun featureUnitOffset(raw: ByteArray): Int =
+        (0 until raw.size - 3).first {
+            raw[it] == 0x12.toByte() && raw[it + 1] == 0x24.toByte() && raw[it + 2] == 0x06.toByte()
+        }
+
+    private companion object {
+        /** Fosi Audio DS2 configuration descriptors, captured on the HONOR (phase 8a). */
+        val DS2 = intArrayOf(
+            0x12, 0x01, 0x00, 0x02, 0xEF, 0x02, 0x01, 0x40, 0x2A, 0x26, 0x01, 0x00, 0x03, 0x00, 0x01, 0x02,
+            0x06, 0x01, 0x09, 0x02, 0x50, 0x01, 0x03, 0x01, 0x00, 0xA0, 0x32, 0x09, 0x04, 0x00, 0x00, 0x01,
+            0x03, 0x00, 0x00, 0x00, 0x09, 0x21, 0x00, 0x01, 0x00, 0x01, 0x22, 0x56, 0x00, 0x07, 0x05, 0x81,
+            0x03, 0x01, 0x00, 0x06, 0x08, 0x0B, 0x01, 0x02, 0x01, 0x00, 0x20, 0x03, 0x09, 0x04, 0x01, 0x00,
+            0x00, 0x01, 0x01, 0x20, 0x03, 0x09, 0x24, 0x01, 0x00, 0x02, 0x0A, 0x40, 0x00, 0x00, 0x08, 0x24,
+            0x0A, 0x01, 0x07, 0x07, 0x00, 0x00, 0x11, 0x24, 0x02, 0x03, 0x01, 0x01, 0x00, 0x01, 0x02, 0x03,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x24, 0x03, 0x04, 0x02, 0x03, 0x00, 0x0A, 0x01,
+            0x00, 0x00, 0x00, 0x12, 0x24, 0x06, 0x0A, 0x03, 0x03, 0x00, 0x00, 0x00, 0x0C, 0x00, 0x00, 0x00,
+            0x0C, 0x00, 0x00, 0x00, 0x00, 0x09, 0x04, 0x02, 0x00, 0x00, 0x01, 0x02, 0x20, 0x00, 0x09, 0x04,
+            0x02, 0x01, 0x02, 0x01, 0x02, 0x20, 0x00, 0x10, 0x24, 0x01, 0x03, 0x00, 0x01, 0x01, 0x00, 0x00,
+            0x00, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x06, 0x24, 0x02, 0x01, 0x02, 0x10, 0x07, 0x05, 0x03,
+            0x05, 0xC8, 0x00, 0x01, 0x08, 0x25, 0x01, 0x00, 0x00, 0x02, 0x02, 0x00, 0x07, 0x05, 0x84, 0x11,
+            0x04, 0x00, 0x04, 0x09, 0x04, 0x02, 0x02, 0x02, 0x01, 0x02, 0x20, 0x00, 0x10, 0x24, 0x01, 0x03,
+            0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x06, 0x24, 0x02, 0x01,
+            0x03, 0x18, 0x07, 0x05, 0x03, 0x05, 0x2C, 0x01, 0x01, 0x08, 0x25, 0x01, 0x00, 0x00, 0x02, 0x02,
+            0x00, 0x07, 0x05, 0x84, 0x11, 0x04, 0x00, 0x04, 0x09, 0x04, 0x02, 0x03, 0x02, 0x01, 0x02, 0x20,
+            0x00, 0x10, 0x24, 0x01, 0x03, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x03, 0x00, 0x00, 0x00,
+            0x00, 0x06, 0x24, 0x02, 0x01, 0x04, 0x20, 0x07, 0x05, 0x03, 0x05, 0x90, 0x01, 0x01, 0x08, 0x25,
+            0x01, 0x00, 0x00, 0x02, 0x02, 0x00, 0x07, 0x05, 0x84, 0x11, 0x04, 0x00, 0x04, 0x09, 0x04, 0x02,
+            0x04, 0x02, 0x01, 0x02, 0x20, 0x00, 0x10, 0x24, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80,
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x24, 0x02, 0x01, 0x04, 0x20, 0x07, 0x05, 0x03, 0x05,
+            0x90, 0x01, 0x01, 0x08, 0x25, 0x01, 0x00, 0x00, 0x02, 0x02, 0x00, 0x07, 0x05, 0x84, 0x11, 0x04,
+            0x00, 0x04,
+        ).map { it.toByte() }.toByteArray()
+    }
+}
+
+class VolumeKeyRepeatPolicyTest {
+    @Test
+    fun `a first press always steps`() {
+        assertTrue(VolumeKeyRepeatPolicy.shouldStep(repeatCount = 0, raising = true, lastStepAtMs = 1_000, nowMs = 1_001))
+    }
+
+    @Test
+    fun `a held key raises no faster than its interval, and lowers faster`() {
+        val last = 1_000L
+        assertTrue(!VolumeKeyRepeatPolicy.shouldStep(3, raising = true, lastStepAtMs = last, nowMs = last + 100))
+        assertTrue(VolumeKeyRepeatPolicy.shouldStep(3, raising = true, lastStepAtMs = last, nowMs = last + 150))
+        assertTrue(VolumeKeyRepeatPolicy.shouldStep(3, raising = false, lastStepAtMs = last, nowMs = last + 80))
+        assertTrue(VolumeKeyRepeatPolicy.RAISE_INTERVAL_MS > VolumeKeyRepeatPolicy.LOWER_INTERVAL_MS)
+    }
+}

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">Riepilogo bande. Tocca per selezionare; regola nell’editor della banda.</string>
+    <string name="eq_band_position">Banda %1$d di %2$d · %3$s</string>
+    <string name="eq_band_previous">Seleziona banda precedente</string>
+    <string name="eq_band_next">Seleziona banda successiva</string>
+    <string name="eq_frequency_select">Seleziona frequenza</string>
+    <string name="eq_gain_label">Guadagno · passi di 1 dB</string>
+    <string name="eq_gain_decrease">Riduci il guadagno a %1$s di 1 dB</string>
+    <string name="eq_gain_increase">Aumenta il guadagno a %1$s di 1 dB</string>
+    <string name="eq_gain_readout">%1$+d dB</string>
+    <string name="eq_gain_accessible">Guadagno a %1$s</string>
+    <string name="eq_band_reset">Reimposta la banda selezionata a 0 dB</string>
+    <string name="timer_off">Disattivato</string>
+    <string name="timer_end_track">Alla fine di questo brano</string>
+    <string name="timer_repeat_current">Ripeti questo brano</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d riproduzione</item>
+        <item quantity="many">%1$d riproduzioni</item>
+        <item quantity="other">%1$d riproduzioni</item>
+    </plurals>
+    <string name="timer_repeat_hint">Include la riproduzione in corso. Ripete questo brano, poi mette in pausa. Cambiare brano o modalità di ripetizione annulla il conteggio.</string>
+    <string name="timer_active">Attivo: %1$s</string>
+    <string name="timer_durations">Metti in pausa dopo</string>
+    <string name="timer_custom">Intervallo personalizzato</string>
+    <string name="timer_interval_hint">Durata dalla conferma, non un’ora del giorno.</string>
+    <string name="timer_hours">Ore (0–23)</string>
+    <string name="timer_minutes">Minuti (0–59)</string>
+    <string name="timer_interval_error">Inserisci da 0 a 23 ore e da 0 a 59 minuti. Il totale deve essere maggiore di zero.</string>
+    <string name="timer_pending_hint">Selezione in attesa. Il timer attivo cambia solo dopo la conferma.</string>
+    <string name="timer_close">Chiudi</string>
+    <string name="timer_start">Avvia</string>
+    <string name="timer_confirm_off">Disattiva</string>
+    <string name="timer_repeat_less">Una riproduzione in meno</string>
+    <string name="timer_repeat_more">Una riproduzione in più</string>
+</resources>

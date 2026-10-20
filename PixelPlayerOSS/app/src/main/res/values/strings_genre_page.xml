@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B29-L6 / B33-U4: a genre's page lists its songs; the counts line also says how many albums and artists they come from. -->
+    <string name="genre_empty_title">Nothing here</string>
+    <string name="genre_empty_body">No song in the library is tagged with this genre.</string>
+    <plurals name="genre_count_songs">
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
+    </plurals>
+    <plurals name="genre_count_albums">
+        <item quantity="one">%1$d album</item>
+        <item quantity="other">%1$d albums</item>
+    </plurals>
+    <plurals name="genre_count_artists">
+        <item quantity="one">%1$d artist</item>
+        <item quantity="other">%1$d artists</item>
+    </plurals>
+    <!-- B33-U5: Search shows a folded "Genre · X" section at the foot of All when the query matches a genre. -->
+    <string name="search_genre_section_title">Genre · %1$s</string>
+    <string name="search_genre_section_folded">Folded</string>
+    <string name="search_genre_section_unfolded">Unfolded</string>
+    <string name="search_genre_section_unfold">Unfold</string>
+    <string name="search_genre_section_fold">Fold</string>
+    <string name="search_genre_see_all">See all</string>
+    <string name="search_genre_see_all_cd">See all the songs of %1$s</string>
+    <string name="search_genre_load_failed">This genre could not be loaded</string>
+</resources>

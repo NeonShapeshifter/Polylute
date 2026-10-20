@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B32-Q6: the System page of Settings (it was Maintenance behind a PIN), Maintenance's own page, and the confirmations the System page asks. -->
+    <string name="system_rebuild_database_subtitle">Rebuilds the library from MediaStore. Favorites and edits are kept.</string>
+    <string name="system_maintenance_subtitle">Logs, diagnostics and technical tools</string>
+    <string name="system_confirm_lyrics_title">Delete imported lyrics?</string>
+    <string name="system_confirm_return_title">Return to the DAP?</string>
+    <string name="system_confirm_return_body">The device is locked to Polylute again, as dedicated mode keeps it.</string>
+    <string name="system_confirm_return_action">Return</string>
+    <string name="system_return_not_locked">Polylute is HOME again, but the device did not lock. Try again.</string>
+    <string name="system_return_done">Back in the DAP</string>
+    <string name="maintenance_regenerate_section">Regenerate</string>
+    <string name="library_locate_songs_tab_hidden">Show the Songs tab in the Library to find it there</string>
+</resources>

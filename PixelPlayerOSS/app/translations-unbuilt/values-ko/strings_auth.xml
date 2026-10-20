@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_cd_back">뒤로</string>
+    <string name="auth_web_retry">재시도</string>
+    <string name="toast_welcome_user">%1$s님, 환영합니다!</string>
+</resources>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">Ringkasan pita. Ketuk untuk memilih; sesuaikan di editor pita terpilih.</string>
+    <string name="eq_band_position">Pita %1$d dari %2$d · %3$s</string>
+    <string name="eq_band_previous">Pilih pita sebelumnya</string>
+    <string name="eq_band_next">Pilih pita berikutnya</string>
+    <string name="eq_frequency_select">Pilih frekuensi</string>
+    <string name="eq_gain_label">Gain · langkah 1 dB</string>
+    <string name="eq_gain_decrease">Kurangi gain %1$s sebesar 1 dB</string>
+    <string name="eq_gain_increase">Tambah gain %1$s sebesar 1 dB</string>
+    <string name="eq_gain_readout">%1$+d dB</string>
+    <string name="eq_gain_accessible">Gain pada %1$s</string>
+    <string name="eq_band_reset">Atur ulang pita terpilih ke 0 dB</string>
+    <string name="timer_off">Nonaktif</string>
+    <string name="timer_end_track">Saat lagu ini selesai</string>
+    <string name="timer_repeat_current">Ulangi lagu ini</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="other">%1$d pemutaran</item>
+    </plurals>
+    <string name="timer_repeat_hint">Termasuk pemutaran yang sedang berlangsung. Mengulangi lagu ini, lalu menjeda. Mengganti lagu atau mode pengulangan membatalkan penghitung.</string>
+    <string name="timer_active">Aktif: %1$s</string>
+    <string name="timer_durations">Jeda setelah</string>
+    <string name="timer_custom">Interval khusus</string>
+    <string name="timer_interval_hint">Durasi sejak konfirmasi, bukan waktu tertentu dalam sehari.</string>
+    <string name="timer_hours">Jam (0–23)</string>
+    <string name="timer_minutes">Menit (0–59)</string>
+    <string name="timer_interval_error">Masukkan 0–23 jam dan 0–59 menit. Total harus lebih dari nol.</string>
+    <string name="timer_pending_hint">Pilihan tertunda. Pengatur waktu aktif hanya berubah setelah konfirmasi.</string>
+    <string name="timer_close">Tutup</string>
+    <string name="timer_start">Mulai</string>
+    <string name="timer_confirm_off">Nonaktifkan</string>
+    <string name="timer_repeat_less">Kurangi satu pemutaran</string>
+    <string name="timer_repeat_more">Tambah satu pemutaran</string>
+</resources>

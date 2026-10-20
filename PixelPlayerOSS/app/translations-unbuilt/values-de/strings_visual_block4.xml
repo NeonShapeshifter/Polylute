@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">Bandübersicht. Antippen zum Auswählen; im Bandeditor anpassen.</string>
+    <string name="eq_band_position">Band %1$d von %2$d · %3$s</string>
+    <string name="eq_band_previous">Vorheriges Band auswählen</string>
+    <string name="eq_band_next">Nächstes Band auswählen</string>
+    <string name="eq_frequency_select">Frequenz auswählen</string>
+    <string name="eq_gain_label">Verstärkung · Schritte von 1 dB</string>
+    <string name="eq_gain_decrease">Verstärkung bei %1$s um 1 dB verringern</string>
+    <string name="eq_gain_increase">Verstärkung bei %1$s um 1 dB erhöhen</string>
+    <string name="eq_gain_readout">%1$+d dB</string>
+    <string name="eq_gain_accessible">Verstärkung bei %1$s</string>
+    <string name="eq_band_reset">Ausgewähltes Band auf 0 dB zurücksetzen</string>
+    <string name="timer_off">Aus</string>
+    <string name="timer_end_track">Am Ende dieses Titels</string>
+    <string name="timer_repeat_current">Diesen Titel wiederholen</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d Wiedergabe</item>
+        <item quantity="other">%1$d Wiedergaben</item>
+    </plurals>
+    <string name="timer_repeat_hint">Die laufende Wiedergabe zählt mit. Dieser Titel wird wiederholt, dann pausiert. Titelwechsel oder Änderung des Wiederholungsmodus bricht ab.</string>
+    <string name="timer_active">Aktiv: %1$s</string>
+    <string name="timer_durations">Pausieren nach</string>
+    <string name="timer_custom">Eigenes Intervall</string>
+    <string name="timer_interval_hint">Dauer ab Bestätigung, keine Uhrzeit.</string>
+    <string name="timer_hours">Stunden (0–23)</string>
+    <string name="timer_minutes">Minuten (0–59)</string>
+    <string name="timer_interval_error">0–23 Stunden und 0–59 Minuten eingeben. Die Gesamtdauer muss größer als null sein.</string>
+    <string name="timer_pending_hint">Auswahl ausstehend. Der aktive Timer ändert sich erst nach Bestätigung.</string>
+    <string name="timer_close">Schließen</string>
+    <string name="timer_start">Starten</string>
+    <string name="timer_confirm_off">Ausschalten</string>
+    <string name="timer_repeat_less">Eine Wiedergabe weniger</string>
+    <string name="timer_repeat_more">Eine Wiedergabe mehr</string>
+</resources>

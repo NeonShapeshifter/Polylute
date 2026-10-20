@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">محفوظ في الملف الشخصي</string>
+    <string name="profile_audio_current_effect">التأثير على المخرج الحالي</string>
+    <string name="profile_audio_not_selected">غير مطبّق · الملف الشخصي غير محدد</string>
+    <string name="profile_audio_applied">مطبّق</string>
+    <string name="eq_output_pure_direct">تم تجاوزه بسبب Pure Direct</string>
+    <string name="eq_output_usb_direct">تم تجاوزه بسبب USB Direct</string>
+    <string name="eq_output_maintenance">تم تجاوزه بسبب الصيانة</string>
+    <string name="eq_saved_curve_note">يُحفظ الوضع المحدد والمنحنى في هذا الملف الشخصي.</string>
+    <string name="safety_max_saved_enabled">Safety Max مفعّل في الملف الشخصي</string>
+    <string name="safety_max_saved_summary">تفضيل محفوظ. يحدد المخرج الحالي ما إذا كان الحد يُطبّق.</string>
+    <string name="safety_max_saved_unavailable">محفوظ في الملف الشخصي؛ لا يُطبّق على هذا المخرج.</string>
+    <string name="safety_max_saved_unavailable_usb">محفوظ في الملف الشخصي؛ لا يُطبّق على مخرج USB Direct هذا.</string>
+    <string name="safety_max_output_rescaled">مطبّق بحد معدّل · تغير نطاق المخرج</string>
+    <string name="safety_max_output_override">تم تجاوز الحد مؤقتًا</string>
+    <string name="safety_max_saved_limit">الحد المحفوظ لهذا المخرج</string>
+    <string name="safety_max_calibration_unavailable">المعايرة غير متاحة على هذا المخرج.</string>
+    <string name="profile_audio_saved_eq_summary">محفوظ: %1$s · %2$s</string>
+    <string name="profile_audio_route_note">يُحتفظ بالوضع والمنحنى. يتجاوز Pure Direct المعادل فقط عندما يكون المخرج الحالي USB Direct.</string>
+</resources>

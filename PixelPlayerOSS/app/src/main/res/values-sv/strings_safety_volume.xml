@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="safety_max_title">Safety Max-volym</string>
+    <string name="safety_max_not_set">Inte inställd</string>
+    <string name="safety_max_configured">100% = inställt tak</string>
+    <string name="safety_max_other_output">Inte inställd för den här utgången</string>
+    <string name="safety_max_disabled">Inaktiverad</string>
+    <string name="safety_max_explanation">Safety Max är ditt personliga volymtak. Det mäter inte ljudtryck och garanterar inte en säker lyssningsnivå.</string>
+    <string name="safety_max_current_output">Aktuell utgång</string>
+    <string name="safety_max_unavailable_output">Safety Max är inte tillgängligt på den här utgången.</string>
+    <string name="safety_max_recalibrate">Utgångens omfång har ändrats. Ny kalibrering krävs.</string>
+    <string name="safety_max_not_set_output">Inget tak är inställt för den här utgången.</string>
+    <string name="safety_max_current_status">%1$d%% · rått steg %2$d av %3$d</string>
+    <string name="safety_max_use_current">Använd aktuell volym som Safety Max</string>
+    <string name="safety_max_zero_rejected">Höj volymen över noll innan du ställer in ett tak.</string>
+    <string name="safety_max_level_unconfirmed">DAC:en har inte bekräftat sin volymnivå. Knappen läser av den igen; inget sparas förrän den kan bekräftas.</string>
+    <string name="safety_max_not_saved_unconfirmed">Inget sparades: DAC:ens nivå kunde inte läsas. Kontrollera anslutningen och försök igen.</string>
+    <string name="safety_max_not_saved_output_changed">Inget sparades: utgången ändrades medan nivån lästes av. Försök igen.</string>
+    <string name="safety_max_enabled">Safety Max aktiverat</string>
+    <string name="safety_max_enabled_summary">Vanliga volymändringar stannar vid ditt inställda tak.</string>
+    <string name="safety_max_reached_title">Safety Max nått</string>
+    <string name="safety_max_reached_message">Du är på det inställda maxet för %1$s. Går du högre överskrider du ditt Safety Max.</string>
+    <string name="safety_max_temporary_override">Tillfällig överstyrning</string>
+    <string name="safety_max_override_closes_soon">Det här stängs om %1$d s om du inte svarar.</string>
+    <string name="safety_max_override_lasts">Överstyrningen gäller tills du sänker volymen till ditt max, eller efter %1$d min utan uppspelning. Byte av hörlurar eller utgång avslutar den också.</string>
+    <string name="safety_max_disable">Inaktivera för de här hörlurarna</string>
+    <string name="volume_hud_state_limit">GRÄNS</string>
+    <string name="volume_hud_state_blocked">GRÄNS</string>
+    <string name="volume_hud_state_override">ÖVERSTYRD</string>
+    <string name="volume_hud_override_detail">Avslutas när du sänker volymen eller efter %1$d min utan uppspelning</string>
+    <string name="volume_hud_state_maximum">MAX</string>
+    <string name="volume_hud_level">%1$d / %2$d</string>
+    <string name="volume_hud_cd">Volym %1$d av %2$d</string>
+    <string name="safety_max_dac_own_volume_note">På en USB-DAC visas inte DAC:ens egna volymknappar i appen, och Safety Max begränsar dem inte.</string>
+    <string name="safety_max_calibrate_dac_at_max">Om din DAC har egen volym (knappar eller ratt), vrid upp den helt först – värsta fallet – och kalibrera sedan. Appen kan inte läsa den volymen, så ett tak som ställts in med lägre volym slutar skydda dig när den höjs.</string>
+    <string name="safety_max_calibrate_dac_notice">Inget Safety Max-tak är inställt för den här DAC:en, så ingenting begränsar dess volym. Kalibrera Safety Max för den.</string>
+    <string name="safety_max_refused_notice">Safety Max · lås upp för att gå högre</string>
+    <string name="safety_max_volume_write_failed">DAC:en bekräftade inte den lägre volymen. Dess nivå kan vara högre än den som visas.</string>
+    <string name="safety_max_notice_channel">Volymgräns</string>
+    <string name="more_group_debug">Felsökning</string>
+    <string name="debug_mark_noise">Markera brus nu</string>
+    <string name="debug_mark_noise_supporting">Sparar de senaste 30 s av USB-utgångens feedback och paket, och strömmens tillstånd, i en fil</string>
+    <string name="debug_mark_noise_done">Sparade</string>
+    <string name="debug_mark_noise_failed">Kunde inte spara brusmarkeringen</string>
+</resources>

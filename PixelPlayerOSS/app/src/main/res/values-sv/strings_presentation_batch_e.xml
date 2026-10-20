@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="presentation_batch_e_queue_empty">Kön är tom.</string>
+    <string name="presentation_batch_e_cd_queue_actions">Köåtgärder</string>
+    <string name="presentation_batch_e_action_clear_queue">Rensa kön</string>
+    <string name="presentation_batch_e_action_save_as_playlist">Spara som spellista</string>
+    <string name="presentation_batch_e_action_locate_current_song">Hitta aktuell låt</string>
+    <string name="presentation_batch_e_queue_named_suffix">Kön för %1$s</string>
+    <string name="presentation_batch_e_queue_current">Aktuell kö</string>
+    <string name="presentation_batch_e_removed">borttagen</string>
+    <string name="presentation_batch_e_clear_queue_dialog_title">Rensa kön</string>
+    <string name="presentation_batch_e_clear_queue_dialog_message">Är du säker på att du vill rensa alla låtar från kön utom den som spelas nu?</string>
+    <string name="presentation_batch_e_queue_subtitle_empty">Kön är tom för tillfället.</string>
+    <string name="presentation_batch_e_queue_source_fallback">Kö</string>
+    <string name="presentation_batch_e_cd_toggle_shuffle">Slå på/av blandning</string>
+    <string name="presentation_batch_e_cd_toggle_repeat">Slå på/av upprepning</string>
+    <string name="presentation_batch_e_cd_sleep_timer">Insomningstimer</string>
+    <string name="presentation_batch_e_save_as_playlist_sheet_title">Spara som spellista</string>
+    <string name="presentation_batch_e_deselect_all">Avmarkera alla</string>
+    <string name="presentation_batch_e_playlist_name_label">Spellistans namn</string>
+    <string name="presentation_batch_e_search_songs_to_include_placeholder">Sök efter låtar att ta med…</string>
+    <string name="presentation_batch_e_save_as_format">Spara som: %1$s</string>
+    <string name="presentation_batch_e_enter_playlist_name">Ange ett namn på spellistan</string>
+    <string name="presentation_batch_e_no_songs_match_query">Inga låtar matchar ”%1$s”</string>
+    <string name="presentation_batch_e_cd_dismiss_song">Avfärda låt</string>
+    <string name="presentation_batch_e_cd_remove_from_playlist">Ta bort från spellistan</string>
+    <string name="presentation_batch_e_more_options_for_song">Fler alternativ för %1$s</string>
+    <plurals name="presentation_batch_e_n_songs_selected">
+        <item quantity="one">%d låt vald</item>
+        <item quantity="other">%d låtar valda</item>
+    </plurals>
+    <string name="presentation_batch_e_no_playlist_created">Ingen spellista har skapats.</string>
+    <string name="presentation_batch_e_new_playlist_hint">Tryck på ”%1$s” för att börja.</string>
+    <string name="presentation_batch_e_create_playlist_title">Skapa spellista</string>
+    <string name="presentation_batch_e_create_playlist_subtitle">Välj hur den ska skapas.</string>
+    <string name="presentation_batch_e_creation_mode_manual">Manuellt</string>
+    <string name="presentation_batch_e_creation_mode_manual_subtitle">Utforma omslag, ikon och form och välj låtar själv.</string>
+    <string name="presentation_batch_e_creation_mode_describe">Beskriv den</string>
+    <string name="presentation_batch_e_creation_mode_describe_subtitle">Skriv vad du vill höra så väljer appen låtarna, helt offline.</string>
+    <string name="presentation_batch_e_describe_playlist_title">Beskriv din spellista</string>
+    <string name="presentation_batch_e_describe_playlist_subtitle">Matchas mot ditt bibliotek på den här enheten – inget lämnar den.</string>
+    <string name="presentation_batch_e_describe_playlist_hint">t.ex. låtar att lyfta tyngder till</string>
+    <string name="presentation_batch_e_describe_generate">Skapa</string>
+    <string name="presentation_batch_e_describe_regenerate">Skapa på nytt</string>
+    <string name="presentation_batch_e_describe_no_matches">Inga låtar i ditt bibliotek matchar den beskrivningen.</string>
+    <string name="presentation_batch_e_describe_save">Spara spellista</string>
+    <plurals name="presentation_batch_e_describe_result_count">
+        <item quantity="one">%d låt matchade</item>
+        <item quantity="other">%d låtar matchade</item>
+    </plurals>
+    <string name="presentation_batch_e_reset_presets_title">Återställ förinställningar</string>
+    <string name="presentation_batch_e_reset_presets_message">Det här återställer standardordningen och synligheten för förinställningarna. Fortsätta?</string>
+    <string name="presentation_batch_e_manage_presets_title">Hantera förinställningar</string>
+    <string name="presentation_batch_e_presets_drag_hint">Dra för att ändra ordning • Tryck på ögat för att visa eller dölja</string>
+    <string name="presentation_batch_e_cd_reset_presets_default">Återställ till standard</string>
+    <string name="presentation_batch_e_cd_visible">Synlig</string>
+    <string name="presentation_batch_e_cd_hidden">Dold</string>
+</resources>

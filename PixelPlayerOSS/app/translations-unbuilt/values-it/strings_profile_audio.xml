@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Salvato nel profilo</string>
+    <string name="profile_audio_current_effect">Effetto sull\'uscita attuale</string>
+    <string name="profile_audio_not_selected">Non applicato · profilo non selezionato</string>
+    <string name="profile_audio_applied">Applicato</string>
+    <string name="eq_output_pure_direct">Escluso da Pure Direct</string>
+    <string name="eq_output_usb_direct">Escluso da USB Direct</string>
+    <string name="eq_output_maintenance">Escluso dalla manutenzione</string>
+    <string name="eq_saved_curve_note">La modalità selezionata e la curva sono salvate in questo profilo.</string>
+    <string name="safety_max_saved_enabled">Safety Max attivato nel profilo</string>
+    <string name="safety_max_saved_summary">Preferenza salvata. L\'uscita attuale determina se il limite viene applicato.</string>
+    <string name="safety_max_saved_unavailable">Salvato nel profilo; non applicato a questa uscita.</string>
+    <string name="safety_max_saved_unavailable_usb">Salvato nel profilo; non applicato a questa uscita USB Direct.</string>
+    <string name="safety_max_output_rescaled">Applicato con un limite adattato · intervallo dell\'uscita cambiato</string>
+    <string name="safety_max_output_override">Limite temporaneamente superato</string>
+    <string name="safety_max_saved_limit">Limite salvato per questa uscita</string>
+    <string name="safety_max_calibration_unavailable">La calibrazione non è disponibile su questa uscita.</string>
+    <string name="profile_audio_saved_eq_summary">Salvato: %1$s · %2$s</string>
+    <string name="profile_audio_route_note">La modalità e la curva vengono conservate. Pure Direct esclude l\'EQ solo quando l\'uscita attuale è USB Direct.</string>
+</resources>

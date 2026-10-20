@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">프로필에 저장됨</string>
+    <string name="profile_audio_current_effect">현재 출력에 적용되는 효과</string>
+    <string name="profile_audio_not_selected">적용되지 않음 · 프로필이 선택되지 않음</string>
+    <string name="profile_audio_applied">적용됨</string>
+    <string name="eq_output_pure_direct">Pure Direct로 인해 생략됨</string>
+    <string name="eq_output_usb_direct">USB Direct로 인해 생략됨</string>
+    <string name="eq_output_maintenance">유지보수로 인해 생략됨</string>
+    <string name="eq_saved_curve_note">선택한 모드와 곡선이 이 프로필에 저장됩니다.</string>
+    <string name="safety_max_saved_enabled">프로필에서 Safety Max 활성화</string>
+    <string name="safety_max_saved_summary">저장된 설정입니다. 현재 출력에 따라 한도 적용 여부가 결정됩니다.</string>
+    <string name="safety_max_saved_unavailable">프로필에 저장됨; 이 출력에는 적용되지 않습니다.</string>
+    <string name="safety_max_saved_unavailable_usb">프로필에 저장됨; 이 USB Direct 출력에는 적용되지 않습니다.</string>
+    <string name="safety_max_output_rescaled">조정된 한도 적용 중 · 출력 범위 변경됨</string>
+    <string name="safety_max_output_override">한도가 일시적으로 해제됨</string>
+    <string name="safety_max_saved_limit">이 출력에 저장된 한도</string>
+    <string name="safety_max_calibration_unavailable">이 출력에서는 보정을 사용할 수 없습니다.</string>
+    <string name="profile_audio_saved_eq_summary">저장됨: %1$s · %2$s</string>
+    <string name="profile_audio_route_note">모드와 곡선은 유지됩니다. Pure Direct는 현재 출력이 USB Direct일 때만 EQ를 생략합니다.</string>
+</resources>

@@ -1,0 +1,13 @@
+Polylute is an Android music player for the files on your device. It can send audio straight to a USB DAC, bit-perfect, and it can turn a phone into a dedicated digital audio player.
+
+* Purity: bit-perfect output to a USB DAC, without Android's mixer
+* Resonance: the processed path, with per-headphone profiles, an equalizer and volume limits
+* Library by song, album, artist, genre and folder; playlists, favorites, queue, gapless playback and crossfade
+* Listening history and statistics
+* App mode: a normal music player
+* DAP mode: Home, Pinned or Dedicated, for a phone used only as a player
+* English, Spanish and Swedish
+
+Online services are optional and off by default: lyrics from LRCLIB and artist pictures from Deezer. Polylute has no accounts, ads or analytics.
+
+Based on PixelPlayerOSS (GPL-3.0) and decent-player (MIT). Polylute is licensed GPL-3.0-or-later.

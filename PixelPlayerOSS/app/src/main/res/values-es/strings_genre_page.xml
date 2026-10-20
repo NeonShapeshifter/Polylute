@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B29-L6 / B33-U4: la página de un género lista sus canciones; la línea de cuentas dice también de cuántos álbumes y artistas vienen. -->
+    <string name="genre_empty_title">No hay nada aquí</string>
+    <string name="genre_empty_body">Ninguna canción de la biblioteca tiene este género.</string>
+    <plurals name="genre_count_songs">
+        <item quantity="one">%1$d canción</item>
+        <item quantity="many">%1$d canciones</item>
+        <item quantity="other">%1$d canciones</item>
+    </plurals>
+    <plurals name="genre_count_albums">
+        <item quantity="one">%1$d álbum</item>
+        <item quantity="many">%1$d álbumes</item>
+        <item quantity="other">%1$d álbumes</item>
+    </plurals>
+    <plurals name="genre_count_artists">
+        <item quantity="one">%1$d artista</item>
+        <item quantity="many">%1$d artistas</item>
+        <item quantity="other">%1$d artistas</item>
+    </plurals>
+    <!-- B33-U5: Buscar muestra una sección plegada «Género · X» al final de Todo cuando la consulta coincide con un género. -->
+    <string name="search_genre_section_title">Género · %1$s</string>
+    <string name="search_genre_section_folded">Plegado</string>
+    <string name="search_genre_section_unfolded">Desplegado</string>
+    <string name="search_genre_section_unfold">Desplegar</string>
+    <string name="search_genre_section_fold">Plegar</string>
+    <string name="search_genre_see_all">Ver todo</string>
+    <string name="search_genre_see_all_cd">Ver todas las canciones de %1$s</string>
+    <string name="search_genre_load_failed">No se pudo cargar este género</string>
+</resources>

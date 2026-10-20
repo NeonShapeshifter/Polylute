@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">Båndoversikt. Trykk for å velge; juster i redigereren for valgt bånd.</string>
+    <string name="eq_band_position">Bånd %1$d av %2$d · %3$s</string>
+    <string name="eq_band_previous">Velg forrige bånd</string>
+    <string name="eq_band_next">Velg neste bånd</string>
+    <string name="eq_frequency_select">Velg frekvens</string>
+    <string name="eq_gain_label">Forsterkning · trinn på 1 dB</string>
+    <string name="eq_gain_decrease">Reduser forsterkning ved %1$s med 1 dB</string>
+    <string name="eq_gain_increase">Øk forsterkning ved %1$s med 1 dB</string>
+    <string name="eq_gain_readout">%1$+d dB</string>
+    <string name="eq_gain_accessible">Forsterkning ved %1$s</string>
+    <string name="eq_band_reset">Tilbakestill valgt bånd til 0 dB</string>
+    <string name="timer_off">Av</string>
+    <string name="timer_end_track">Når denne sangen slutter</string>
+    <string name="timer_repeat_current">Gjenta denne sangen</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="one">%1$d avspilling</item>
+        <item quantity="other">%1$d avspillinger</item>
+    </plurals>
+    <string name="timer_repeat_hint">Den pågående avspillingen teller med. Gjentar denne sangen og setter deretter på pause. Bytte av sang eller gjentakelsesmodus avbryter telleren.</string>
+    <string name="timer_active">Aktiv: %1$s</string>
+    <string name="timer_durations">Sett på pause etter</string>
+    <string name="timer_custom">Egendefinert intervall</string>
+    <string name="timer_interval_hint">Varighet fra bekreftelse, ikke et klokkeslett.</string>
+    <string name="timer_hours">Timer (0–23)</string>
+    <string name="timer_minutes">Minutter (0–59)</string>
+    <string name="timer_interval_error">Angi 0–23 timer og 0–59 minutter. Totalen må være større enn null.</string>
+    <string name="timer_pending_hint">Valg venter. Den aktive timeren endres først når du bekrefter.</string>
+    <string name="timer_close">Lukk</string>
+    <string name="timer_start">Start</string>
+    <string name="timer_confirm_off">Slå av</string>
+    <string name="timer_repeat_less">Én avspilling mindre</string>
+    <string name="timer_repeat_more">Én avspilling mer</string>
+</resources>

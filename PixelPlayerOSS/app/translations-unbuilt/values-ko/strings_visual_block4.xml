@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="eq_band_summary_hint">밴드 요약입니다. 탭하여 선택하고 선택한 밴드 편집기에서 조절하세요.</string>
+    <string name="eq_band_position">%2$d개 중 %1$d번 밴드 · %3$s</string>
+    <string name="eq_band_previous">이전 밴드 선택</string>
+    <string name="eq_band_next">다음 밴드 선택</string>
+    <string name="eq_frequency_select">주파수 선택</string>
+    <string name="eq_gain_label">게인 · 1 dB 단위</string>
+    <string name="eq_gain_decrease">%1$s 게인을 1 dB 낮추기</string>
+    <string name="eq_gain_increase">%1$s 게인을 1 dB 높이기</string>
+    <string name="eq_gain_readout">%1$+d dB</string>
+    <string name="eq_gain_accessible">%1$s 게인</string>
+    <string name="eq_band_reset">선택한 밴드를 0 dB로 초기화</string>
+    <string name="timer_off">꺼짐</string>
+    <string name="timer_end_track">이 곡이 끝날 때</string>
+    <string name="timer_repeat_current">이 곡 반복</string>
+    <plurals name="timer_repeat_value">
+        <item quantity="other">%1$d회 재생</item>
+    </plurals>
+    <string name="timer_repeat_hint">현재 재생도 포함합니다. 이 곡을 반복한 후 일시 정지합니다. 곡이나 반복 모드를 변경하면 취소됩니다.</string>
+    <string name="timer_active">활성: %1$s</string>
+    <string name="timer_durations">다음 시간 후 일시 정지</string>
+    <string name="timer_custom">사용자 지정 간격</string>
+    <string name="timer_interval_hint">확인 시점부터의 재생 시간이며 시각이 아닙니다.</string>
+    <string name="timer_hours">시간 (0–23)</string>
+    <string name="timer_minutes">분 (0–59)</string>
+    <string name="timer_interval_error">0~23시간과 0~59분을 입력하세요. 합계는 0보다 커야 합니다.</string>
+    <string name="timer_pending_hint">선택 대기 중입니다. 활성 타이머는 확인 후에만 변경됩니다.</string>
+    <string name="timer_close">닫기</string>
+    <string name="timer_start">시작</string>
+    <string name="timer_confirm_off">끄기</string>
+    <string name="timer_repeat_less">재생 횟수 하나 줄이기</string>
+    <string name="timer_repeat_more">재생 횟수 하나 늘리기</string>
+</resources>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B22: el ecualizador (`Equalizer.dc.html`). -->
+    <string name="eq_subtitle_with">%1$s · con %2$s</string>
+    <string name="eq_frozen_hint">Puedes editar la curva; se aplicará al desactivar %1$s.</string>
+    <string name="eq_route_resonance">Resonancia</string>
+    <string name="eq_route_usb_android">USB Android</string>
+    <string name="eq_route_android">%1$s · Android</string>
+    <string name="eq_mode_saved_in">Modo · guardado en %1$s</string>
+    <string name="eq_preset_row">Preset</string>
+    <string name="eq_save_preset">Guardar como preset</string>
+    <string name="eq_section_response">Respuesta</string>
+    <string name="eq_section_bands">Bandas · ±15 dB</string>
+    <string name="eq_saved_note">El modo y la curva se guardan en %1$s.</string>
+    <string name="eq_off_note">Sin ecualizador. La señal pasa sin cambios.</string>
+    <string name="eq_response_description">Respuesta de frecuencia de la curva guardada</string>
+    <string name="eq_band_accessible">%1$s, %2$s dB</string>
+</resources>

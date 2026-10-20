@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B32-Q6: la página Sistema de los ajustes (era Mantenimiento tras un PIN), la página de Mantenimiento y las confirmaciones que pide Sistema. -->
+    <string name="system_rebuild_database_subtitle">Reconstruye la biblioteca desde MediaStore. Se conservan favoritos y ediciones.</string>
+    <string name="system_maintenance_subtitle">Registros, diagnósticos y herramientas técnicas</string>
+    <string name="system_confirm_lyrics_title">¿Eliminar las letras importadas?</string>
+    <string name="system_confirm_return_title">¿Volver al DAP?</string>
+    <string name="system_confirm_return_body">El dispositivo vuelve a quedar bloqueado en Polylute, como lo mantiene el modo dedicado.</string>
+    <string name="system_confirm_return_action">Volver</string>
+    <string name="system_return_not_locked">Polylute vuelve a ser HOME, pero el dispositivo no se bloqueó. Inténtalo de nuevo.</string>
+    <string name="system_return_done">De vuelta en el DAP</string>
+    <string name="maintenance_regenerate_section">Regenerar</string>
+    <string name="library_locate_songs_tab_hidden">Muestra la pestaña Canciones en la biblioteca para encontrarla</string>
+</resources>

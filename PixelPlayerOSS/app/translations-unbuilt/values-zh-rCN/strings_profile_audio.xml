@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">已保存在配置文件中</string>
+    <string name="profile_audio_current_effect">当前输出上的效果</string>
+    <string name="profile_audio_not_selected">未应用 · 未选择此配置文件</string>
+    <string name="profile_audio_applied">已应用</string>
+    <string name="eq_output_pure_direct">因 Pure Direct 而跳过</string>
+    <string name="eq_output_usb_direct">因 USB Direct 而跳过</string>
+    <string name="eq_output_maintenance">因维护而跳过</string>
+    <string name="eq_saved_curve_note">所选模式和曲线保存在此配置文件中。</string>
+    <string name="safety_max_saved_enabled">配置文件中已启用 Safety Max</string>
+    <string name="safety_max_saved_summary">已保存的偏好。是否应用限制取决于当前输出。</string>
+    <string name="safety_max_saved_unavailable">已保存在配置文件中；不应用于此输出。</string>
+    <string name="safety_max_saved_unavailable_usb">已保存在配置文件中；不应用于此 USB Direct 输出。</string>
+    <string name="safety_max_output_rescaled">正在应用调整后的限制 · 输出范围已更改</string>
+    <string name="safety_max_output_override">暂时解除限制</string>
+    <string name="safety_max_saved_limit">为此输出保存的限制</string>
+    <string name="safety_max_calibration_unavailable">此输出无法进行校准。</string>
+    <string name="profile_audio_saved_eq_summary">已保存：%1$s · %2$s</string>
+    <string name="profile_audio_route_note">模式和曲线会保留。Pure Direct 仅在当前输出为 USB Direct 时跳过 EQ。</string>
+</resources>

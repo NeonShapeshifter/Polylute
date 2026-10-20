@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B32-Q6: Systemsidan i inställningarna (var underhåll bakom en PIN), underhållssidan och de bekräftelser Systemsidan ber om. -->
+    <string name="system_rebuild_database_subtitle">Bygger om biblioteket från MediaStore. Favoriter och ändringar behålls.</string>
+    <string name="system_maintenance_subtitle">Loggar, diagnostik och tekniska verktyg</string>
+    <string name="system_confirm_lyrics_title">Ta bort importerade låttexter?</string>
+    <string name="system_confirm_return_title">Tillbaka till DAP?</string>
+    <string name="system_confirm_return_body">Enheten låses till Polylute igen, som dedikerat läge håller den.</string>
+    <string name="system_confirm_return_action">Tillbaka</string>
+    <string name="system_return_not_locked">Polylute är HOME igen, men enheten låstes inte. Försök igen.</string>
+    <string name="system_return_done">Tillbaka i DAP</string>
+    <string name="maintenance_regenerate_section">Återskapa</string>
+    <string name="library_locate_songs_tab_hidden">Visa fliken Låtar i biblioteket för att hitta den</string>
+</resources>

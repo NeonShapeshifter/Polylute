@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Saved in profile</string>
+    <string name="profile_audio_current_effect">Effect on current output</string>
+    <string name="profile_audio_not_selected">Not applied · profile not selected</string>
+    <string name="profile_audio_applied">Applied</string>
+    <string name="eq_output_pure_direct">Bypassed by Purity</string>
+    <string name="eq_output_usb_direct">Bypassed by USB Direct</string>
+    <string name="eq_output_maintenance">Bypassed by maintenance</string>
+    <string name="safety_max_saved_enabled">Safety Max enabled in profile</string>
+    <string name="safety_max_saved_summary">Saved preference. The current output determines whether the limit applies.</string>
+    <string name="safety_max_saved_unavailable">Saved in profile; not applied on this output.</string>
+    <string name="safety_max_saved_unavailable_usb">Saved in profile; not applied with this USB Direct output.</string>
+    <string name="safety_max_output_rescaled">Applied with an adapted limit · output range changed</string>
+    <string name="safety_max_output_override">Limit temporarily overridden</string>
+    <string name="safety_max_saved_limit">Saved limit for this output</string>
+    <string name="safety_max_calibration_unavailable">Calibration is unavailable on this output.</string>
+    <string name="profile_audio_saved_eq_summary">Saved: %1$s · %2$s</string>
+    <!-- B21: the profile row when the EQ is off. Said once: the mode and the effect used to both say "off". -->
+    <string name="profile_audio_saved_eq_off">Saved: Off</string>
+    <string name="profile_audio_route_note">The mode and curve remain saved. Purity bypasses EQ only while USB Direct is the current output.</string>
+</resources>

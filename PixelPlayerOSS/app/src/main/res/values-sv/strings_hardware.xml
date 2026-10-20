@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="maintenance_hardware_section">Maskinvara / enhet</string>
+    <string name="maintenance_hardware_loading">Läser enhetens tillstånd…</string>
+    <string name="maintenance_hardware_event_log">Logg över maskinvaruhändelser</string>
+    <string name="maintenance_hardware_events_none">Inga maskinvaruhändelser registrerade</string>
+    <string name="maintenance_hardware_events_dropped">%1$d äldre händelser har tagits bort (begränsad logg)</string>
+    <string name="maintenance_overrides_section">Överstyrningar för underhåll</string>
+    <string name="maintenance_overrides_feature_kills">Funktionsavstängningar – stödd konfiguration</string>
+    <string name="maintenance_overrides_diagnostic">Diagnostiska överstyrningar – tillfälliga verktyg</string>
+    <string name="maintenance_overrides_none">Inga överstyrningar aktiva</string>
+    <string name="maintenance_overrides_summary">%1$d aktiva · %2$d diagnostiska</string>
+    <string name="maintenance_overrides_clear_all">Rensa alla</string>
+    <string name="maintenance_overrides_persistence_note">Överstyrningar lagras separat från dina inställningar och skrivs aldrig in i dem. När en överstyrning tas bort återgår beteendet exakt till det som dina inställningar beskriver. De finns kvar efter en omstart tills de rensas.</string>
+    <string name="maintenance_override_lock_screen_label">Integration med DAP-låsskärmen</string>
+    <string name="maintenance_override_lock_screen_consequence">Hindrar appen från att äga väckningsytan och stämma av låsskärmens Lock Task-policy. Använd på en OEM-version vars låsskärm beter sig fel.</string>
+    <string name="maintenance_override_force_android_label">Tvinga Android-ljud</string>
+    <string name="maintenance_override_force_android_consequence">Dirigerar allt via Android-ljudvägen. Skiljer ett fel i Direct-vägen från ett uppspelningsfel.</string>
+    <string name="maintenance_override_disable_transition_label">Inaktivera Direct-övergången</string>
+    <string name="maintenance_override_disable_transition_consequence">Håller Direct nåbart men blockerar den automatiska växlingen dit. Skiljer ett övergångsfel från ett fel i ljudutgången.</string>
+    <string name="maintenance_override_disable_dsp_label">Inaktivera DSP-grafen</string>
+    <string name="maintenance_override_disable_dsp_consequence">Tar bort hörlurarnas DSP-graf från Android-vägen utan att ändra din equalizerprofil.</string>
+</resources>

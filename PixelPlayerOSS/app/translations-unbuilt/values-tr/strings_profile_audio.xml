@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Profile kaydedildi</string>
+    <string name="profile_audio_current_effect">Geçerli çıkıştaki etki</string>
+    <string name="profile_audio_not_selected">Uygulanmıyor · profil seçili değil</string>
+    <string name="profile_audio_applied">Uygulanıyor</string>
+    <string name="eq_output_pure_direct">Pure Direct nedeniyle atlandı</string>
+    <string name="eq_output_usb_direct">USB Direct nedeniyle atlandı</string>
+    <string name="eq_output_maintenance">Bakım nedeniyle atlandı</string>
+    <string name="eq_saved_curve_note">Seçilen mod ve eğri bu profile kaydedilir.</string>
+    <string name="safety_max_saved_enabled">Profilde Safety Max etkin</string>
+    <string name="safety_max_saved_summary">Kaydedilen tercih. Sınırın uygulanıp uygulanmayacağını geçerli çıkış belirler.</string>
+    <string name="safety_max_saved_unavailable">Profile kaydedildi; bu çıkışta uygulanmıyor.</string>
+    <string name="safety_max_saved_unavailable_usb">Profile kaydedildi; bu USB Direct çıkışında uygulanmıyor.</string>
+    <string name="safety_max_output_rescaled">Uyarlanmış sınırla uygulanıyor · çıkış aralığı değişti</string>
+    <string name="safety_max_output_override">Sınır geçici olarak aşılıyor</string>
+    <string name="safety_max_saved_limit">Bu çıkış için kaydedilen sınır</string>
+    <string name="safety_max_calibration_unavailable">Bu çıkışta kalibrasyon kullanılamıyor.</string>
+    <string name="profile_audio_saved_eq_summary">Kaydedilen: %1$s · %2$s</string>
+    <string name="profile_audio_route_note">Mod ve eğri korunur. Pure Direct, EQ\'yu yalnızca geçerli çıkış USB Direct olduğunda atlar.</string>
+</resources>

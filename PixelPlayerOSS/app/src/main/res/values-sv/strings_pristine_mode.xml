@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pristine_lock_name">Purity</string>
+    <string name="pristine_lock_change">Ändra</string>
+    <string name="pristine_lock_notice_eq">%1$s på · EQ tillämpas inte</string>
+    <string name="pristine_lock_notice_replaygain">%1$s på · ReplayGain tillämpas inte</string>
+    <string name="pristine_lock_notice_digital">%1$s på · digital volym tillämpas inte</string>
+    <string name="pristine_lock_notice_eq_pending">%1$s på · EQ tillämpas inte i USB Direct</string>
+    <string name="pristine_lock_notice_replaygain_pending">%1$s på · ReplayGain tillämpas inte i USB Direct</string>
+    <string name="pristine_lock_notice_digital_pending">%1$s på · digital volym tillämpas inte i USB Direct</string>
+    <string name="pristine_lock_notice_crossfade">%1$s på · inte tillgängligt: låtarna följer direkt på varandra, utan glapp</string>
+    <string name="pristine_lock_notice_speed">%1$s på · inte tillgängligt: uppspelningen hålls på 1,0×</string>
+    <string name="pristine_lock_notice_crossfade_pending">%1$s på · med en USB-DAC ansluten tillämpas inte övertoning</string>
+    <string name="pristine_lock_notice_speed_pending">%1$s på · med en USB-DAC ansluten tillämpas inte uppspelningshastigheten</string>
+    <string name="setcat_crossfade_android_route_note">Med en USB-DAC spelas det via Android-vägen</string>
+    <string name="setcat_speed_android_route_note">Annat än 1,0× spelas via Android-vägen</string>
+    <string name="pristine_status_off">Av</string>
+    <string name="pristine_status_active">På — orörd signal hela vägen till DAC:en.</string>
+    <string name="pristine_status_only_direct">På — bara i USB Direct</string>
+    <string name="pristine_status_not_pristine">På — men signalen bearbetas just nu</string>
+    <string name="pristine_status_with_reason">%1$s — %2$s.</string>
+    <string name="pristine_reason_starting">startar</string>
+    <string name="pristine_reason_no_dac">ingen USB-DAC ansluten</string>
+    <string name="pristine_reason_permission">USB-behörighet krävs</string>
+    <string name="pristine_reason_source">det här spåret kan inte spelas via USB Direct</string>
+    <string name="pristine_reason_deferred">väntar på rätt tillfälle att växla till USB Direct</string>
+    <string name="pristine_reason_failed">USB Direct misslyckades, spelar via Android</string>
+    <string name="pristine_reason_maintenance">en underhållsinställning håller uppspelningen på Android</string>
+    <string name="pristine_reason_crossfade">övertoning går via Android-vägen</string>
+    <string name="pristine_reason_speed">uppspelningshastigheten går via Android-vägen</string>
+    <string name="pristine_reason_effect">en Android-effekt (basförstärkning, virtualiserare, ljudstyrka) går via Android-vägen</string>
+    <string name="digital_reset_full">Återställ till 100 %</string>
+    <string name="pristine_rise_title">Nivån skulle öka</string>
+    <string name="pristine_rise_body">%1$s lämnar den digitala volymen på 100 %%. Nivån skulle öka med ungefär %2$s dB: %3$s. Sänk DAC:ens volym innan du fortsätter.</string>
+    <string name="pristine_rise_reason_outside_direct">utanför USB Direct kan dämpningen inte flyttas till DAC:en, så nivån höjs när Direct startar</string>
+    <string name="pristine_rise_reason_no_hardware">den här DAC:en har ingen volymkontroll som appen kan ställa in och verifiera</string>
+    <string name="pristine_rise_reason_range">DAC:ens volym kan inte sänkas mer</string>
+    <string name="pristine_rise_confirm">Slå på ändå</string>
+    <string name="pristine_rise_cancel">Avbryt</string>
+    <string name="pristine_status_waiting">I väntan — utan USB-DAC gäller allt. Med en DAC fryser det EQ, ReplayGain, digital volym, övertoning och hastighet.</string>
+    <string name="pristine_reason_resonance">Resonans: USB Direct med appens DSP</string>
+</resources>

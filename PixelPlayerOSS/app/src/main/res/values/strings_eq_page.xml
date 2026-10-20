@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B22: the equalizer (`Equalizer.dc.html`). -->
+    <!-- %1$s = the headphones, %2$s = the DAC they are used with. -->
+    <string name="eq_subtitle_with">%1$s · with %2$s</string>
+    <string name="eq_frozen_hint">You can edit the curve; it applies once %1$s is off.</string>
+    <string name="eq_route_resonance">Resonance</string>
+    <string name="eq_route_usb_android">USB Android</string>
+    <!-- %1$s = the output ("Speaker", "Bluetooth"). -->
+    <string name="eq_route_android">%1$s · Android</string>
+    <string name="eq_mode_saved_in">Mode · saved in %1$s</string>
+    <string name="eq_preset_row">Preset</string>
+    <string name="eq_save_preset">Save as preset</string>
+    <string name="eq_section_response">Response</string>
+    <string name="eq_section_bands">Bands · ±15 dB</string>
+    <string name="eq_saved_note">The mode and curve are saved in %1$s.</string>
+    <string name="eq_off_note">No equalizer. The signal passes unchanged.</string>
+    <string name="eq_response_description">Frequency response of the saved curve</string>
+    <!-- Units: the same in every language. -->
+    <string name="eq_axis_low" translatable="false">20 Hz</string>
+    <string name="eq_axis_zero" translatable="false">0 dB</string>
+    <string name="eq_axis_high" translatable="false">20 kHz</string>
+    <!-- What a screen reader says for a band: %1$s = "125 Hz", %2$s = "+1". -->
+    <string name="eq_band_accessible">%1$s, %2$s dB</string>
+</resources>

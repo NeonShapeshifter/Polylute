@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fase 13 — cadenas de integración con el hardware y el dispositivo.
+
+  Estas cadenas pertenecen al diagnóstico de hardware de Mantenimiento y a su panel de overrides.
+  Son deliberadamente explícitas sobre las consecuencias: un override que el usuario no puede
+  razonar es una trampa, y una fila de diagnóstico que no dice si conoce la respuesta es peor que
+  no tener fila.
+-->
+<resources>
+    <string name="maintenance_hardware_section">Hardware / dispositivo</string>
+    <string name="maintenance_hardware_loading">Leyendo el estado del dispositivo…</string>
+    <string name="maintenance_hardware_event_log">Registro de eventos de hardware</string>
+    <string name="maintenance_hardware_events_none">No hay eventos de hardware registrados</string>
+    <string name="maintenance_hardware_events_dropped">Se descartaron %1$d eventos antiguos (registro acotado)</string>
+
+    <string name="maintenance_overrides_section">Overrides de mantenimiento</string>
+    <string name="maintenance_overrides_feature_kills">Anulaciones de funciones — configuración admitida</string>
+    <string name="maintenance_overrides_diagnostic">Overrides de diagnóstico — instrumentos temporales</string>
+    <string name="maintenance_overrides_none">No hay overrides activos</string>
+    <string name="maintenance_overrides_summary">%1$d activos · %2$d de diagnóstico</string>
+    <string name="maintenance_overrides_clear_all">Borrar todos</string>
+    <string name="maintenance_overrides_persistence_note">Los overrides se guardan aparte de tus ajustes y nunca se escriben en ellos. Quitar un override restaura exactamente el comportamiento que tus ajustes ya describen. Se mantienen entre reinicios hasta que los borres.</string>
+
+    <string name="maintenance_override_lock_screen_label">Integración con la pantalla de bloqueo DAP</string>
+    <string name="maintenance_override_lock_screen_consequence">Impide que la app sea dueña de la superficie de activación y reconcilie la política de bloqueo de tarea del keyguard. Úsalo en una compilación OEM cuya pantalla de bloqueo se comporte mal.</string>
+    <string name="maintenance_override_force_android_label">Forzar audio de Android</string>
+    <string name="maintenance_override_force_android_consequence">Enruta todo por la ruta de audio de Android. Aísla un fallo de la ruta Direct de un fallo de reproducción.</string>
+    <string name="maintenance_override_disable_transition_label">Desactivar la transición a Direct</string>
+    <string name="maintenance_override_disable_transition_consequence">Mantiene Direct accesible pero bloquea el cambio automático a esa ruta. Separa un fallo de transición de un fallo del sumidero.</string>
+    <string name="maintenance_override_disable_dsp_label">Desactivar el grafo DSP</string>
+    <string name="maintenance_override_disable_dsp_consequence">Quita el grafo DSP de auriculares de la ruta de Android sin editar tu perfil de ecualizador.</string>
+</resources>

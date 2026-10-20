@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_cd_back">Назад</string>
+    <string name="auth_web_retry">Повторить</string>
+    <string name="toast_welcome_user">Добро пожаловать, %1$s!</string>
+</resources>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_audio_saved_configuration">Сохранено в профиле</string>
+    <string name="profile_audio_current_effect">Действие на текущем выходе</string>
+    <string name="profile_audio_not_selected">Не применяется · профиль не выбран</string>
+    <string name="profile_audio_applied">Применяется</string>
+    <string name="eq_output_pure_direct">Пропущено из-за Pure Direct</string>
+    <string name="eq_output_usb_direct">Пропущено из-за USB Direct</string>
+    <string name="eq_output_maintenance">Пропущено при обслуживании</string>
+    <string name="eq_saved_curve_note">Выбранный режим и кривая сохраняются в этом профиле.</string>
+    <string name="safety_max_saved_enabled">Safety Max включён в профиле</string>
+    <string name="safety_max_saved_summary">Сохранённая настройка. Текущий выход определяет, применяется ли ограничение.</string>
+    <string name="safety_max_saved_unavailable">Сохранено в профиле; не применяется на этом выходе.</string>
+    <string name="safety_max_saved_unavailable_usb">Сохранено в профиле; не применяется на этом выходе USB Direct.</string>
+    <string name="safety_max_output_rescaled">Применяется с адаптированным пределом · диапазон выхода изменился</string>
+    <string name="safety_max_output_override">Ограничение временно снято</string>
+    <string name="safety_max_saved_limit">Сохранённый предел для этого выхода</string>
+    <string name="safety_max_calibration_unavailable">Калибровка недоступна на этом выходе.</string>
+    <string name="profile_audio_saved_eq_summary">Сохранено: %1$s · %2$s</string>
+    <string name="profile_audio_route_note">Режим и кривая сохраняются. Pure Direct пропускает EQ только когда текущий выход — USB Direct.</string>
+</resources>

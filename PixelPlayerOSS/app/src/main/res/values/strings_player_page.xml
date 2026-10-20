@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B22: the player (`Player.dc.html`, `LyricsMenu.dc.html`, `Queue.dc.html`). -->
+    <!-- The header is icons only: these are their names. -->
+    <string name="player_header_collapse">Close player</string>
+    <string name="player_header_lyrics">Lyrics</string>
+    <string name="player_header_details">Track details</string>
+    <string name="player_add_bookmark">Add bookmark</string>
+    <!-- The lyrics bar and its options sheet. -->
+    <string name="lyrics_options">Lyrics options</string>
+    <string name="lyrics_menu_title">Lyrics</string>
+    <string name="lyrics_menu_section_song">This song</string>
+    <string name="lyrics_menu_section_reading">Reading</string>
+    <string name="lyrics_menu_section_file">File</string>
+    <string name="lyrics_menu_sync">Sync</string>
+    <string name="lyrics_menu_sync_sub">Move the lines earlier or later</string>
+    <string name="lyrics_menu_sync_earlier">Delay 0.1 s</string>
+    <string name="lyrics_menu_sync_later">Advance 0.1 s</string>
+    <string name="lyrics_menu_alignment">Alignment</string>
+    <string name="lyrics_menu_align_left">Left</string>
+    <string name="lyrics_menu_align_center">Center</string>
+    <string name="lyrics_menu_translation">Translation</string>
+    <string name="lyrics_menu_romanization">Romanization</string>
+    <string name="lyrics_menu_keep_screen_on">Keep the screen on</string>
+    <string name="lyrics_menu_search">Search lyrics</string>
+    <string name="lyrics_menu_import">Import .lrc</string>
+    <string name="lyrics_menu_save">Save to file</string>
+    <!-- The queue sheet. -->
+    <string name="queue_title_next">Up next</string>
+    <!-- B32-Q4: the peek of the queue at the foot of the full player -->
+    <string name="player_queue_peek_open">Open the queue</string>
+</resources>
