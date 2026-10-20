@@ -8,6 +8,9 @@ android {
 
     defaultConfig {
         minSdk = 29
+        // The JNI code calls FlacDecoderJni.read and the FlacStreamMetadata / PictureFrame constructors by name: an app that minifies must
+        // keep them, so the rules travel with the library (without this a release build crashed on the first FLAC, 1.0.0 on the S22).
+        consumerProguardFiles("proguard-rules.txt")
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DWITH_OGG=OFF", "-DINSTALL_MANPAGES=OFF")

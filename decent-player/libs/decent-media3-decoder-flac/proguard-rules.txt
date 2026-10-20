@@ -1,2 +1,6 @@
 # Keep FLAC JNI classes (loaded via reflection by ExoPlayer's DefaultRenderersFactory)
 -keep class androidx.media3.decoder.flac.** { *; }
+
+# flac_jni.cc creates these by name (FindClass + GetMethodID "<init>"); keep them as AndroidX Media's own FLAC module does.
+-keep class androidx.media3.extractor.FlacStreamMetadata { *; }
+-keep class androidx.media3.extractor.metadata.flac.PictureFrame { *; }
