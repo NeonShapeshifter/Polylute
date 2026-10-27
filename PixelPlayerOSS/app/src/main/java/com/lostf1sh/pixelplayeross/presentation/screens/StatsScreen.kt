@@ -246,10 +246,12 @@ private fun LazyListScope.topFace(
 ) {
     item(key = "sort") { SortRow(ui.rankMode, onMode) }
     // The months the history spans: from its first one to the end of the current year, so a whole year can be asked for and shown as it goes.
-    val now = YearMonth.now(look.zone)
-    val first = ui.top.report?.historyStartMs?.let { YearMonth.from(java.time.Instant.ofEpochMilli(it).atZone(look.zone)) }
-        ?: ui.current?.historyStartMs?.let { YearMonth.from(java.time.Instant.ofEpochMilli(it).atZone(look.zone)) }
-        ?: ui.top.from.coerceAtMost(now)
+    // B42-fix1: "now" is the month the view model has on the device's clock, which it moves with the clock (midnight, a zone or date change),
+    // not a read in composition that nothing would ask to run again.
+    val now = ui.month
+    val historyStart = (ui.top.report?.historyStartMs ?: ui.current?.historyStartMs)
+        ?.let { YearMonth.from(java.time.Instant.ofEpochMilli(it).atZone(look.zone)) }
+    val first = historyStart ?: ui.top.from.coerceAtMost(now)
     statsTop(
         state = ui.top,
         list = ui.topList,
@@ -257,6 +259,8 @@ private fun LazyListScope.topFace(
         firstMonth = first.coerceAtMost(ui.top.from),
         lastMonth = YearMonth.of(now.year, 12),
         actions = actions,
+        thisMonth = now,
+        historyStart = historyStart,
     )
 }
 

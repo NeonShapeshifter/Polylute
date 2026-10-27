@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B40-F7: Detailed logging (Maintenance): a half hour of what the app does, on this phone, shared on purpose. -->
+    <string name="detailed_logging_title">Registro detallado</string>
+    <string name="detailed_logging_switch">Registrar lo que hace la app</string>
+    <string name="detailed_logging_off_summary">Durante 30 minutos; luego se detiene sola. Se queda en este teléfono.</string>
+    <string name="detailed_logging_on_summary">Activado, quedan %1$d min</string>
+    <string name="detailed_logging_titles_switch">Incluir títulos de canciones y rutas de archivos</string>
+    <string name="detailed_logging_titles_summary">Desactivado por defecto. El registro nombrará entonces canciones y carpetas: compártelo solo con alguien de confianza.</string>
+    <string name="detailed_logging_contents">Se escribe: las líneas de la propia app sobre el DAC y su EQ, la ruta y el formato del audio, el límite de volumen, el modo Dedicado y la pantalla de bloqueo, el temporizador de apagado y los contadores del análisis de la biblioteca; eventos de USB, de ruta y de energía; los resúmenes por segundo de la salida cada 10 segundos y el estado de la transmisión cada minuto; el modelo del teléfono y las versiones de Android y de la app. No se escribe: títulos, artistas, álbumes, listas, nombres ni rutas de archivos, direcciones web, correos ni nombres de cuenta, números de serie ni nombres de dispositivos Bluetooth. No se envía nada: el registro solo sale del teléfono si lo compartes.</string>
+    <string name="detailed_logging_share">Compartir registro</string>
+    <string name="detailed_logging_share_size">%1$s en este teléfono</string>
+    <string name="detailed_logging_empty">Aún no hay nada registrado</string>
+    <string name="detailed_logging_delete">Borrar registro</string>
+    <string name="detailed_logging_deleted">Registro borrado</string>
+    <string name="detailed_logging_share_chooser">Compartir el registro</string>
+    <string name="detailed_logging_share_failed">No se pudo compartir el registro</string>
+    <!-- B40-fix1 item 6: the log on the phone holds song titles and file paths (lines written while that switch was on) -->
+    <string name="detailed_logging_share_size_with_titles">%1$s en este teléfono. Incluye títulos de canciones y rutas de archivos.</string>
+</resources>

@@ -57,6 +57,8 @@ data class EqualizerScreenState(
     val dacName: String? = null,
     /** Where the sound goes when no USB DAC carries it: the route's name on the status row. */
     val outputKind: DapAudioRouteKind = DapAudioRouteKind.ANDROID_AUDIO,
+    /** B40-F2: the attached DAC has an EQ Polylute can edit and the listener has not allowed it yet: the screen offers it. */
+    val dacOffer: com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqOffer? = null,
 ) {
     companion object {
         fun from(
@@ -91,6 +93,9 @@ interface EqualizerScreenActions {
     fun onResetBandsToFlat()
     /** Leads to the Pure Direct switch, which lives on the Audio page. */
     fun onOpenPurityLock()
+
+    /** B40-F2: the listener took the DAC's offer ("use the DAC's own EQ"): the dialog that asks for their permission. */
+    fun onUseDacEq() {}
 }
 
 // ── Headphone profile ────────────────────────────────────────────────────────────────────────────────

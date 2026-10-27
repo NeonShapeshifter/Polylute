@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="device_capabilities_advanced_diagnostics_description">Desactivado por defecto. Registra una breve línea de tiempo de retrasos para depuración beta.</string>
-    <string name="device_capabilities_advanced_diagnostics_expires">Activo hasta %1$s</string>
-    <string name="device_capabilities_advanced_diagnostics_mark_lag">Marcar lag ahora</string>
-    <string name="device_capabilities_advanced_diagnostics_marked">Momento de lag marcado</string>
-    <string name="device_capabilities_advanced_diagnostics_title">Diagnóstico avanzado de rendimiento</string>
     <string name="device_capabilities_buffer_frames">%1$d fotogramas por búfer</string>
     <string name="device_capabilities_finding_clear_body">Tus pistas indexadas coinciden con los decodificadores que Android reporta en este dispositivo.</string>
     <string name="device_capabilities_finding_clear_title">Sin incompatibilidades importantes</string>
@@ -44,14 +39,6 @@
     <string name="device_capabilities_playback_path_title">Ruta de reproducción</string>
     <string name="device_capabilities_ready_title">Listo para la reproducción</string>
     <string name="device_capabilities_renderers_count">%1$s renderizadores</string>
-    <string name="device_capabilities_report_copied">Informe copiado al portapapeles</string>
-    <string name="device_capabilities_report_copy">Copiar</string>
-    <string name="device_capabilities_report_description">Genera un informe de diagnóstico para compartir que nos ayude a clasificar los retrasos en la reproducción o el escaneo. Contiene solo datos del dispositivo, de la biblioteca y de tiempos, sin rutas de archivos, títulos ni artistas.</string>
-    <string name="device_capabilities_report_generate">Generar informe</string>
-    <string name="device_capabilities_report_regenerate">Regenerar</string>
-    <string name="device_capabilities_report_share">Compartir</string>
-    <string name="device_capabilities_report_share_title">Informe de rendimiento de Polylute</string>
-    <string name="device_capabilities_report_title">Informe de rendimiento</string>
     <string name="device_capabilities_review_title">La reproducción necesita revisión</string>
     <string name="device_capabilities_storage_available">Disponible</string>
     <string name="device_capabilities_storage_device_used">Dispositivo utilizado</string>
@@ -161,7 +148,6 @@
     <string name="presentation_batch_g_file_explorer_cd_refresh">Actualizar</string>
     <string name="presentation_batch_g_file_explorer_done">Hecho</string>
     <string name="presentation_batch_g_file_explorer_empty_folders">No hay subcarpetas aquí</string>
-    <string name="presentation_batch_g_file_explorer_hint">Everything is allowed by default. Tap a folder to mark it as excluded from scans.</string>
     <string name="presentation_batch_g_list_cd_album_art_for">Carátula del álbum para %1$s</string>
     <string name="presentation_batch_g_list_cd_more_for_title">Más opciones para %1$s</string>
     <string name="presentation_batch_g_list_cd_playing">Reproduciendo</string>

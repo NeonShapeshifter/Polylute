@@ -27,6 +27,10 @@
     <string name="home_mode_open_security">Open security settings</string>
     <string name="home_mode_dedicated_body">Dedicated locks Polylute with Android’s Lock Task and manages the lock screen. It needs Device Owner.</string>
     <string name="home_mode_guide_title">Make Polylute the device owner</string>
+    <string name="home_mode_guide_who">Dedicated is for a phone that will only be a player, ideally a spare one. On a phone you use every day, App mode or Pinned is the better fit.</string>
+    <string name="home_mode_guide_why_clear">Why the accounts go: Android only names a device owner on a phone that looks unused. It is a security rule and matters only at the moment of the command; add your accounts back right after.</string>
+    <string name="home_mode_guide_extra_users">Samsung’s Secure Folder and work profiles count as extra users. Removing them deletes their data.</string>
+    <string name="home_mode_guide_leave">You can leave Dedicated whenever you want from this page (Stop being the device owner). No reset needed.</string>
     <string name="home_mode_guide_requirements">Requirements: no accounts or extra users on the device when you do it (a new or factory-reset phone, or remove every account first), USB debugging on, and a computer with adb.</string>
     <string name="home_mode_guide_command_label">Run this on the computer:</string>
     <string name="home_mode_guide_copy">Copy command</string>

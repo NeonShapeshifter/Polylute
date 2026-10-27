@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B39-A6 -->
+    <string name="eq_polylute_title">Polylute EQ</string>
+    <string name="eq_polylute_where">Tillämpas i telefonen · fungerar med alla DAC:ar</string>
+    <string name="eq_dac_eq_note_on">%1$s har också en egen EQ, och den är på. Det är en separat equalizer som tillämpas inuti DAC:en.</string>
+    <string name="eq_dac_eq_note_off">%1$s har också en egen EQ, och den är av. Det är en separat equalizer inuti DAC:en.</string>
+    <string name="eq_dac_eq_note_flat">%1$s har också en egen EQ, på men plan: alla band på 0 dB. Det är en separat equalizer inuti DAC:en.</string>
+    <string name="eq_dac_eq_note_unknown">%1$s har också en egen EQ, som inte gick att läsa. Det är en separat equalizer inuti DAC:en.</string>
+    <string name="dac_eq_title">DAC-EQ</string>
+    <string name="dac_eq_where">%1$s · tillämpas inuti DAC:en</string>
+    <string name="dac_eq_not_polylute">Det här är DAC:ens egen equalizer, som tillämpas inuti DAC:en. Polylute EQ är en annan, som tillämpas i telefonen.</string>
+    <string name="audio_dac_eq_title">DAC-EQ</string>
+    <string name="audio_dac_eq_sub">%1$s · tillämpas inuti DAC:en · Polylute läser den bara för tillfället</string>
+    <string name="audio_dac_eq_on">På · formar ljudet</string>
+    <string name="audio_dac_eq_closed">Av i %1$s (ingen EQ)</string>
+    <string name="audio_dac_eq_flat">På, plan: alla band på 0 dB</string>
+    <string name="audio_dac_eq_use">Använd DAC:ens EQ</string>
+    <string name="audio_dac_eq_sub_writable">%1$s · tillämpas inuti DAC:en</string>
+    <string name="audio_dac_eq_unknown">Gick inte att läsa</string>
+    <string name="eq_the_dac">DAC:en</string>
+</resources>

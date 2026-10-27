@@ -12,6 +12,7 @@ import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqBackupStore
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabelSource
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqPreGainSenseSwitch
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqService
+import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqWriteConsent
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqWriteSwitch
 import com.lostf1sh.pixelplayeross.data.dac.fiio.UsbFiioHidOpener
 import com.lostf1sh.pixelplayeross.data.service.player.DualPlayerEngine
@@ -80,6 +81,7 @@ object DacEqModule {
         controller = controller,
         backups = DacEqBackupStore(File(context.filesDir, "dac-eq-backups")),
         writeSwitch = DacEqWriteSwitch.shared(context),
+        consent = DacEqWriteConsent.shared(context),
         elapsedMs = SystemClock::elapsedRealtime,
         wallClockMs = System::currentTimeMillis,
         log = { line -> Timber.tag("DAC_HID").i(line) },

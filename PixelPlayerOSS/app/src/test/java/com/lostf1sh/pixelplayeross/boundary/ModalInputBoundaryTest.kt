@@ -161,11 +161,13 @@ class ModalInputBoundaryTest {
         // is, and compared against a fixed set so that a call to one of the app's *own* composables
         // — several of which end in "Dialog" and open their window further down — is not counted
         // as a second site.
-        val windowNames = setOf("ModalBottomSheet(", "Dialog(", "AlertDialog(", "BasicAlertDialog(")
+        // B42: the app's bottom sheet is `GlassModalBottomSheet`, and its one call to Material's `ModalBottomSheet` is not a window of its
+        // own: the sheets that call it are the windows, and each of them mounts the bridge (the wrapper is left out of the count, as the bridge is)
+        val windowNames = setOf("GlassModalBottomSheet(", "Dialog(", "AlertDialog(", "BasicAlertDialog(")
         var sites = 0
         var mounts = 0
         root.resolve("src/main/java").walkTopDown()
-            .filter { it.extension == "kt" && it.name != "ModalInputBridge.kt" }
+            .filter { it.extension == "kt" && it.name != "ModalInputBridge.kt" && it.name != "GlassModalBottomSheet.kt" }
             .forEach { file ->
                 file.readLines().forEach { line ->
                     val trimmed = line.trim()

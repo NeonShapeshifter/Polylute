@@ -3,13 +3,6 @@ package com.lostf1sh.pixelplayeross.di
 import javax.inject.Qualifier
 
 /**
- * Qualifier for Deezer Retrofit instance.
- */
-@Qualifier
-@Retention(AnnotationRetention.BINARY)
-annotation class DeezerRetrofit
-
-/**
  * Qualifier for Fast OkHttpClient (Short timeouts).
  */
 @Qualifier

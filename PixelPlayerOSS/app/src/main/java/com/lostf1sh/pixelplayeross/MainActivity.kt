@@ -7,7 +7,6 @@ import com.lostf1sh.pixelplayeross.ui.ds.dismissKeyboard
 import com.lostf1sh.pixelplayeross.ui.ds.dapKeyboardDismissHost
 import com.lostf1sh.pixelplayeross.ui.ds.LocalDapKeyboardRegistry
 import com.lostf1sh.pixelplayeross.ui.ds.DapKeyboardRegistry
-import com.lostf1sh.pixelplayeross.ui.theme.resolveBaseTheme
 import com.lostf1sh.pixelplayeross.presentation.components.ModalInputBridge
 import com.lostf1sh.pixelplayeross.presentation.navigation.navigateSafely
 
@@ -138,6 +137,7 @@ import com.lostf1sh.pixelplayeross.data.volume.SafetyVolumeController
 import com.lostf1sh.pixelplayeross.data.volume.ScreenOffOverridePolicy
 import com.lostf1sh.pixelplayeross.dap.admin.DapDeviceOwnerController
 import com.lostf1sh.pixelplayeross.dap.admin.DapContainmentPolicy
+import com.lostf1sh.pixelplayeross.dap.admin.DapActivityInstancePolicy
 import com.lostf1sh.pixelplayeross.dap.admin.DapHomeChangeTracker
 import com.lostf1sh.pixelplayeross.dap.admin.DapHomePickerSession
 import com.lostf1sh.pixelplayeross.dap.admin.HomeExitSettlement
@@ -147,6 +147,7 @@ import com.lostf1sh.pixelplayeross.dap.admin.DapMaintenanceExitCoordinator
 import com.lostf1sh.pixelplayeross.dap.admin.DapMaintenanceSession
 import com.lostf1sh.pixelplayeross.dap.admin.DapReturnOutcome
 import com.lostf1sh.pixelplayeross.dap.admin.DapReturnToDapCoordinator
+import com.lostf1sh.pixelplayeross.dap.admin.DapSystemDialogLift
 import com.lostf1sh.pixelplayeross.dap.admin.DapSystemSurfaceCoordinator
 import com.lostf1sh.pixelplayeross.dap.admin.SystemSurfaceHost
 import com.lostf1sh.pixelplayeross.dap.admin.SystemSurfaceOutcome
@@ -187,6 +188,8 @@ import com.lostf1sh.pixelplayeross.presentation.navigation.LocalBackNavigationMo
 import com.lostf1sh.pixelplayeross.presentation.navigation.LocalDapBackNavigation
 import com.lostf1sh.pixelplayeross.presentation.navigation.BackEdge
 import com.lostf1sh.pixelplayeross.presentation.navigation.dapEdgeBackGesture
+import com.lostf1sh.pixelplayeross.data.preferences.AppColorSource
+import com.lostf1sh.pixelplayeross.ui.ds.AlbumArtColors
 import com.lostf1sh.pixelplayeross.ui.ds.DapAccent
 import com.lostf1sh.pixelplayeross.ui.ds.DapBaseTheme
 import com.lostf1sh.pixelplayeross.ui.ds.DapBottomNav
@@ -217,6 +220,7 @@ import com.lostf1sh.pixelplayeross.data.service.player.UsbPermissionCoordinator
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -231,6 +235,11 @@ import com.lostf1sh.pixelplayeross.presentation.utils.LocalAppHapticsConfig
 import com.lostf1sh.pixelplayeross.presentation.utils.NoOpHapticFeedback
 import com.lostf1sh.pixelplayeross.utils.CrashLogData
 import javax.annotation.concurrent.Immutable
+import kotlinx.coroutines.flow.debounce
+import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_COVER_GLASS_MOVING
+import com.lostf1sh.pixelplayeross.ui.glass.CoverGlassHost
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
+import com.lostf1sh.pixelplayeross.ui.theme.rememberAppPainting
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
@@ -268,6 +277,11 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
     lateinit var dacProfileRepository: DacProfileRepository
     @Inject
     lateinit var safetyVolumeController: SafetyVolumeController
+    /** B41: the glass of each cover (built once per cover and theme, off the main thread). */
+    @Inject
+    lateinit var coverGlassFields: com.lostf1sh.pixelplayeross.ui.glass.CoverGlassFields
+    @Inject
+    lateinit var fixedOutputNoticeCoordinator: com.lostf1sh.pixelplayeross.data.volume.FixedOutputNoticeCoordinator
     private val _pendingPlaylistNavigation = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     private val _pendingShuffleAll = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val homeRootBackGuard = object : OnBackPressedCallback(false) {
@@ -314,7 +328,16 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
      * policy) is read again instead of staying as it was when the activity was created.
      */
     private val ownerEpoch = androidx.compose.runtime.mutableIntStateOf(0)
-    private val homeChangeTracker = DapHomeChangeTracker()
+
+    /**
+     * B42-fix1: the DAP lock screen's two signals, owned by the activity because the keep-screen-on flag (applied outside composition) reads
+     * them: [lockCover] is the wake cycle's (the screen going off arms it, the cycle ending releases it), [lockSurfaceShowing] is the surface
+     * being on screen. Either one means the lock screen, not the player, is what the listener sees.
+     */
+    private val lockCover = CoverSignal()
+    private val lockSurfaceShowing = kotlinx.coroutines.flow.MutableStateFlow(false)
+    // B40-F9b: the process's tracker, not one per instance (MainActivity can have two; see DapActivityInstancePolicy)
+    private val homeChangeTracker get() = DapHomeChangeTracker.process
 
     private val requestAllFilesAccessLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { _ ->
     }
@@ -322,7 +345,38 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
     private companion object {
         const val LANGUAGE_TAG = "AppLanguage"
         const val SYSTEM_BARS_TAG = "SystemBars"
+
+        /** B40-F9b: the live instances of this activity in the process, main thread only; each leaves it in `onDestroy`. */
+        val liveInstances = java.util.concurrent.CopyOnWriteArrayList<MainActivity>()
     }
+
+    // B40-F9b: what this instance is, for DapActivityInstancePolicy
+    private var startedAsHome = false
+    private var resumedNow = false
+
+    private fun instanceView() = DapActivityInstancePolicy.Instance(System.identityHashCode(this), startedAsHome, resumedNow)
+
+    /**
+     * B40-F9b: one MainActivity for the role Polylute has. Android starts a second one when the listener taps the icon while another
+     * launcher is home (the home task's instance is of a type no other launch reuses); the leftover goes, unless it is the one in front.
+     */
+    private fun settleInstances(reason: String) {
+        val polyluteIsHome = runCatching { dapDeviceOwnerController.currentState().isPixelPlayerHome }.getOrDefault(false)
+        val leaving = DapActivityInstancePolicy.toFinish(liveInstances.map { it.instanceView() }, polyluteIsHome).map { it.key }.toSet()
+        if (leaving.isEmpty()) return
+        for (stale in liveInstances.filter { System.identityHashCode(it) in leaving }) {
+            Timber.tag("DapContainment").i(
+                "Second MainActivity (%s): finishing the instance #%d started as %s; Polylute home=%s",
+                reason, stale.creationNumber, if (stale.startedAsHome) "HOME" else "the icon", polyluteIsHome,
+            )
+            liveInstances.remove(stale)
+            stale.finishAndRemoveTask()
+        }
+    }
+
+    /** B40-F9b: something is deliberately holding the Dedicated policy off for a moment; an unfinished-looking device is not one to repair now. */
+    private fun ownerPolicyIsHeldOff(): Boolean =
+        DapMaintenanceSession.isActive || DapTemporarySystemFlowSession.isActive || usbDialogFlow != null || systemSurfaceOpening
 
     @CallSuper
     override fun attachBaseContext(newBase: Context) {
@@ -392,6 +446,9 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
             window.isNavigationBarContrastEnforced = false
         }
         super.onCreate(savedInstanceState)
+        startedAsHome = intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)
+        liveInstances.add(this)
+        settleInstances("onCreate")
         Timber.tag(SYSTEM_BARS_TAG).i(
             SystemBarsDiagnostic.describe(
                 "onCreate",
@@ -413,7 +470,9 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
 
         splashScreen.setKeepOnScreenCondition { false }
 
-        val isBenchmarkMode = intent.getBooleanExtra("is_benchmark", false)
+        val isBenchmarkMode = BenchmarkLaunchPolicy.isBenchmarkLaunch(
+            BuildConfig.BUILD_TYPE, intent.getBooleanExtra("is_benchmark", false),
+        )
         // Only the benchmark build honours this; any app can send these extras to an exported activity.
         val shouldBenchmarkRebuildDatabase = BenchmarkLaunchPolicy.shouldRebuildDatabase(
             BuildConfig.BUILD_TYPE,
@@ -442,10 +501,27 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                 .collectAsStateWithLifecycle(initialValue = DapAccent.DEFAULT)
             val dapBaseTheme by themePreferencesRepository.baseThemeFlow
                 .collectAsStateWithLifecycle(initialValue = DapBaseTheme.DEFAULT)
-            // One theme answer: the base theme that is drawn decides light or dark too, so the
-            // palette and the artwork-derived header schemes can no longer disagree.
-            val drawnBaseTheme = resolveBaseTheme(appThemeMode, dapBaseTheme, systemDarkTheme)
-            val useDarkTheme = !drawnBaseTheme.palette.isLight
+            // B40-F1 / B41 / B42-fix3: "App colours". With "Theme and accent" the colours are the listener's; with "From album art" or "Cover
+            // glass" the cover of the song that is playing decides the accent and the whole backdrop (a gradient of its two colours, or the
+            // blurred cover itself), on Graphite with light ink. How the app is painted for a song is decided in one place, `rememberAppPainting`
+            // (it is also what the tests that count what a song change costs run): the palette is the same for every song and only the accent
+            // follows it, so a song change reaches the composables that wear the accent and nothing else.
+            val appColorSource by themePreferencesRepository.appColorSourceFlow
+                .collectAsStateWithLifecycle(initialValue = AppColorSource.THEME)
+            val appPainting = rememberAppPainting(
+                appColorSource = appColorSource,
+                appThemeMode = appThemeMode,
+                storedBaseTheme = dapBaseTheme,
+                accent = dapAccent,
+                systemDark = systemDarkTheme,
+                albumArtColorScheme = playerViewModel.currentAlbumArtColorSchemePair,
+                themedCoverUri = playerViewModel.currentThemedAlbumArtUri,
+                fields = coverGlassFields,
+            )
+            val glassScene = appPainting.scene
+            val painted = appPainting.painted
+            val glassShown = painted.glassShown
+            val themedLook = painted.look
             val isSetupComplete by mainViewModel.isSetupComplete.collectAsStateWithLifecycle()
             
             var showCrashReportDialog by remember { mutableStateOf(false) }
@@ -489,13 +565,18 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
             }
 
             PixelPlayerTheme(
-                darkTheme = useDarkTheme,
+                darkTheme = painted.useDark,
                 accent = dapAccent,
-                baseTheme = drawnBaseTheme
+                baseTheme = painted.baseTheme,
+                palette = themedLook?.palette ?: painted.baseTheme.palette,
+                accentColorOverride = themedLook?.accent,
             ) {
                 // B16-G3: whatever the window shows where the content does not reach is the app's colour, never the default.
-                PixelPlayerWindowBackground()
+                // B41: the theme's own opaque background, not the page's see-through one the glass leaves the Material scheme with.
+                PixelPlayerWindowBackground(color = Dap.background)
                 val safetyVolumeState by safetyVolumeController.state.collectAsStateWithLifecycle()
+                val fixedOutputNotice by fixedOutputNoticeCoordinator.pending.collectAsStateWithLifecycle()
+                val folderProposal by mainViewModel.folderProposal.collectAsStateWithLifecycle()
                 // One reader for the Back mode: the shell resolves the preference once and publishes
                 // it, so the gesture and every Back affordance cannot disagree about which mode is
                 // in force.
@@ -515,6 +596,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                     LocalDapBackNavigation provides backAuthority,
                     LocalBackNavigationMode provides backNavigationMode,
                     LocalDapKeyboardRegistry provides keyboardRegistry,
+                    LocalCoverGlass provides glassScene.takeIf { glassShown },
                 ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -551,7 +633,21 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         var lockRevealing by remember { mutableStateOf(false) }
                         // B25-S4: the wake cycle says it has the app covered from `SCREEN_OFF`, before the surface is on
                         // screen: the app is held (lifecycle) and unplaced from then, so the wake's first frame is not the app's.
-                        val lockCover = remember { CoverSignal() }
+                        // (B42-fix1: the signal is the activity's, `lockCover`, because the keep-screen-on flag reads it too.)
+                        // B41: the glass, once, behind the app. It moves only in the full player and on the lock screen (and only while a
+                        // song plays); under a lock screen that covers it it is not drawn at all, the lock screen draws its own.
+                        if (glassShown) {
+                            val glassMoving by themePreferencesRepository.coverGlassMovingFlow
+                                .collectAsStateWithLifecycle(initialValue = DEFAULT_COVER_GLASS_MOVING)
+                            CoverGlassHost(
+                                scene = glassScene,
+                                playing = remember { playerViewModel.stablePlayerState.map { it.isPlaying }.distinctUntilChanged() },
+                                playerExpansion = { playerViewModel.playerContentExpansionFraction.value },
+                                movingBackgroundOn = glassMoving,
+                                lockSurfaceVisible = lockSurfaceVisible,
+                                lockCovers = lockSurfaceVisible && !lockRevealing,
+                            )
+                        }
                         FreezeWhileCovered(
                             frozen = lockSurfaceVisible,
                             hidden = (lockSurfaceVisible || lockCover.covered) && !lockRevealing,
@@ -563,7 +659,18 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                     else Modifier
                                 ),
                         ) {
-                            MainAppContent(playerViewModel, mainViewModel)
+                            androidx.compose.runtime.CompositionLocalProvider(
+                                com.lostf1sh.pixelplayeross.presentation.screens.LocalFindFolders provides mainViewModel::findFolders,
+                            ) {
+                                // B42-fix1: what inside the app holds the screen on (the lyrics toggle) must not while the lock screen is what
+                                // the listener sees.
+                                androidx.compose.runtime.CompositionLocalProvider(
+                                    com.lostf1sh.pixelplayeross.presentation.lockscreen.LocalLockSurfaceShowing provides
+                                        (lockSurfaceVisible || lockCover.covered),
+                                ) {
+                                    MainAppContent(playerViewModel, mainViewModel)
+                                }
+                            }
                         }
                         // The DAP lock surface. Drawn inside this composition like every other
                         // screen — no WindowManager overlay, no separate window.
@@ -592,6 +699,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                             dedicated = lockSurfaceAllowed,
                             onSurfaceVisibleChange = { visible ->
                                 lockSurfaceVisible = visible
+                                lockSurfaceShowing.value = visible
                                 if (!visible) lockRevealing = false
                             },
                             onRevealingChange = { lockRevealing = it },
@@ -623,6 +731,36 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                 crashLogData = null
                                 showCrashReportDialog = false
                             }
+                        )
+                    }
+                    // B39-A9: a first run that found music: the folders, already checked, one tap from done.
+                    val folderNoticeContext = androidx.compose.ui.platform.LocalContext.current
+                    LaunchedEffect(mainViewModel) {
+                        mainViewModel.folderSearchNotices.collect { notice ->
+                            val text = when (notice) {
+                                com.lostf1sh.pixelplayeross.presentation.viewmodel.FolderSearchNotice.SEARCHING -> R.string.library_find_folders_searching
+                                com.lostf1sh.pixelplayeross.presentation.viewmodel.FolderSearchNotice.NONE_FOUND -> R.string.library_find_folders_none
+                                com.lostf1sh.pixelplayeross.presentation.viewmodel.FolderSearchNotice.NOT_READY -> R.string.library_find_folders_not_ready
+                            }
+                            android.widget.Toast.makeText(folderNoticeContext, text, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    folderProposal?.let { proposal ->
+                        com.lostf1sh.pixelplayeross.presentation.components.FolderProposalDialog(
+                            state = proposal,
+                            onToggle = mainViewModel::toggleProposedFolder,
+                            onAdd = mainViewModel::addProposedFolders,
+                            onDismiss = mainViewModel::dismissProposedFolders,
+                        )
+                    }
+                    // B40-P3: a play was held on a DAC with no volume Polylute can set (or the listener asked to be asked again). Once per device.
+                    fixedOutputNotice?.let { notice ->
+                        com.lostf1sh.pixelplayeross.presentation.components.FixedOutputQuestionDialog(
+                            notice = notice,
+                            onDismiss = fixedOutputNoticeCoordinator::dismiss,
+                            onOwnControl = fixedOutputNoticeCoordinator::answerOwnControl,
+                            onChoose = fixedOutputNoticeCoordinator::choose,
+                            onConfirmRise = fixedOutputNoticeCoordinator::confirmRise,
                         )
                     }
                     if (safetyVolumeState.showOverrideConfirmation) {
@@ -708,13 +846,15 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                     // F-05: the flag is held only while a song is playing and the player is in
                     // front, and this block lives inside repeatOnLifecycle(STARTED), so it is gone
                     // with the activity too. Nothing here touches the system's screen timeout.
-                    combine(
-                        userPreferencesRepository.dapScreenTimeoutModeFlow,
-                        playerViewModel.stablePlayerState.map { it.isPlaying }.distinctUntilChanged(),
-                        playerViewModel.sheetState.map { it == PlayerSheetState.EXPANDED }.distinctUntilChanged(),
-                    ) { timeoutMode, isPlaying, playerVisible ->
-                        DapDeviceControlPolicy.shouldKeepScreenOn(timeoutMode, isPlaying, playerVisible)
-                    }.distinctUntilChanged().collect { keepScreenOn ->
+                    // B42-fix1: "in front" is what the listener sees: the DAP lock screen is drawn over a player that stays EXPANDED, and
+                    // used to leave the flag on it. The lock signal is the wake cycle's own (set at SCREEN_OFF, before any frame) or the
+                    // surface being on screen.
+                    DapDeviceControlPolicy.keepScreenOnFlow(
+                        timeoutMode = userPreferencesRepository.dapScreenTimeoutModeFlow,
+                        isPlaying = playerViewModel.stablePlayerState.map { it.isPlaying }.distinctUntilChanged(),
+                        sheetExpanded = playerViewModel.sheetState.map { it == PlayerSheetState.EXPANDED }.distinctUntilChanged(),
+                        lockSurfaceShowing = combine(lockCover.coveredFlow, lockSurfaceShowing) { covered, shown -> covered || shown },
+                    ).collect { keepScreenOn ->
                         if (keepScreenOn) {
                             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         } else {
@@ -737,9 +877,11 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
      */
     private fun reconcileOwnerPolicyIfHomeChanged(reason: String) {
         val state = runCatching { dapDeviceOwnerController.currentState() }.getOrNull() ?: return
-        if (!homeChangeTracker.changed(state)) return
+        // B40-F9b: a change since the last look, or a device that is wrong by itself (picked as home again after an exit: nothing moved
+        // between the two looks, and the policy was never put back)
+        if (!homeChangeTracker.shouldReconcile(state, holding = ownerPolicyIsHeldOff())) return
         Timber.tag("DapContainment").i(
-            "Owner facts changed (%s): owner=%s home=%s flag=%s permitted=%s; reconciling",
+            "Owner facts changed or unfinished (%s): owner=%s home=%s flag=%s permitted=%s; reconciling",
             reason,
             state.isDeviceOwner,
             state.isPixelPlayerHome,
@@ -1302,11 +1444,11 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
      * with the record left at `launchCount=0 ... windows=[]` — so nothing is drawn and the
      * permission callback never arrives.
      *
-     * This routes that one request through [beginTemporarySystemConfirmation], the same supported
-     * mechanism the container already uses for Bluetooth enablement and other required system UI:
-     * suspend Lock Task, let the system dialog show, restore containment in `onResume`. Returns
-     * false when the suspension could not be taken, so the engine knows nothing was shown and can
-     * allow a later retry rather than treating the attachment as already asked.
+     * This routes that one request through [showUsbPermissionDialogThroughLiftedLockTask] (B40-P2): the same lift the System
+     * page takes to open Android Settings, the dialog, and the containment back when it is answered, dismissed or has had
+     * [UsbPermissionCoordinator.DEFAULT_TIMEOUT_MS] (before, the way back was only the app coming to the front again, so a dialog
+     * that never showed left the device unlocked). Returns false when the flow could not start, so the engine knows nothing was
+     * shown and can allow a later retry rather than treating the attachment as already asked.
      */
     /** Kept so `onDestroy` removes only this activity's requester (AUD-030). */
     private var usbPermissionRequester: ((() -> Unit) -> Boolean)? = null
@@ -1327,13 +1469,60 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                 request()
                 return@requester true
             }
-            beginTemporarySystemConfirmation { flowReady ->
-                if (flowReady) request()
-            }
-            true
+            showUsbPermissionDialogThroughLiftedLockTask(request)
         }
         usbPermissionRequester = requester
-        dualPlayerEngine.setUsbPermissionRequester(requester)
+        dualPlayerEngine.setUsbPermissionRequester(requester, onAnswered = {
+            usbDialogFlow?.ended?.complete(DapSystemDialogLift.Outcome.ANSWERED)
+        })
+    }
+
+    /**
+     * B40-P2: the lifted-Lock-Task flow that is showing the system's USB permission dialog now, if any, and whether the activity has gone
+     * to the background since the dialog was asked for (the dialog is in front) so that coming back to the front means it is over.
+     */
+    private class UsbDialogFlow {
+        val ended = CompletableDeferred<DapSystemDialogLift.Outcome>()
+        var pausedSinceShown = false
+    }
+
+    private var usbDialogFlow: UsbDialogFlow? = null
+
+    /**
+     * B40-P2: shows the USB permission dialog on a Dedicated device whose Lock Task is holding the task list. The same two-step lift as the
+     * System page ([releaseLockTaskForMaintenance]), then the dialog, then the containment back through the Maintenance exit
+     * ([returnToDedicatedModeNow]: it also restores the allowlist when the lift had to clear it), whatever the dialog does: answered,
+     * dismissed, or nothing within [UsbPermissionCoordinator.DEFAULT_TIMEOUT_MS] ([DapSystemDialogLift]). Returns false when it did not
+     * start (another dialog flow is out), so the engine forgets the request and asks again.
+     */
+    private fun showUsbPermissionDialogThroughLiftedLockTask(request: () -> Unit): Boolean {
+        if (usbDialogFlow != null) return false
+        val flow = UsbDialogFlow().also { usbDialogFlow = it }
+        // inhibits the re-lock on a focus change or a resume while the dialog is out (the flag is cleared by the flow's own re-lock)
+        DapTemporarySystemFlowSession.begin()
+        lifecycleScope.launch {
+            val outcome = try {
+                DapSystemDialogLift(
+                    lift = ::releaseLockTaskForMaintenance,
+                    relock = {
+                        DapTemporarySystemFlowSession.end()
+                        returnToDedicatedModeNow()
+                    },
+                    timeoutMs = UsbPermissionCoordinator.DEFAULT_TIMEOUT_MS,
+                ).run(
+                    needsLift = true,
+                    show = {
+                        flow.pausedSinceShown = false
+                        request()
+                    },
+                    ended = flow.ended,
+                )
+            } finally {
+                if (usbDialogFlow === flow) usbDialogFlow = null
+            }
+            Timber.tag("DapContainment").i("USB permission dialog: %s", outcome)
+        }
+        return true
     }
 
     private fun handleIntent(intent: Intent?) {
@@ -1830,7 +2019,8 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                         alpha = 1f
                                     }
                                     .height(DapHeights.Nav + systemNavBarInset),
-                                color = Dap.surface
+                                // B42-fix3 (item 8): the bar paints its own frosted surface (`DapBottomNav`); a second one here would be two veils
+                                color = androidx.compose.ui.graphics.Color.Transparent
                             ) {
                                 DapBottomNav(
                                     items = dapNavItems,
@@ -1892,7 +2082,19 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         )
 
                         Box(
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    // B41: over the glass the pages are see-through, so the full player, which is see-through too, must not
+                                    // have them showing behind it: they give way to it as it opens (read in the layer, no recomposition).
+                                    if (Dap.glass != null) {
+                                        Modifier.graphicsLayer {
+                                            alpha = 1f - playerViewModel.playerContentExpansionFraction.value.coerceIn(0f, 1f)
+                                        }
+                                    } else {
+                                        Modifier
+                                    }
+                                )
                         ) {
                             // The shell decides whether a shelf exists on this route, so it also
                             // publishes the space that shelf occupies. Screens reserve exactly that
@@ -1910,6 +2112,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                     isDetailVisible = !isAtRootShell,
                                     onSearchBarActiveChange = { isSearchBarActive = it },
                                     onOpenSidebar = { scope.launch { drawerState.open() } },
+                                    glassBehind = Dap.glass != null,
                                 )
                             }
                         }
@@ -1922,7 +2125,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         // The scrim reads the sheet's own progress, so the background and the
                         // player are one motion. It used to run its own 350 ms fade, which kept
                         // the background changing after a 140-220 ms sheet had already settled.
-                        if (isExpandedOrExpanding) {
+                        if (isExpandedOrExpanding && Dap.glass == null) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -2037,6 +2240,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
     override fun onStop() {
         super.onStop()
         LogUtils.d(this, "onStop")
+        settleInstances("onStop")
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -2057,6 +2261,8 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
 
     override fun onResume() {
         super.onResume()
+        resumedNow = true
+        settleInstances("onResume")
         if (!systemBarsLoggedOnResume) {
             systemBarsLoggedOnResume = true
             // Posted: the window has its insets by the time the first frame after the resume is built.
@@ -2073,7 +2279,12 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                 )
             }
         }
-        if (DapTemporarySystemFlowSession.isActive) {
+        val dialogFlow = usbDialogFlow
+        if (dialogFlow != null) {
+            // B40-P2: back in front after the dialog was in front: it is over, and the flow puts the containment back. A resume that is not
+            // that (the lift itself) leaves the flag and the flow's own bound in charge.
+            if (dialogFlow.pausedSinceShown) dialogFlow.ended.complete(DapSystemDialogLift.Outcome.DISMISSED)
+        } else if (DapTemporarySystemFlowSession.isActive) {
             DapTemporarySystemFlowSession.end()
         }
         settleHomeExit()
@@ -2089,6 +2300,8 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
     }
 
     override fun onPause() {
+        resumedNow = false
+        usbDialogFlow?.pausedSinceShown = true
         DapHomePickerSession.activityPaused()
         safetyVolumeController.detachConfirmationHost(overrideConfirmationHost)
         // Over the lock screen only while resumed: a pause (screen off, the Keyguard handoff) puts the
@@ -2098,6 +2311,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
     }
 
     override fun onDestroy() {
+        liveInstances.remove(this)
         languageObserver?.close()
         languageObserver = null
         window.decorView.removeCallbacks(languageGraceRecreate)

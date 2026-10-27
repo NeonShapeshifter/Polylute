@@ -11,8 +11,6 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapTextAction
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
 import androidx.compose.ui.res.stringResource
 import com.lostf1sh.pixelplayeross.R
-import com.lostf1sh.pixelplayeross.presentation.components.scoped.LyricsPredictiveBackHandler
-import com.lostf1sh.pixelplayeross.presentation.components.scoped.respectSystemBackEdgesForHorizontalDrag
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -51,8 +49,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberUpdatedState
@@ -64,8 +60,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.animation.core.Animatable
@@ -73,7 +71,6 @@ import kotlinx.coroutines.launch
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import kotlinx.coroutines.delay
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -102,8 +99,12 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.ui.platform.LocalView
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -223,11 +224,8 @@ fun LyricsSheet(
     onLyricsAlignmentChange: (String) -> Unit,
     onShowLyricsTranslationChange: (Boolean) -> Unit,
     onShowLyricsRomanizationChange: (Boolean) -> Unit,
-    onBackClick: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrev: () -> Unit,
     immersiveLyricsEnabled: Boolean,
     immersiveLyricsTimeout: Long,
     isImmersiveTemporarilyDisabled: Boolean,
@@ -239,32 +237,10 @@ fun LyricsSheet(
      */
     externalLyricsEnabled: Boolean,
     modifier: Modifier = Modifier,
-    swipeThreshold: Dp = 100.dp,
     highlightZoneFraction: Float = 0.08f,
     highlightOffsetDp: Dp = 32.dp,
     autoscrollAnimationSpec: AnimationSpec<Float>? = null
 ) {
-    var backProgress by remember { mutableFloatStateOf(1f) }
-
-    val backProgressProvider = rememberUpdatedState(backProgress)
-
-    LaunchedEffect(Unit) {
-        val anim = Animatable(1f)
-        anim.animateTo(
-            targetValue = 0f,
-            animationSpec = spring(
-                stiffness = Spring.StiffnessMediumLow,
-                dampingRatio = Spring.DampingRatioLowBouncy
-            )
-        ) { backProgress = value }
-    }
-
-    LyricsPredictiveBackHandler(
-        enabled = true,
-        onProgressChanged = { backProgress = it },
-        onBack = onBackClick
-    )
-
     val stablePlayerState by stablePlayerStateFlow.collectAsStateWithLifecycle()
     val sheetColors = remember(colorScheme) { lyricsSheetColors(colorScheme) }
     val backgroundColor = sheetColors.controlContainer
@@ -356,7 +332,9 @@ fun LyricsSheet(
     // F-05: the toggle holds the screen only while a song is playing. Paused with the sheet open it
     // used to hold the screen on until the sheet was closed (and so kept the phone out of Doze);
     // `isPlaying` is a key so the single owner re-evaluates, and releases, on every play/pause.
-    DisposableEffect(keepScreenOn, isPlaying, lifecycleOwner) {
+    // B42-fix1: ... and not under the DAP lock screen, which is drawn over the open player: the same rule as the window flag's.
+    val lockSurfaceShowing = com.lostf1sh.pixelplayeross.presentation.lockscreen.LocalLockSurfaceShowing.current
+    DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && keepScreenOn) {
                 keepScreenOn = false
@@ -368,7 +346,7 @@ fun LyricsSheet(
             }
         }
 
-        if (DapDeviceControlPolicy.shouldKeepScreenOnForLyrics(keepScreenOn, isPlaying)) {
+        if (DapDeviceControlPolicy.shouldKeepScreenOnForLyrics(keepScreenOn, isPlaying, lockSurfaceShowing)) {
             view.keepScreenOn = true
         }
 
@@ -407,19 +385,16 @@ fun LyricsSheet(
     }
 
     var immersiveMode by remember { mutableStateOf(false) }
-    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // B40-F5: "the listener did something" is a signal, not state: writing a timestamp into Compose state recomposed this whole page on
+    // every pointer event, and a scroll (which the lines consume) never reached it at all.
+    val interactions = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST) }
+    val touchGate = remember { ImmersiveTouchGate() }
     var showMoreSheet by remember { mutableStateOf(false) }
     val moreSheetState = rememberModalSheetState(
         skipPartiallyExpanded = true
     )
 
     val hapticFeedback = LocalHapticFeedback.current
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isSwipeActive by remember { mutableStateOf(false) }
-    var hasTriggeredAction by remember { mutableStateOf(false) }
-    val swipeThresholdPx = with(LocalDensity.current) { swipeThreshold.toPx() }
-    val overlayTranslation = remember { Animatable(0f) }
-    val swipeProgress = remember { Animatable(0f) }
 
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
@@ -438,19 +413,31 @@ fun LyricsSheet(
         onDispose { context.unregisterReceiver(receiver) }
     }
 
-    LaunchedEffect(immersiveLyricsEnabled, lastInteractionTime, showSyncedLyrics, isImmersiveTemporarilyDisabled) {
-        // B32-Q7: asked again here, so a state built with "on" (a stored preference read before the gate, a test) cannot start the mode while it is hidden.
-        if (ImmersiveLyrics.effective(immersiveLyricsEnabled) && showSyncedLyrics == true && !isImmersiveTemporarilyDisabled) {
-            delay(immersiveLyricsTimeout)
-            immersiveMode = true
-        } else {
+    // B32-Q7: asked again here, so a state built with "on" (a stored preference read before the gate, a test) cannot start the mode while it is hidden.
+    val immersiveMayEngage = ImmersiveLyricsPolicy.mayEngage(
+        featureOn = ImmersiveLyrics.effective(immersiveLyricsEnabled),
+        syncedLinesShown = showSyncedLyrics == true,
+        playing = isPlaying,
+        switchedOffOnce = isImmersiveTemporarilyDisabled,
+        coveredByAnotherSurface = showMoreSheet || showFetchLyricsDialog || showSaveLyricsDialog,
+    )
+    LaunchedEffect(immersiveMayEngage, immersiveLyricsTimeout) {
+        if (!immersiveMayEngage) {
             immersiveMode = false
+            return@LaunchedEffect
+        }
+        // The countdown starts now and starts again at every interaction; a finger resting on the page is one.
+        interactions.onStart { emit(Unit) }.collectLatest {
+            delay(immersiveLyricsTimeout)
+            while (touchGate.isTouching) delay(ImmersiveLyricsPolicy.TOUCH_RECHECK_MS)
+            immersiveMode = true
         }
     }
 
+    // One short move, in step with the controls folding away: the slow spring this used outlived the fold and kept re-measuring every line.
     val fontScale by animateFloatAsState(
         targetValue = if (immersiveMode) 1.4f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
         label = "fontScale"
     )
     
@@ -460,8 +447,8 @@ fun LyricsSheet(
     )
 
     fun resetImmersiveTimer() {
-        lastInteractionTime = System.currentTimeMillis()
-        immersiveMode = false
+        if (immersiveMode) immersiveMode = false
+        interactions.tryEmit(Unit)
     }
 
     // The surface used to force this dialog open the moment a resolve came back empty, which
@@ -567,67 +554,40 @@ fun LyricsSheet(
     
 
     Scaffold(
+        // B42-fix1: the lyrics are a page of the player's pager. The pager owns every horizontal gesture on it (a swipe changes the page and the
+        // system back, from either edge, returns to Player), so this page has no swipe of its own, no back handling and no claim on the back
+        // edges. It used to carry a drag that skipped to the previous or the next song and slid a big button in from the side of the screen.
         modifier = modifier
             .fillMaxSize()
-            .graphicsLayer {
-                val p = backProgressProvider.value
-                val scale = lerp(1f, 0.92f, p)
-                scaleX = scale
-                scaleY = scale
-                translationY = lerp(0f, size.height * 0.08f, p)
-            }
-            // An inward drag from the reserved Back edge is the system Back gesture, not a track
-            // change. Claiming it here stops `onPrev`/`onNext` firing for the same motion, while
-            // centre swipes and vertical lyric scrolling are untouched.
-            .respectSystemBackEdgesForHorizontalDrag()
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = {
-                        isSwipeActive = true
-                        hasTriggeredAction = false
-                        dragOffset = 0f
-                        resetImmersiveTimer()
-                        coroutineScope.launch {
-                            swipeProgress.snapTo(0f)
-                        }
-                    },
-                    onDragEnd = {
-                        isSwipeActive = false
-                        val committed = abs(dragOffset) > swipeThresholdPx && !hasTriggeredAction 
-                        
-                        if (committed) {
-                            if (dragOffset > 0) onPrev() else onNext()
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-
-                        coroutineScope.launch {
-                             swipeProgress.animateTo(0f, tween(200))
-                             dragOffset = 0f
-                        }
-                    },
-                    onDragCancel = {
-                        isSwipeActive = false
-                        dragOffset = 0f
-                        coroutineScope.launch {
-                            swipeProgress.animateTo(0f, tween(200))
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        resetImmersiveTimer()
-                        
-                        if (!hasTriggeredAction) {
-                            dragOffset += dragAmount.x
-                            val progress = (abs(dragOffset) / swipeThresholdPx).coerceIn(0f, 1f)
-                            
-                            coroutineScope.launch {
-                                swipeProgress.snapTo(progress)
+            // B40-F5: every touch on the page is "the listener is here", before the lines or the controls see it (Initial pass, nothing
+            // consumed): a scroll of the lyrics, a press on the bar, a finger resting still. The first touch of a folded page unfolds it, and
+            // remembers that it did, so its tap does not also seek.
+            .pointerInput(touchGate) {
+                awaitPointerEventScope {
+                    var lastRestartMs = Long.MIN_VALUE
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val changes = event.changes
+                        val down = changes.any { it.changedToDown() }
+                        if (down) {
+                            touchGate.touchBegan(immersive = immersiveMode)
+                            lastRestartMs = changes.maxOf { it.uptimeMillis }
+                            resetImmersiveTimer()
+                        } else if (changes.any { it.changedToUp() }) {
+                            resetImmersiveTimer()
+                        } else {
+                            val now = changes.maxOf { it.uptimeMillis }
+                            if (now - lastRestartMs >= ImmersiveLyricsPolicy.MOVE_RESTART_INTERVAL_MS) {
+                                lastRestartMs = now
+                                resetImmersiveTimer()
                             }
                         }
+                        if (changes.none { it.pressed }) touchGate.touchEnded()
                     }
-                )
+                }
             },
-        containerColor = containerColor,
+        // B42-fix1: over the cover glass the page is the player's glass itself, not a fill of its own
+        containerColor = if (Dap.glass != null) Color.Transparent else containerColor,
         contentColor = contentColor,
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize()) {
@@ -635,12 +595,6 @@ fun LyricsSheet(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = paddingValues.calculateTopPadding())
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    resetImmersiveTimer()
-                }
         ) {
             val initialSyncedLineIndex = remember(lyrics, playbackPositionFlow, lyricsSyncOffset) {
                 resolveCurrentLineIndex(
@@ -694,13 +648,16 @@ fun LyricsSheet(
                                 positionOverrideMs = previewSeekPositionMs,
                                 accentColor = lyricHighlightColor,
                                 textStyle = scaledTextStyle,
-                                onLineClick = { syncedLine -> 
-                                    onSeekTo(
-                                        resolveSeekPositionMs(
-                                            lineTimeMs = syncedLine.time.toLong(),
-                                            lyricsSyncOffsetMs = lyricsSyncOffset
+                                onLineClick = { syncedLine ->
+                                    // B40-F5: the tap that brought the controls back is not a request to seek.
+                                    if (touchGate.lineTapSeeks()) {
+                                        onSeekTo(
+                                            resolveSeekPositionMs(
+                                                lineTimeMs = syncedLine.time.toLong(),
+                                                lyricsSyncOffsetMs = lyricsSyncOffset
+                                            )
                                         )
-                                    )
+                                    }
                                     resetImmersiveTimer()
                                 },
                                 highlightZoneFraction = highlightZoneFraction,
@@ -773,23 +730,14 @@ fun LyricsSheet(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(containerColor)
+                        // over the cover glass the bar is part of the glass, not a slab across it (B42-fix1); its pill and its two round buttons keep their fills
+                        .background(if (Dap.glass != null) Color.Transparent else containerColor)
                         .padding(
                             top = DapSpacing.Sm,
                             bottom = paddingValues.calculateBottomPadding() + DapSpacing.Sm,
                             start = DapSpacing.Gutter,
                             end = DapSpacing.Gutter,
                         )
-                        .pointerInput(Unit) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    if (event.changes.any { it.pressed }) {
-                                        resetImmersiveTimer()
-                                    }
-                                }
-                            }
-                        }
                 ) {
                     // One row (B22): play/pause as a tonal round button, the timeline in a pill, and the options as a
                     // tonal round button. The same tonal disc the queue and the library use.
@@ -930,47 +878,6 @@ fun LyricsSheet(
                 )
             }
         }
-       
-       if (isSwipeActive || swipeProgress.value > 0f) {
-           val isNext = dragOffset < 0
-           val overlayAlignment = if (isNext) Alignment.CenterEnd else Alignment.CenterStart
-           val icon = if (isNext) Icons.Rounded.SkipNext else Icons.Rounded.SkipPrevious
-           
-           Box(
-               modifier = Modifier
-                   .align(overlayAlignment)
-                   .size(100.dp)
-                   .padding(
-                       start = if(isNext) 0.dp else 6.dp,
-                       end = if(isNext) 6.dp else 0.dp
-                   )
-                   .graphicsLayer {
-                        val widthPx = size.width
-                        val initialOffset = if(isNext) widthPx else -widthPx
-                        translationX = initialOffset * (1f - swipeProgress.value)
-
-                        scaleX = 0.8f + (swipeProgress.value * 0.2f)
-                        scaleY = 0.8f + (swipeProgress.value * 0.2f)
-                   }
-                   .background(
-                        color = accentColor,
-                        shape = RoundedCornerShape(
-                            topStart = if(isNext) 360.dp else 8.dp,
-                            bottomStart = if(isNext) 360.dp else 8.dp,
-                            topEnd = if(isNext) 8.dp else 360.dp,
-                            bottomEnd = if(isNext) 8.dp else 360.dp
-                        )
-                   ),
-               contentAlignment = Alignment.Center
-           ) {
-               Icon(
-                   imageVector = icon,
-                   contentDescription = null,
-                   modifier = Modifier.size(48.dp),
-                   tint = onAccentColor
-               )
-           }
-       }
 
       }
     }
@@ -1058,7 +965,9 @@ fun SyncedLyricsList(
         )
         val flingBehavior = rememberSnapperFlingBehavior(layoutInfo = snapperLayoutInfo)
 
-        LaunchedEffect(currentLineIndex, lines.size, metrics, isPreviewSeeking) {
+        // The text size is a key: when immersive mode grows the text the current line is put back in the highlight zone for its new height,
+        // at the end of the change as well as during it (it used to stay where the old, smaller height had put it).
+        LaunchedEffect(currentLineIndex, lines.size, metrics, isPreviewSeeking, textStyle.fontSize) {
             if (lines.isEmpty()) return@LaunchedEffect
             if (currentLineIndex !in lines.indices) return@LaunchedEffect
             if (listState.layoutInfo.totalItemsCount == 0) return@LaunchedEffect
@@ -1193,6 +1102,16 @@ fun SyncedLyricsList(
     }
 }
 
+/**
+ * B42-fix1 (item 8): the ink of a lyric that is dimmed (the lines that are not being sung, a translation, unsynced text). Over the cover
+ * glass it is the glass's own ink for that level ([onGlass]: opaque, and at AA on the glass by construction) and not the content colour at a
+ * fraction of its strength, which on a saturated cover was a hair under 3:1 for the lines; everywhere else it is the content colour at
+ * [alpha], as it was.
+ */
+@Composable
+private fun dimmedLyricInk(alpha: Float, onGlass: Color): Color =
+    if (Dap.glass != null) onGlass else LocalContentColor.current.copy(alpha = alpha)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LyricLineRow(
@@ -1226,7 +1145,7 @@ fun LyricLineRow(
     val isCurrentLine by remember(line.time, lineEndTime) {
         derivedStateOf { positionProvider() in line.time.toLong()..<lineEndTime }
     }
-    val unhighlightedColor = LocalContentColor.current.copy(alpha = 0.45f)
+    val unhighlightedColor = dimmedLyricInk(alpha = 0.45f, onGlass = Dap.tertiaryText)
     val lineColor by animateColorAsState(
         targetValue = if (isCurrentLine) accentColor else unhighlightedColor,
         animationSpec = if (useAnimatedLyrics) spring(
@@ -1318,8 +1237,9 @@ fun LyricLineRow(
         )
     }
 
-    val romanizationColor = lineColor.copy(alpha = lineColor.alpha * 0.85f)
-    val translationColor = lineColor.copy(alpha = lineColor.alpha * 0.55f)
+    val onGlass = Dap.glass != null
+    val romanizationColor = if (onGlass) Dap.tertiaryText else lineColor.copy(alpha = lineColor.alpha * 0.85f)
+    val translationColor = if (onGlass) Dap.tertiaryText else lineColor.copy(alpha = lineColor.alpha * 0.55f)
 
     val horizontalAlignment = when (lyricsAlignment) {
         "center" -> Alignment.CenterHorizontally
@@ -1569,11 +1489,11 @@ fun PlainLyricsLine(
             fontWeight = FontWeight.Normal
         )
     }
-    val translationColor = LocalContentColor.current.copy(alpha = 0.45f)
+    val translationColor = dimmedLyricInk(alpha = 0.45f, onGlass = Dap.tertiaryText)
 
     Column(modifier = modifier, horizontalAlignment = horizontalAlignment) {
         if (primaryText.isNotBlank()) {
-            Text(text = primaryText, style = style, color = LocalContentColor.current.copy(alpha = 0.7f), textAlign = textAlign)
+            Text(text = primaryText, style = style, color = dimmedLyricInk(alpha = 0.7f, onGlass = Dap.secondaryText), textAlign = textAlign)
 
             if (showRomanization && romanizationText.isNotBlank()) {
                 Text(

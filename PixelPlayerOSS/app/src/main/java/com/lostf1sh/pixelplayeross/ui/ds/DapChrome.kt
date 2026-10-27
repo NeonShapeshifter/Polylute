@@ -1,5 +1,7 @@
 package com.lostf1sh.pixelplayeross.ui.ds
 
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
+import com.lostf1sh.pixelplayeross.ui.glass.glassSheetContainer
 import com.lostf1sh.pixelplayeross.R
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.aspectRatio
@@ -173,7 +175,8 @@ fun DapBottomNav(
     Column(
         modifier
             .fillMaxWidth()
-            .background(Dap.surface)
+            // B42-fix3 (item 8): over the cover glass the bar is frosted glass (one veil, the same as the mini player's and the queue sheet's)
+            .background(Dap.panel)
     ) {
         DapDivider()
         Row(
@@ -245,7 +248,7 @@ fun DapMiniPlayer(
     Column(
         modifier
             .fillMaxWidth()
-            .background(Dap.surface)
+            .background(Dap.shelf)
     ) {
         DapDivider()
         Row(
@@ -330,7 +333,8 @@ fun DapSheetSurface(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = DapRadius.SheetTop, topEnd = DapRadius.SheetTop))
-            .background(Dap.surface)
+            // B42: over the cover glass the sheet this sits in is the glass (see GlassModalBottomSheet), and this surface is nothing
+            .background(glassSheetContainer(Dap.surface, LocalCoverGlass.current))
     ) {
         Box(
             Modifier
@@ -491,7 +495,7 @@ fun DapScreen(
     Box(
         modifier
             .fillMaxWidth()
-            .background(Dap.background)
+            .background(Dap.page)
     ) { content() }
 }
 
@@ -534,6 +538,8 @@ fun DapPlayerHeader(
     onLyrics: () -> Unit,
     onDetails: () -> Unit,
     modifier: Modifier = Modifier,
+    /** B42-fix1: the details are a page of the player now, so their icon is a switch like the lyrics' one. */
+    detailsActive: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -559,8 +565,11 @@ fun DapPlayerHeader(
         ) { tint -> Icon(Icons.Outlined.Lyrics, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp)) }
         DapStateIconButton(
             contentDescription = stringResource(R.string.player_header_details),
-            active = false,
+            active = detailsActive,
             onClick = onDetails,
+            stateDescription = stringResource(
+                if (detailsActive) R.string.lock_transport_state_on else R.string.lock_transport_state_off
+            ),
         ) { tint -> Icon(Icons.Outlined.Info, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp)) }
     }
 }

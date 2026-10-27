@@ -4,6 +4,7 @@
     <string name="player_header_collapse">Stäng spelaren</string>
     <string name="player_header_lyrics">Låttext</string>
     <string name="player_header_details">Spårinformation</string>
+    <string name="player_action_options">Alternativ</string>
     <string name="player_add_bookmark">Lägg till bokmärke</string>
     <string name="lyrics_options">Alternativ för låttext</string>
     <string name="lyrics_menu_title">Låttext</string>
@@ -26,4 +27,5 @@
     <string name="queue_title_next">Nästa</string>
     <!-- B32-Q4: the peek of the queue at the foot of the full player -->
     <string name="player_queue_peek_open">Öppna kön</string>
+    <string name="player_lyrics_under_cover_cd">Öppna låttexten</string>
 </resources>

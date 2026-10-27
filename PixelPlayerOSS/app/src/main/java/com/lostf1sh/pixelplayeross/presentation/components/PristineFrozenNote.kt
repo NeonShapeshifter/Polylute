@@ -84,6 +84,7 @@ object PristineLockCopy {
         AudioRouteReason.USB_PERMISSION_REQUIRED -> R.string.pristine_reason_permission
         AudioRouteReason.SOURCE_NOT_DIRECT_COMPATIBLE -> R.string.pristine_reason_source
         AudioRouteReason.SAFETY_TRANSITION_DEFERRED -> R.string.pristine_reason_deferred
+        AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS -> R.string.route_reason_dac_shared
         AudioRouteReason.DIRECT_FAILED_FALLBACK -> R.string.pristine_reason_failed
         AudioRouteReason.MAINTENANCE_FORCE_ANDROID,
         AudioRouteReason.MAINTENANCE_DIRECT_DISABLED -> R.string.pristine_reason_maintenance

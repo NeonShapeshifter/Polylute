@@ -49,6 +49,15 @@ internal data class RawDirectoryEntry(
     val displayName: String? = null
 )
 
+/**
+ * The listing from the filesystem with the counts MediaStore has for it.
+ *
+ * B39-A1: a directory the filesystem lists and MediaStore has no audio row under is kept (a new album the scanner has not reached is
+ * still a folder the listener can pick), but its counts are **zero**, not unknown. They used to stay at [UNKNOWN_AUDIO_COUNT] for good, and
+ * the sheet draws that as "Scanning...": every folder with no music in it (Alarms, Android, DCIM, Documents on a phone) said it was
+ * scanning for as long as the sheet was open, which looked like a stuck scan. This is only called with a MediaStore index in hand, so
+ * "no row" is an answer; a refresh asks again.
+ */
 internal fun mergeDirectoryEntryLists(
     filesystemEntries: List<RawDirectoryEntry>,
     mediaStoreEntries: List<RawDirectoryEntry>
@@ -59,6 +68,7 @@ internal fun mergeDirectoryEntryLists(
         merged[entry.canonicalPath] = entry
     }
 
+    val indexed = mediaStoreEntries.mapTo(HashSet()) { it.canonicalPath }
     mediaStoreEntries.forEach { mediaEntry ->
         val existing = merged[mediaEntry.canonicalPath]
         merged[mediaEntry.canonicalPath] =
@@ -69,8 +79,21 @@ internal fun mergeDirectoryEntryLists(
             }
     }
 
-    return merged.values.sortedWith(compareBy({ it.file.name.lowercase() }))
+    return merged.values
+        .map { entry ->
+            if (entry.canonicalPath !in indexed && entry.hasUnknownCount()) {
+                entry.copy(directAudioCount = entry.directAudioCount.knownOrZero(), totalAudioCount = entry.totalAudioCount.knownOrZero())
+            } else entry
+        }
+        .sortedWith(compareBy({ it.file.name.lowercase() }))
 }
+
+private const val UNKNOWN_AUDIO_COUNT = -1
+
+private fun RawDirectoryEntry.hasUnknownCount(): Boolean =
+    directAudioCount == UNKNOWN_AUDIO_COUNT || totalAudioCount == UNKNOWN_AUDIO_COUNT
+
+private fun Int.knownOrZero(): Int = if (this == UNKNOWN_AUDIO_COUNT) 0 else this
 
 private data class MediaStoreDirectoryIndex(
     val childrenByParent: Map<String, Set<String>>,
@@ -136,7 +159,6 @@ class FileExplorerStateHolder(
 
     companion object {
         private const val PREFETCH_CHILDREN_LIMIT = 8
-        private const val UNKNOWN_AUDIO_COUNT = -1
     }
 
     init {
@@ -369,9 +391,10 @@ class FileExplorerStateHolder(
                         val childKey = normalizePath(child)
                         RawDirectoryEntry(
                             file = child,
-                            directAudioCount = cachedIndex?.directAudioCountByPath?.get(childKey)
+                            // B39-A1: with the index in hand a folder it has no row for has no indexed audio (0); only without one is it unknown.
+                            directAudioCount = cachedIndex?.let { it.directAudioCountByPath[childKey] ?: 0 }
                                 ?: UNKNOWN_AUDIO_COUNT,
-                            totalAudioCount = cachedIndex?.totalAudioCountByPath?.get(childKey)
+                            totalAudioCount = cachedIndex?.let { it.totalAudioCountByPath[childKey] ?: 0 }
                                 ?: UNKNOWN_AUDIO_COUNT,
                             canonicalPath = childKey
                         )

@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
@@ -64,6 +65,10 @@ internal fun PlayerCoverSurface(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
+            // B42-fix1: a swipe that starts on the cover is the cover's alone (it changes the song, or bounces at the end of the queue); what
+            // it cannot use does not go on to turn the player's page.
+            .keepHorizontalSwipeOnThisSurface()
+            .testTag(PlayerPagesTags.Cover)
     ) {
         val carouselHeight = when (carouselStyle) {
             CarouselStyle.NO_PEEK -> maxWidth
@@ -142,7 +147,7 @@ private fun AlbumPlaceholder(
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Icon(
                 modifier = Modifier.size(86.dp),
-                painter = painterResource(R.drawable.pixelplayer_base_monochrome),
+                painter = painterResource(R.drawable.polylute_mark),
                 contentDescription = null,
                 tint = onColor
             )

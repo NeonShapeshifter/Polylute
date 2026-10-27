@@ -23,7 +23,6 @@ import com.lostf1sh.pixelplayeross.data.database.SongArtistCrossRef
 import com.lostf1sh.pixelplayeross.data.database.SongEntity
 import com.lostf1sh.pixelplayeross.data.database.SourceType
 import com.lostf1sh.pixelplayeross.data.database.serializeArtistRefs
-import com.lostf1sh.pixelplayeross.data.diagnostics.AdvancedPerformanceDiagnostics
 import com.lostf1sh.pixelplayeross.data.model.ArtistRef
 import com.lostf1sh.pixelplayeross.data.media.AudioMetadataReader
 import com.lostf1sh.pixelplayeross.data.identity.LibraryIdentity
@@ -138,20 +137,12 @@ constructor(
                     var pendingReattachments: List<IdentityResolution> = emptyList()
                     var pendingProjectionIds: Set<Long> = emptySet()
                     var pendingEvidenceUpdates: List<LibraryItemEntity> = emptyList()
+                    var disagreeingEvidence: Map<Long, String> = emptyMap()
+                    val handledEvidence = HandledEvidence(java.io.File(applicationContext.filesDir, HandledEvidence.FILE_NAME))
 
                     Timber.tag(TAG)
                         .i("Starting MediaStore synchronization (Mode: $syncMode, ForceMetadata: $requestedForceMetadata)...")
                     val startTime = System.currentTimeMillis()
-                    AdvancedPerformanceDiagnostics.recordEventIfEnabled(
-                        type = AdvancedPerformanceDiagnostics.EventTypes.WORKER,
-                        name = "sync_worker_start"
-                    ) {
-                        mapOf(
-                            "mode" to syncMode.name,
-                            "forceMetadata" to requestedForceMetadata.toString(),
-                            "attempt" to runAttemptCount.toString()
-                        )
-                    }
 
                     val artistDelimiters = userPreferencesRepository.artistDelimitersFlow.first()
                     val artistWordDelimiters = userPreferencesRepository.artistWordDelimitersFlow.first()
@@ -160,6 +151,12 @@ constructor(
                             userPreferencesRepository.groupByAlbumArtistFlow.first()
                     val rescanRequired =
                             userPreferencesRepository.artistSettingsRescanRequiredFlow.first()
+                    // B39-A9: an install of 1.0 moves to "nothing unless its folder is included" here, from the database and before this sync
+                    // reads the rules, so the library is the same on the first sync after the update. A no-op after the first time.
+                    com.lostf1sh.pixelplayeross.data.library.LibraryRulesMigration
+                        .of(applicationContext, userPreferencesRepository, musicDao)
+                        .runIfNeeded()
+
                     val directoryRulesVersion =
                         userPreferencesRepository.getDirectoryRulesVersion()
                     val lastAppliedDirectoryRulesVersion =
@@ -170,7 +167,31 @@ constructor(
                     val allowedDirs = userPreferencesRepository.allowedDirectoriesFlow.first()
                     val blockedDirs = userPreferencesRepository.blockedDirectoriesFlow.first()
                     val directoryResolver = DirectoryRuleResolver(allowedDirs, blockedDirs)
-                    
+
+                    // B40-F3: files copied in that Android has not indexed yet are found in the included folders and handed to its scanner
+                    // first, so the MediaStore read below has them. Never stops the sync.
+                    val walkFolders = inputData.getBoolean(INPUT_WALK_FOLDERS, false)
+                    val walkFoldersIfDue = inputData.getBoolean(INPUT_WALK_FOLDERS_IF_DUE, false)
+                    if (walkFolders || walkFoldersIfDue) {
+                        runCatching {
+                            setProgress(
+                                workDataOf(
+                                    PROGRESS_CURRENT to 0,
+                                    PROGRESS_TOTAL to 0,
+                                    PROGRESS_PHASE to SyncProgress.SyncPhase.FETCHING_MEDIASTORE.ordinal
+                                )
+                            )
+                            fileScannerFactory(applicationContext)
+                                .run(
+                                    com.lostf1sh.pixelplayeross.data.library.LibraryFolders.Rules(allowedDirs, blockedDirs),
+                                    dueOnly = !walkFolders,
+                                )
+                        }.onFailure { error ->
+                            if (error is kotlinx.coroutines.CancellationException) throw error
+                            Timber.tag(TAG).w(error, "The folder walk failed; the sync goes on with what MediaStore has")
+                        }
+                    }
+
                     val lastSyncTimestamp = userPreferencesRepository.getLastSyncTimestamp()
 
                     minSongDurationMs = userPreferencesRepository.getMinSongDuration()
@@ -191,12 +212,11 @@ constructor(
                         // locator, a missing projection or changed identity evidence.
                         val libraryItems = musicDao.getAllLibraryItems()
                         val knownByLocator = libraryItems.associateBy { it.currentLocator }
-                        pendingProjectionIds = scannedItems.filter { scanned ->
-                            val known = knownByLocator[scanned.mediaStoreId]
-                            scanned.mediaStoreId !in localSongIds || known == null ||
-                                known.stableKey != scanned.fingerprint ||
-                                (known.fileSignature.isNotEmpty() && known.fileSignature != scanned.fileSignature)
-                        }.mapTo(HashSet()) { it.mediaStoreId }
+                        // B41-fix1 (B10): a row whose evidence disagrees with the library's is read again only until it has been handled for
+                        // the evidence MediaStore gives now; what was handled is kept (see PendingProjections).
+                        val pendingNow = PendingProjections.compute(scannedItems, localSongIds, knownByLocator, handledEvidence.load())
+                        pendingProjectionIds = pendingNow.pending
+                        disagreeingEvidence = pendingNow.disagreeing
 
                         // Identity is resolved BEFORE anything is destroyed. The previous version
                         // deleted the set difference here, which meant a renumbered file was
@@ -490,6 +510,11 @@ constructor(
                         )
                     })
 
+                    // B41-fix1 (B10): the disagreements this sync has dealt with are the ones it does not ask about again until MediaStore
+                    // says something else. Only after the projections and the evidence were written, and never a reason to stop the sync.
+                    runCatching { handledEvidence.save(disagreeingEvidence) }
+                        .onFailure { Timber.tag(TAG).w(it, "Could not record the handled evidence; those rows will be read again next time") }
+
                     // The set of playable items, their identities and their metadata all just changed, which is
                     // every input the history is read against: Stats and the collections read the library again.
                     libraryChangeSignal.changed("library sync changed the active identities")
@@ -514,16 +539,6 @@ constructor(
                     val totalSongs = musicDao.getSongCount().first()
                     if (!syncPlan.runMaintenance) {
                         Timber.tag(TAG).d("Skipping library maintenance phases for local-only sync.")
-                        AdvancedPerformanceDiagnostics.recordEventIfEnabled(
-                            type = AdvancedPerformanceDiagnostics.EventTypes.WORKER,
-                            name = "sync_worker_success"
-                        ) {
-                            mapOf(
-                                "mode" to syncMode.name,
-                                "durationMs" to (System.currentTimeMillis() - startTime).toString(),
-                                "totalSongs" to totalSongs.toString()
-                            )
-                        }
                         return@withContext Result.success(
                             workDataOf(OUTPUT_TOTAL_SONGS to totalSongs)
                         )
@@ -597,27 +612,11 @@ constructor(
 
                     val finalTotalSongs = musicDao.getSongCount().first()
 
-                    AdvancedPerformanceDiagnostics.recordEventIfEnabled(
-                        type = AdvancedPerformanceDiagnostics.EventTypes.WORKER,
-                        name = "sync_worker_success"
-                    ) {
-                        mapOf(
-                            "mode" to syncMode.name,
-                            "durationMs" to (System.currentTimeMillis() - startTime).toString(),
-                            "totalSongs" to finalTotalSongs.toString()
-                        )
-                    }
                     Result.success(workDataOf(OUTPUT_TOTAL_SONGS to finalTotalSongs))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     Timber.tag(TAG).e(e, "Error during MediaStore synchronization")
-                    AdvancedPerformanceDiagnostics.recordEventIfEnabled(
-                        type = AdvancedPerformanceDiagnostics.EventTypes.WORKER,
-                        name = "sync_worker_failure"
-                    ) {
-                        mapOf("error" to (e.message ?: e.javaClass.simpleName))
-                    }
                     Result.failure()
                 }
             }
@@ -1502,6 +1501,17 @@ constructor(
         const val INPUT_FORCE_METADATA = "input_force_metadata"
         const val INPUT_RUN_MAINTENANCE = "input_run_maintenance"
         const val INPUT_SYNC_MODE = "input_sync_mode"
+
+        /** B40-F3: walk the included folders and ask Android to index what it has not (the listener's own refresh, a full rescan, a rebuild). */
+        const val INPUT_WALK_FOLDERS = "input_walk_folders"
+
+        /** B40-F3: the same, but only if the last walk is old enough (the periodic maintenance). */
+        const val INPUT_WALK_FOLDERS_IF_DUE = "input_walk_folders_if_due"
+
+        /** B40-F3: how the worker gets its folder scanner. The tests hand in one over a fake MediaStore; nothing else touches it. */
+        @Volatile
+        internal var fileScannerFactory: (Context) -> com.lostf1sh.pixelplayeross.data.library.LibraryFileScanner =
+            { context -> com.lostf1sh.pixelplayeross.data.library.LibraryFileScanner(context) }
         private const val MAX_PLAYBACK_DEFERRALS = 5
 
         /**
@@ -1540,13 +1550,15 @@ constructor(
                         .build()
 
         fun incrementalSyncWork(
-            runMaintenance: Boolean = true
+            runMaintenance: Boolean = true,
+            walkFolders: Boolean = false
         ) =
                 OneTimeWorkRequestBuilder<SyncWorker>()
                         .setInputData(
                                 workDataOf(
                                         INPUT_SYNC_MODE to SyncMode.INCREMENTAL.name,
-                                        INPUT_RUN_MAINTENANCE to runMaintenance
+                                        INPUT_RUN_MAINTENANCE to runMaintenance,
+                                        INPUT_WALK_FOLDERS to walkFolders
                                 )
                         )
                         .build()
@@ -1564,7 +1576,8 @@ constructor(
                                 workDataOf(
                                         INPUT_SYNC_MODE to SyncMode.FULL.name,
                                         INPUT_FORCE_METADATA to deepScan,
-                                        INPUT_RUN_MAINTENANCE to true
+                                        INPUT_RUN_MAINTENANCE to true,
+                                        INPUT_WALK_FOLDERS to true
                                 )
                         )
                         .setConstraints(heavySyncConstraints)
@@ -1575,7 +1588,8 @@ constructor(
                         .setInputData(
                                 workDataOf(
                                         INPUT_SYNC_MODE to SyncMode.REBUILD.name,
-                                        INPUT_RUN_MAINTENANCE to true
+                                        INPUT_RUN_MAINTENANCE to true,
+                                        INPUT_WALK_FOLDERS to true
                                 )
                         )
                         .setConstraints(heavySyncConstraints)
@@ -1590,7 +1604,8 @@ constructor(
                 .setInputData(
                     workDataOf(
                         INPUT_SYNC_MODE to SyncMode.FULL.name,
-                        INPUT_RUN_MAINTENANCE to true
+                        INPUT_RUN_MAINTENANCE to true,
+                        INPUT_WALK_FOLDERS_IF_DUE to true
                     )
                 )
                 .setConstraints(constraints)

@@ -309,6 +309,7 @@ internal fun PlaylistsList(
         }
 
         ExpressiveScrollBar(
+            contentEndMargin = DapSpacing.Gutter,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = 4.dp, top = 16.dp, bottom = scrollBarBottom),

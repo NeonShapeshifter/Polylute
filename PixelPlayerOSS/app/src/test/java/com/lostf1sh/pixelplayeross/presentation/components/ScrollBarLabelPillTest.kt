@@ -81,6 +81,7 @@ class ScrollBarLabelPillTest {
                     }
                 }
                 ExpressiveScrollBar(
+                    contentEndMargin = 12.dp,
                     modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 16.dp, bottom = 140.dp),
                     listState = state,
                     dragLabelProvider = provider,

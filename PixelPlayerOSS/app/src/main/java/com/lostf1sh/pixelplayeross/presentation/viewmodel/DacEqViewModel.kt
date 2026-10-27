@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqService
+import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqualizerCoordinator
 import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -21,6 +22,7 @@ class DacEqViewModel @Inject constructor(
     headphones: HeadphoneProfileRepository,
     audioStatusSource: AudioStatusSource,
     savedStateHandle: SavedStateHandle,
+    equalizer: HeadphoneEqualizerCoordinator,
 ) : ViewModel() {
     val controller = DacEqScreenController(
         scope = viewModelScope,
@@ -28,5 +30,7 @@ class DacEqViewModel @Inject constructor(
         service = service,
         store = headphones,
         audio = audioStatusSource.status,
+        // B40-F2: through the coordinator, so the DSP follows (the repository alone would change the profile and not the signal)
+        turnSoftwareEqOff = { id -> equalizer.updateEqualizer(id) { it.copy(enabled = false) } },
     )
 }

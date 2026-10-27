@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapAccent
+import com.lostf1sh.pixelplayeross.ui.ds.LocalDapPalette
 import com.lostf1sh.pixelplayeross.ui.ds.DapDivider
 import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
@@ -91,6 +92,8 @@ internal fun AccentSwatchRow(
     selected: DapAccent,
     onAccentSelected: (DapAccent) -> Unit,
 ) {
+    // B40-F1: the swatches are the colours these names have on the theme in use
+    val palette = LocalDapPalette.current
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Gutter)) {
         Spacer(Modifier.height(DapSpacing.Md))
         Text(text = label, style = DapType.SettingLabel, color = Dap.primaryText)
@@ -124,7 +127,7 @@ internal fun AccentSwatchRow(
                         modifier = Modifier
                             .size(24.dp)
                             .clip(CircleShape)
-                            .background(option.color)
+                            .background(palette.accentColor(option))
                             .then(
                                 if (isSelected) Modifier.border(2.dp, Dap.primaryText, CircleShape)
                                 else Modifier
@@ -134,7 +137,7 @@ internal fun AccentSwatchRow(
             }
         }
         Spacer(Modifier.height(DapSpacing.Lg))
-        AccentPreview(accent = selected.color)
+        AccentPreview(accent = palette.accentColor(selected))
         Spacer(Modifier.height(DapSpacing.Lg))
         DapDivider()
     }

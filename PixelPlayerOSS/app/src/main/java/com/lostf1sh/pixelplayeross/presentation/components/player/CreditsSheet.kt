@@ -34,6 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.CreditsUiState
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
+import com.lostf1sh.pixelplayeross.ui.glass.glassSheetContainer
 
 /**
  * The Credits sibling view.
@@ -50,9 +52,12 @@ fun CreditsSheet(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // B42: over the cover glass the window carries its own copy of it (see SecondaryViewWindow), and this surface is nothing
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface
+        color = glassSheetContainer(MaterialTheme.colorScheme.surface, LocalCoverGlass.current),
+        // what the surface made of its text (onSurface) it still does, over the glass
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Column(
             modifier = Modifier

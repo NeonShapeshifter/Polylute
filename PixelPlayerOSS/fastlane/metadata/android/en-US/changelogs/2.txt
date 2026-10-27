@@ -1,0 +1,7 @@
+Polylute 1.1.0.
+
+* Five themes, and the whole app can take the colours of the album art. Immersive lyrics are back; the mini player's line can be dragged to seek.
+* Optional music info from MusicBrainz and Wikimedia (off by default). Deezer is gone.
+* New files in your folders are found. The Melody's EQ can be written, with your OK. Detailed logging in Maintenance.
+* Better downsampling above 192 kHz, and an optional peak limiter, on the Android route.
+* No location or exact-alarm permission.

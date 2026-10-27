@@ -298,7 +298,7 @@ class B28StatsPlaylistsRenderTest {
     private fun page(id: AutoCollectionId, collection: AutoCollection?, hidden: Boolean = false) = content {
         CollectionPage(
             id = id, collection = collection, isHidden = hidden, currentSongId = songs[3].id,
-            onHide = {}, onShow = {}, onPlay = {}, onShuffle = {}, onOpenSong = {}, onMore = {},
+            onHide = {}, onShow = {}, onPlay = {}, onShuffle = {}, onPlaySong = {}, onMore = {},
         )
     }
 
@@ -477,7 +477,7 @@ class B28StatsPlaylistsRenderTest {
         scrolledUnderTheMiniPlayer {
             CollectionPage(
                 id = AutoCollectionId.NEVER_PLAYED, collection = sources.getValue(AutoCollectionId.NEVER_PLAYED), isHidden = false,
-                currentSongId = songs[3].id, onHide = {}, onShow = {}, onPlay = {}, onShuffle = {}, onOpenSong = {}, onMore = {},
+                currentSongId = songs[3].id, onHide = {}, onShow = {}, onPlay = {}, onShuffle = {}, onPlaySong = {}, onMore = {},
             )
         }
         compose.waitForIdle()

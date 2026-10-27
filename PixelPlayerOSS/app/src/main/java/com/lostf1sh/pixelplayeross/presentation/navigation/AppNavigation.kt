@@ -493,17 +493,22 @@ fun DetailNavigation(
             }
             composable(
                 route = Screen.Equalizer.route,
-                arguments = listOf(navArgument("headphoneProfileId") { type = NavType.StringType }),
+                arguments = listOf(
+                    navArgument("headphoneProfileId") { type = NavType.StringType },
+                    navArgument("askDacEq") { type = NavType.BoolType; defaultValue = false },
+                ),
                 enterTransition = { enterTransition() },
                 exitTransition = { exitTransition() },
                 popEnterTransition = { popEnterTransition() },
                 popExitTransition = { popExitTransition() },
-            ) {
+            ) { backStackEntry ->
                 ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
                     // B30: the DAC's own EQ when a writable DAC's EQ was read, else the software equalizer (decided before either exists).
+                    // B41: opened from the Audio page's "Use the DAC's EQ", it asks the listener's yes at once.
                     com.lostf1sh.pixelplayeross.presentation.screens.EqualizerRoute(
                         navController = navController,
-                        playerViewModel = playerViewModel
+                        playerViewModel = playerViewModel,
+                        askDacEqOnArrival = backStackEntry.arguments?.getBoolean("askDacEq") == true,
                     )
                 }
             }

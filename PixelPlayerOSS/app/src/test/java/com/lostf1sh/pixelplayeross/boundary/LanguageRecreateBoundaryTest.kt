@@ -95,7 +95,8 @@ class LanguageRecreateBoundaryTest {
 
     @Test
     fun `the window's background follows the app's theme`() {
-        assertThat(activity).contains("PixelPlayerWindowBackground()")
+        // B41: the theme's own opaque background, not the Material one, which the cover glass leaves see-through
+        assertThat(activity).contains("PixelPlayerWindowBackground(color = Dap.background)")
         val theme = main("$java/ui/theme/Theme.kt")
         assertThat(theme.substringAfter("fun PixelPlayerWindowBackground(")).contains("window.setBackgroundDrawable(argb.toDrawable())")
     }

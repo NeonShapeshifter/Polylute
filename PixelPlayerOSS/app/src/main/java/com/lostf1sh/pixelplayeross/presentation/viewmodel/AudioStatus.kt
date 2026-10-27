@@ -41,12 +41,25 @@ data class AudioStatus(
     val sinkDirectActive: Boolean = false,
     val maintenanceDspBypass: Boolean = false,
     val dacEq: DacEqLabel = DacEqLabel.NOT_APPLICABLE,
+    /** B40-F8: Resonance's peak limiter is in the signal of the stream that is configured now (the Android route's processor said so). */
+    val limiterRunning: Boolean = false,
+    /**
+     * B41: the attached DAC's own EQ is one this build can write once the listener allows it (F2: the Melody). Only then does the Audio
+     * page's DAC EQ row offer "Use the DAC's EQ"; a DAC that is read only (or no DAC) offers nothing.
+     */
+    val dacEqWritable: Boolean = false,
 ) {
     /** Whether the router found a USB DAC when it last decided; null before it has looked. */
     val dacPresent: Boolean? get() = route.usbDacPresent
 
     /** A USB DAC is connected. */
     val dacConnected: Boolean get() = route.usbDacPresent == true
+
+    /**
+     * B39-A8: a DAC is connected and Android has not given Polylute permission to use it. The route is then Android's own (the reason
+     * says so), and nothing else on the page tells the listener: this is what the Audio page names, with a way to ask again.
+     */
+    val usbPermissionPending: Boolean get() = route.usbDacPresent == true && route.permissionGranted == false
 
     /** USB Direct is carrying the stream, in any signal mode. */
     val directActive: Boolean get() = route.isDirectActive

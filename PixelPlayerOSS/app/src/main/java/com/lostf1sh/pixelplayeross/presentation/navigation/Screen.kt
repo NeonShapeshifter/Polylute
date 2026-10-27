@@ -74,9 +74,10 @@ sealed class Screen(val route: String) {
     object ArtistSettings : Screen("artist_settings")
     object DelimiterConfig : Screen("delimiter_config")
     object WordDelimiterConfig : Screen("word_delimiter_config")
-    object Equalizer : Screen("equalizer/{headphoneProfileId}") {
-        fun createRoute(headphoneProfileId: String) =
-            "equalizer/${Uri.encode(headphoneProfileId)}"
+    object Equalizer : Screen("equalizer/{headphoneProfileId}?askDacEq={askDacEq}") {
+        /** [askDacEq] (B41): arrive already asking the listener's yes for the DAC's own EQ; the plain route is what every caller had. */
+        fun createRoute(headphoneProfileId: String, askDacEq: Boolean = false) =
+            "equalizer/${Uri.encode(headphoneProfileId)}" + if (askDacEq) "?askDacEq=true" else ""
     }
     object DeviceCapabilities : Screen("device_capabilities")
 

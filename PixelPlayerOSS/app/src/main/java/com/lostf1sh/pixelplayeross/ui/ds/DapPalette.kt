@@ -88,8 +88,61 @@ data class DapPalette(
      * Drives the Material scheme family and the accent presentation below; it is not a colour.
      */
     val isLight: Boolean,
+
+    /**
+     * B40-F1: this theme's own colour for each named accent ([DapAccentTables]). The listener picks the *name*; the theme decides how that
+     * name looks on its surfaces (purer and brighter on black, deeper on white), at WCAG AA or better on every one of them.
+     */
+    val accents: Map<DapAccent, Color> = DapAccentTables.Graphite,
+
+    /**
+     * B41: set while a cover backdrop is behind the app ("App colours: Cover glass" or "From album art" and a cover to show). The page then
+     * draws no fill of its own ([page]) and the surfaces that sit on it are frosted glass ([panel], [panelRaised]); every other role stays as
+     * it is, opaque, so a dialog or a sheet (its own window, over a dimmed app) never shows what is behind it.
+     */
+    val glass: com.lostf1sh.pixelplayeross.ui.glass.GlassSurfaces? = null,
 ) {
     /**
+     * B41: what a **page** fills itself with: [background], or nothing at all (the background's colour at alpha 0, so its luminance still
+     * says what the theme is) while the glass is behind the app. A page that fills itself with [background] hides the glass.
+     */
+    val page: Color get() = if (glass != null) background.copy(alpha = 0f) else background
+
+    /**
+     * B41: [surface], or over the glass (B42-fix3, item 8) a veil of the theme's background that lets the glass show through it, deeper: what a
+     * card, a tile, a header's panel, the mini player and the bottom bar are filled with. It is the same for every song.
+     */
+    val panel: Color get() = glass?.panel ?: surface
+
+    /** The mini player and folded "Up next": an opaque, darkened colour from the cover, the theme surface otherwise. */
+    val shelf: Color
+        @androidx.compose.runtime.Composable
+        get() = com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass.current?.takeIf { glass != null }?.shelf ?: surface
+
+    /**
+     * B42-fix3 (item 8): what a **bar** over the page is filled with (the strip under the status bar, a collapsing top bar once it has collapsed): [background],
+     * or over the glass the same frosted veil as a panel, so it is the glass seen through a deeper veil and never the theme's near-black.
+     */
+    val bar: Color get() = glass?.panel ?: background
+
+    /** B41: [surfaceRaised], or over the glass a little light over a panel (a raised control, an art well). */
+    val panelRaised: Color get() = glass?.panelRaised ?: surfaceRaised
+
+    /**
+     * B41: what a header image fades into where it meets the page: [background], or (over the glass) the glass's own average colour under the
+     * page's veil. The one role that follows the song, and it is read from the glass itself: a composable that uses it follows the field,
+     * every other reader of the palette is untouched by a song change (B42-fix3, item 1).
+     */
+    val fadeEdge: Color
+        @androidx.compose.runtime.Composable
+        get() = com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass.current?.takeIf { glass != null }?.edge ?: background
+
+    /** The colour of [accent] on this theme. */
+    fun accentColor(accent: DapAccent): Color = accents.getValue(accent)
+
+    /**
+     * B40-F1: for a colour that is **not** one of the named accents (it has no entry in [accents]); a named accent is [accentColor].
+     *
      * The accent as it should be *presented* on this palette.
      *
      * The curated accents are light pastels chosen to read against graphite. On a light palette
@@ -185,6 +238,7 @@ data class DapPalette(
             onFill = Color(0xFF000000),
             scrim = Color(0xCC000000),
             isLight = false,
+            accents = DapAccentTables.Black,
         )
 
         /**
@@ -228,6 +282,80 @@ data class DapPalette(
             onFill = Color(0xFFFAFAFB),
             scrim = Color(0x66000000),
             isLight = true,
+            accents = DapAccentTables.Light,
+        )
+
+        /**
+         * B40-F1: a mid-dark neutral gray, for the listener who finds graphite too close to black and white too bright.
+         *
+         * The same stacking direction as graphite (a raised container is lighter than the page), at a lighter step: the page is a
+         * visible gray, so text is lifted a little to keep its contrast on the raised panel. Hairlines are white at low alpha, as on
+         * every dark palette.
+         */
+        val Gray = DapPalette(
+            background = Color(0xFF2A2C30),
+            surface = Color(0xFF33363B),
+            surfaceRaised = Color(0xFF3D4046),
+
+            dividerFaint = Color(0x0FFFFFFF),
+            divider = Color(0x1AFFFFFF),
+            border = Color(0x24FFFFFF),
+            trackStroke = Color(0x29FFFFFF),
+            interactiveTrack = Color(0x30FFFFFF),
+            dividerStrong = Color(0x3DFFFFFF),
+
+            primaryText = Color(0xFFF1F2F4),
+            secondaryText = Color(0xFFBFC2C7),
+            tertiaryText = Color(0xFFABAEB4),
+            disabledText = Color(0xFF7C7F85),
+
+            warning = Color(0xFFE0AE74),
+            error = Color(0xFFFF9C96),
+
+            artPlaceholderHigh = Color(0xFF4A4D53),
+            artPlaceholderLow = Color(0xFF404348),
+            artPlaceholderDisabled = Color(0xFF55585E),
+
+            onFill = Color(0xFF16171A),
+            scrim = Color(0xCC000000),
+            isLight = false,
+            accents = DapAccentTables.Gray,
+        )
+
+        /**
+         * B40-F1: a deep navy, the dark appearance with a cool cast.
+         *
+         * A blue-black page with panels that step up in blue, so depth reads as colour and not as grey. Text is cool white; the warning
+         * stays warm (it must not look like the page), and the error is the lightened red of the other new dark palette.
+         */
+        val Navy = DapPalette(
+            background = Color(0xFF0A1424),
+            surface = Color(0xFF101C33),
+            surfaceRaised = Color(0xFF182845),
+
+            dividerFaint = Color(0x0FFFFFFF),
+            divider = Color(0x17FFFFFF),
+            border = Color(0x21FFFFFF),
+            trackStroke = Color(0x26FFFFFF),
+            interactiveTrack = Color(0x2BFFFFFF),
+            dividerStrong = Color(0x33FFFFFF),
+
+            primaryText = Color(0xFFE9EEF7),
+            secondaryText = Color(0xFFB0BBD0),
+            tertiaryText = Color(0xFF93A1BC),
+            disabledText = Color(0xFF5E6D88),
+
+            warning = Color(0xFFE0AE74),
+            error = Color(0xFFEE7A7F),
+
+            artPlaceholderHigh = Color(0xFF1F3152),
+            artPlaceholderLow = Color(0xFF182642),
+            artPlaceholderDisabled = Color(0xFF2A3C5E),
+
+            onFill = Color(0xFF070D18),
+            scrim = Color(0xCC000000),
+            isLight = false,
+            accents = DapAccentTables.Navy,
         )
 
         /** How far a light palette darkens an accent before presenting it. */
@@ -239,7 +367,7 @@ data class DapPalette(
 }
 
 /**
- * The three curated base appearances.
+ * The curated base appearances: graphite (the default), black, light, and (B40-F1) gray and navy.
  *
  * Persisted by [storageKey], so the keys are part of the data contract: renaming one silently
  * resets every install that had chosen it back to the default.
@@ -247,7 +375,9 @@ data class DapPalette(
 enum class DapBaseTheme(val label: String, val storageKey: String) {
     Graphite("Graphite", "graphite"),
     Black("Black", "black"),
-    Light("Light", "light");
+    Light("Light", "light"),
+    Gray("Gray", "gray"),
+    Navy("Navy", "navy");
 
     /** The palette this choice selects. */
     val palette: DapPalette
@@ -255,6 +385,8 @@ enum class DapBaseTheme(val label: String, val storageKey: String) {
             Graphite -> DapPalette.Graphite
             Black -> DapPalette.Black
             Light -> DapPalette.Light
+            Gray -> DapPalette.Gray
+            Navy -> DapPalette.Navy
         }
 
     companion object {

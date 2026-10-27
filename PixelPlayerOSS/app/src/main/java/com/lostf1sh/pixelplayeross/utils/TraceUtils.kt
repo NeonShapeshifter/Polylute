@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.utils
 
 import android.os.Trace
+import com.lostf1sh.pixelplayeross.DevelopmentToolsPolicy
 import java.util.concurrent.atomic.AtomicInteger
 
 private val traceCookieGenerator = AtomicInteger()
@@ -11,6 +12,7 @@ private val traceCookieGenerator = AtomicInteger()
  * [traceAsyncSection] in suspend functions.
  */
 inline fun <T> traceSection(label: String, block: () -> T): T {
+    if (!DevelopmentToolsPolicy.enabled()) return block()
     Trace.beginSection(label)
     try {
         return block()
@@ -27,6 +29,7 @@ inline fun <T> traceSection(label: String, block: () -> T): T {
  * the log carries `SongChange: <label> took N ms`, with nothing printed for a section that is cheap. Not for suspend code.
  */
 inline fun <T> timedSection(label: String, thresholdMs: Long = 8L, block: () -> T): T {
+    if (!DevelopmentToolsPolicy.enabled()) return block()
     val startedAt = android.os.SystemClock.elapsedRealtime()
     Trace.beginSection(label)
     try {
@@ -47,6 +50,7 @@ inline fun <T> timedSection(label: String, thresholdMs: Long = 8L, block: () -> 
  * making them the only safe form for suspend functions.
  */
 suspend fun <T> traceAsyncSection(label: String, block: suspend () -> T): T {
+    if (!DevelopmentToolsPolicy.enabled()) return block()
     val cookie = traceCookieGenerator.incrementAndGet()
     Trace.beginAsyncSection(label, cookie)
     try {

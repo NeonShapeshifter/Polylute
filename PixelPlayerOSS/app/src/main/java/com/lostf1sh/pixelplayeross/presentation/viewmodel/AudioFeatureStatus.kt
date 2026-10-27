@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.presentation.viewmodel
 
 import androidx.annotation.StringRes
+import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel
 import androidx.compose.runtime.Immutable
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.presentation.components.PristineFrozenFeature
@@ -33,6 +34,8 @@ data class FeatureStatus(
     @StringRes val textRes: Int,
     /** Applied, and through the Android route (crossfade, speed, an effect with a USB DAC connected). */
     val androidRoute: Boolean = false,
+    /** B41: the one value the sentence names (the DAC's name); null keeps the line's usual argument, the lock's name. */
+    val arg: String? = null,
 ) {
     companion object {
         val Applied = FeatureStatus(FeatureStatusKind.APPLIED, R.string.audio_status_applied)
@@ -41,6 +44,12 @@ data class FeatureStatus(
         val Off = FeatureStatus(FeatureStatusKind.OFF, R.string.audio_status_off)
         val BypassedByMaintenance = FeatureStatus(FeatureStatusKind.BYPASSED, R.string.audio_status_bypassed_maintenance)
         val OtherProfile = FeatureStatus(FeatureStatusKind.OTHER_PROFILE, R.string.audio_status_other_profile)
+
+        /** B40-F8: on, and the stream in play is on USB Direct, where the limiter is not (the Android route's chain does not run there). */
+        val LimiterAndroidOnly = FeatureStatus(FeatureStatusKind.OFF, R.string.audio_status_limiter_android_only)
+
+        /** B40-F8: on, and the stream in play was configured before it was: it joins the signal at the next seek or song. */
+        val LimiterNextSong = FeatureStatus(FeatureStatusKind.OFF, R.string.audio_status_limiter_next_song)
     }
 }
 
@@ -63,6 +72,20 @@ fun AudioStatus.equalizerStatus(isProfileSelected: Boolean, enabled: Boolean): F
     maintenanceDspBypass -> FeatureStatus.BypassedByMaintenance
     purityInForce -> FeatureStatus.Frozen
     else -> FeatureStatus.Applied
+}
+
+/**
+ * B40-F8: Resonance's peak limiter. Off wins; then the Maintenance kill, then the lock (a frozen setting is kept but does not reach the
+ * signal); then the route: on USB Direct the Android chain does not run, so it says so instead of "applied"; on the Android route it is
+ * applied when the stream in play has it, and "from the next song" when the switch was turned on after the stream was configured.
+ */
+fun AudioStatus.limiterStatus(enabled: Boolean): FeatureStatus = when {
+    !enabled -> FeatureStatus.Off
+    maintenanceDspBypass -> FeatureStatus.BypassedByMaintenance
+    purityInForce -> FeatureStatus.Frozen
+    route.isDirectActive -> FeatureStatus.LimiterAndroidOnly
+    limiterRunning -> FeatureStatus.Applied
+    else -> FeatureStatus.LimiterNextSong
 }
 
 /** ReplayGain. Same order as the equalizer: off wins, then the override, then the lock. */
@@ -123,4 +146,22 @@ fun safetyMaxStatus(state: SafetyMaxOutputState): FeatureStatus = when (state) {
         FeatureStatus(FeatureStatusKind.BYPASSED, R.string.audio_status_safety_unavailable)
     SafetyMaxOutputState.OFF -> FeatureStatus.Off
     SafetyMaxOutputState.PROFILE_NOT_SELECTED -> FeatureStatus.OtherProfile
+}
+
+/**
+ * B39-A6: what the DAC's own EQ is doing, in the same status line the app's EQ uses, so the two read side by side. Null when the DAC
+ * has no EQ the app can ask about (no DAC, or one outside the FiiO/Snowsky table): there is then nothing to say about it.
+ *
+ * B41: the three quiet-or-not answers are told apart, because they mean different things to the listener: **off** (the DAC's own "Close
+ * EQ": its real state, said with the DAC's name), **flat** (on, every band at 0 dB) and **could not be read** (nothing is known).
+ * "Off or flat" read as the last one.
+ *
+ * @param dacName what the sentence calls the DAC.
+ */
+fun AudioStatus.dacEqStatus(dacName: String): FeatureStatus? = when (dacEq) {
+    DacEqLabel.NOT_APPLICABLE -> null
+    DacEqLabel.ON -> FeatureStatus(FeatureStatusKind.APPLIED, R.string.audio_dac_eq_on)
+    DacEqLabel.OFF -> FeatureStatus(FeatureStatusKind.OFF, R.string.audio_dac_eq_closed, arg = dacName)
+    DacEqLabel.FLAT -> FeatureStatus(FeatureStatusKind.OFF, R.string.audio_dac_eq_flat)
+    DacEqLabel.UNKNOWN -> FeatureStatus(FeatureStatusKind.BYPASSED, R.string.audio_dac_eq_unknown)
 }

@@ -5,6 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
@@ -21,6 +23,7 @@ import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
 import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
+import com.lostf1sh.pixelplayeross.data.preferences.AppColorSource
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
 import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.service.player.AudioBackend
@@ -96,7 +99,6 @@ class SettingsPagesRenderTest {
         override fun onBackNavigationModeChange(value: BackNavigationMode) { calls += "back:${value.id}" }
         override fun onKeepPlayingInBackgroundChange(value: Boolean) { calls += "keepPlaying:$value" }
         override fun onResumeOnHeadsetReconnectChange(value: Boolean) { calls += "resume:$value" }
-        override fun onDapLockScreenEnabledChange(value: Boolean) { calls += "lockScreen:$value" }
         override fun onShowQueueHistoryChange(value: Boolean) { calls += "queueHistory:$value" }
         override fun onFolderBackGestureNavigationChange(value: Boolean) { calls += "folderBack:$value" }
         override fun onTapBackgroundClosesPlayerChange(value: Boolean) { calls += "tapBackground:$value" }
@@ -116,11 +118,13 @@ class SettingsPagesRenderTest {
         compose.onAllNodesWithText(s(R.string.setcat_random_mode_title)).assertCountEquals(0)
         compose.onAllNodesWithText(s(R.string.audio_persistent_mix_title)).assertCountEquals(0)
 
-        // Six switches, in page order; each one reaches its own action with the value it was switched to.
+        // B41: "DAP lock screen" is Appearance's now. Five switches, in page order; each one reaches its own action with the value it was
+        // switched to.
+        compose.onAllNodesWithText(s(R.string.setcat_dap_lock_screen_title)).assertCountEquals(0)
         val switches = compose.onAllNodes(isToggleable())
-        switches.assertCountEquals(6)
-        for (i in 0 until 6) switches[i].performScrollTo().performClick()
-        assertEquals(6, actions.calls.size)
+        switches.assertCountEquals(5)
+        for (i in 0 until 5) switches[i].performScrollTo().performClick()
+        assertEquals(5, actions.calls.size)
         assertTrue(actions.calls.toString(), actions.calls.containsAll(listOf("queueHistory:true", "haptics:false")))
     }
 
@@ -131,30 +135,28 @@ class SettingsPagesRenderTest {
         override fun onExternalLyricsEnabledChange(value: Boolean) { calls += "external:$value" }
         override fun onLyricsSourcePreferenceChange(value: LyricsSourcePreference) { calls += "source:$value" }
         override fun onAutoScanLrcFilesChange(value: Boolean) { calls += "autoScan:$value" }
-        override fun onImmersiveLyricsEnabledChange(value: Boolean) { calls += "immersive:$value" }
-        override fun onImmersiveLyricsTimeoutChange(value: Long) { calls += "timeout:$value" }
-        override fun onLyricsAlignmentChange(value: String) { calls += "alignment:$value" }
-        override fun onShowLyricsTranslationChange(value: Boolean) { calls += "translation:$value" }
-        override fun onShowLyricsRomanizationChange(value: Boolean) { calls += "romanization:$value" }
-        override fun onUseAnimatedLyricsChange(value: Boolean) { calls += "animated:$value" }
-        override fun onAnimatedLyricsBlurEnabledChange(value: Boolean) { calls += "blur:$value" }
-        override fun onAnimatedLyricsBlurStrengthChange(value: Float) { calls += "blurStrength:$value" }
     }
 
     @Test
-    fun `lyrics shows its three sections, and the options that depend on a switch appear only with it`() {
+    fun `B41 - lyrics keeps only its sources, and each of them calls its action`() {
         val actions = LyricsRecorder()
-        var state by mutableStateOf(LyricsSettingsState.from(SettingsUiState(immersiveLyricsEnabled = false, animatedLyricsBlurEnabled = false)))
+        val state = LyricsSettingsState.from(SettingsUiState())
         setPage { LyricsSettingsScreen(state, actions) }
-        assertShows(R.string.setcat_lyrics_sources, R.string.setcat_lyrics_reading, R.string.setcat_lyrics_effects)
-        // The blur strength is the option of a switch that is off.
-        compose.onAllNodesWithText(s(R.string.presentation_batch_f_exp_blur_strength)).assertCountEquals(0)
-        state = LyricsSettingsState.from(SettingsUiState(immersiveLyricsEnabled = true, animatedLyricsBlurEnabled = true))
-        compose.waitForIdle()
-        assertShows(R.string.presentation_batch_f_exp_blur_strength)
-        // B32-Q7: immersive lyrics are hidden in 1.0, with its switch on or off: neither the switch nor its auto-hide delay is drawn.
-        compose.onAllNodesWithText(s(R.string.setcat_immersive_lyrics_title)).assertCountEquals(0)
-        compose.onAllNodesWithText(s(R.string.setcat_auto_hide_delay_label)).assertCountEquals(0)
+        assertShows(
+            R.string.setcat_lyrics_sources, R.string.setcat_external_lyrics_title, R.string.setcat_lyrics_source_priority_label,
+            R.string.setcat_auto_scan_lrc_title,
+        )
+        // everything about how lyrics read and look moved to Appearance
+        for (moved in listOf(
+            R.string.setcat_immersive_lyrics_title, R.string.setcat_lyrics_alignment_label, R.string.setcat_lyrics_translation_title,
+            R.string.setcat_lyrics_romanization_title, R.string.presentation_batch_f_exp_animated_lyrics_title,
+            R.string.presentation_batch_f_exp_lyric_blur_title,
+        )) compose.onAllNodesWithText(s(moved)).assertCountEquals(0)
+        val switches = compose.onAllNodes(isToggleable())
+        switches.assertCountEquals(2)
+        switches[0].performScrollTo().performClick()
+        switches[1].performScrollTo().performClick()
+        assertEquals(listOf("external:true", "autoScan:true"), actions.calls)
     }
 
     // ── Library ──────────────────────────────────────────────────────────────────────────────────────
@@ -164,8 +166,13 @@ class SettingsPagesRenderTest {
         override fun onMinSongDurationChange(value: Int) { calls += "minDuration:$value" }
         override fun onMinTracksPerAlbumChange(value: Int) { calls += "minTracks:$value" }
         override fun onAlbumArtCacheLimitMbChange(value: Int) { calls += "cache:$value" }
-        override fun onExternalArtistImagesEnabledChange(value: Boolean) { calls += "artistImages:$value" }
-        override fun onOpenExcludedDirectories() { calls += "excluded" }
+        override fun onMusicInfoCoversChange(value: Boolean) { calls += "covers:$value" }
+        override fun onMusicInfoArtistPhotosChange(value: Boolean) { calls += "photos:$value" }
+        override fun onMusicInfoDescriptionsChange(value: Boolean) { calls += "descriptions:$value" }
+        override fun onMusicInfoCacheLimitChange(megabytes: Int) { calls += "musicInfoLimit:$megabytes" }
+        override fun onDeleteMusicInfo(onDone: (Long) -> Unit) { calls += "deleteMusicInfo"; onDone(2048L) }
+        override fun onOpenLibraryFolders() { calls += "excluded" }
+        override fun onFindFolders() { calls += "find folders" }
         override fun onOpenArtistSettings() { calls += "artists" }
         override fun onOpenDuplicates() { calls += "duplicates" }
         override fun onRefreshLibrary() { calls += "refresh" }
@@ -178,16 +185,39 @@ class SettingsPagesRenderTest {
         val state = LibrarySettingsState.from(SettingsUiState(), isSyncing = false, syncProgress = SyncProgress())
         setPage { LibrarySettingsScreen(state, actions) }
         assertShows(
-            R.string.setcat_library_structure, R.string.setcat_filtering, R.string.setcat_sync_scanning, R.string.setcat_online_services,
-            R.string.setcat_excluded_directories_title, R.string.setcat_artists_title, R.string.setcat_min_song_duration,
+            R.string.setcat_library_structure, R.string.setcat_filtering, R.string.setcat_sync_scanning, R.string.setcat_music_info,
+            R.string.library_folders_title, R.string.library_find_folders_title, R.string.setcat_artists_title, R.string.setcat_min_song_duration,
             R.string.setcat_min_tracks_per_album, R.string.setcat_album_art_cache_limit, R.string.setcat_find_duplicates_title,
         )
-        compose.onNodeWithText(s(R.string.setcat_excluded_directories_title)).performScrollTo().performClick()
+        compose.onNodeWithText(s(R.string.library_folders_title)).performScrollTo().performClick()
+        compose.onNodeWithText(s(R.string.library_find_folders_title)).performScrollTo().performClick()
         compose.onNodeWithText(s(R.string.setcat_artists_title)).performScrollTo().performClick()
         compose.onNodeWithText(s(R.string.setcat_find_duplicates_title)).performScrollTo().performClick()
         compose.onNodeWithText(s(R.string.setcat_sync_update_library)).performScrollTo().performClick()
         compose.onNodeWithText(s(R.string.presentation_batch_f_full_rescan)).performScrollTo().performClick()
-        assertEquals(listOf("excluded", "artists", "duplicates", "refresh", "rescan"), actions.calls)
+        assertEquals(listOf("excluded", "find folders", "artists", "duplicates", "refresh", "rescan"), actions.calls)
+    }
+
+    @Test
+    fun `B40-F4 - the music info section has three switches off by default, offline preparation, and a way to delete what was downloaded`() {
+        val actions = LibraryRecorder()
+        val state = LibrarySettingsState.from(
+            SettingsUiState(musicInfoUsedBytes = 3L * 1024 * 1024), isSyncing = false, syncProgress = SyncProgress(),
+        )
+        assertEquals(false, state.musicInfoCoversEnabled)
+        assertEquals(false, state.musicInfoArtistPhotosEnabled)
+        assertEquals(false, state.musicInfoDescriptionsEnabled)
+        setPage { LibrarySettingsScreen(state, actions) }
+        assertShows(
+            R.string.setcat_music_info, R.string.setcat_music_info_note, R.string.setcat_music_info_covers_title,
+            R.string.setcat_music_info_photos_title, R.string.setcat_music_info_descriptions_title,
+            R.string.offline_download_title, R.string.setcat_music_info_delete_title,
+        )
+        // the three switches are the page's only toggles, in the order they are drawn
+        val toggles = compose.onAllNodes(isToggleable())
+        for (index in 0..2) toggles[index].performScrollTo().assertIsOff().performClick()
+        compose.onNodeWithText(s(R.string.setcat_music_info_delete_title)).performScrollTo().performClick()
+        assertEquals(listOf("covers:true", "photos:true", "descriptions:true", "deleteMusicInfo"), actions.calls)
     }
 
     // ── Appearance ───────────────────────────────────────────────────────────────────────────────────
@@ -196,6 +226,8 @@ class SettingsPagesRenderTest {
         val calls = mutableListOf<String>()
         override fun onAppLanguageChange(value: String) { calls += "language:$value" }
         override fun onAccentChange(value: DapAccent) { calls += "accent:$value" }
+        override fun onAppColorSourceChange(value: String) { calls += "appColors:$value" }
+        override fun onCoverThemeChoiceChange(value: String) { calls += "coverTheme:$value" }
         override fun onPlayerThemePreferenceChange(value: String) { calls += "playerTheme:$value" }
         override fun onShowPlayerFileInfoChange(value: Boolean) { calls += "fileInfo:$value" }
         override fun onAlbumArtQualityChange(value: AlbumArtQuality) { calls += "artQuality:$value" }
@@ -203,6 +235,17 @@ class SettingsPagesRenderTest {
         override fun onLibraryNavigationModeChange(value: String) { calls += "libraryNav:$value" }
         override fun onThemeChoiceChange(choice: DapAppearanceChoice) { calls += "theme:$choice" }
         override fun onOpenPaletteStyle() { calls += "palette" }
+        override fun onCoverGlassMovingChange(value: Boolean) { calls += "moving:$value" }
+        override fun onLyricsUnderCoverChange(value: Boolean) { calls += "lyricsUnderCover:$value" }
+        override fun onImmersiveLyricsEnabledChange(value: Boolean) { calls += "immersive:$value" }
+        override fun onImmersiveLyricsTimeoutChange(value: Long) { calls += "timeout:$value" }
+        override fun onLyricsAlignmentChange(value: String) { calls += "alignment:$value" }
+        override fun onShowLyricsTranslationChange(value: Boolean) { calls += "translation:$value" }
+        override fun onShowLyricsRomanizationChange(value: Boolean) { calls += "romanization:$value" }
+        override fun onUseAnimatedLyricsChange(value: Boolean) { calls += "animated:$value" }
+        override fun onAnimatedLyricsBlurEnabledChange(value: Boolean) { calls += "blur:$value" }
+        override fun onAnimatedLyricsBlurStrengthChange(value: Float) { calls += "blurStrength:$value" }
+        override fun onDapLockScreenEnabledChange(value: Boolean) { calls += "lockScreen:$value" }
     }
 
     @Test
@@ -213,12 +256,105 @@ class SettingsPagesRenderTest {
         assertShows(
             R.string.setcat_global_theme, R.string.setcat_now_playing, R.string.setcat_artwork, R.string.setcat_app_navigation_section,
             R.string.setcat_app_language_label, R.string.setcat_theme_label, R.string.setcat_accent_label,
-            R.string.setcat_player_theme_label, R.string.setcat_show_player_file_info_title, R.string.setcat_album_art_palette_title,
+            R.string.setcat_app_colors_label, R.string.setcat_player_theme_label, R.string.setcat_show_player_file_info_title, R.string.setcat_album_art_palette_title,
         )
         compose.onNodeWithText(s(R.string.setcat_album_art_palette_title)).performScrollTo().performClick()
-        compose.onNode(isToggleable()).performScrollTo().performClick()
+        // the file-info switch is the first switch of the Player section
+        compose.onAllNodes(isToggleable())[0].performScrollTo().performClick()
         assertEquals(listOf("palette", "fileInfo:false"), actions.calls)
+    }
 
+    @Test
+    fun `B41 - appearance is the one place for how the app looks, in four sections`() {
+        val state = AppearanceSettingsState.from(SettingsUiState())
+        setPage { AppearanceSettingsScreen(state, AppearanceRecorder()) }
+        assertShows(
+            // Theme · Player · Lyrics · Lock screen
+            R.string.setcat_global_theme, R.string.setcat_now_playing, R.string.settings_category_lyrics_title, R.string.setcat_lock_screen_section,
+            // Player
+            R.string.setcat_lyrics_under_cover_title,
+            // Lyrics: the reading and the effects that moved from Settings, Lyrics
+            R.string.setcat_immersive_lyrics_title, R.string.setcat_lyrics_alignment_label, R.string.setcat_lyrics_translation_title,
+            R.string.setcat_lyrics_romanization_title, R.string.presentation_batch_f_exp_animated_lyrics_title,
+            R.string.presentation_batch_f_exp_lyric_blur_title,
+            // Lock screen: moved from Behaviour
+            R.string.setcat_dap_lock_screen_title,
+        )
+    }
+
+    @Test
+    fun `B41 - Moving background is offered once Cover glass is the app's colour source`() {
+        val glass = AppearanceSettingsState.from(SettingsUiState(appColorSource = AppColorSource.COVER_GLASS))
+        setPage { AppearanceSettingsScreen(glass, AppearanceRecorder()) }
+        assertShows(R.string.setcat_app_colors_cover_glass, R.string.setcat_moving_background_title, R.string.setcat_accent_desc_album_art)
+    }
+
+    @Test
+    fun `B41 - without Cover glass there is no Moving background row`() {
+        val album = AppearanceSettingsState.from(SettingsUiState(appColorSource = AppColorSource.ALBUM_ART))
+        setPage { AppearanceSettingsScreen(album, AppearanceRecorder()) }
+        compose.onAllNodesWithText(s(R.string.setcat_moving_background_title)).assertCountEquals(0)
+        assertShows(R.string.setcat_lyrics_under_cover_title)
+    }
+
+    @Test
+    fun `B41 - Moving background and Lyrics under the cover are on by default and call their actions`() {
+        val actions = AppearanceRecorder()
+        val state = AppearanceSettingsState.from(SettingsUiState(appColorSource = AppColorSource.COVER_GLASS))
+        assertEquals(true, state.coverGlassMoving)
+        assertEquals(true, state.lyricsUnderCover)
+        setPage { AppearanceSettingsScreen(state, actions) }
+        // the Player section's switches, in page order: file info, Moving background, Lyrics under the cover
+        val switches = compose.onAllNodes(isToggleable())
+        switches[1].performScrollTo().assertIsOn().performClick()
+        switches[2].performScrollTo().assertIsOn().performClick()
+        assertEquals(listOf("moving:false", "lyricsUnderCover:false"), actions.calls)
+    }
+
+    @Test
+    fun `B41 - the lyrics options that depend on a switch appear only with it`() {
+        val actions = AppearanceRecorder()
+        var state by mutableStateOf(AppearanceSettingsState.from(SettingsUiState(immersiveLyricsEnabled = false, animatedLyricsBlurEnabled = false)))
+        setPage { AppearanceSettingsScreen(state, actions) }
+        // The blur strength is the option of a switch that is off.
+        compose.onAllNodesWithText(s(R.string.presentation_batch_f_exp_blur_strength)).assertCountEquals(0)
+        // B40-F5: immersive lyrics are back; the auto-hide delay is the option of its switch, which is off here.
+        assertShows(R.string.setcat_immersive_lyrics_title)
+        compose.onAllNodesWithText(s(R.string.setcat_auto_hide_delay_label)).assertCountEquals(0)
+        state = AppearanceSettingsState.from(SettingsUiState(immersiveLyricsEnabled = true, animatedLyricsBlurEnabled = true))
+        compose.waitForIdle()
+        assertShows(R.string.presentation_batch_f_exp_blur_strength, R.string.setcat_immersive_lyrics_title, R.string.setcat_auto_hide_delay_label)
+    }
+
+    @Test
+    fun `B41 - the lyrics rows and the lock screen switch that moved call the actions they always called`() {
+        val actions = AppearanceRecorder()
+        val state = AppearanceSettingsState.from(SettingsUiState(immersiveLyricsEnabled = false, animatedLyricsBlurEnabled = false))
+        setPage { AppearanceSettingsScreen(state, actions) }
+        // in page order: file info and Lyrics under the cover (Player), then the Lyrics section, then the Lock screen's
+        val switches = compose.onAllNodes(isToggleable())
+        switches.assertCountEquals(8)
+        for (i in 2..7) switches[i].performScrollTo().performClick()
+        assertEquals(
+            listOf("immersive:true", "translation:false", "romanization:false", "animated:true", "blur:true", "lockScreen:true"),
+            actions.calls,
+        )
+    }
+
+    @Test
+    fun `B40-F1 - the app colours row says where the colours come from, and the accent row says what it is then for`() {
+        val theme = AppearanceSettingsState.from(SettingsUiState())
+        setPage { AppearanceSettingsScreen(theme, AppearanceRecorder()) }
+        assertShows(R.string.setcat_app_colors_theme, R.string.setcat_accent_desc)
+        compose.onAllNodesWithText(s(R.string.setcat_accent_desc_album_art)).assertCountEquals(0)
+    }
+
+    @Test
+    fun `B40-F1 - in album art mode the row says so and the accent is the fallback for a song with no cover`() {
+        val cover = AppearanceSettingsState.from(SettingsUiState(appColorSource = com.lostf1sh.pixelplayeross.data.preferences.AppColorSource.ALBUM_ART))
+        setPage { AppearanceSettingsScreen(cover, AppearanceRecorder()) }
+        assertShows(R.string.setcat_app_colors_album_art, R.string.setcat_accent_desc_album_art)
+        compose.onAllNodesWithText(s(R.string.setcat_accent_desc)).assertCountEquals(0)
     }
 
     @Test

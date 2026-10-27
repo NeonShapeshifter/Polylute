@@ -199,7 +199,7 @@ class HardwareDiagnosticsTest {
             directTransitionOverride = false,
         )
         assertThat(value(group, "Direct active")).isEqualTo("yes")
-        assertThat(value(group, "Signal path")).isEqualTo("Processed")
+        assertThat(value(group, "Signal path")).isEqualTo("Resonance (processed)")
         assertThat(value(group, "Direct processing")).contains("EQ")
         // The claim that must never reappear: Direct active, therefore bit-perfect.
         assertThat(value(group, "Bit-perfect")).isEqualTo("No — Equalizer active")
@@ -219,7 +219,7 @@ class HardwareDiagnosticsTest {
             forceAndroidOverride = false,
             directTransitionOverride = false,
         )
-        assertThat(value(group, "Signal path")).isEqualTo("Pristine")
+        assertThat(value(group, "Signal path")).isEqualTo("Purity (untouched)")
         assertThat(value(group, "Direct processing")).isEqualTo("none")
         assertThat(value(group, "Bit-perfect")).isEqualTo("Not measured")
     }

@@ -69,7 +69,8 @@ class MaintenanceReachabilityBoundaryTest {
     fun `the reconciliation is the existing idempotent one, and it refreshes what composition derived`() {
         val reconcile = activity.substringAfter("private fun reconcileOwnerPolicyIfHomeChanged(reason: String) {")
             .substringBefore("private fun restoreDeviceOwnerPolicy()")
-        assertThat(reconcile).contains("if (!homeChangeTracker.changed(state)) return")
+        // B40-F9b: a change since the last look, or a Device Owner home that is unfinished by itself (the tracker is the process's)
+        assertThat(reconcile).contains("if (!homeChangeTracker.shouldReconcile(state, holding = ownerPolicyIsHeldOff())) return")
         assertThat(reconcile).contains("restoreDeviceOwnerPolicy()")
         assertThat(reconcile).contains("ownerEpoch.intValue++")
         // The shell reads the epoch, so a change recomposes the mode-derived state.

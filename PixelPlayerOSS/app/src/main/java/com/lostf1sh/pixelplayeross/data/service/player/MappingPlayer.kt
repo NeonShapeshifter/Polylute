@@ -39,15 +39,40 @@ class MappingPlayer(
      * history takes the reason from here (B28).
      */
     private val onUserTransport: ((TrackEndReason) -> Unit)? = null,
+    /**
+     * Asked before any request to play reaches the player, from any controller (the app, the notification, a headset button, the lock
+     * screen). False holds the request: nothing is started, and the gate says why on its own (B39-S1: a DAC with no volume the app can
+     * set has not been told about yet). It never stops a pause.
+     */
+    private val playGate: (() -> Boolean)? = null,
+    /**
+     * Told when the listener pauses or stops, from any controller (B40-fix2): a play that is waiting somewhere for a protection to take
+     * effect ([playGate] holds it) must not start when that arrives. Separate from [onPause], which also says nothing of a stop.
+     */
+    private val onPlaybackCancelled: (() -> Unit)? = null,
 ) : ForwardingPlayer(innerPlayer) {
 
+    override fun play() {
+        if (playGate?.invoke() == false) return
+        super.play()
+    }
+
     override fun pause() {
+        onPlaybackCancelled?.invoke()
         onPause?.invoke()
         super.pause()
     }
 
+    override fun stop() {
+        onPlaybackCancelled?.invoke()
+        super.stop()
+    }
+
     override fun setPlayWhenReady(playWhenReady: Boolean) {
-        if (!playWhenReady) onPause?.invoke()
+        if (!playWhenReady) {
+            onPlaybackCancelled?.invoke()
+            onPause?.invoke()
+        } else if (playGate?.invoke() == false) return
         super.setPlayWhenReady(playWhenReady)
     }
 

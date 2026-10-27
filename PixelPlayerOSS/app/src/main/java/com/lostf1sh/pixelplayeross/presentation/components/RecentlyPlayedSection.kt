@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +41,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -55,11 +53,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.model.RecentlyPlayedSongUiModel
-import com.lostf1sh.pixelplayeross.presentation.viewmodel.ThemeStateHolder
 import kotlinx.collections.immutable.ImmutableList
 import com.lostf1sh.pixelplayeross.presentation.components.songTitleLabel
 import com.lostf1sh.pixelplayeross.presentation.components.songArtistLabel
@@ -93,7 +89,6 @@ fun RecentlyPlayedSection(
     songs: ImmutableList<RecentlyPlayedSongUiModel>,
     onSongClick: (Song) -> Unit,
     onOpenAllClick: () -> Unit,
-    themeStateHolder: ThemeStateHolder,
     currentSongId: String? = null,
     contentPadding: PaddingValues = HomeRecentlyPlayedDefaultContentPadding,
     modifier: Modifier = Modifier
@@ -183,7 +178,6 @@ fun RecentlyPlayedSection(
                                     RecentlyPlayedPill(
                                         item = cell.item,
                                         isCurrentSong = currentSongId == cell.item.song.id,
-                                        themeStateHolder = themeStateHolder,
                                         modifier = Modifier.width(cell.width),
                                         onClick = { onSongClick(cell.item.song) }
                                     )
@@ -250,24 +244,14 @@ private fun resolveRecentlyPlayedRowTargets(totalItems: Int): IntArray {
 private fun RecentlyPlayedPill(
     item: RecentlyPlayedSongUiModel,
     isCurrentSong: Boolean,
-    themeStateHolder: ThemeStateHolder,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
-    val albumColorSchemeState by remember(item.song.albumArtUriString, themeStateHolder) {
-        themeStateHolder.getAlbumColorSchemeFlow(item.song.albumArtUriString.orEmpty())
-    }.collectAsStateWithLifecycle()
-
-    val albumColorScheme = remember(albumColorSchemeState, isDark) {
-        albumColorSchemeState?.let { if (isDark) it.dark else it.light }
-    }
-
-    // One flat surface for every pill. The album-derived primaryContainer tint and the animated
-    // corner radius were the last place the product still coloured itself from artwork, and the
-    // periwinkle they produced belonged to a different design. The current track is marked the
-    // way the rest of the system marks it: an accent title.
-    val containerColor = Dap.surface
+    // One surface for every pill: over the cover glass (B42-fix3, item 8) a frosted one, the theme's own surface everywhere else. (It used
+    // to ask the theme holder for the album's own colour scheme here, once per pill, to throw it away: a palette request from composition for
+    // every tile on screen, and nothing drawn with the answer.)
+    val containerColor = Dap.panel
+    // the accent is read only by the pill that is playing: the others do not subscribe to it, so a song change reaches two pills, not all
     val titleColor = if (isCurrentSong) LocalDapAccent.current else Dap.primaryText
     val artistColor = Dap.tertiaryText
     val shape = RoundedCornerShape(DapRadius.Surface)

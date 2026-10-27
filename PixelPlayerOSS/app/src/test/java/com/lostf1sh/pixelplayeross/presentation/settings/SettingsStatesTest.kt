@@ -32,6 +32,8 @@ class SettingsStatesTest {
         keepPlayingInBackground = false,
         resumeOnHeadsetReconnect = true,
         dapLockScreenEnabled = true,
+        coverGlassMoving = false,
+        lyricsUnderCover = false,
         persistentShuffleEnabled = true,
         randomMode = RandomMode.FAST,
         showQueueHistory = false,
@@ -53,7 +55,7 @@ class SettingsStatesTest {
         minSongDuration = 30000,
         minTracksPerAlbum = 3,
         albumArtCacheLimitMb = 400,
-        externalArtistImagesEnabled = true,
+        musicInfoDescriptionsEnabled = true,
         replayGainEnabled = true,
         replayGainUseAlbumGain = true,
         isCrossfadeEnabled = true,
@@ -74,24 +76,12 @@ class SettingsStatesTest {
     }
 
     @Test
-    fun `the behavior page reads the behavior preferences, and no longer the two that moved to Audio`() {
-        val state = BehaviorSettingsState.from(ui)
-        assertThat(state.showQueueHistory).isFalse()
-        assertThat(state.keepPlayingInBackground).isFalse()
-        assertThat(state.resumeOnHeadsetReconnect).isTrue()
-        assertThat(state.dapLockScreenEnabled).isTrue()
-        assertThat(state.folderBackGestureNavigation).isFalse()
-        assertThat(state.tapBackgroundClosesPlayer).isTrue()
-        assertThat(state.hapticsEnabled).isFalse()
-        assertThat(state.backNavigationMode).isEqualTo(BackNavigationMode.entries.last())
-    }
-
-    @Test
-    fun `the lyrics page reads the lyrics preferences`() {
-        val state = LyricsSettingsState.from(ui)
-        assertThat(state.externalLyricsEnabled).isTrue()
-        assertThat(state.lyricsSourcePreference).isEqualTo(LyricsSourcePreference.API_FIRST)
-        assertThat(state.autoScanLrcFiles).isTrue()
+    fun `B41 - the appearance page also reads what moved to it, from the same preferences`() {
+        val state = AppearanceSettingsState.from(ui)
+        // the two new switches
+        assertThat(state.coverGlassMoving).isFalse()
+        assertThat(state.lyricsUnderCover).isFalse()
+        // how the lyrics read and look (it was Settings, Lyrics)
         assertThat(state.immersiveLyricsEnabled).isTrue()
         assertThat(state.immersiveLyricsTimeout).isEqualTo(6000L)
         assertThat(state.lyricsAlignment).isEqualTo("right")
@@ -100,6 +90,28 @@ class SettingsStatesTest {
         assertThat(state.useAnimatedLyrics).isTrue()
         assertThat(state.animatedLyricsBlurEnabled).isFalse()
         assertThat(state.animatedLyricsBlurStrength).isEqualTo(3.5f)
+        // the lock screen (it was Settings, Behaviour)
+        assertThat(state.dapLockScreenEnabled).isTrue()
+    }
+
+    @Test
+    fun `the behavior page reads the behavior preferences, and no longer the two that moved to Audio`() {
+        val state = BehaviorSettingsState.from(ui)
+        assertThat(state.showQueueHistory).isFalse()
+        assertThat(state.keepPlayingInBackground).isFalse()
+        assertThat(state.resumeOnHeadsetReconnect).isTrue()
+        assertThat(state.folderBackGestureNavigation).isFalse()
+        assertThat(state.tapBackgroundClosesPlayer).isTrue()
+        assertThat(state.hapticsEnabled).isFalse()
+        assertThat(state.backNavigationMode).isEqualTo(BackNavigationMode.entries.last())
+    }
+
+    @Test
+    fun `B41 - the lyrics page reads the lyrics sources, and no longer how lyrics look`() {
+        val state = LyricsSettingsState.from(ui)
+        assertThat(state.externalLyricsEnabled).isTrue()
+        assertThat(state.lyricsSourcePreference).isEqualTo(LyricsSourcePreference.API_FIRST)
+        assertThat(state.autoScanLrcFiles).isTrue()
     }
 
     @Test
@@ -109,7 +121,8 @@ class SettingsStatesTest {
         assertThat(state.minSongDuration).isEqualTo(30000)
         assertThat(state.minTracksPerAlbum).isEqualTo(3)
         assertThat(state.albumArtCacheLimitMb).isEqualTo(400)
-        assertThat(state.externalArtistImagesEnabled).isTrue()
+        assertThat(state.musicInfoDescriptionsEnabled).isTrue()
+        assertThat(state.musicInfoCoversEnabled).isFalse()
         assertThat(state.isSyncing).isTrue()
         assertThat(state.syncProgress).isSameInstanceAs(progress)
     }
@@ -139,10 +152,18 @@ class SettingsStatesTest {
         assertThat(AppearanceSettingsState.from(changed)).isEqualTo(AppearanceSettingsState.from(ui))
         assertThat(LibrarySettingsState.from(changed, false, SyncProgress())).isEqualTo(LibrarySettingsState.from(ui, false, SyncProgress()))
         assertThat(BehaviorSettingsState.from(changed)).isNotEqualTo(BehaviorSettingsState.from(ui))
-        // And the other way: a lyrics preference leaves Behavior alone.
-        val lyricsChanged = ui.copy(lyricsAlignment = "left", immersiveLyricsTimeout = 3000L)
-        assertThat(BehaviorSettingsState.from(lyricsChanged)).isEqualTo(BehaviorSettingsState.from(ui))
-        assertThat(LyricsSettingsState.from(lyricsChanged)).isNotEqualTo(LyricsSettingsState.from(ui))
+        // And the other way: a lyrics source leaves Behavior alone.
+        val sourceChanged = ui.copy(autoScanLrcFiles = false)
+        assertThat(BehaviorSettingsState.from(sourceChanged)).isEqualTo(BehaviorSettingsState.from(ui))
+        assertThat(LyricsSettingsState.from(sourceChanged)).isNotEqualTo(LyricsSettingsState.from(ui))
+        // B41: how lyrics look is Appearance's, not Lyrics': the alignment moves Appearance's state and leaves the sources' alone
+        val lookChanged = ui.copy(lyricsAlignment = "left", immersiveLyricsTimeout = 3000L)
+        assertThat(LyricsSettingsState.from(lookChanged)).isEqualTo(LyricsSettingsState.from(ui))
+        assertThat(AppearanceSettingsState.from(lookChanged)).isNotEqualTo(AppearanceSettingsState.from(ui))
+        // and the lock screen moved with it: it is no longer Behavior's
+        val lockChanged = ui.copy(dapLockScreenEnabled = false)
+        assertThat(BehaviorSettingsState.from(lockChanged)).isEqualTo(BehaviorSettingsState.from(ui))
+        assertThat(AppearanceSettingsState.from(lockChanged)).isNotEqualTo(AppearanceSettingsState.from(ui))
     }
 
     @Test
@@ -151,6 +172,9 @@ class SettingsStatesTest {
         assertThat(AudioSettingsState.from(defaults, 1f, AudioStatus(), DacProfilesUiState(), HeadphoneProfilesUiState()).randomMode)
             .isEqualTo(RandomMode.CLASSIC)
         assertThat(BehaviorSettingsState.from(defaults).backNavigationMode).isEqualTo(BackNavigationMode.DEFAULT)
-        assertThat(LyricsSettingsState.from(defaults).animatedLyricsBlurStrength).isEqualTo(defaults.animatedLyricsBlurStrength)
+        assertThat(AppearanceSettingsState.from(defaults).animatedLyricsBlurStrength).isEqualTo(defaults.animatedLyricsBlurStrength)
+        // B41: both new switches are on until the listener turns them off
+        assertThat(defaults.coverGlassMoving).isTrue()
+        assertThat(defaults.lyricsUnderCover).isTrue()
     }
 }

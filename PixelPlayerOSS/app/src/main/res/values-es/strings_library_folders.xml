@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B39-A9: the library includes folders instead of excluding them. -->
+    <string name="library_folders_title">Carpetas en la biblioteca</string>
+    <string name="library_folders_subtitle">Solo la música de estas carpetas está en tu biblioteca.</string>
+    <string name="library_folders_hint">Solo las carpetas marcadas aquí están en tu biblioteca, con todo lo que contienen. Toca una casilla para incluir una carpeta o dejarla fuera.</string>
+    <string name="folder_state_in_library">En la biblioteca</string>
+    <string name="folder_state_not_in_library">Fuera</string>
+    <string name="library_find_folders_title">Buscar carpetas con música</string>
+    <string name="library_find_folders_subtitle">Busca carpetas que tengan música y aún no estén en tu biblioteca.</string>
+    <string name="library_find_folders_searching">Buscando carpetas con música…</string>
+    <string name="library_find_folders_none">No se han encontrado carpetas nuevas con música.</string>
+    <string name="library_find_folders_not_ready">Ahora no se pueden cambiar las carpetas de la biblioteca. Inténtalo de nuevo en un momento.</string>
+    <string name="folder_proposal_title">Carpetas con música</string>
+    <string name="folder_proposal_body">Estas carpetas tienen música y aún no están en tu biblioteca. Desmarca las que no quieras.</string>
+    <string name="folder_proposal_not_now">Ahora no</string>
+    <string name="folder_proposal_nothing_chosen">Añadir</string>
+    <plurals name="folder_proposal_add">
+        <item quantity="one">Añadir %d canción</item>
+        <item quantity="many">Añadir %d de canciones</item>
+        <item quantity="other">Añadir %d canciones</item>
+    </plurals>
+    <plurals name="folder_proposal_songs">
+        <item quantity="one">%d canción</item>
+        <item quantity="many">%d de canciones</item>
+        <item quantity="other">%d canciones</item>
+    </plurals>
+    <string name="file_explorer_scanning">Escaneando…</string>
+    <string name="file_explorer_songs_99_plus">Más de 99 canciones</string>
+    <plurals name="file_explorer_songs">
+        <item quantity="one">%d canción</item>
+        <item quantity="many">%d de canciones</item>
+        <item quantity="other">%d canciones</item>
+    </plurals>
+    <string name="file_explorer_preparing">Preparando carpetas…</string>
+    <string name="file_explorer_loading">Cargando carpetas…</string>
+    <string name="file_explorer_preparing_hint">Puede tardar un momento mientras Polylute explora las subcarpetas disponibles.</string>
+    <string name="library_empty_find_folders">Todavía no hay nada en la biblioteca. Busca las carpetas con tu música y añádelas.</string>
+</resources>

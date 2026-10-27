@@ -10,6 +10,9 @@ package com.lostf1sh.pixelplayeross
 object BenchmarkLaunchPolicy {
     const val BENCHMARK_BUILD_TYPE = "benchmark"
 
+    fun isBenchmarkLaunch(buildType: String, requested: Boolean): Boolean =
+        buildType == BENCHMARK_BUILD_TYPE && requested
+
     fun shouldRebuildDatabase(buildType: String, isBenchmark: Boolean, rebuildRequested: Boolean): Boolean =
         buildType == BENCHMARK_BUILD_TYPE && isBenchmark && rebuildRequested
 }

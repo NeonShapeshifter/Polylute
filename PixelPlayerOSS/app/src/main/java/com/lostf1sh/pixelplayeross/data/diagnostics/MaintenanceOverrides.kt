@@ -138,3 +138,10 @@ data class MaintenanceOverrides(
             )
     }
 }
+
+/** Temporary measurement controls belong to development builds; the OEM compatibility option remains supported in release. */
+object MaintenanceOverridePolicy {
+    fun allowed(override: MaintenanceOverride, buildType: String = com.lostf1sh.pixelplayeross.BuildConfig.BUILD_TYPE): Boolean =
+        override.kind == MaintenanceOverrideKind.FEATURE_KILL ||
+            com.lostf1sh.pixelplayeross.DevelopmentToolsPolicy.enabled(buildType)
+}

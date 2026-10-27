@@ -163,13 +163,20 @@ class CloudRemovalBoundaryTest {
     // --- 7. No surviving background work, and no worker that could retry forever -------------
 
     @Test
-    fun `the only scheduled worker left is the local library one`() {
-        // "Removing cloud architecture but leaving a crashing or retrying worker is failure."
-        // The precise form of that failure is a second @HiltWorker that WorkManager can build and
-        // that nothing left in the app knows how to satisfy.
+    fun `only local indexing and explicitly requested offline preparation have workers`() {
+        // Offline preparation is an explicit one-shot selection, separate from local indexing.
+        // No removed server-sync worker or automatic periodic download may return.
         val workers = Project.mainSources().filter { "@HiltWorker" in it.readText() }
 
-        assertThat(workers.map { it.name }).containsExactly("SyncWorker.kt")
+        assertThat(workers.map { it.name }).containsExactly("SyncWorker.kt", "OfflineDownloadWorker.kt")
+        val offline = workers.single { it.name == "OfflineDownloadWorker.kt" }.readText()
+        assertThat(offline).doesNotContain("Result.retry()")
+        val manager = Project.mainSources().single { it.name == "OfflineDownloads.kt" }.readText()
+        assertThat(manager).contains("OneTimeWorkRequestBuilder<OfflineDownloadWorker>")
+        assertThat(manager).contains("offlineNetworkConstraints()")
+        assertThat(manager).contains("NetworkType.UNMETERED")
+        assertThat(manager).contains("TRANSPORT_WIFI")
+        assertThat(manager).doesNotContain("PeriodicWorkRequest")
     }
 
     @Test

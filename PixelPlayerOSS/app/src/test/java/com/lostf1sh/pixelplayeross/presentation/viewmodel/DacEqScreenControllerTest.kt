@@ -497,7 +497,7 @@ class DacEqScreenControllerTest {
         assertThat(r.dac.activePreset).isEqualTo(0xF0)
         assertThat(r.screen.uiState.value.eqOn).isFalse()
         // No "EQ applied" is claimed: the label is the DAC's real state.
-        assertThat(r.service.controller.label.value.name).isEqualTo("OFF_OR_FLAT")
+        assertThat(r.service.controller.label.value.name).isEqualTo("OFF")
         r.screen.dismissError()
         runCurrent()
         assertThat(r.screen.uiState.value.error).isNull()

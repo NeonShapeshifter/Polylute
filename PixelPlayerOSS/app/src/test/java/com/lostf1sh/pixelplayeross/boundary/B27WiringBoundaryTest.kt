@@ -105,43 +105,50 @@ class B27WiringBoundaryTest {
     // ── A5: the instruments are in debug builds only ───────────────────────────────────────────────
 
     @Test
-    fun `A5 the noise mark and its provider exist in the debug source set and nowhere else`() {
-        assertThat(File(app, "debug/java/com/lostf1sh/pixelplayeross/dap/admin/NoiseMark.kt").isFile).isTrue()
-        assertThat(File(app, "debug/java/com/lostf1sh/pixelplayeross/dap/admin/DebugHooksProvider.kt").isFile).isTrue()
-        for (variant in listOf("main", "release", "benchmark")) {
+    fun `A5 the noise mark is in the main source set, so the release has it, and the debug source set has no copy of it or a provider for it`() {
+        assertThat(File(main, "data/diagnostics/NoiseMark.kt").isFile).isTrue()
+        // B39-S2: the one thing of the debug bridge that moved to the release. Nothing of it is left behind in the debug source set.
+        for (name in listOf("NoiseMark.kt", "DebugHooksProvider.kt")) {
+            val names = File(app, "debug").walkTopDown().filter { it.isFile }.map { it.name }.toList()
+            assertThat(names).doesNotContain(name)
+        }
+        assertThat(File(main, "data/diagnostics/DebugHooks.kt").exists()).isFalse()
+        for (variant in listOf("release", "benchmark")) {
             val names = File(app, variant).walkTopDown().filter { it.isFile }.map { it.name }.toList()
             assertThat(names).doesNotContain("NoiseMark.kt")
-            assertThat(names).doesNotContain("DebugHooksProvider.kt")
         }
     }
 
     @Test
-    fun `A5 the action and the provider are declared in the debug manifest only`() {
+    fun `A5 the broadcast that runs it from a shell is declared in the debug manifest only, and no manifest has a provider for it`() {
         val debug = text(File(app, "debug/AndroidManifest.xml"))
         assertThat(debug).contains("com.lostf1sh.pixelplayeross.debug.MARK_NOISE")
-        assertThat(debug).contains(".dap.admin.DebugHooksProvider")
-        for (variant in listOf("main", "release", "benchmark")) {
+        for (variant in listOf("debug", "main", "release", "benchmark")) {
             val manifest = File(app, "$variant/AndroidManifest.xml")
             if (!manifest.isFile) continue
-            assertThat(text(manifest)).doesNotContain("MARK_NOISE")
             assertThat(text(manifest)).doesNotContain("DebugHooksProvider")
+            if (variant != "debug") assertThat(text(manifest)).doesNotContain("MARK_NOISE")
         }
     }
 
     @Test
-    fun `A5 the More menu shows the row only in a debug build, in the Now Playing menu, when the hook is installed`() {
+    fun `A5 the More menu and Maintenance offer the row in every build, the More menu only in Now Playing`() {
         val sheet = code(text(File(main, "presentation/components/SongInfoBottomSheet.kt")))
-        val guard = sheet.indexOf("if (BuildConfig.DEBUG && onViewTrackDetails != null && markNoise != null)")
-        val row = sheet.indexOf("R.string.debug_mark_noise)")
+        val guard = sheet.indexOf("if (onViewTrackDetails != null) {")
+        val row = sheet.indexOf("R.string.noise_mark)")
         assertThat(guard).isAtLeast(0)
         assertThat(row).isGreaterThan(guard)
-        // the main source reaches the debug code through the hook only
-        val mainSources = main.walkTopDown().filter { it.isFile && it.extension == "kt" }
-        val offenders = mainSources.filter {
-            val source = code(text(it))
-            source.contains("dap.admin.NoiseMark") || source.contains("nativeGetSecondSummaries")
-        }.map { it.name }.toList()
-        assertThat(offenders).isEmpty()
+        assertThat(sheet).doesNotContain("BuildConfig.DEBUG")
+        assertThat(sheet).doesNotContain("DebugHooks")
+        val maintenance = code(text(File(main, "presentation/screens/MaintenanceScreen.kt")))
+        assertThat(maintenance).contains("stringResource(R.string.noise_mark)")
+        assertThat(maintenance).contains("NoiseMarkDialog(noiseMark)")
+        // the debug receiver is the only caller outside the two rows, and it lives in the debug source set
+        val callers = File(main, "").walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .filter { code(text(it)).contains("NoiseMark.mark(") || code(text(it)).contains("noiseMark.mark(") || code(text(it)).contains("nativeGetSecondSummaries") }
+            .map { it.name }.toList()
+        // B40-F7: the Detailed log reads the same ring every ten seconds while the listener has it on (DetailedLoggingService)
+        assertThat(callers).containsExactly("NoiseMarkAction.kt", "MaintenanceScreen.kt", "SongInfoBottomSheet.kt", "NoiseMark.kt", "DetailedLoggingService.kt")
     }
 
     @Test

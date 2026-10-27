@@ -352,6 +352,22 @@ struct UsbAudioContext {
      * average before it. Fed by every applied reading, on the thread that reaps the feedback endpoint.
      */
     UsbFeedbackWatch feedbackWatch;
+
+    /**
+     * B41-fix1 (A1b): the DAC's last word, the last reading inside the +-5 % window, whatever the policy made of it. It is what
+     * the logs show as `fpmf=` and what `follow` sends. `calibratedFpmf` is the follower: under `auto` it does not take a reading
+     * the watch judges implausible, so nothing that reads it can pick up a value the policy is there to refuse.
+     */
+    double readingFpmf;
+    /** Whether the policy was refusing the feedback (stuck or implausible, under `auto`) after the last reading. */
+    bool refusing;
+    /**
+     * Bumped each time the policy turns from obeying to refusing. The block of PCM being packetized took its rate when it began
+     * (about 100 ms of audio): a reading that makes the policy refuse while the block is half written has to reach the rest of it.
+     */
+    uint32_t refusalEpoch;
+    /** This stream's number (usb-audio-output.cpp numbers them as they are created), for the policy events. */
+    int64_t streamSeq;
 };
 
 // ── Functions accessible from native-audio-engine ──────────────────

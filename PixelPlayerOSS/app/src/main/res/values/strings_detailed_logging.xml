@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B40-F7: Detailed logging (Maintenance): a half hour of what the app does, on this phone, shared on purpose. -->
+    <string name="detailed_logging_title">Detailed logging</string>
+    <string name="detailed_logging_switch">Record what the app does</string>
+    <string name="detailed_logging_off_summary">For 30 minutes, then it stops by itself. It stays on this phone.</string>
+    <string name="detailed_logging_on_summary">On, %1$d min left</string>
+    <string name="detailed_logging_titles_switch">Include song titles and file paths</string>
+    <string name="detailed_logging_titles_summary">Off by default. The log will then name songs and folders: share it only with someone you trust.</string>
+    <string name="detailed_logging_contents">Written: the app\'s own lines about the DAC and its EQ, the audio route and format, the volume ceiling, Dedicated mode and the lock screen, the sleep timer and the library scan\'s counters; USB, route and power events; the output\'s one-second summaries every 10 seconds and the stream\'s state every minute; the phone model and the Android and app versions. Not written: titles, artists, albums, playlists, file names and paths, web addresses, e-mail and account names, serial numbers, or the names of Bluetooth devices. Nothing is sent: the log leaves the phone only if you share it.</string>
+    <string name="detailed_logging_share">Share log</string>
+    <string name="detailed_logging_share_size">%1$s on this phone</string>
+    <string name="detailed_logging_empty">Nothing recorded yet</string>
+    <string name="detailed_logging_delete">Delete log</string>
+    <string name="detailed_logging_deleted">Log deleted</string>
+    <string name="detailed_logging_share_chooser">Share the log</string>
+    <string name="detailed_logging_share_failed">The log could not be shared</string>
+    <!-- B40-fix1 item 6: the log on the phone holds song titles and file paths (lines written while that switch was on) -->
+    <string name="detailed_logging_share_size_with_titles">%1$s on this phone. It includes song titles and file paths.</string>
+</resources>

@@ -23,6 +23,9 @@ import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqMode
 import com.lostf1sh.pixelplayeross.data.model.TransitionMode
 import com.lostf1sh.pixelplayeross.data.model.TransitionSettings
 import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
+import com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer
+import com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode
+import com.lostf1sh.pixelplayeross.data.volume.FixedOutputDac
 import com.lostf1sh.pixelplayeross.data.volume.PristineModePolicy
 import com.lostf1sh.pixelplayeross.data.volume.SafetyVolumeState
 import com.lostf1sh.pixelplayeross.presentation.components.AndroidRouteHintLine
@@ -41,9 +44,11 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.HeadphoneProfileUiItem
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.HeadphoneProfilesUiState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.SettingsUiState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.androidRouteHint
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.dacEqStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.crossfadeStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.equalizerStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.gaplessStatus
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.limiterStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.replayGainStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.safetyMaxOutputState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.safetyMaxStatus
@@ -151,6 +156,14 @@ data class AudioSettingsState(
     val randomMode: RandomMode,
     val persistentShuffleEnabled: Boolean,
     val audio: AudioStatus,
+    /** B39-S1: the DAC attached, when it has no volume the app can set (the row that lets the listener read the notice again). */
+    val fixedOutputDac: FixedOutputDac? = null,
+    /** B40-P3: what the listener answered for that DAC (null: not asked yet). */
+    val fixedOutputAnswer: DeviceVolumeAnswer? = null,
+    /** B39-A7: "Share the DAC with other apps", Resonance only (Purity keeps the DAC whatever this is). */
+    val dacShareEnabled: Boolean = false,
+    /** B40-F8: the listener's switch for Resonance's peak limiter. */
+    val resonanceLimiterEnabled: Boolean = false,
 ) {
     companion object {
         fun from(
@@ -162,6 +175,8 @@ data class AudioSettingsState(
             device: DeviceControlUiState = DeviceControlUiState(),
             volume: SafetyVolumeState = SafetyVolumeState(),
             transition: TransitionSettings? = null,
+            fixedOutputDac: FixedOutputDac? = null,
+            fixedOutputAnswer: DeviceVolumeAnswer? = null,
         ): AudioSettingsState {
             val selected = headphones.selected
             return AudioSettingsState(
@@ -198,6 +213,10 @@ data class AudioSettingsState(
                 randomMode = ui.randomMode,
                 persistentShuffleEnabled = ui.persistentShuffleEnabled,
                 audio = audio,
+                fixedOutputDac = fixedOutputDac,
+                fixedOutputAnswer = fixedOutputAnswer,
+                dacShareEnabled = ui.dacShareEnabled,
+                resonanceLimiterEnabled = ui.resonanceLimiterEnabled,
             )
         }
 
@@ -233,9 +252,19 @@ interface AudioSettingsActions {
     fun onOpenKnownHeadphones()
     /** The equalizer of the headphones in use, one tap from here. */
     fun onOpenEqualizer(profileId: String)
+    /** B41: "Use the DAC's EQ": the Resonance screen of [profileId], already asking the listener's yes for the DAC's own EQ (F2). Writes nothing. */
+    fun onUseDacEq(profileId: String) {}
     fun onOpenSafetyMax(profileId: String)
     /** The global transition rules (duration, curves). */
     fun onOpenGlobalTransitionEditor()
+    /** B40-P3: the question about a DAC with no volume the app can set (does it have its own control; Resonance or Purity), asked again. */
+    fun onShowFixedOutputNotice()
+    /** B39-A7: the "Share the DAC with other apps" switch. */
+    fun onDacShareChange(value: Boolean)
+    /** B40-F8: the "Peak limiter" switch (Resonance, Android route). */
+    fun onResonanceLimiterChange(value: Boolean) {}
+    /** B39-A8: ask Android for the USB permission again. */
+    fun onAskUsbPermission()
 }
 
 @Composable
@@ -285,6 +314,39 @@ private fun OutputSection(state: AudioSettingsState, actions: AudioSettingsActio
                 onClick = { actions.onOpenDacProfile(current.profile.profileId) },
             )
         }
+        // B39-A8: a DAC is connected and Polylute was never allowed to use it (or was refused): the sound is on Android's own USB route and
+        // nothing else says so. Named here, with a way to be asked again.
+        if (current != null && state.audio.usbPermissionPending) {
+            DapNavRow(
+                label = stringResource(R.string.audio_usb_permission_title),
+                description = stringResource(R.string.audio_usb_permission_sub, current.profile.displayName),
+                onClick = actions::onAskUsbPermission,
+            )
+        }
+        if (current != null && state.fixedOutputDac != null) {
+            val answer = state.fixedOutputAnswer
+            DapNavRow(
+                label = stringResource(R.string.fixed_output_row_title),
+                description = stringResource(
+                    when {
+                        answer == null -> R.string.fixed_output_row_sub_unanswered
+                        !answer.hasOwnControl -> R.string.fixed_output_row_sub_no_control
+                        answer.mode == DeviceVolumeMode.PURITY -> R.string.fixed_output_row_sub_purity
+                        else -> R.string.fixed_output_row_sub_resonance
+                    },
+                ),
+                onClick = actions::onShowFixedOutputNotice,
+            )
+        }
+        // B39-A7: Resonance can let other apps use the DAC; Purity never does. The switch is the listener's and is off by default.
+        DapSwitchRow(
+            label = stringResource(R.string.audio_dac_share_title),
+            description = stringResource(
+                if (state.audio.purityPreference) R.string.audio_dac_share_sub_purity else R.string.audio_dac_share_sub,
+            ),
+            checked = state.dacShareEnabled,
+            onCheckedChange = actions::onDacShareChange,
+        )
         DapNavRow(
             label = stringResource(R.string.dac_more),
             onClick = { actions.onOpenKnownDacs() },
@@ -329,11 +391,21 @@ private fun PureDirectSection(state: AudioSettingsState, actions: AudioSettingsA
         } else {
             status
         }
+        // B40-P3: a device whose volume Polylute cannot set and that holds Purity off: the switch says why it does not apply to it.
+        val heldOff = state.fixedOutputAnswer?.holdsPurityOff == true
         DapSwitchRow(
             label = stringResource(R.string.pristine_lock_name),
-            description = sentence,
+            description = if (heldOff) {
+                stringResource(
+                    if (state.fixedOutputAnswer?.hasOwnControl == false) R.string.pristine_held_off_no_control else R.string.pristine_held_off_resonance,
+                    state.fixedOutputDac?.name ?: state.currentDac?.profile?.displayName ?: stringResource(R.string.eq_the_dac),
+                )
+            } else {
+                sentence
+            },
             checked = state.audio.purityPreference,
             onCheckedChange = actions::onPureDirectChange,
+            enabled = !heldOff,
         )
         if (state.pureDirect.digitalBlocksPristine) {
             Column(Modifier.fillMaxWidth().padding(vertical = DapSpacing.Sm)) {
@@ -389,6 +461,33 @@ private fun SoundSection(state: AudioSettingsState, actions: AudioSettingsAction
             )
         }
 
+        // B39-A6: the DAC's own equalizer is a different thing from the one above, in a different place (inside the DAC), and is named and
+        // listed apart so the two are not read as one. It is shown only for a DAC whose EQ the app can ask about.
+        // B41: it says what the DAC holds (off in the DAC, flat, on, could not be read), with the DAC's name, and where this build can write
+        // the DAC's EQ (the Melody) it offers the one action that leads to the listener's yes: it opens the same consent F2 asks for on the
+        // Resonance screen. Nothing is written by tapping it.
+        val dacName = state.currentDac?.profile?.displayName ?: state.audio.route.deviceName ?: stringResource(R.string.eq_the_dac)
+        state.audio.dacEqStatus(dacName)?.let { dacEq ->
+            val useDacEqProfile = state.equalizer?.profileId?.takeIf { state.audio.dacEqWritable }
+            DapNavRow(
+                label = stringResource(R.string.audio_dac_eq_title),
+                // "Polylute only reads it for now" is true of a read-only DAC; where this build can write the DAC's EQ it would contradict the action below.
+                description = stringResource(if (state.audio.dacEqWritable) R.string.audio_dac_eq_sub_writable else R.string.audio_dac_eq_sub, dacName),
+                extra = {
+                    FeatureStatusLine(dacEq)
+                    if (useDacEqProfile != null) {
+                        DapTextAction(
+                            label = stringResource(R.string.audio_dac_eq_use),
+                            onClick = { actions.onUseDacEq(useDacEqProfile) },
+                            color = LocalDapAccent.current,
+                            // The action's own padding must not push its word off the row's left edge.
+                            modifier = Modifier.offset(x = -DapSpacing.Xs),
+                        )
+                    }
+                },
+            )
+        }
+
         val rg = state.audio.replayGainStatus(state.replayGainEnabled)
         val rgFrozen = rg.kind == FeatureStatusKind.FROZEN
         DapSwitchRow(
@@ -414,6 +513,18 @@ private fun SoundSection(state: AudioSettingsState, actions: AudioSettingsAction
                 dim = rgFrozen,
             )
         }
+
+        // B40-F8: Resonance's peak limiter. Off unless asked for; it works in the Android route's chain after the equalizer, and the line
+        // under it says whether it is in the signal now, will be from the next song, or cannot be (USB Direct, the lock, the Maintenance kill).
+        val limiter = state.audio.limiterStatus(state.resonanceLimiterEnabled)
+        DapSwitchRow(
+            label = stringResource(R.string.audio_limiter_title),
+            description = stringResource(R.string.audio_limiter_sub),
+            checked = state.resonanceLimiterEnabled,
+            onCheckedChange = actions::onResonanceLimiterChange,
+            extra = { FeatureStatusLine(limiter) },
+            dim = limiter.kind == FeatureStatusKind.FROZEN,
+        )
 
         val safety = state.safetyMax
         if (safety != null) {

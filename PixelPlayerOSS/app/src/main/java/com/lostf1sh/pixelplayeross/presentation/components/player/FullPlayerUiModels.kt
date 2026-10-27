@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
  *   title / artist / like / loading    <- [PlayerTrackInfoState]       (`PlayerTrackInfoSurface`)
  *   seek bar, times, technical line    <- [PlayerProgressState]        (`PlayerProgressSurface`)
  *   transport, shuffle, repeat         <- [PlayerControlsState]        (`PlayerControlsSurface`)
- *   header tabs, details, queue        <- the header and the queue drag (`FullPlayerContent`)
+ *   header icons, pages, queue        <- the header, the pages (`PlayerPages`) and the queue drag (`FullPlayerScreen`)
  *   lyrics                             <- [PlayerLyricsState]          (`PlayerLyricsEntry`)
  *
  * The slices are separate classes so a song change that leaves one of them equal (the controls, when shuffle
@@ -132,6 +132,8 @@ data class PlayerLyricsState(
     val isFavorite: Boolean,
     val lyricsProvider: () -> Lyrics?,
     val lyricsResolveCompletedProvider: () -> Boolean,
+    /** B41: two lines of synced lyrics under the cover (Appearance, Player). */
+    val underCover: Boolean = true,
 )
 
 /** Everything the full player shows. Built once per composition of the host; each surface reads its own slice. */
@@ -231,8 +233,6 @@ interface FullPlayerActions {
 
     // ── the entries to the other surfaces ──
     fun onCollapse()
-    /** The "Details" tab: the track-details view of the current song. */
-    fun onShowDetails()
     fun onQueueDragStart()
     fun onQueueDrag(dragAmount: Float)
     fun onQueueRelease(totalDrag: Float, velocity: Float)

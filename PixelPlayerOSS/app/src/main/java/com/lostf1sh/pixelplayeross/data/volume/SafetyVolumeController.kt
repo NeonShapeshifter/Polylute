@@ -440,6 +440,12 @@ class SafetyVolumeController @Inject constructor(
                 .distinctUntilChanged()
                 .collect(dualPlayerEngine::onHandoffVolumeVerdict)
         }
+        // B40-P1: a play the listener asked for after the DAC was shared waits only for a confirmed level, not for this verdict.
+        appScope.launch {
+            state.map(HandoffResumeSafety::userPlayLevel)
+                .distinctUntilChanged()
+                .collect(dualPlayerEngine::onUserPlayLevel)
+        }
         reconcile()
     }
 
@@ -1360,7 +1366,21 @@ class SafetyVolumeController @Inject constructor(
      * ([DacVolumeArbiter.supersede]), whose lock is that same monitor, entered again.
      */
     private fun hardwareOpenTarget(range: UsbVolumeRange, currentUnits: Int): Int? {
-        val dac = uniqueConnectedDac(dacProfiles.profiles.value, dacProfiles.connected.value) ?: return null
+        val dac = uniqueConnectedDac(dacProfiles.profiles.value, dacProfiles.connected.value)
+        if (dac == null) {
+            // B39-S1: a DAC this app cannot name (its profile is not registered yet, or it is one of several) has no saved level and no
+            // calibration to consult, and is the one case nothing is known about: it is brought to the first-use level, not left as it is.
+            val target = UsbHardwareVolumePolicy.openTarget(
+                currentUnits, savedUnits = null, ceilingUnits = null, firstUseUnits = UsbHardwareVolumePolicy.firstUseUnits(range),
+            )
+            Timber.tag(TAG).i(
+                "DAC opened (no profile yet) current=%.1fdB firstUse=yes target=%s",
+                UsbHardwareVolumePolicy.decibels(currentUnits),
+                levelText(target, "unchanged"),
+            )
+            if (target != null) announceFirstUseLevel(UsbHardwareVolumePolicy.decibels(target))
+            return target
+        }
         val contextId = "dac:${dac.profileId}"
         val selected = profiles.state.value.selectedProfile
         val snapshot = hardwareSnapshot(contextId, dac.displayName, range, currentUnits)
@@ -1380,22 +1400,49 @@ class SafetyVolumeController @Inject constructor(
             observationFor(overrideSession, SystemClock.elapsedRealtime(), snapshot, ceilingRaw = null),
         )
         val saved = hardwareStore.saved(contextId)
-        val target = UsbHardwareVolumePolicy.openTarget(currentUnits, saved, ceilingUnits.takeUnless { overrideStands })
+        // B39-S1: a DAC the listener never chose a level on and nobody calibrated starts at the first-use level, not wherever it booted.
+        val calibratedAnywhere = profiles.state.value.profiles.any {
+            it.safetyMax.calibrationFor(contextId, SafetyVolumeBackendKind.USB_HARDWARE_VOLUME) != null
+        }
+        val firstUse = UsbHardwareVolumePolicy.isFirstUse(saved, calibratedAnywhere, overrideStands)
+        val firstUseUnits = if (firstUse) UsbHardwareVolumePolicy.firstUseUnits(range) else null
+        val target = UsbHardwareVolumePolicy.openTarget(
+            currentUnits, saved, ceilingUnits.takeUnless { overrideStands }, firstUseUnits,
+        )
         // B15-F1: the driver lowers the DAC to this after we return: Safety's write, so a duck on it is over.
         if (target != null) dacVolume.supersede()
         // The real ceiling apart from the guard's answer: the driver logs that one as `guardTarget=`,
         // the lower of the saved level and this ceiling. `none` here means nothing bounds a rise of the
         // DAC's level (AUD-126) — it was invisible while the two shared the name `ceiling=`.
         Timber.tag(TAG).i(
-            "DAC opened context=%s current=%.1fdB saved=%s safetyCeiling=%s override=%s target=%s",
+            "DAC opened context=%s current=%.1fdB saved=%s safetyCeiling=%s override=%s firstUse=%s target=%s",
             contextId,
             UsbHardwareVolumePolicy.decibels(currentUnits),
-            saved?.let { "%.1fdB".format(UsbHardwareVolumePolicy.decibels(it)) } ?: "none",
-            ceilingUnits?.let { "%.1fdB".format(UsbHardwareVolumePolicy.decibels(it)) } ?: "none",
+            levelText(saved, "none"),
+            levelText(ceilingUnits, "none"),
             if (overrideStands) "standing" else "none",
-            target?.let { "%.1fdB".format(UsbHardwareVolumePolicy.decibels(it)) } ?: "unchanged",
+            if (firstUse) "yes" else "no",
+            levelText(target, "unchanged"),
         )
+        if (firstUse && target != null) announceFirstUseLevel(UsbHardwareVolumePolicy.decibels(target))
         return target
+    }
+
+    /** A level in the open log: the dB value, or [absent] (formatted here, not inside the log call). */
+    private fun levelText(units: Int?, absent: String): String =
+        units?.let { "%.1fdB".format(UsbHardwareVolumePolicy.decibels(it)) } ?: absent
+
+    /** B39-S1: said once per process and DAC attachment (the guard runs at every rate change), in words, with the level it was brought to. */
+    @Volatile
+    private var firstUseAnnouncedFor: Long = -1L
+
+    private fun announceFirstUseLevel(decibels: Float) {
+        val generation = usbDevice.openGeneration
+        if (firstUseAnnouncedFor == generation) return
+        firstUseAnnouncedFor = generation
+        mainHandler.post {
+            Toast.makeText(context, context.getString(R.string.safety_first_use_level, decibels.toInt()), Toast.LENGTH_LONG).show()
+        }
     }
 
     // USB control transfers are blocking, up to 250 ms each, and reconcile runs on the main thread

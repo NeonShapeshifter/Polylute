@@ -2,6 +2,7 @@ package com.lostf1sh.pixelplayeross.presentation.viewmodel
 
 import com.google.common.truth.Truth.assertThat
 import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepository
+import com.lostf1sh.pixelplayeross.data.stats.ClockChanges
 import com.lostf1sh.pixelplayeross.data.stats.Kit
 import com.lostf1sh.pixelplayeross.data.stats.Kit.MIN
 import com.lostf1sh.pixelplayeross.data.stats.Kit.at
@@ -20,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -79,7 +81,9 @@ class StatsViewModelTest {
     }
 
     private fun viewModel(provider: SlowProvider, playlists: PlaylistPreferencesRepository = mockk(relaxed = true)) =
-        StatsViewModel(provider, playlists, LibraryChangeSignal(), dispatchers).also {
+        StatsViewModel(provider, playlists, LibraryChangeSignal(), dispatchers, object : ClockChanges {
+            override val changes: Flow<Unit> = emptyFlow()
+        }).also {
             it.clock = { now }
             it.zone = { Kit.zone }
         }

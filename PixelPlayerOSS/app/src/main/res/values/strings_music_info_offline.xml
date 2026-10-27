@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="music_info_expand">Expand description</string>
+    <string name="music_info_collapse">Collapse description</string>
+    <string name="offline_download_title">Download for offline use</string>
+    <string name="offline_download_all">Entire library</string>
+    <string name="offline_download_selected">Selected tracks: %1$d</string>
+    <string name="offline_download_lyrics">Lyrics</string>
+    <string name="offline_download_photos">Artist photos</string>
+    <string name="offline_download_covers">Missing album covers</string>
+    <string name="offline_download_descriptions">Artist and album descriptions</string>
+    <string name="offline_download_note">Downloads the chosen content over unmetered Wi-Fi using track and artist names. Existing lyrics are kept. Automatic download settings stay as they are. Downloaded content stays until you delete it.</string>
+    <string name="offline_download_start">Download</string>
+    <string name="offline_download_pause">Pause</string>
+    <string name="offline_download_resume">Continue</string>
+    <string name="offline_download_preparing">Preparing…</string>
+    <string name="offline_download_waiting">Waiting for Wi-Fi…</string>
+    <string name="offline_download_running">Downloading…</string>
+    <string name="offline_download_paused">Paused</string>
+    <string name="offline_download_complete">Ready for offline use</string>
+    <string name="offline_download_progress">Tracks: %1$d / %2$d</string>
+    <string name="offline_download_summary">Available: %1$d · No result: %2$d · Errors: %3$d</string>
+    <string name="offline_download_failed">Could not start the download. Try again.</string>
+    <string name="offline_download_last">Previous result</string>
+    <string name="offline_download_new">New selection</string>
+    <string name="offline_download_close">Close</string>
+    <string name="offline_download_progress_artists">Artists: %1$d / %2$d</string>
+    <string name="offline_download_progress_albums">Albums: %1$d / %2$d</string>
+    <string name="offline_download_progress_items">Items: %1$d / %2$d</string>
+    <string name="external_link_unavailable">No browser is available, or opening links is blocked on this device.</string>
+</resources>

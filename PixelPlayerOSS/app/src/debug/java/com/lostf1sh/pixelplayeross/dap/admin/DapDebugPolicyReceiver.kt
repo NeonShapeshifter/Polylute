@@ -13,6 +13,7 @@ import com.decent.usbaudio.UsbAudioStream
 import com.decent.usbaudio.media3.DirectPathTelemetry
 import com.decent.usbaudio.media3.DirectPlaybackPresence
 import com.decent.usbaudio.media3.RateSwitchPreroll
+import com.lostf1sh.pixelplayeross.data.diagnostics.NoiseMark
 import com.lostf1sh.pixelplayeross.data.diagnostics.HardwareEventLog
 import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqualizerCoordinator
 import com.lostf1sh.pixelplayeross.di.AppScope
@@ -24,7 +25,6 @@ import com.lostf1sh.pixelplayeross.data.service.player.NativeEngineDebugSwitch
 import com.lostf1sh.pixelplayeross.data.service.player.RateSwitchPrerollSetting
 import com.lostf1sh.pixelplayeross.data.service.player.UsbDirectAudioDiagnostics
 import com.lostf1sh.pixelplayeross.data.volume.PristineLockDiagnostic
-import com.lostf1sh.pixelplayeross.data.volume.SafetyVolumeController
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -49,9 +49,6 @@ interface DualPlayerEngineDebugEntryPoint {
     /** Background scope for the suspend profile writes. */
     @AppScope
     fun appScope(): CoroutineScope
-
-    /** B27-A5: the DAC's level and Safety Max, read (never written) into a noise mark. */
-    fun safetyVolumeController(): SafetyVolumeController
 
     /** B30: the DAC's own EQ: the read, the backups, the one gate's writer and the debug override. */
     fun dacEqService(): com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqService

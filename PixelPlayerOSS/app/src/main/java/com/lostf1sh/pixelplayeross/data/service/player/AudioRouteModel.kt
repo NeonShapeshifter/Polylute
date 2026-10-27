@@ -25,6 +25,12 @@ enum class AudioRouteReason {
     SOURCE_NOT_DIRECT_COMPATIBLE,
     SAFETY_TRANSITION_DEFERRED,
 
+    /**
+     * B39-A7: Resonance with "Share the DAC with other apps" on, and Polylute has let go of the DAC (another app has the floor, or
+     * Polylute is paused or idle), so Android can play to it. Never decided for Purity, which keeps the DAC whether it plays or not.
+     */
+    DAC_SHARED_WITH_OTHER_APPS,
+
     // ── Signal blockers: USB Direct is available, but the requested processing has no
     //    implementation on the Direct path in this pass, so the Android path must carry it. ──
     CROSSFADE_REQUIRES_ANDROID,
@@ -83,6 +89,18 @@ data class AudioProcessingRequirements(
         get() = graphicEq || replayGain || digitalVolume
 }
 
+/**
+ * B40-fix1 (P3): the listening state as the signal path reads it *now*: whether the engine has been told the state at all, whether the
+ * Purity lock is in force on it (with a DAC attached, or not yet known: [PristineModePolicy.lockInForce]), and whether the effective
+ * requirements carry a digital volume (so the gain stage is in the signal and not left out as pristine). The volume question reads this
+ * to know that an answer's protection reached the path that plays, which a preference flag set somewhere else does not say.
+ */
+data class AppliedSignalFacts(
+    val known: Boolean = false,
+    val lockInForce: Boolean = true,
+    val digitalVolume: Boolean = false,
+)
+
 data class AudioRouteFacts(
     val usbDacPresent: Boolean,
     val usbPermissionGranted: Boolean,
@@ -108,6 +126,11 @@ data class AudioRouteFacts(
      * a moment after it hands the DAC back; also false when `snd-usb-audio` never rebinds (AUD-003).
      */
     val androidUsbRouteAvailable: Boolean = true,
+    /**
+     * B39-A7: the DAC has been handed back for other apps to use ([DacShareController]). Only honoured when the signal wants the app's
+     * DSP (Resonance): with nothing to process this is Purity, which never lets go of the DAC, whatever this says.
+     */
+    val dacReleasedForSharing: Boolean = false,
 )
 
 /**
@@ -178,6 +201,8 @@ object AudioRoutePolicy {
         !facts.sourceDirectCompatible -> android(AudioRouteReason.SOURCE_NOT_DIRECT_COMPATIBLE)
         facts.directFailedForSource -> android(AudioRouteReason.DIRECT_FAILED_FALLBACK)
         !facts.directTransitionAllowed -> android(AudioRouteReason.SAFETY_TRANSITION_DEFERRED)
+        // Purity never releases: this needs the app's DSP in the signal, and without it the DAC stays with Polylute.
+        facts.dacReleasedForSharing && facts.processing.requiresPcmProcessing -> android(AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS)
         facts.processing.requiresPcmProcessing -> AudioRouteDecision(
             backend = AudioBackend.USB_DIRECT,
             reason = AudioRouteReason.DIRECT_PROCESSED,

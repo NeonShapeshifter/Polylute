@@ -12,9 +12,14 @@ import com.lostf1sh.pixelplayeross.presentation.screens.DapStorageControlContent
 import com.lostf1sh.pixelplayeross.presentation.screens.DapWirelessControlContent
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DeviceControlUiState
 
-/** What the Device page draws: the device's own live state. */
+/**
+ * What the Device page draws: the device's own live state.
+ *
+ * B39-A5: [showScreenTimeout] is false in App mode (see [ModeSurfacePolicy]): the screen-off setting is the DAP's, and it asks for the
+ * write-settings permission, which an app on a phone with its own launcher has no business asking for.
+ */
 @Immutable
-data class DeviceSettingsState(val device: DeviceControlUiState)
+data class DeviceSettingsState(val device: DeviceControlUiState, val showScreenTimeout: Boolean = true)
 
 /** Everything the Device page can do. The platform round trips (permissions, system panels) are the host's. */
 interface DeviceSettingsActions {
@@ -46,14 +51,16 @@ fun DeviceSettingsScreen(state: DeviceSettingsState, actions: DeviceSettingsActi
         )
     }
 
-    SettingsSubsection(
-        title = stringResource(R.string.setcat_device_screen),
-        addBottomSpace = false,
-    ) {
-        DapScreenTimeoutControlContent(
-            state = state.device,
-            onTimeoutSelected = actions::onScreenTimeoutSelected,
-        )
+    if (state.showScreenTimeout) {
+        SettingsSubsection(
+            title = stringResource(R.string.setcat_device_screen),
+            addBottomSpace = false,
+        ) {
+            DapScreenTimeoutControlContent(
+                state = state.device,
+                onTimeoutSelected = actions::onScreenTimeoutSelected,
+            )
+        }
     }
 
     SettingsSubsection(

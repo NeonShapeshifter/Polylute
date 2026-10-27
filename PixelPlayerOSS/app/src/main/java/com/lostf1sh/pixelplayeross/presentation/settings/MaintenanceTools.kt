@@ -26,7 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.lostf1sh.pixelplayeross.presentation.components.GlassModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -168,7 +168,7 @@ fun MaintenanceToolsSection(
     }
 
     if (showPaletteRegenerateSheet) {
-        ModalBottomSheet(
+        GlassModalBottomSheet(
             onDismissRequest = {
                 if (!isAnyPaletteRegenerateRunning) {
                     showPaletteRegenerateSheet = false

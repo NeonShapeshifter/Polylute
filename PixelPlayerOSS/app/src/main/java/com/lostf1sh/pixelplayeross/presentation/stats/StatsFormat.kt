@@ -51,6 +51,9 @@ internal object StatsFormat {
     /** `oct 2026`: one month, as a stepper shows it. */
     fun month(month: YearMonth, locale: Locale): String = "${monthShort(month.month, locale)} ${month.year}"
 
+    /** `October 2026` / `octubre 2026` / `oktober 2026`: one month in a sentence (B42-fix1). */
+    fun monthLong(month: YearMonth, locale: Locale): String = "${month.month.getDisplayName(TextStyle.FULL, locale)} ${month.year}"
+
     /**
      * The period of a "Top N" as it is written in its title: `2026` for a whole year, `mar–ago 2026` inside a year,
      * `oct 2025–mar 2026` across two. One month is `mar 2026`.

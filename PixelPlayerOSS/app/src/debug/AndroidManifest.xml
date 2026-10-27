@@ -86,7 +86,8 @@
                 <action android:name="com.lostf1sh.pixelplayeross.debug.SET_FEEDBACK_POLICY" />
                 <!--
                   B27-A5 (N-07): "I heard noise just now" - writes the last 30 s of the USB output's one-second summaries and the stream's
-                  state to files/noise-marks/ (extra: seconds = 1..128). The More menu's row does the same.
+                  state to files/noise-marks/ (extra: seconds = 1..128). Since B39-S2 the action itself is in the release (More sheet and
+                  Maintenance: data/diagnostics/NoiseMark); only this broadcast, to run it from a shell, is debug.
                 -->
                 <action android:name="com.lostf1sh.pixelplayeross.debug.MARK_NOISE" />
                 <!--
@@ -102,12 +103,5 @@
                 <action android:name="com.lostf1sh.pixelplayeross.debug.SET_RATE_SWITCH_PREROLL" />
             </intent-filter>
         </receiver>
-        <!--
-          B27-A5: registers the More menu's "mark noise" row (DebugHooks) when the process starts. Debug only; not exported.
-        -->
-        <provider
-            android:name=".dap.admin.DebugHooksProvider"
-            android:authorities="${applicationId}.debughooks"
-            android:exported="false" />
     </application>
 </manifest>

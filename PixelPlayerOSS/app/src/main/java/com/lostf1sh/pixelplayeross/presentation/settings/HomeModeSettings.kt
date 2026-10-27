@@ -214,7 +214,11 @@ private fun DedicatedLevel(state: HomeModeState, actions: HomeModeActions, confi
         if (!product.isDeviceOwner) {
             // a guide, not a switch: nothing is claimed active, and the command is for the computer
             Caption(stringResource(R.string.home_mode_guide_title), strong = true)
+            // B39-A11: who it is for, why the accounts go (and only for the command), what counts as an extra user, and how to leave
+            Caption(stringResource(R.string.home_mode_guide_who))
             Caption(stringResource(R.string.home_mode_guide_requirements))
+            Caption(stringResource(R.string.home_mode_guide_why_clear))
+            Caption(stringResource(R.string.home_mode_guide_extra_users))
             Caption(stringResource(R.string.home_mode_guide_command_label))
             SelectionContainer {
                 Text(
@@ -226,6 +230,7 @@ private fun DedicatedLevel(state: HomeModeState, actions: HomeModeActions, confi
             }
             SystemRow(Icons.Rounded.ContentCopy, R.string.home_mode_guide_copy, onClick = actions::onCopyDpmCommand)
             Caption(stringResource(R.string.home_mode_guide_may_refuse))
+            Caption(stringResource(R.string.home_mode_guide_leave))
         } else {
             DapNavRow(
                 label = stringResource(R.string.home_mode_lock_state),

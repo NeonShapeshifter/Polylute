@@ -2,6 +2,7 @@ package com.lostf1sh.pixelplayeross.presentation.lockscreen
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +15,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The app, while the DAP lock screen covers it (B22, Part 2).
@@ -135,6 +138,7 @@ internal class CappedLifecycleOwner(private val parent: Lifecycle) : LifecycleOw
  */
 class CoverSignal {
     private val state = mutableStateOf(false)
+    private val flow = MutableStateFlow(false)
     private var listener: ((Boolean) -> Unit)? = null
 
     var covered: Boolean
@@ -142,8 +146,15 @@ class CoverSignal {
         set(value) {
             if (state.value == value) return
             state.value = value
+            flow.value = value
             listener?.invoke(value)
         }
+
+    /**
+     * B42-fix1: the same value as a flow, set in the same call, for what lives outside composition (the activity's keep-screen-on flag,
+     * which has to know the lock screen is up from `SCREEN_OFF`, before a frame has recomposed anything).
+     */
+    val coveredFlow: StateFlow<Boolean> get() = flow
 
     internal fun attach(listener: ((Boolean) -> Unit)?) {
         this.listener = listener
@@ -161,3 +172,9 @@ object WakeCycleCover {
         WakeCycleState.VISIBLE -> hasSong
     }
 }
+
+/**
+ * B42-fix1: whether the DAP lock screen is over the app, or armed to be (the screen is off, or the Keyguard has not let go yet). For the few things
+ * inside the app that hold the screen on, which must not while the lock screen is what the listener sees. False where nothing provides it.
+ */
+val LocalLockSurfaceShowing = compositionLocalOf { false }

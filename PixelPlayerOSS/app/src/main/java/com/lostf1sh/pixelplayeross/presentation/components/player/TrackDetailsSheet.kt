@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -133,12 +134,36 @@ fun TrackDetailsSheet(
                 // sat inside the status-bar band. The content takes the inset itself now.
                 .statusBarsPadding()
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.TopCenter
-            ) {
+            TrackDetailsBody(
+                state = state,
+                currentPositionProvider = currentPositionProvider,
+                totalDurationMs = totalDurationMs,
+                onSeek = onSeek,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        // The Back affordance, floating over the sheet instead of in a bar. It is the overlay
+        // and not the bar's own glyph because only the overlay consults the Back mode — in
+        // Gestures the mode says a control that exists only to perform Back must not be drawn.
+    }
+}
+
+/**
+ * What the details say, as a scrolling page with no frame of its own: no scaffold, no back row, no status-bar inset (B42-fix1). The sheet
+ * ([TrackDetailsSheet]) puts it in a window with a Back row; the player's Details page puts it under the player's own header.
+ */
+@Composable
+internal fun TrackDetailsBody(
+    state: TrackDetailsUiState,
+    currentPositionProvider: () -> Long,
+    totalDurationMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.TopCenter
+    ) {
                 Column(
                     modifier = Modifier
                         .fillMaxHeight()
@@ -291,17 +316,12 @@ fun TrackDetailsSheet(
                     Text(
                         text = stringResource(R.string.track_details_read_only_note),
                         style = DapType.Note,
-                        color = Dap.disabledText,
+                        color = noteInk(),
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     Spacer(Modifier.height(DapSpacing.SectionGap))
                 }
-            }
-        }
-        // The Back affordance, floating over the sheet instead of in a bar. It is the overlay
-        // and not the bar's own glyph because only the overlay consults the Back mode — in
-        // Gestures the mode says a control that exists only to perform Back must not be drawn.
     }
 }
 
@@ -317,7 +337,8 @@ private fun WaveformSection(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
+            .height(56.dp)
+            .testTag(PlayerPagesTags.Waveform),
         contentAlignment = Alignment.Center
     ) {
         when {
@@ -335,7 +356,7 @@ private fun WaveformSection(
                 Text(
                     text = stringResource(R.string.track_details_waveform_loading),
                     style = DapType.Note,
-                    color = Dap.disabledText,
+                    color = noteInk(),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
@@ -349,7 +370,7 @@ private fun WaveformSection(
             else -> Text(
                 text = stringResource(R.string.track_details_waveform_unavailable),
                 style = DapType.Note,
-                color = Dap.disabledText,
+                color = noteInk(),
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -715,14 +736,15 @@ private fun equalizerMark(state: EqualizerState): DapStateKind = when (state) {
 
 private fun dacEqLabelText(label: DacEqLabel): Int = when (label) {
     DacEqLabel.ON -> R.string.track_details_dac_eq_on
-    DacEqLabel.OFF_OR_FLAT -> R.string.track_details_dac_eq_off
+    DacEqLabel.OFF -> R.string.track_details_dac_eq_off
+    DacEqLabel.FLAT -> R.string.track_details_dac_eq_flat
     DacEqLabel.UNKNOWN, DacEqLabel.NOT_APPLICABLE -> R.string.track_details_dac_eq_unknown
 }
 
 /** Shaping is a state of the sound, not a fault; unknown is the one that warrants attention. */
 private fun dacEqMark(label: DacEqLabel): DapStateKind = when (label) {
     DacEqLabel.ON -> DapStateKind.Selected
-    DacEqLabel.OFF_OR_FLAT -> DapStateKind.Off
+    DacEqLabel.OFF, DacEqLabel.FLAT -> DapStateKind.Off
     DacEqLabel.UNKNOWN, DacEqLabel.NOT_APPLICABLE -> DapStateKind.Attention
 }
 
@@ -748,3 +770,11 @@ private fun replayGainLabel(state: ReplayGainState): Int = when (state) {
     ReplayGainState.ALBUM_APPLIED -> R.string.track_details_rg_album_applied
     ReplayGainState.REQUESTED_NOT_APPLIED -> R.string.track_details_rg_requested_not_applied
 }
+
+/**
+ * B42-fix1 (item 8): the ink of the Details' notes (the read-only line, "waveform loading", "waveform not available"). They are information, not a
+ * disabled control, and over the cover glass the disabled grey is a dim wash that cannot be read; there they are the glass's own tertiary ink
+ * (at AA on the glass by construction). Everywhere else it is the disabled ink, as it was.
+ */
+@Composable
+private fun noteInk(): Color = if (Dap.glass != null) Dap.tertiaryText else Dap.disabledText

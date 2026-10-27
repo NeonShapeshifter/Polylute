@@ -6,7 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.LruCache
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
-import com.lostf1sh.pixelplayeross.data.network.deezer.DeezerApiService
+import com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.utils.NetworkRetryUtils
 import com.lostf1sh.pixelplayeross.utils.isRetryableNetworkError
@@ -30,12 +30,16 @@ import timber.log.Timber
 import androidx.core.graphics.scale
 
 /**
- * Repository for fetching and caching artist images from Deezer API.
- * Uses both in-memory LRU cache and Room database for persistent storage.
+ * Artist pictures: the listener's own, else one downloaded from Wikimedia Commons (B40-F4, when the switch is on), else none.
+ *
+ * Deezer is gone (B40-F4): its client, its switch and its requests are removed, and **a picture address stored from Deezer is not shown or
+ * kept**: the app clears every stored address that points at the internet at its start ([retireDeezerOnce]). A picture
+ * downloaded now is a file in the app's music-info folder and its path is what is stored; "Delete downloaded data" removes both.
+ * Uses an in-memory LRU cache and Room for the stored path.
  */
 @Singleton
 class ArtistImageRepository @Inject constructor(
-    private val deezerApiService: DeezerApiService,
+    private val musicInfo: MusicInfoRepository,
     private val musicDao: MusicDao,
     private val userPreferencesRepository: UserPreferencesRepository
 ) {
@@ -43,7 +47,6 @@ class ArtistImageRepository @Inject constructor(
         private const val TAG = "ArtistImageRepository"
         private const val CACHE_SIZE = 100
         private const val PREFETCH_CONCURRENCY = 3
-        private val deezerSizeRegex = Regex("/\\d{2,4}x\\d{2,4}([\\-.])")
         private const val NETWORK_RETRY_ATTEMPTS = 3
         private const val NETWORK_RETRY_INITIAL_DELAY_MS = 500L
         private const val MAX_CUSTOM_IMAGE_SOURCE_BYTES = 24L * 1024L * 1024L
@@ -74,24 +77,24 @@ class ArtistImageRepository @Inject constructor(
     
     private val failedFetches = mutableSetOf<String>()
 
+    @Volatile
+    private var deezerRetired = false
+
     /**
-     * Get artist image URL, fetching from Deezer if not cached.
+     * The artist's downloaded picture, from the phone if there is one, else (with the switch on) from Wikimedia Commons.
      * @param artistName Name of the artist
      * @param artistId Room database ID of the artist (for caching)
-     * @return Image URL or null if not found
+     * @return The picture's file path, or null if there is none
      */
     suspend fun getArtistImageUrl(artistName: String, artistId: Long): String? {
         if (artistName.isBlank()) return null
-        if (!userPreferencesRepository.externalArtistImagesEnabledFlow.first()) return null
+        retireDeezerOnce()
 
         val normalizedName = artistName.trim().lowercase()
 
         memoryCache.get(normalizedName)?.let { cachedUrl ->
-            return cachedUrl
-        }
-        
-        if (failedFetches.contains(normalizedName)) {
-            return null
+            if (File(cachedUrl).isFile) return cachedUrl
+            memoryCache.remove(normalizedName)
         }
 
         val (resolvedArtistId, dbCachedUrl) = withContext(Dispatchers.IO) {
@@ -100,26 +103,45 @@ class ArtistImageRepository @Inject constructor(
                 ?: musicDao.getArtistImageUrlByNormalizedName(artistName)
             canonicalArtistId to cachedUrl
         }
-        if (!dbCachedUrl.isNullOrEmpty()) {
-            val upgradedDbUrl = upgradeToHighResDeezerUrl(dbCachedUrl)
-            memoryCache.put(normalizedName, upgradedDbUrl)
-            if (upgradedDbUrl != dbCachedUrl) {
-                withContext(Dispatchers.IO) {
-                    musicDao.updateArtistImageUrl(resolvedArtistId, upgradedDbUrl)
-                }
-            }
-            return upgradedDbUrl
+        // A stored address that points at the internet is Deezer's and is not shown (B40-F4); a stored path is shown if the file is there.
+        if (!dbCachedUrl.isNullOrEmpty() && !isRemote(dbCachedUrl) && File(dbCachedUrl).isFile) {
+            memoryCache.put(normalizedName, dbCachedUrl)
+            return dbCachedUrl
         }
 
+        // Offline first: a picture downloaded earlier is used whatever the switch says now.
+        musicInfo.service.cachedArtistPhoto(artistName)?.let { photo ->
+            memoryCache.put(normalizedName, photo.path)
+            withContext(Dispatchers.IO) { musicDao.updateArtistImageUrl(resolvedArtistId, photo.path) }
+            return photo.path
+        }
+
+        if (failedFetches.contains(normalizedName)) return null
+        if (!userPreferencesRepository.musicInfoArtistPhotosEnabledFlow.first()) return null
         return fetchAndCacheArtistImage(artistName, resolvedArtistId, normalizedName)
     }
+
+    /**
+     * Stored picture addresses that point at the internet (Deezer's) are cleared: on the app's first start of this version they all go
+     * (the update is a no-op afterwards), and the read path above never shows one in the meantime.
+     */
+    suspend fun retireDeezerOnce() {
+        if (deezerRetired) return
+        withContext(Dispatchers.IO) {
+            val cleared = musicDao.clearRemoteArtistImages()
+            if (cleared > 0) Timber.tag(TAG).i("Deezer is gone: %d stored artist picture address(es) cleared", cleared)
+        }
+        deezerRetired = true
+    }
+
+    private fun isRemote(url: String): Boolean = url.startsWith("http://") || url.startsWith("https://")
 
     /**
      * Prefetch artist images for a list of artists in background.
      * Useful for batch loading when displaying artist lists.
      */
     suspend fun prefetchArtistImages(artists: List<Pair<Long, String>>) = withContext(Dispatchers.IO) {
-        if (!userPreferencesRepository.externalArtistImagesEnabledFlow.first()) return@withContext
+        if (!userPreferencesRepository.musicInfoArtistPhotosEnabledFlow.first()) return@withContext
 
         artists.chunked(PREFETCH_CONCURRENCY * 4).forEach { chunk ->
             chunk.map { (artistId, artistName) ->
@@ -157,31 +179,14 @@ class ArtistImageRepository @Inject constructor(
 
         return try {
             withContext(Dispatchers.IO) {
-                val response = withNetworkRetry("deezer_search:$artistName") {
-                    deezerApiService.searchArtist(artistName, limit = 1)
-                }
-                val deezerArtist = response.data.firstOrNull()
-
-                if (deezerArtist != null) {
-                    val imageUrl = (
-                        deezerArtist.pictureXl
-                            ?: deezerArtist.pictureBig
-                            ?: deezerArtist.pictureMedium
-                            ?: deezerArtist.picture
-                        )?.let(::upgradeToHighResDeezerUrl)
-
-                    if (!imageUrl.isNullOrEmpty()) {
-                        memoryCache.put(normalizedName, imageUrl)
-                        
-                        musicDao.updateArtistImageUrl(artistId, imageUrl)
-
-                        Timber.tag(TAG).d("Fetched and cached image for $artistName: $imageUrl")
-                        imageUrl
-                    } else {
-                        null
-                    }
+                val photo = musicInfo.service.fetchArtistPhoto(artistName)
+                if (photo != null) {
+                    memoryCache.put(normalizedName, photo.path)
+                    musicDao.updateArtistImageUrl(artistId, photo.path)
+                    Timber.tag(TAG).d("Downloaded and cached a picture for $artistName")
+                    photo.path
                 } else {
-                    Timber.tag(TAG).d("No Deezer artist found for: $artistName")
+                    Timber.tag(TAG).d("No picture found for: $artistName")
                     failedFetches.add(normalizedName)
                     null
                 }
@@ -231,7 +236,7 @@ class ArtistImageRepository @Inject constructor(
     /**
      * Returns the effective image URL for an artist:
      * - If a custom (user-set) image exists in DB → returns that path
-     * - Otherwise falls back to the Deezer URL (fetching from API if needed)
+     * - Otherwise falls back to the downloaded picture (fetching it if the switch is on)
      */
     suspend fun getEffectiveArtistImageUrl(artistId: Long, artistName: String): String? {
         val customUri = withContext(Dispatchers.IO) { musicDao.getArtistCustomImage(artistId) }
@@ -353,7 +358,7 @@ class ArtistImageRepository @Inject constructor(
     }
 
     /**
-     * Removes the user's custom artist image, reverting to the Deezer URL.
+     * Removes the user's custom artist image, reverting to the downloaded picture (if any).
      *
      * @param context Application context
      * @param artistId The artist's database row ID
@@ -372,10 +377,5 @@ class ArtistImageRepository @Inject constructor(
                     .e("Failed to clear custom artist image for id=$artistId: ${e.message}")
             }
         }
-    }
-
-    private fun upgradeToHighResDeezerUrl(url: String): String {
-        if (!url.contains("dzcdn.net/images/artist")) return url
-        return deezerSizeRegex.replace(url, "/1000x1000$1")
     }
 }

@@ -68,4 +68,37 @@ class UsbPermissionCoordinatorTest {
         // Destroyed, stopped or screen off: suspending Lock Task from there is exactly AUD-101.
         assertThat(UsbPermissionCoordinator.requesterAdmits(activityResumed = false)).isFalse()
     }
+
+    // ── B39-A8: a DAC that was never allowed can be asked again ──────────────────────────────────
+
+    @Test
+    fun `forgetting a denial lets the listener be asked again for that DAC only`() {
+        val coordinator = UsbPermissionCoordinator()
+        coordinator.tryBegin(a, nowMs = 0)
+        coordinator.onResult(a, granted = false)
+        coordinator.tryBegin(b, nowMs = 0)
+        coordinator.onResult(b, granted = false)
+        assertThat(coordinator.tryBegin(a, nowMs = 100)).isFalse()   // remembered for the attachment, as it was
+
+        coordinator.forget(a)
+
+        assertThat(coordinator.tryBegin(a, nowMs = 200)).isTrue()
+        assertThat(coordinator.tryBegin(b, nowMs = 200)).isFalse()   // the other DAC's denial stands
+    }
+
+    @Test
+    fun `forgetting also drops a request that never produced a dialog`() {
+        val coordinator = UsbPermissionCoordinator()
+        assertThat(coordinator.tryBegin(a, nowMs = 0)).isTrue()      // pending, and nothing was shown
+        assertThat(coordinator.tryBegin(a, nowMs = 10)).isFalse()
+        coordinator.forget(a)
+        assertThat(coordinator.tryBegin(a, nowMs = 20)).isTrue()
+    }
+
+    @Test
+    fun `forgetting a DAC that was never asked about changes nothing`() {
+        val coordinator = UsbPermissionCoordinator()
+        coordinator.forget(a)
+        assertThat(coordinator.tryBegin(a, nowMs = 0)).isTrue()
+    }
 }

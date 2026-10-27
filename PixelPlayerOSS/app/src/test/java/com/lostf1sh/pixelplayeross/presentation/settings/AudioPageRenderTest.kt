@@ -6,8 +6,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -43,6 +46,7 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.HeadphoneProfilesUiSta
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.SettingsUiState
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -96,8 +100,13 @@ open class AudioPageRenderTest {
         override fun onOpenHeadphoneProfile(profileId: String) { calls += "headphone:$profileId" }
         override fun onOpenKnownHeadphones() { calls += "knownHeadphones" }
         override fun onOpenEqualizer(profileId: String) { calls += "eq:$profileId" }
+        override fun onUseDacEq(profileId: String) { calls += "useDacEq:$profileId" }
         override fun onOpenSafetyMax(profileId: String) { calls += "safety:$profileId" }
         override fun onOpenGlobalTransitionEditor() { calls += "editor" }
+        override fun onShowFixedOutputNotice() { calls += "fixedOutput" }
+        override fun onDacShareChange(value: Boolean) { calls += "dacShare:$value" }
+        override fun onResonanceLimiterChange(value: Boolean) { calls += "limiter:$value" }
+        override fun onAskUsbPermission() { calls += "askUsbPermission" }
     }
 
     // ── the four audio states ────────────────────────────────────────────────────────────────────────
@@ -149,6 +158,8 @@ open class AudioPageRenderTest {
         withDac: Boolean = audio.dacConnected,
         speed: Float = 1.0f,
         device: DeviceControlUiState = DeviceControlUiState(audio = audio),
+        fixedOutputDac: com.lostf1sh.pixelplayeross.data.volume.FixedOutputDac? = null,
+        fixedOutputAnswer: com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer? = null,
     ) = AudioSettingsState.from(
         ui = ui,
         playbackSpeed = speed,
@@ -157,6 +168,8 @@ open class AudioPageRenderTest {
         headphones = HeadphoneProfilesUiState(profiles = listOf(headphone), selected = headphone),
         device = device,
         transition = TransitionSettings(mode = TransitionMode.OVERLAP, durationMs = 4000),
+        fixedOutputDac = fixedOutputDac,
+        fixedOutputAnswer = fixedOutputAnswer,
     )
 
     private fun setPage(state: AudioSettingsState, actions: AudioSettingsActions = Recorder()) = compose.setContent {
@@ -181,6 +194,250 @@ open class AudioPageRenderTest {
     private fun fits(label: String) {
         RenderChecks.assertInsideWindow(compose, label)
         RenderChecks.assertNoCutText(compose, label)
+    }
+
+    // ── B39-A6: the two equalizers are named for where they are applied ──────────────────────────────
+
+    @Test
+    fun `the app's EQ is Polylute EQ, on the phone, and with a Melody whose EQ is on the DAC's own is a second row, inside the DAC`() {
+        setPage(state(dacResonance.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.ON)))
+        assertShows(
+            s(R.string.audio_eq_title),                                   // "Polylute EQ"
+            s(R.string.audio_eq_sub, "TYGR", s(R.string.audio_row_join, s(R.string.headphone_eq_mode_10), "ROCK")),
+            s(R.string.audio_dac_eq_title),                               // "DAC EQ"
+            s(R.string.audio_dac_eq_sub, "SNOWSKY Melody"),
+            s(R.string.audio_dac_eq_on),
+        )
+        // in every language the app's EQ is the app's and the other is the DAC's (the Spanish and Swedish pages run this test too)
+        assertTrue(s(R.string.audio_eq_title).contains("Polylute") && s(R.string.audio_eq_title).contains("EQ"))
+        assertTrue(s(R.string.audio_dac_eq_title).contains("DAC") && s(R.string.audio_dac_eq_title).contains("EQ"))
+        assertNotEquals(s(R.string.audio_eq_title), s(R.string.audio_dac_eq_title))
+        fits("two equalizers")
+    }
+
+    @Test
+    fun `B41 - a DAC whose own EQ is closed says it is off in the DAC, by name, and not that it could not be read`() {
+        // the owner's Melody reads preset 0xF0 ("Close EQ") twice and consistently: that is the DAC's real state
+        setPage(state(dacPure.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.OFF)))
+        assertShows(s(R.string.audio_dac_eq_title), s(R.string.audio_dac_eq_closed, "SNOWSKY Melody"))
+        assertAbsent(s(R.string.audio_dac_eq_on), s(R.string.audio_dac_eq_flat), s(R.string.audio_dac_eq_unknown))
+        fits("DAC EQ off in the DAC")
+    }
+
+    @Test
+    fun `B41 - flat is only for an EQ that is on with every band at 0 dB`() {
+        setPage(state(dacPure.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.FLAT)))
+        assertShows(s(R.string.audio_dac_eq_title), s(R.string.audio_dac_eq_flat))
+        assertAbsent(s(R.string.audio_dac_eq_closed, "SNOWSKY Melody"), s(R.string.audio_dac_eq_unknown))
+        fits("DAC EQ flat")
+    }
+
+    @Test
+    fun `a DAC whose EQ could not be read says so instead of claiming it is off`() {
+        setPage(state(dacPure.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.UNKNOWN)))
+        assertShows(s(R.string.audio_dac_eq_title), s(R.string.audio_dac_eq_unknown))
+        assertAbsent(s(R.string.audio_dac_eq_closed, "SNOWSKY Melody"), s(R.string.audio_dac_eq_flat))
+    }
+
+    @Test
+    fun `B41 - Use the DAC's EQ is offered only where this build can write the DAC's EQ, and tapping it asks and writes nothing`() {
+        val actions = Recorder()
+        val closed = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.OFF
+        // a DAC this build can write (the Melody): the action is there, for the headphones the EQ screen is opened for
+        setPage(state(dacPure.copy(dacEq = closed, dacEqWritable = true)), actions)
+        compose.onNodeWithText(s(R.string.audio_dac_eq_use)).performScrollTo().assertIsDisplayed().performClick()
+        assertEquals(listOf("useDacEq:hp-1"), actions.calls)
+        fits("DAC EQ with the action")
+    }
+
+    @Test
+    fun `B41 - a DAC that is read only offers no action, and neither does a DAC whose EQ cannot be asked`() {
+        setPage(state(dacPure.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.OFF, dacEqWritable = false)))
+        assertAbsent(s(R.string.audio_dac_eq_use))
+    }
+
+    @Test
+    fun `B41 - a writable DAC says its EQ is applied inside it without the read-only note`() {
+        setPage(state(dacPure.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.OFF, dacEqWritable = true)))
+        assertShows(s(R.string.audio_dac_eq_sub_writable, "SNOWSKY Melody"))
+        assertAbsent(s(R.string.audio_dac_eq_sub, "SNOWSKY Melody"))
+    }
+
+    @Test
+    fun `no second EQ row for a DAC outside the table or with no DAC at all`() {
+        setPage(state(dacResonance))
+        assertAbsent(s(R.string.audio_dac_eq_title))
+        assertShows(s(R.string.audio_eq_title))
+    }
+
+    @Test
+    fun `B39-A7 - Share the DAC with other apps is a switch in Output, off by default, and calls its action`() {
+        val actions = Recorder()
+        setPage(state(dacResonance), actions)
+        assertShows(s(R.string.audio_dac_share_title), s(R.string.audio_dac_share_sub))
+        compose.onAllNodes(isToggleable())[0].assertIsOff()
+        compose.onAllNodes(isToggleable())[0].performClick()
+        assertEquals(listOf("dacShare:true"), actions.calls)
+    }
+
+    @Test
+    fun `B39-A7 - with Purity on the switch says Purity keeps the DAC, and is still the listener's to set`() {
+        setPage(state(dacPure))
+        assertShows(s(R.string.audio_dac_share_title), s(R.string.audio_dac_share_sub_purity))
+        assertAbsent(s(R.string.audio_dac_share_sub))
+    }
+
+    @Test
+    fun `B39-A7 - a stored on state is drawn on`() {
+        setPage(state(dacResonance, ui = SettingsUiState(replayGainEnabled = true, dacShareEnabled = true)))
+        compose.onAllNodes(isToggleable())[0].assertIsOn()
+    }
+
+    // ── B40-F8: Resonance's peak limiter: a switch, off unless asked for, with a line that says the truth ──────────────────
+
+    /** The switch on the row whose label is [label]: the toggleable that sits at the label's height. */
+    private fun switchOf(label: String): androidx.compose.ui.test.SemanticsNodeInteraction {
+        val y = compose.onNodeWithText(label).fetchSemanticsNode().boundsInRoot.center.y
+        val nodes = compose.onAllNodes(isToggleable()).fetchSemanticsNodes()
+        val index = nodes.indices.minByOrNull { kotlin.math.abs(nodes[it].boundsInRoot.center.y - y) }!!
+        return compose.onAllNodes(isToggleable())[index]
+    }
+
+    @Test
+    fun `B40-F8 - the limiter is a switch on the Audio page, off by default, and calls its action`() {
+        val actions = Recorder()
+        setPage(state(AudioStatus()), actions)
+        assertShows(s(R.string.audio_limiter_title), s(R.string.audio_limiter_sub), s(R.string.audio_status_off))
+        switchOf(s(R.string.audio_limiter_title)).assertIsOff()
+        switchOf(s(R.string.audio_limiter_title)).performClick()
+        assertEquals(listOf("limiter:true"), actions.calls)
+        fits("limiter row")
+    }
+
+    @Test
+    fun `B40-F8 - on the Android route with the limiter in the stream the line says it is applied`() {
+        setPage(state(AudioStatus(limiterRunning = true), ui = SettingsUiState(replayGainEnabled = true, resonanceLimiterEnabled = true)))
+        switchOf(s(R.string.audio_limiter_title)).assertIsOn()
+        val applied = compose.onAllNodesWithText(s(R.string.audio_status_applied), substring = false).fetchSemanticsNodes().size
+        assertTrue("the limiter row, the equalizer and replay gain all say applied", applied >= 3)
+        compose.onAllNodesWithText(s(R.string.audio_status_limiter_next_song), substring = false).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.audio_status_limiter_android_only), substring = false).assertCountEquals(0)
+    }
+
+    @Test
+    fun `B40-F8 - turned on while a song plays it says it comes from the next song`() {
+        setPage(state(AudioStatus(limiterRunning = false), ui = SettingsUiState(replayGainEnabled = false, resonanceLimiterEnabled = true)))
+        assertShows(s(R.string.audio_status_limiter_next_song))
+    }
+
+    @Test
+    fun `B40-F8 - with a DAC on USB Direct the limiter does not run, and the page does not pretend it does`() {
+        setPage(state(dacResonance, ui = SettingsUiState(replayGainEnabled = false, resonanceLimiterEnabled = true)))
+        assertShows(s(R.string.audio_status_limiter_android_only))
+        compose.onAllNodesWithText(s(R.string.audio_status_limiter_next_song), substring = false).assertCountEquals(0)
+    }
+
+    // ── B39-A8: a DAC that is there and not allowed is said, with a way to ask again ──────────────────
+
+    private val dacNotAllowed = AudioStatus(
+        route = AudioRouteState(
+            usbDacPresent = true, permissionGranted = false, reason = AudioRouteReason.USB_PERMISSION_REQUIRED,
+        ),
+    )
+
+    @Test
+    fun `B39-A8 - a connected DAC without USB permission is named on the page, and asking again calls its action`() {
+        val actions = Recorder()
+        setPage(state(dacNotAllowed), actions)
+        assertShows(s(R.string.audio_usb_permission_title), s(R.string.audio_usb_permission_sub, "SNOWSKY Melody"))
+        compose.onNodeWithText(s(R.string.audio_usb_permission_title)).performClick()
+        assertEquals(listOf("askUsbPermission"), actions.calls)
+        fits("usb permission")
+    }
+
+    @Test
+    fun `B39-A8 - a DAC that is allowed, and no DAC at all, have no such row`() {
+        setPage(state(dacPure.copy(route = route(DirectSignalMode.PRISTINE).copy(permissionGranted = true))))
+        assertAbsent(s(R.string.audio_usb_permission_title))
+    }
+
+    @Test
+    fun `B39-A8 - with no DAC there is nothing to allow`() {
+        setPage(state(noDac))
+        assertAbsent(s(R.string.audio_usb_permission_title))
+    }
+
+    @Test
+    fun `B39-A8 - a permission nobody has read yet is not a refusal`() {
+        setPage(state(AudioStatus(route = AudioRouteState(usbDacPresent = true, permissionGranted = null)), withDac = true))
+        assertAbsent(s(R.string.audio_usb_permission_title))
+    }
+
+    // ── B40-P3: a device whose volume Polylute cannot set is asked about once, and the answer can be changed here ──────────────────
+
+    private val dongle = com.lostf1sh.pixelplayeross.data.volume.FixedOutputDac("dac-1", "SNOWSKY Melody")
+
+    private fun answer(hasOwnControl: Boolean, mode: com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode) =
+        com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer(hasOwnControl, mode)
+
+    @Test
+    fun `B40-P3 - a device not yet asked about has a row that says Polylute cannot set its volume, and opens the question`() {
+        val actions = Recorder()
+        setPage(state(dacResonance, fixedOutputDac = dongle), actions)
+        assertShows(s(R.string.fixed_output_row_title), s(R.string.fixed_output_row_sub_unanswered))
+        compose.onNodeWithText(s(R.string.fixed_output_row_title)).performClick()
+        assertEquals(listOf("fixedOutput"), actions.calls)
+        fits("fixed output row")
+    }
+
+    private fun assertRowSays(answer: com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer, sub: Int) {
+        setPage(state(dacResonance, fixedOutputDac = dongle, fixedOutputAnswer = answer))
+        assertShows(s(R.string.fixed_output_row_title), s(sub))
+        fits("fixed output row ${answer.encode()}")
+    }
+
+    @Test
+    fun `B40-P3 - a knob device in Resonance is said on the row`() =
+        assertRowSays(answer(true, com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode.RESONANCE), R.string.fixed_output_row_sub_resonance)
+
+    @Test
+    fun `B40-P3 - a knob device in Purity is said on the row`() =
+        assertRowSays(answer(true, com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode.PURITY), R.string.fixed_output_row_sub_purity)
+
+    @Test
+    fun `B40-P3 - a device with no control is said on the row`() =
+        assertRowSays(com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer.noControl, R.string.fixed_output_row_sub_no_control)
+
+    @Test
+    fun `B40-P3 - a DAC with a volume control has no such row`() {
+        setPage(state(dacResonance))
+        assertAbsent(s(R.string.fixed_output_row_title))
+    }
+
+    @Test
+    fun `B40-P3 - Purity is off and its switch is disabled for a device that holds it off, with the reason`() {
+        val pure = com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer.noControl
+        setPage(state(dacResonance, fixedOutputDac = dongle, fixedOutputAnswer = pure))
+        assertShows(s(R.string.pristine_held_off_no_control, "SNOWSKY Melody"))
+        // the first toggle is the share switch (Output); the Purity switch is the second, off and not enabled
+        compose.onAllNodes(isToggleable())[1].assertIsOff()
+        compose.onAllNodes(isToggleable())[1].assertIsNotEnabled()
+        fits("held off")
+    }
+
+    @Test
+    fun `B40-P3 - a knob device the listener put in Resonance says it was their choice`() {
+        val resonance = answer(true, com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode.RESONANCE)
+        setPage(state(dacResonance, fixedOutputDac = dongle, fixedOutputAnswer = resonance))
+        assertShows(s(R.string.pristine_held_off_resonance, "SNOWSKY Melody"))
+    }
+
+    @Test
+    fun `B40-P3 - a device in Purity leaves the switch as the listener set it`() {
+        val purity = answer(true, com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode.PURITY)
+        setPage(state(dacPure, fixedOutputDac = dongle, fixedOutputAnswer = purity))
+        compose.onAllNodes(isToggleable())[1].assertIsOn()
+        compose.onAllNodes(isToggleable())[1].assertIsEnabled()
     }
 
     // ── what every state shows ───────────────────────────────────────────────────────────────────────
@@ -282,8 +539,8 @@ open class AudioPageRenderTest {
     fun `the Pure Direct switch is on this page and calls the action that writes its preference`() {
         val actions = Recorder()
         setPage(state(dacResonance), actions)
-        // First switch of the page: Pure Direct.
-        compose.onAllNodes(isToggleable())[0].performClick()
+        // The page's switches in order: "Share the DAC with other apps" (Output, B39-A7), then Pure Direct.
+        compose.onAllNodes(isToggleable())[1].performClick()
         assertEquals(listOf("pure:true"), actions.calls)
     }
 

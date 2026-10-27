@@ -6,6 +6,19 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import com.lostf1sh.pixelplayeross.R
+import com.lostf1sh.pixelplayeross.presentation.components.scoped.respectSystemBackEdgesForHorizontalDrag
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -36,7 +49,6 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.presentation.components.LocalMaterialTheme
@@ -57,10 +69,24 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapPlayerHeader
  *  - **the layers over them** (lyrics, the bookmark dialog, the artist picker).
  *
  * UI-only state lives here (which layer is open, the skip coordination); nothing that has to survive the screen does.
+ *
+ * ## Pages (B42-fix1)
+ *
+ * Under the header the screen is a pager of four pages: **Menu** (the song's options), **Player** (everything above: the cover, the track,
+ * the bar, the transport; where it always opens), **Lyrics** and **Details**. Nothing says so on screen: no indicator, no dots, no tabs.
+ *
+ * **Two swipes, told apart by where the finger lands.** A horizontal swipe that begins on the cover changes the song (the cover's carousel is
+ * a pager inside this one, and [keepHorizontalSwipeOnThisSurface] makes sure it keeps the whole gesture, even at the first or the last song).
+ * A swipe that begins anywhere else on a page changes the page. What drags keeps its drag the same way: the seek bar, the waveform and the
+ * lyrics' own scroll consume their gesture before the pager sees it. The back edges belong to the system ([respectSystemBackEdgesForHorizontalDrag]).
+ *
+ * The header's lyrics and details icons jump to their pages (and, on the page, back to Player); the system back goes from any other page to
+ * Player and from Player closes it, as before; the chevron closes it from anywhere. A screen reader is offered Options, Lyrics and Details as
+ * actions on the pages. Pages are composed only while they are on or beside the screen.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActions) {
+internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActions, pageSlots: PlayerPageSlots = PlayerPageSlots()) {
     val song = state.cover.song
     var showArtistPicker by rememberSaveable { mutableStateOf(false) }
     var showSaveBookmarkDialog by rememberSaveable { mutableStateOf(false) }
@@ -74,7 +100,19 @@ fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActions) {
     // B29-L7: the queue swipe starts at the transport controls and below (see [QueueSwipePolicy]).
     val queueZone = remember { QueueSwipeZone() }
 
-    val lyricsEntry = rememberPlayerLyricsEntry(song.id, state.lyrics, actions)
+    val pages = rememberPlayerPagesState()
+    val lyricsEntry = rememberPlayerLyricsEntry(song.id, state.lyrics, actions) { pages.goTo(PlayerPage.LYRICS) }
+
+    // Opening the player always lands on Player: a collapsed player is put back there (it is retained composed, and would otherwise reopen
+    // on the page it was left on).
+    val sheetState = state.env.currentSheetState
+    LaunchedEffect(sheetState) {
+        if (sheetState != PlayerSheetState.EXPANDED) pages.reset()
+    }
+    // The layers around the player that belong to its Player page only (the queue's folded strip) are told which page it is on.
+    val pageSignal = LocalPlayerPageSignal.current
+    if (pageSignal != null) PlayerPageSignalEffect(pages, pageSignal)
+    PlayerPagesBackHandler(pages)
 
     val skip = rememberPlayerSkipCoordinator(
         song = song,
@@ -144,6 +182,7 @@ fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActions) {
         modifier = Modifier
             .onGloballyPositioned { queueZone.screenTopInWindow = it.positionInWindow().y }
             .playerQueueDragGesture(
+                onPlayerPage = { pages.isOnPlayer },
                 currentSheetState = state.env.currentSheetState,
                 expansionFractionProvider = state.env.expansionFractionProvider,
                 bottomExclusionPx = queueGestureBottomExclusionPx,
@@ -165,16 +204,14 @@ fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActions) {
                            animationSpec = DapMotion.surfaceExit()
                        )
             ) {
-                DapPlayerHeader(
+                PlayerPagesHeader(
+                    pages = pages,
+                    lyricsEntry = lyricsEntry,
+                    onCollapse = actions::onCollapse,
                     modifier = Modifier.graphicsLayer {
                         val fraction = expansionFractionProvider()
                         alpha = (fraction / 1f).coerceIn(0f, 1f)
                     },
-                    lyricsActive = lyricsEntry.isShowing,
-                    onCollapse = actions::onCollapse,
-                    // The lyrics button is a switch on the same screen: on opens the lyrics, off goes back to the cover.
-                    onLyrics = { if (lyricsEntry.isShowing) lyricsEntry.close() else lyricsEntry.open() },
-                    onDetails = actions::onShowDetails,
                 )
             }
         }
@@ -200,51 +237,87 @@ fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActions) {
             val progressSurface: @Composable () -> Unit = {
                 PlayerProgressSurface(state.progress, state.env, surfaceActions)
             }
+            // B41: the two lines of synced lyrics under the cover (the whole composable is nothing when the switch is off or there are none)
+            val lyricsLinesSurface: @Composable () -> Unit = {
+                PlayerLyricsLines(lyrics = state.lyrics, progress = state.progress, onOpen = { lyricsEntry.open() })
+            }
             val controlsSurface: @Composable () -> Unit = {
                 // Wrapped only to report where its top edge is: the line the queue swipe starts from.
                 Box(Modifier.onGloballyPositioned { queueZone.controlsTopInWindow = it.positionInWindow().y }) {
                     PlayerControlsSurface(state.controls, state.env, surfaceActions)
                 }
             }
-            // While the lyrics are over the cover, the cover and its controls are not there for a screen reader either:
-            // a second Pause and a second heart under the lyrics would be focusable and press nothing anyone can see.
-            Box(
-                Modifier
+            // The player's pages (B42-fix1). A page that is not on or next to the screen is not composed, which is also what keeps the cover and
+            // its controls out of a screen reader's way while the lyrics are on screen (a second Pause under the lyrics pressed nothing anyone saw).
+            val optionsLabel = stringResource(R.string.player_action_options)
+            val lyricsLabel = stringResource(R.string.player_header_lyrics)
+            val detailsLabel = stringResource(R.string.player_header_details)
+            val topInset = paddingValues.calculateTopPadding()
+            HorizontalPager(
+                state = pages.pager,
+                modifier = Modifier
                     .fillMaxSize()
-                    .then(if (lyricsEntry.isShowing) Modifier.clearAndSetSemantics { } else Modifier)
-            ) {
-                if (isLandscape) {
-                    FullPlayerLandscapeContent(
-                        paddingValues = paddingValues,
-                        albumCoverSection = coverSurface,
-                        songMetadataSection = trackInfoSurface,
-                        playerProgressSection = progressSurface,
-                        controlsSection = controlsSurface
+                    // The back edges are the system's: a drag that starts there is Back, not a page.
+                    .respectSystemBackEdgesForHorizontalDrag()
+                    .testTag(PlayerPagesTags.Pager)
+                    // The three pages beside Player have no button of their own on Player (the menu has none at all): a screen reader gets
+                    // them as actions.
+                    .semantics {
+                        customActions = listOf(
+                            CustomAccessibilityAction(optionsLabel) { pages.goTo(PlayerPage.MENU); true },
+                            CustomAccessibilityAction(lyricsLabel) { lyricsEntry.open(); true },
+                            CustomAccessibilityAction(detailsLabel) { pages.goTo(PlayerPage.DETAILS); true },
+                        )
+                    },
+                // lazy: a page is composed while any of it is on screen, and not before
+                beyondViewportPageCount = 0,
+                key = { it },
+            ) { index ->
+                when (PlayerPage.entries[index]) {
+                    PlayerPage.MENU -> Box(Modifier.fillMaxSize().padding(top = topInset).testTag(PlayerPagesTags.Menu)) {
+                        pageSlots.menu(pages)
+                    }
+
+                    PlayerPage.PLAYER -> Box(Modifier.fillMaxSize().testTag(PlayerPagesTags.Player)) {
+                        if (isLandscape) {
+                            FullPlayerLandscapeContent(
+                                paddingValues = paddingValues,
+                                albumCoverSection = coverSurface,
+                                songMetadataSection = trackInfoSurface,
+                                playerProgressSection = progressSurface,
+                                controlsSection = controlsSurface,
+                                lyricsLinesSection = lyricsLinesSurface,
+                            )
+                        } else {
+                            FullPlayerPortraitContent(
+                                paddingValues = paddingValues,
+                                albumCoverSection = coverSurface,
+                                songMetadataSection = trackInfoSurface,
+                                playerProgressSection = progressSurface,
+                                controlsSection = controlsSurface,
+                                lyricsLinesSection = lyricsLinesSurface,
+                            )
+                        }
+                    }
+
+                    // The lyrics' own bar is at the foot of this page, and there is no "A continuación" strip under it: the queue's folded
+                    // strip belongs to Player (see [PlayerPageSignal]), so the page keeps clear of the navigation bar only.
+                    PlayerPage.LYRICS -> PlayerLyricsPage(
+                        entry = lyricsEntry,
+                        song = song,
+                        lyrics = state.lyrics,
+                        actions = actions,
+                        modifier = Modifier
+                            .padding(top = topInset, bottom = navigationBarBottomInset)
+                            .testTag(PlayerPagesTags.Lyrics),
                     )
-                } else {
-                    FullPlayerPortraitContent(
-                        paddingValues = paddingValues,
-                        albumCoverSection = coverSurface,
-                        songMetadataSection = trackInfoSurface,
-                        playerProgressSection = progressSurface,
-                        controlsSection = controlsSurface,
-                    )
+
+                    PlayerPage.DETAILS -> Box(Modifier.fillMaxSize().padding(top = topInset).testTag(PlayerPagesTags.Details)) {
+                        pageSlots.details(pages)
+                    }
                 }
             }
-            // The lyrics take the place of the cover and the controls, under the same header: the header's Lyrics
-            // button is on, and pressing it again goes back to the cover (B22).
-            PlayerLyricsLayer(
-                entry = lyricsEntry,
-                song = song,
-                lyrics = state.lyrics,
-                actions = actions,
-                // B33-U1: the queue sheet's folded strip is at the foot of the portrait player, over the lyrics as over the cover, so the
-                // lyrics keep clear of it (the room the strip takes and the navigation bar under it).
-                modifier = Modifier.padding(
-                    top = paddingValues.calculateTopPadding(),
-                    bottom = if (isLandscape) 0.dp else QueuePeekHeight + QueuePeekBottomGap + navigationBarBottomInset,
-                ),
-            )
+            PlayerLyricsDialogs(entry = lyricsEntry, song = song, lyrics = state.lyrics, actions = actions)
         }
     }
 
@@ -263,6 +336,60 @@ fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActions) {
     }
 }
 
+/** Test tags of the pages and of the pager that holds them. */
+internal object PlayerPagesTags {
+    const val Pager = "player-pages"
+    const val Menu = "player-page-menu"
+    const val Player = "player-page-player"
+    const val Lyrics = "player-page-lyrics"
+    const val Details = "player-page-details"
+    /** The cover on the Player page: where a swipe changes the song. */
+    const val Cover = "player-cover"
+    /** The details' waveform: a control that drags (a scrub), on a page that turns. */
+    const val Waveform = "player-details-waveform"
+}
+
+/**
+ * The header over the pages. It is its own scope so that a change of page (which flips two icons) redraws the header and not the screen: the
+ * lyrics icon is on while the lyrics page is, and a second press goes back to Player; the details icon is the same for the details page.
+ */
+@Composable
+private fun PlayerPagesHeader(
+    pages: PlayerPagesState,
+    lyricsEntry: PlayerLyricsEntry,
+    onCollapse: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val current = pages.current
+    DapPlayerHeader(
+        modifier = modifier,
+        lyricsActive = current == PlayerPage.LYRICS,
+        detailsActive = current == PlayerPage.DETAILS,
+        onCollapse = onCollapse,
+        // The icons are switches between their page and the player: on opens the page, off goes back to the cover (B22).
+        onLyrics = { if (pages.current == PlayerPage.LYRICS) pages.goTo(PlayerPage.Start) else lyricsEntry.open() },
+        onDetails = { if (pages.current == PlayerPage.DETAILS) pages.goTo(PlayerPage.Start) else pages.goTo(PlayerPage.DETAILS) },
+    )
+}
+
+/**
+ * Tells the layers beside the player which page it is on, in the same frame the page changes (a side effect of its own scope, so a change of
+ * page redraws this and not the screen), and puts "on Player" back when the player goes.
+ */
+@Composable
+private fun PlayerPageSignalEffect(pages: PlayerPagesState, signal: PlayerPageSignal) {
+    val page = pages.current
+    SideEffect { signal.page = page }
+    DisposableEffect(signal) { onDispose { signal.page = PlayerPage.Start } }
+}
+
+/** Back from Menu, Lyrics or Details is Player; from Player it is not handled here, so it closes the player as it always did. */
+@Composable
+private fun PlayerPagesBackHandler(pages: PlayerPagesState) {
+    val offPlayer by remember(pages) { derivedStateOf { !pages.isOnPlayer } }
+    BackHandler(enabled = offPlayer) { pages.back() }
+}
+
 /** True in landscape. Read once by the host; the screen takes it as state so it can be drawn in either. */
 @Composable
 internal fun isLandscapeNow(): Boolean =
@@ -277,6 +404,8 @@ internal fun isLandscapeNow(): Boolean =
  * is under the finger from the first pixel it is the queue's.
  */
 private fun Modifier.playerQueueDragGesture(
+    /** The queue is dragged up from the transport: a page with no transport (Menu, Lyrics, Details) has no queue to drag. */
+    onPlayerPage: () -> Boolean,
     currentSheetState: PlayerSheetState,
     expansionFractionProvider: () -> Float,
     bottomExclusionPx: Float,
@@ -288,7 +417,7 @@ private fun Modifier.playerQueueDragGesture(
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         val isFullyExpanded = currentSheetState == PlayerSheetState.EXPANDED && expansionFractionProvider() >= 0.99f
-        if (!isFullyExpanded) return@awaitEachGesture
+        if (!isFullyExpanded || !onPlayerPage()) return@awaitEachGesture
 
         val bottomBoundaryY = (size.height.toFloat() - bottomExclusionPx).coerceAtLeast(0f)
         val downInWindow = down.position.y + zone.screenTopInWindow

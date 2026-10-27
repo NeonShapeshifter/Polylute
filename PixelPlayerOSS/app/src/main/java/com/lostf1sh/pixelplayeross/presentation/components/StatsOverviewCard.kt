@@ -58,7 +58,8 @@ fun StatsOverviewCard(
             .fillMaxWidth()
             .padding(horizontal = DapSpacing.Gutter),
         shape = RoundedCornerShape(DapRadius.Surface),
-        colors = CardDefaults.cardColors(containerColor = Dap.surface),
+        // over the cover glass a frosted surface (B42-fix3, item 8); the theme's own surface otherwise
+        colors = CardDefaults.cardColors(containerColor = Dap.panel),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         onClick = onClick
     ) {
@@ -348,6 +349,6 @@ private fun PlaceholderLine(width: Dp) {
             .width(width)
             .height(14.dp)
             .clip(RoundedCornerShape(DapRadius.Surface))
-            .background(Dap.surfaceRaised)
+            .background(Dap.panelRaised)
     )
 }

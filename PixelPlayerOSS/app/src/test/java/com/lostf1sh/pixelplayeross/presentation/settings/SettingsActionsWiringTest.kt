@@ -59,6 +59,18 @@ class SettingsActionsWiringTest {
     }
 
     @Test
+    fun `B41-fix1 the theme row of a cover mode writes the cover choice and leaves the explicit theme alone`() {
+        val actions = AppearanceSettingsActionsImpl(vm, navigate)
+        for (choice in listOf("dark", "light", "system")) actions.onCoverThemeChoiceChange(choice)
+        verify(exactly = 1) { vm.setCoverThemeChoice("dark") }
+        verify(exactly = 1) { vm.setCoverThemeChoice("light") }
+        verify(exactly = 1) { vm.setCoverThemeChoice("system") }
+        // not the pair that "Theme and accent" stores: that is what going back shows again
+        verify(exactly = 0) { vm.setBaseTheme(any()) }
+        verify(exactly = 0) { vm.setAppThemeMode(any()) }
+    }
+
+    @Test
     fun `the theme row is two writes, in the order that never draws the wrong destination`() {
         val actions = AppearanceSettingsActionsImpl(vm, navigate)
         for (choice in DapAppearanceChoice.entries) {
@@ -80,7 +92,6 @@ class SettingsActionsWiringTest {
         actions.onBackNavigationModeChange(BackNavigationMode.entries.last())
         actions.onKeepPlayingInBackgroundChange(false)
         actions.onResumeOnHeadsetReconnectChange(true)
-        actions.onDapLockScreenEnabledChange(true)
         actions.onShowQueueHistoryChange(false)
         actions.onFolderBackGestureNavigationChange(false)
         actions.onTapBackgroundClosesPlayerChange(true)
@@ -88,7 +99,6 @@ class SettingsActionsWiringTest {
         verify(exactly = 1) { vm.setBackNavigationMode(BackNavigationMode.entries.last()) }
         verify(exactly = 1) { vm.setKeepPlayingInBackground(false) }
         verify(exactly = 1) { vm.setResumeOnHeadsetReconnect(true) }
-        verify(exactly = 1) { vm.setDapLockScreenEnabled(true) }
         verify(exactly = 1) { vm.setShowQueueHistory(false) }
         verify(exactly = 1) { vm.setFolderBackGestureNavigation(false) }
         verify(exactly = 1) { vm.setTapBackgroundClosesPlayer(true) }
@@ -101,6 +111,14 @@ class SettingsActionsWiringTest {
         actions.onExternalLyricsEnabledChange(true)
         actions.onLyricsSourcePreferenceChange(LyricsSourcePreference.LOCAL_FIRST)
         actions.onAutoScanLrcFilesChange(true)
+        verify(exactly = 1) { vm.setExternalLyricsEnabled(true) }
+        verify(exactly = 1) { vm.setLyricsSourcePreference(LyricsSourcePreference.LOCAL_FIRST) }
+        verify(exactly = 1) { vm.setAutoScanLrcFiles(true) }
+    }
+
+    @Test
+    fun `B41 - what moved from Lyrics and Behavior to Appearance writes the same preferences from there`() {
+        val actions = AppearanceSettingsActionsImpl(vm, navigate)
         actions.onImmersiveLyricsEnabledChange(true)
         actions.onImmersiveLyricsTimeoutChange(5000L)
         actions.onLyricsAlignmentChange("left")
@@ -109,9 +127,7 @@ class SettingsActionsWiringTest {
         actions.onUseAnimatedLyricsChange(true)
         actions.onAnimatedLyricsBlurEnabledChange(false)
         actions.onAnimatedLyricsBlurStrengthChange(1.5f)
-        verify(exactly = 1) { vm.setExternalLyricsEnabled(true) }
-        verify(exactly = 1) { vm.setLyricsSourcePreference(LyricsSourcePreference.LOCAL_FIRST) }
-        verify(exactly = 1) { vm.setAutoScanLrcFiles(true) }
+        actions.onDapLockScreenEnabledChange(true)
         verify(exactly = 1) { vm.setImmersiveLyricsEnabled(true) }
         verify(exactly = 1) { vm.setImmersiveLyricsTimeout(5000L) }
         verify(exactly = 1) { vm.setLyricsAlignment("left") }
@@ -120,6 +136,18 @@ class SettingsActionsWiringTest {
         verify(exactly = 1) { vm.setUseAnimatedLyrics(true) }
         verify(exactly = 1) { vm.setAnimatedLyricsBlurEnabled(false) }
         verify(exactly = 1) { vm.setAnimatedLyricsBlurStrength(1.5f) }
+        verify(exactly = 1) { vm.setDapLockScreenEnabled(true) }
+    }
+
+    @Test
+    fun `B41 - the two new switches write their own preferences`() {
+        val actions = AppearanceSettingsActionsImpl(vm, navigate)
+        actions.onCoverGlassMovingChange(false)
+        actions.onLyricsUnderCoverChange(false)
+        actions.onAppColorSourceChange(com.lostf1sh.pixelplayeross.data.preferences.AppColorSource.COVER_GLASS)
+        verify(exactly = 1) { vm.setCoverGlassMoving(false) }
+        verify(exactly = 1) { vm.setLyricsUnderCover(false) }
+        verify(exactly = 1) { vm.setAppColorSource("cover_glass") }
     }
 
     @Test
@@ -129,16 +157,24 @@ class SettingsActionsWiringTest {
         actions.onMinSongDurationChange(20000)
         actions.onMinTracksPerAlbumChange(2)
         actions.onAlbumArtCacheLimitMbChange(300)
-        actions.onExternalArtistImagesEnabledChange(true)
+        actions.onMusicInfoCoversChange(true)
+        actions.onMusicInfoArtistPhotosChange(true)
+        actions.onMusicInfoDescriptionsChange(true)
+        actions.onMusicInfoCacheLimitChange(250)
         actions.onRefreshLibrary()
         actions.onFullRescan()
         actions.onOpenArtistSettings()
         actions.onOpenDuplicates()
-        actions.onOpenExcludedDirectories()
+        actions.onOpenLibraryFolders()
+        actions.onFindFolders()
         verify(exactly = 1) { vm.setMinSongDuration(20000) }
+        verify(exactly = 1) { vm.findFolders() }
         verify(exactly = 1) { vm.setMinTracksPerAlbum(2) }
         verify(exactly = 1) { vm.setAlbumArtCacheLimitMb(300) }
-        verify(exactly = 1) { vm.setExternalArtistImagesEnabled(true) }
+        verify(exactly = 1) { vm.setMusicInfoCoversEnabled(true) }
+        verify(exactly = 1) { vm.setMusicInfoArtistPhotosEnabled(true) }
+        verify(exactly = 1) { vm.setMusicInfoDescriptionsEnabled(true) }
+        verify(exactly = 1) { vm.setMusicInfoCacheLimitMb(250) }
         verify(exactly = 1) { vm.refreshLibrary() }
         verify(exactly = 1) { vm.fullSyncLibrary() }
         // The explorer: the dialog is raised first, then the explorer is opened at its root.
@@ -188,6 +224,25 @@ class SettingsActionsWiringTest {
         actions.onRandomModeChange(RandomMode.FAST)
         verify(exactly = 1) { vm.setPersistentShuffleEnabled(true) }
         verify(exactly = 1) { vm.setRandomMode(RandomMode.FAST) }
+    }
+
+    @Test
+    fun `B41 - Use the DAC's EQ opens the equalizer of the headphones in use, already asking, and writes nothing`() {
+        val actions = AudioSettingsActionsImpl(vm, mockk(relaxed = true), navigate)
+        actions.onUseDacEq("hp-1")
+        assertThat(routes).containsExactly(Screen.Equalizer.createRoute("hp-1", askDacEq = true))
+        // the question is a query on the same route; the plain route every other caller uses is what it was
+        assertThat(routes.single()).isEqualTo(Screen.Equalizer.createRoute("hp-1") + "?askDacEq=true")
+        assertThat(Screen.Equalizer.createRoute("hp-1")).doesNotContain("askDacEq")
+    }
+
+    @Test
+    fun `B40-F8 - the peak limiter switch writes the limiter preference`() {
+        val actions = AudioSettingsActionsImpl(vm, mockk(relaxed = true), navigate)
+        actions.onResonanceLimiterChange(true)
+        actions.onResonanceLimiterChange(false)
+        verify(exactly = 1) { vm.setResonanceLimiterEnabled(true) }
+        verify(exactly = 1) { vm.setResonanceLimiterEnabled(false) }
     }
 
     @Test

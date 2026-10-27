@@ -2,6 +2,7 @@
 
 package com.lostf1sh.pixelplayeross.presentation.screens
 
+import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.dapDismissKeyboardActions
 import com.lostf1sh.pixelplayeross.ui.ds.dapTextField
 import android.content.ClipData
@@ -143,7 +144,7 @@ import com.lostf1sh.pixelplayeross.presentation.components.ModalInputBridge
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.database.AudioBookmarkEntity
 import com.lostf1sh.pixelplayeross.data.model.Song
-import androidx.compose.material3.ModalBottomSheet
+import com.lostf1sh.pixelplayeross.presentation.components.GlassModalBottomSheet
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.lostf1sh.pixelplayeross.presentation.components.CollapsibleCommonTopBar
 import com.lostf1sh.pixelplayeross.presentation.components.MiniPlayerHeight
@@ -401,7 +402,7 @@ fun AudioBookmarkFolderScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .nestedScroll(topBarState.nestedScrollConnection)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(Dap.page)
             ) {
                 LazyColumn(
                     state = topBarState.lazyListState,
@@ -1634,7 +1635,7 @@ private fun BookmarkMomentCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BookmarkMomentActionsBottomSheet(
+internal fun BookmarkMomentActionsBottomSheet(
     bookmark: AudioBookmarkEntity,
     onDismiss: () -> Unit,
     onRename: () -> Unit,
@@ -1644,7 +1645,7 @@ private fun BookmarkMomentActionsBottomSheet(
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
     val formattedTime = remember(bookmark.timestampMs) { formatBookmarkTime(bookmark.timestampMs) }
 
-    ModalBottomSheet(
+    GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),

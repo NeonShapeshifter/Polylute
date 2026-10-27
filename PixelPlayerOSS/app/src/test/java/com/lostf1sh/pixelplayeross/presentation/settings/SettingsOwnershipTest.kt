@@ -31,6 +31,8 @@ import java.nio.file.Files
  * the source because the alternative — a Compose UI test — would need the whole Hilt graph to say
  * something that is really about which page a control sits in.
  *
+ * B41: how lyrics read and look, and the DAP lock screen, moved to Appearance (the same preferences, the same setters).
+ *
  * B21: each category is its own file in `presentation/settings` that calls an actions interface
  * (`actions.onXChange`), and `SettingsActionsWiring.kt` maps every action to the ViewModel setter it
  * is named after. So "the Lyrics page edits setExternalLyricsEnabled" reads as "the Lyrics page calls
@@ -133,30 +135,45 @@ class SettingsOwnershipTest {
         }
     }
 
-    // --- D: persistent lyrics settings are owned by Lyrics ---------------------------------------
+    // --- D: where lyrics come from is Lyrics'; how they read and look is Appearance's (B41) -------
+
+    /** Where lyrics come from: the Lyrics category. */
+    private val lyricsSourceSetters = listOf("setExternalLyricsEnabled", "setLyricsSourcePreference", "setAutoScanLrcFiles")
+
+    /** How lyrics read and look (it was Lyrics, "Reading" and "Effects"; B41 moved it to Appearance): the same preferences, the same setters. */
+    private val lyricsLookSetters = listOf(
+        "setImmersiveLyricsEnabled",
+        "setImmersiveLyricsTimeout",
+        "setUseAnimatedLyrics",
+        "setAnimatedLyricsBlurEnabled",
+        "setAnimatedLyricsBlurStrength",
+        "setLyricsAlignment",
+        "setShowLyricsTranslation",
+        "setShowLyricsRomanization",
+    )
 
     @Test
-    fun `every persistent lyrics setting is edited in the Lyrics category`() {
+    fun `where lyrics come from is edited in the Lyrics category`() {
         val tests = readSource("SettingsCategoryScreen.kt")
         // Guard against a vacuous pass: the category must exist before its branch can be inspected.
         assertThat(tests).contains("SettingsCategory.LYRICS ->")
 
         val lyrics = categoryBranch("LYRICS")
-        listOf(
-            "setExternalLyricsEnabled",
-            "setLyricsSourcePreference",
-            "setAutoScanLrcFiles",
-            "setImmersiveLyricsEnabled",
-            "setImmersiveLyricsTimeout",
-            "setUseAnimatedLyrics",
-            "setAnimatedLyricsBlurEnabled",
-            "setAnimatedLyricsBlurStrength",
-            "setLyricsAlignment",
-            "setShowLyricsTranslation",
-            "setShowLyricsRomanization",
-        ).forEach { setter ->
+        lyricsSourceSetters.forEach { setter ->
             assertThat(lyrics).contains(action(setter))
             // ...and the action is the setter's, not another's.
+            assertThat(wiring).contains("vm.$setter(value)")
+        }
+    }
+
+    @Test
+    fun `B41 - how lyrics read and look is edited in the Appearance category, and no longer in Lyrics`() {
+        val appearance = categoryBranch("APPEARANCE")
+        val lyrics = categoryBranch("LYRICS")
+        lyricsLookSetters.forEach { setter ->
+            assertThat(appearance).contains(action(setter))
+            assertThat(lyrics).doesNotContain(action(setter))
+            // the same setter as before the move: the preference did not change
             assertThat(wiring).contains("vm.$setter(value)")
         }
     }
@@ -166,16 +183,16 @@ class SettingsOwnershipTest {
         val library = categoryBranch("LIBRARY")
         val appearance = categoryBranch("APPEARANCE")
 
-        listOf(
-            "setExternalLyricsEnabled",
-            "setLyricsSourcePreference",
-            "setAutoScanLrcFiles",
-            "setImmersiveLyricsEnabled",
-            "setUseAnimatedLyrics",
-        ).forEach { setter ->
-            assertThat(library).doesNotContain(action(setter))
-            assertThat(appearance).doesNotContain(action(setter))
-        }
+        (lyricsSourceSetters + lyricsLookSetters).forEach { setter -> assertThat(library).doesNotContain(action(setter)) }
+        // Appearance holds the look of lyrics, not where they come from
+        lyricsSourceSetters.forEach { setter -> assertThat(appearance).doesNotContain(action(setter)) }
+    }
+
+    @Test
+    fun `B41 - the DAP lock screen switch is Appearance's, no longer Behavior's, and writes the same preference`() {
+        assertThat(categoryBranch("APPEARANCE")).contains(action("setDapLockScreenEnabled"))
+        assertThat(categoryBranch("BEHAVIOR")).doesNotContain(action("setDapLockScreenEnabled"))
+        assertThat(wiring).contains("vm.setDapLockScreenEnabled(value)")
     }
 
     @Test

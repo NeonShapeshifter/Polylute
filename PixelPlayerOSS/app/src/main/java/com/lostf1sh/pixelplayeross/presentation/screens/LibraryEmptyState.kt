@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -31,8 +33,16 @@ import com.lostf1sh.pixelplayeross.ui.theme.RoundedSans
 private data class LibraryEmptySpec(
     val iconRes: Int,
     val titleRes: Int,
-    val subtitleRes: Int
+    val subtitleRes: Int,
+    /** B39-A9: the library is empty because nothing is included (or nothing is on the phone): the way back is a button away. */
+    val offersFindFolders: Boolean = false,
 )
+
+/**
+ * B39-A9: "Find folders with music" for the empty library. The shell provides it (the same scan and dialog as Settings, Library); an empty
+ * library drawn without one (a preview, a test) simply has no button.
+ */
+val LocalFindFolders = staticCompositionLocalOf<(() -> Unit)?> { null }
 
 private fun libraryEmptySpec(
     tabId: LibraryTabId,
@@ -61,7 +71,8 @@ private fun libraryEmptySpec(
             else -> LibraryEmptySpec(
                 iconRes = R.drawable.rounded_music_off_24,
                 titleRes = R.string.lib_empty_songs_all_title,
-                subtitleRes = R.string.lib_empty_songs_all_subtitle
+                subtitleRes = R.string.library_empty_find_folders,
+                offersFindFolders = true,
             )
         }
 
@@ -177,6 +188,12 @@ internal fun LibraryExpressiveEmptyState(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
+            }
+            val findFolders = LocalFindFolders.current
+            if (spec.offersFindFolders && findFolders != null) {
+                FilledTonalButton(onClick = findFolders) {
+                    Text(stringResource(R.string.library_find_folders_title))
+                }
             }
         }
     }

@@ -33,6 +33,7 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.preferences.FullPlayerLoadingTweaks
 import com.lostf1sh.pixelplayeross.presentation.components.player.FullPlayerContent
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.FullPlayerVisualState
+import com.lostf1sh.pixelplayeross.presentation.components.scoped.MiniSeekPolicy
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.ParkedWhileCollapsed
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.rememberFullPlayerRuntimePolicy
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.rememberHeldWhile
@@ -68,7 +69,10 @@ internal fun BoxScope.UnifiedPlayerMiniAndFullLayers(
     shouldRenderFullPlayer: Boolean = true,
     /** B33-U2: how far the mini player's content is carried by its sideways swipe, in px (read where it is drawn). */
     miniSwipeOffsetProvider: () -> Float = { 0f },
-    onShowSongInfo: () -> Unit,
+    /** Where the Menu page's navigation rows lead (B42-fix1). */
+    onNavigateToAlbum: (Song) -> Unit,
+    onNavigateToArtist: (Song) -> Unit,
+    onNavigateToGenre: (Song) -> Unit,
     onQueueDragStart: () -> Unit,
     onQueueDrag: (Float) -> Unit,
     onQueueRelease: (Float, Float) -> Unit
@@ -106,7 +110,12 @@ internal fun BoxScope.UnifiedPlayerMiniAndFullLayers(
                         onNext = { playerViewModel.nextSong() },
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { translationX = miniSwipeOffsetProvider() }
+                            .graphicsLayer { translationX = miniSwipeOffsetProvider() },
+                        // B40-F6: the progress line reads the position the sheet already collects, in the draw phase only
+                        seekPositionProvider = currentPositionProvider,
+                        seekDurationMs = MiniSeekPolicy.durationMs(infrequentPlayerState.totalDuration, currentSongNonNull.duration),
+                        onSeek = { playerViewModel.seekTo(it) },
+                        seekActiveProvider = { isMiniPlayerVisible },
                     )
                 }
             }
@@ -242,7 +251,9 @@ internal fun BoxScope.UnifiedPlayerMiniAndFullLayers(
                             onNext = onNext,
                             onPrevious = onPrevious,
                             onCollapse = onCollapse,
-                            onShowSongInfo = onShowSongInfo,
+                            onNavigateToAlbum = onNavigateToAlbum,
+                            onNavigateToArtist = onNavigateToArtist,
+                            onNavigateToGenre = onNavigateToGenre,
                             onQueueDragStart = onQueueDragStart,
                             onQueueDrag = onQueueDrag,
                             onQueueRelease = onQueueRelease,
@@ -264,6 +275,8 @@ internal fun BoxScope.UnifiedPlayerMiniAndFullLayers(
 // initialisation and could never follow a palette or accent change.
 private val dapPlayerScheme: ColorScheme
     @Composable get() = dapColorScheme(
-        LocalDapPalette.current.presentedAccent(LocalDapAccent.current),
+        // B40-F1: already the colour this theme draws it in (a named accent resolved by the theme, or the cover's after its floor):
+        // presenting it again darkened it twice on white.
+        LocalDapAccent.current,
         LocalDapPalette.current,
     )

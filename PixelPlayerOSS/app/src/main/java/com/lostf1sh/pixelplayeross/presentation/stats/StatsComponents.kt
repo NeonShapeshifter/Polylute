@@ -169,7 +169,7 @@ internal fun InitialsAvatar(name: String, modifier: Modifier = Modifier) {
         modifier
             .size(DapSizes.ThumbRow)
             .clip(CircleShape)
-            .background(Dap.surfaceRaised),
+            .background(Dap.panelRaised),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -220,7 +220,7 @@ internal fun Bar(share: Float, modifier: Modifier = Modifier, color: Color = Loc
             .fillMaxWidth()
             .height(3.dp)
             .clip(RoundedCornerShape(1.5.dp))
-            .background(Dap.surfaceRaised),
+            .background(Dap.panelRaised),
     ) {
         val clamped = share.coerceIn(0f, 1f)
         if (clamped > 0f) {
@@ -291,7 +291,7 @@ internal fun TimelineChart(
     val max = values.maxOrNull()?.takeIf { it > 0f } ?: 1f
     val peakIndex = values.indexOf(values.max()).takeIf { values.max() > 0f }
     val accent = LocalDapAccent.current
-    val stub = Dap.surfaceRaised
+    val stub = Dap.panelRaised
     val baseline = Dap.divider
     val count = buckets.size
     val peak = peakIndex?.let { buckets[it] }
@@ -380,7 +380,7 @@ internal fun ClockGrid(
     modifier: Modifier = Modifier,
 ) {
     val accent = LocalDapAccent.current
-    val empty = Dap.surface
+    val empty = Dap.panel
     val max = if (mode == StatsRankMode.PLAYS) clock.maxPlays.toFloat() else clock.maxTimeMs.toFloat()
     val days = remember(locale) { DayOfWeek.entries.map { it.getDisplayName(TextStyle.NARROW, locale) } }
     Column(modifier.fillMaxWidth()) {

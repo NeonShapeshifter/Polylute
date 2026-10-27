@@ -1,16 +1,21 @@
 package com.lostf1sh.pixelplayeross.di
 
 import com.lostf1sh.pixelplayeross.data.stats.CatalogSource
+import com.lostf1sh.pixelplayeross.data.stats.ClockChanges
 import com.lostf1sh.pixelplayeross.data.stats.LedgerProvider
 import com.lostf1sh.pixelplayeross.data.stats.ListeningModel
 import com.lostf1sh.pixelplayeross.data.stats.RoomCatalogSource
+import com.lostf1sh.pixelplayeross.data.stats.SystemClockChanges
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-/** The two seams of the listening model: where the library comes from, and where Stats and the collections read the ledger. */
+/**
+ * The seams of the listening model: where the library comes from, where Stats and the collections read the ledger, and (B42-fix1) what tells
+ * Stats the device's clock moved.
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class StatsModule {
@@ -21,4 +26,8 @@ abstract class StatsModule {
     @Binds
     @Singleton
     abstract fun bindLedgerProvider(impl: ListeningModel): LedgerProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindClockChanges(impl: SystemClockChanges): ClockChanges
 }

@@ -422,7 +422,6 @@ fun HomeScreen(
                             onOpenAllClick = {
                                 navController.navigateSafely(Screen.RecentlyPlayed.route)
                             },
-                            themeStateHolder = playerViewModel.themeStateHolder,
                             currentSongId = currentSong?.id,
                             contentPadding = PaddingValues(horizontal = DapSpacing.Gutter)
                         )
@@ -468,7 +467,7 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Dap.background)
+                    .background(Dap.page)
                     .verticalScroll(rememberScrollState())
                     .padding(homeContentPadding),
             ) {
@@ -484,7 +483,8 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(statusBarInset)
-                .background(Dap.background)
+                // over the cover glass the strip is frosted (B42-fix3, item 8): the same veil as a card, not the theme's near-black
+                .background(Dap.bar)
         )
 
         Box(
@@ -497,8 +497,8 @@ fun HomeScreen(
                         colorStops = arrayOf(
                             0.0f to Color.Transparent,
                             0.2f to Color.Transparent,
-                            0.8f to Dap.background,
-                            1.0f to Dap.background
+                            0.8f to Dap.fadeEdge,
+                            1.0f to Dap.fadeEdge
                         )
                     )
                 )

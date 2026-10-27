@@ -207,9 +207,23 @@ class FiioProtocolReadTest {
 
     @Test
     fun `a DAC that answers the switch gives a value`() {
-        val dac = FakeFiioDac(melody, activePreset = 0x01, answersSwitch = true)
-        val state = FiioEqReader.read(FiioHidSession(dac, melody))
+        // a model that answers the switch (the Melody, in B30's probe, does not: see the next test)
+        val answering = melody.copy(answersEqSwitch = true)
+        val dac = FakeFiioDac(answering, activePreset = 0x01, answersSwitch = true)
+        val state = FiioEqReader.read(FiioHidSession(dac, answering))
         assertThat(state.eqSwitch).isEqualTo(EqRead.Read(true))
+    }
+
+    @Test
+    fun `B40-F2 - the Melody is not asked for the switch it does not answer, and no GET 1A is sent`() {
+        assertThat(melody.answersEqSwitch).isFalse()
+        val dac = FakeFiioDac(melody, activePreset = 0xF0, answersSwitch = true)
+        val state = FiioEqReader.read(FiioHidSession(dac, melody))
+        assertThat(state.eqSwitch).isInstanceOf(EqRead.Unknown::class.java)
+        // byte 5 of an output report is the command: 0x1A (the switch) never went out
+        assertThat(dac.written.map { it[5].toInt() and 0xFF }).doesNotContain(0x1A)
+        // and the verdict follows the preset: Close EQ is off
+        assertThat(state.verdict).isEqualTo(DacEqVerdict.OFF)
     }
 
     @Test

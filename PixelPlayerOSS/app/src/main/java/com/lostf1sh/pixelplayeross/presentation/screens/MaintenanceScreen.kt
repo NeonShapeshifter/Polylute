@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.DeveloperBoard
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
@@ -54,8 +55,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.decent.usbaudio.media3.UsbDirectSinkState
+import com.lostf1sh.pixelplayeross.presentation.components.NoiseMarkDialog
+import com.lostf1sh.pixelplayeross.presentation.components.rememberNoiseMarkState
 import com.lostf1sh.pixelplayeross.presentation.model.labelRes
 import com.lostf1sh.pixelplayeross.BuildConfig
+import com.lostf1sh.pixelplayeross.DevelopmentToolsPolicy
 import com.lostf1sh.pixelplayeross.R
 import androidx.compose.ui.text.style.TextAlign
 import com.lostf1sh.pixelplayeross.data.intelligence.TrackIntelligenceDiagnostic
@@ -73,6 +77,7 @@ import com.lostf1sh.pixelplayeross.dap.mode.DedicatedProvisioningEvidence
 import com.lostf1sh.pixelplayeross.dap.mode.ProductLevel
 import com.lostf1sh.pixelplayeross.dap.mode.ProductModeResolver
 import com.lostf1sh.pixelplayeross.presentation.settings.MaintenanceToolsActionsImpl
+import com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy
 import com.lostf1sh.pixelplayeross.presentation.settings.MaintenanceToolsSection
 import com.lostf1sh.pixelplayeross.presentation.settings.MaintenanceToolsState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
@@ -101,11 +106,13 @@ fun MaintenanceScreen(
     playerViewModel: PlayerViewModel,
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     statsViewModel: StatsViewModel = hiltViewModel(),
+    detailedLoggingViewModel: com.lostf1sh.pixelplayeross.presentation.viewmodel.DetailedLoggingViewModel = hiltViewModel(),
 ) {
     MaintenancePanel(
         playerViewModel = playerViewModel,
         settingsViewModel = settingsViewModel,
         statsViewModel = statsViewModel,
+        detailedLoggingViewModel = detailedLoggingViewModel,
         onExit = onExit,
         onOpenDiagnostics = onOpenDiagnostics,
     )
@@ -117,22 +124,36 @@ private fun MaintenancePanel(
     playerViewModel: PlayerViewModel,
     settingsViewModel: SettingsViewModel,
     statsViewModel: StatsViewModel,
+    detailedLoggingViewModel: com.lostf1sh.pixelplayeross.presentation.viewmodel.DetailedLoggingViewModel,
     onExit: () -> Unit,
     onOpenDiagnostics: () -> Unit,
 ) {
     val context = LocalContext.current
+    val loggingState by detailedLoggingViewModel.state.collectAsStateWithLifecycle()
+    val loggingActions = remember(detailedLoggingViewModel, context) {
+        object : DetailedLoggingActions {
+            override fun setOn(on: Boolean) = detailedLoggingViewModel.setOn(on)
+            override fun setIncludeEverything(value: Boolean) = detailedLoggingViewModel.setIncludeEverything(value)
+            override fun delete() = detailedLoggingViewModel.delete()
+            override fun share(): Boolean {
+                val intent = detailedLoggingViewModel.shareIntent() ?: return false
+                return runCatching { context.startActivity(intent) }.isSuccess
+            }
+        }
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val diagnostics by settingsViewModel.usbAudioDiagnostics.collectAsStateWithLifecycle()
     val route by settingsViewModel.audioRouteState.collectAsStateWithLifecycle()
     val hardwareDiagnostic by settingsViewModel.deviceDiagnostics.collectAsStateWithLifecycle()
     val overrides by settingsViewModel.maintenanceOverrides.collectAsStateWithLifecycle()
-    val trackDiagnostic by settingsViewModel.trackDiagnostic.collectAsStateWithLifecycle()
-    val metadataDiagnostic by settingsViewModel.metadataDiagnostic.collectAsStateWithLifecycle()
-    val collectionDiagnostic by settingsViewModel.collectionDiagnostic.collectAsStateWithLifecycle()
+    val developmentTools = DevelopmentToolsPolicy.enabled()
+    val trackDiagnostic = if (developmentTools) settingsViewModel.trackDiagnostic.collectAsStateWithLifecycle().value else null
+    val metadataDiagnostic = if (developmentTools) settingsViewModel.metadataDiagnostic.collectAsStateWithLifecycle().value else null
+    val collectionDiagnostic = if (developmentTools) settingsViewModel.collectionDiagnostic.collectAsStateWithLifecycle().value else null
     val paletteTargets by playerViewModel.paletteRegenerationTargets.collectAsStateWithLifecycle()
     // Refreshed on demand rather than observed: the diagnostic is engineering detail, and opening
     // Maintenance should not put a query on a path playback shares.
-    LaunchedEffect(Unit) { settingsViewModel.refreshTrackDiagnostic() }
+    LaunchedEffect(Unit) { if (developmentTools) settingsViewModel.refreshTrackDiagnostic() }
     val deviceOwnerController = remember(context.applicationContext) {
         DapDeviceOwnerController(context.applicationContext)
     }
@@ -170,12 +191,15 @@ private fun MaintenancePanel(
             metadata = metadataDiagnostic,
             collections = collectionDiagnostic,
             tools = toolsState,
+            showDapStatus = ModeSurfacePolicy.showMaintenanceDapStatus(deviceOwnerState.isDeviceOwner, deviceOwnerState.isPixelPlayerHome),
+            detailedLogging = loggingState,
         ),
         toolsActions = toolsActions,
         onSetOverride = settingsViewModel::setMaintenanceOverride,
         onClearAllOverrides = settingsViewModel::clearAllMaintenanceOverrides,
         onExit = onExit,
         onOpenDiagnostics = onOpenDiagnostics,
+        detailedLoggingActions = loggingActions,
     )
 }
 
@@ -191,6 +215,10 @@ internal data class MaintenanceState(
     val metadata: MetadataDiagnostic?,
     val collections: CollectionDiagnostic?,
     val tools: MaintenanceToolsState,
+    /** B39-A5: the home and Device Owner readouts are the DAP's; in App mode they are not drawn. */
+    val showDapStatus: Boolean = true,
+    /** B40-F7: the Detailed logging section; null leaves the section out (a page built without the logger). */
+    val detailedLogging: com.lostf1sh.pixelplayeross.data.diagnostics.DetailedLogState? = null,
 )
 
 /** The page as a function of its state: what the route above feeds and the render tests draw. */
@@ -203,6 +231,8 @@ internal fun MaintenanceContent(
     onExit: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     offersTestCrash: Boolean = com.lostf1sh.pixelplayeross.presentation.settings.MaintenanceToolsPolicy.offersTestCrash(),
+    detailedLoggingActions: DetailedLoggingActions? = null,
+    developmentTools: Boolean = DevelopmentToolsPolicy.enabled(),
 ) {
     DapScreen(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -220,17 +250,19 @@ internal fun MaintenanceContent(
 
                 item {
                     MaintenanceSection(stringResource(R.string.maintenance_status_section)) {
-                        MaintenanceInfoRow(
-                            Icons.Rounded.Home,
-                            stringResource(R.string.maintenance_current_home),
-                            state.currentHome,
-                        )
+                        if (state.showDapStatus) {
+                            MaintenanceInfoRow(
+                                Icons.Rounded.Home,
+                                stringResource(R.string.maintenance_current_home),
+                                state.currentHome,
+                            )
+                        }
                         MaintenanceInfoRow(
                             Icons.Rounded.Info,
                             stringResource(R.string.maintenance_package_version),
                             "${BuildConfig.APPLICATION_ID} · ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                         )
-                        MaintenanceDeviceOwnerDiagnostics(state.deviceOwner)
+                        if (state.showDapStatus) MaintenanceDeviceOwnerDiagnostics(state.deviceOwner)
                     }
                 }
 
@@ -252,25 +284,28 @@ internal fun MaintenanceContent(
                             overrides = state.overrides,
                             onSetOverride = onSetOverride,
                             onClearAll = onClearAllOverrides,
+                            developmentTools = developmentTools,
                         )
                     }
                 }
 
-                item {
-                    MaintenanceSection(stringResource(R.string.maintenance_section_track_identity)) {
-                        MaintenanceTrackDiagnostic(state.track)
+                if (developmentTools) {
+                    item {
+                        MaintenanceSection(stringResource(R.string.maintenance_section_track_identity)) {
+                            MaintenanceTrackDiagnostic(state.track)
+                        }
                     }
-                }
 
-                item {
-                    MaintenanceSection(stringResource(R.string.maintenance_section_metadata)) {
-                        MaintenanceMetadataDiagnostic(state.metadata)
+                    item {
+                        MaintenanceSection(stringResource(R.string.maintenance_section_metadata)) {
+                            MaintenanceMetadataDiagnostic(state.metadata)
+                        }
                     }
-                }
 
-                item {
-                    MaintenanceSection(stringResource(R.string.maintenance_section_smart_collections)) {
-                        MaintenanceCollectionDiagnostic(state.collections)
+                    item {
+                        MaintenanceSection(stringResource(R.string.maintenance_section_smart_collections)) {
+                            MaintenanceCollectionDiagnostic(state.collections)
+                        }
                     }
                 }
 
@@ -281,6 +316,24 @@ internal fun MaintenanceContent(
                             stringResource(R.string.maintenance_device_diagnostics),
                             subtitle = stringResource(R.string.maintenance_device_diagnostics_subtitle),
                         ) { onOpenDiagnostics() }
+                        // B39-S2: the noise trap, for the next "shh" on a normal install: the same action as the player's More sheet.
+                        val noiseMark = rememberNoiseMarkState()
+                        val context = LocalContext.current
+                        MaintenanceAction(
+                            Icons.Rounded.GraphicEq,
+                            stringResource(R.string.noise_mark),
+                            subtitle = stringResource(R.string.noise_mark_supporting),
+                        ) { noiseMark.mark(context) }
+                        NoiseMarkDialog(noiseMark)
+                    }
+                }
+
+                // B40-F7: a half hour of what the app does, for a problem that only happens on the listener's phone.
+                state.detailedLogging?.let { logging ->
+                    if (detailedLoggingActions != null) {
+                        item {
+                            MaintenanceDetailedLogging(logging, rememberDetailedLoggingNow(logging.untilMs), detailedLoggingActions)
+                        }
                     }
                 }
 
@@ -559,7 +612,7 @@ private fun MaintenanceCollectionDiagnostic(diagnostic: CollectionDiagnostic?) {
 
 /** A diagnostic's "there is nothing to show, and here is why" line. */
 @Composable
-private fun MaintenanceNote(text: String) {
+internal fun MaintenanceNote(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
@@ -573,7 +626,7 @@ private fun formatDiagnosticNumber(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
 @Composable
-private fun MaintenanceSection(
+internal fun MaintenanceSection(
     title: String,
     content: @Composable () -> Unit,
 ) {
@@ -594,7 +647,7 @@ private fun MaintenanceSection(
 }
 
 @Composable
-private fun MaintenanceAction(
+internal fun MaintenanceAction(
     icon: ImageVector,
     title: String,
     subtitle: String? = null,
@@ -652,8 +705,8 @@ private fun MaintenanceAudioDiagnostics(
         diagnostics.deviceName ?: stringResource(R.string.usb_diag_none),
     )
     MaintenanceDiagnosticRow(stringResource(R.string.usb_diag_direct_state), directState)
-    MaintenanceDiagnosticRow(stringResource(R.string.usb_diag_route_transition), route.transition.name)
-    MaintenanceDiagnosticRow(stringResource(R.string.usb_diag_route_reason), route.reason.name)
+    MaintenanceDiagnosticRow(stringResource(R.string.usb_diag_route_transition), stringResource(route.transition.labelRes()))
+    MaintenanceDiagnosticRow(stringResource(R.string.usb_diag_route_reason), stringResource(route.reason.labelRes()))
     diagnostics.errorReason?.let {
         Text(
             text = it,
@@ -746,6 +799,7 @@ private fun MaintenanceOverridePanel(
     overrides: MaintenanceOverrides,
     onSetOverride: (MaintenanceOverride, Boolean) -> Unit,
     onClearAll: () -> Unit,
+    developmentTools: Boolean,
 ) {
     val featureKills = MaintenanceOverride.entries
         .filter { it.kind == MaintenanceOverrideKind.FEATURE_KILL }
@@ -758,13 +812,15 @@ private fun MaintenanceOverridePanel(
         active = overrides,
         onSetOverride = onSetOverride,
     )
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-    MaintenanceOverrideGroup(
-        title = stringResource(R.string.maintenance_overrides_diagnostic),
-        overrides = diagnostics,
-        active = overrides,
-        onSetOverride = onSetOverride,
-    )
+    if (developmentTools) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+        MaintenanceOverrideGroup(
+            title = stringResource(R.string.maintenance_overrides_diagnostic),
+            overrides = diagnostics,
+            active = overrides,
+            onSetOverride = onSetOverride,
+        )
+    }
 
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     Row(

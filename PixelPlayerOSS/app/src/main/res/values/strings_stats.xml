@@ -97,6 +97,7 @@
     <string name="stats_top_to">To</string>
     <string name="stats_top_prev_month">Previous month</string>
     <string name="stats_top_next_month">Next month</string>
+    <string name="stats_top_history_starts">Your history starts in %1$s</string>
     <string name="stats_top_save">Save as playlist</string>
     <string name="stats_top_saved">Saved as “%1$s”</string>
     <string name="stats_top_empty_title">No songs played in this period</string>

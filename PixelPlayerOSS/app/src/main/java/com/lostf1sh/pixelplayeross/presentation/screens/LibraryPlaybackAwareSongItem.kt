@@ -85,7 +85,7 @@ internal fun LibraryPlaybackAwareSongItem(
         isLoading = false,
         albumArtSize = albumArtSize,
         showAlbumArt = showAlbumArt,
-        containerColorOverride = if (isLocated) Dap.surfaceRaised else null,
+        containerColorOverride = if (isLocated) Dap.panelRaised else null,
         isSelected = isSelected,
         selectionIndex = selectionIndex,
         isSelectionMode = isSelectionMode,

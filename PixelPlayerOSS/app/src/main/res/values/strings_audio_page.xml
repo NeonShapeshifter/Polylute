@@ -17,11 +17,11 @@
     <string name="audio_output_bluetooth">Output: Bluetooth</string>
     <string name="audio_output_android">Output: Android audio</string>
     <string name="audio_digital_warning">Digital volume at %1$d %%: the signal is modified.</string>
-    <string name="audio_eq_title">Equalizer</string>
+    <string name="audio_eq_title">Polylute EQ</string>
     <string name="audio_eq_no_headphones">Select headphones to adjust their equalizer</string>
     <!-- %1$s = the headphones, %2$s = "10 bands · ROCK" or "Off". -->
-    <string name="audio_eq_sub">%1$s · %2$s</string>
-    <string name="audio_eq_sub_saved">%1$s · saved: %2$s</string>
+    <string name="audio_eq_sub">On the phone · %1$s · %2$s</string>
+    <string name="audio_eq_sub_saved">On the phone · %1$s · saved: %2$s</string>
     <string name="audio_replaygain_title">ReplayGain</string>
     <string name="audio_replaygain_sub">Normalizes using the file\'s tags</string>
     <!-- "Gain from: Track | Album" -->
@@ -54,4 +54,23 @@
     <string name="audio_status_safety_unavailable">Not applied on this output</string>
     <!-- B22: the battery on the DAP lock screen's footer. -->
     <string name="lock_battery_percent">%1$d%%</string>
+    <!-- B39-A7: sharing the DAC with other apps, Resonance only. -->
+    <string name="audio_dac_share_title">Share the DAC with other apps</string>
+    <string name="audio_dac_share_sub">Resonance only: other apps can use the DAC while Polylute is paused. Play takes it back.</string>
+    <string name="audio_dac_share_sub_purity">Purity is on and keeps the DAC. This applies in Resonance.</string>
+    <!-- B39-A8: a DAC is connected and its USB permission was denied or never given. %1$s = the DAC. -->
+    <string name="audio_usb_permission_title">USB access needed</string>
+    <string name="audio_usb_permission_sub">%1$s is connected but Polylute is not allowed to use it, so the sound goes through Android\'s own USB route. Tap to ask again.</string>
+    <!-- B40-P1: a play after the DAC was shared that could not start says why. -->
+    <string name="dac_share_refused_dac_not_back">The DAC did not come back in time, so playback stayed paused.</string>
+    <string name="dac_share_refused_level_unconfirmed">The DAC is back but its volume could not be confirmed, so playback stayed paused.</string>
+    <!-- B40-P4: a hand-back that needed a bus reset and could not confirm the DAC's volume afterwards. -->
+    <string name="dac_share_release_unconfirmed">The DAC was not shared: its volume could not be confirmed after the bus reset, so Polylute kept hold of it and did not hand it to Android.</string>
+    <!-- B40-F8: Resonance's optional peak limiter (Android route). -->
+    <string name="audio_limiter_title">Peak limiter</string>
+    <string name="audio_limiter_sub">Keeps the equalizer\'s boosts from clipping. Resonance on the Android route only.</string>
+    <string name="audio_status_limiter_android_only">Android route only</string>
+    <string name="audio_status_limiter_next_song">Applies from the next song</string>
+    <!-- B40-fix2 item 1: the bus reset left the DAC with Android at a volume Polylute could not confirm -->
+    <string name="dac_share_release_with_android">The DAC was not shared: after the bus reset Polylute could not hold it and could not confirm its volume, so Android has it. Keep it low until Polylute takes it back at the next play.</string>
 </resources>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B39-A4 -->
+    <string name="route_transition_android_active">Androids ljud aktivt</string>
+    <string name="route_transition_direct_eligible">USB Direct möjligt</string>
+    <string name="route_transition_direct_negotiating">USB Direct startar</string>
+    <string name="route_transition_direct_active">USB Direct aktivt</string>
+    <string name="route_transition_direct_failed">USB Direct misslyckades, använder Android</string>
+    <string name="route_reason_starting">Startar</string>
+    <string name="route_reason_no_usb_dac">Ingen USB-DAC</string>
+    <string name="route_reason_usb_permission">USB-behörighet behövs</string>
+    <string name="route_reason_source">Det här spåret kan inte använda USB Direct</string>
+    <string name="route_reason_deferred">Väntar på rätt tillfälle att byta</string>
+    <string name="route_reason_dac_shared">DAC:en är delad: andra appar kan använda den medan Polylute är pausad</string>
+    <string name="route_reason_crossfade">Övertoning använder Androids väg</string>
+    <string name="route_reason_effect">En Android-effekt använder Androids väg</string>
+    <string name="route_reason_speed">Uppspelningshastigheten använder Androids väg</string>
+    <string name="route_reason_purity">Purity: USB Direct, orörd signal</string>
+    <string name="route_reason_resonance">Resonance: USB Direct, bearbetad signal</string>
+    <string name="route_reason_direct_active">USB Direct aktivt</string>
+    <string name="route_reason_direct_failed">USB Direct misslyckades, använder Android</string>
+    <string name="route_reason_maintenance_force">Underhåll: Androids väg påtvingad</string>
+    <string name="route_reason_maintenance_disabled">Underhåll: USB Direct av</string>
+</resources>

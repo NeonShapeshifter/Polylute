@@ -41,7 +41,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import android.content.Context
-import android.content.Intent
+import android.widget.Toast
+import com.lostf1sh.pixelplayeross.utils.tryOpenExternalLink
 import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
@@ -516,8 +517,9 @@ private fun EditSongContent(
                             val encodedTitle = URLEncoder.encode(title, "UTF-8")
                             val encodedArtist = URLEncoder.encode(artist, "UTF-8")
                             val url = "https://lrclib.net/search/$encodedTitle%20$encodedArtist"
-                            val intent = Intent(Intent.ACTION_VIEW).setData(Uri.parse(url))
-                            context.startActivity(intent)
+                            if (!context.tryOpenExternalLink(url)) {
+                                Toast.makeText(context, R.string.external_link_unavailable, Toast.LENGTH_SHORT).show()
+                            }
                         },
                         color = Dap.secondaryText,
                     )

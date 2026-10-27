@@ -30,6 +30,7 @@ data class AlbumDetailUiState(
 class AlbumDetailViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val musicRepository: MusicRepository,
+    private val musicInfo: com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -37,6 +38,32 @@ class AlbumDetailViewModel @Inject constructor(
     val uiState: StateFlow<AlbumDetailUiState> = _uiState.asStateFlow()
 
     private var loadedAlbumId: Long? = null
+
+    private val _about = MutableStateFlow(com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState())
+
+    /** B40-F4: the album's Wikipedia description, from what was downloaded before, and filled in when the switch is on and it arrives. */
+    val about: StateFlow<com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState> = _about.asStateFlow()
+
+    private var aboutFor: String? = null
+
+    private fun loadAbout(album: Album) {
+        val key = "${album.title}|${album.artist}"
+        if (aboutFor == key) return
+        aboutFor = key
+        viewModelScope.launch {
+            val service = musicInfo.service
+            val kind = com.lostf1sh.pixelplayeross.data.musicinfo.AboutKind.ALBUM
+            // the service reads the cache and asks the network on its own IO dispatcher: this scope is the main thread's (B40-fix1)
+            suspend fun current() = com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState(
+                description = service.cachedAbout(kind, album.title, album.artist),
+            )
+            _about.value = current()
+            // The service decides whether anything better than what is shown may be asked for (a language it prefers, not marked missing,
+            // with the switch on): always asking is how a cached English fallback still gets upgraded to the app's language (B40-fix2).
+            service.fetchAbout(kind, album.title, album.artist)
+            current().let { if (it != _about.value) _about.value = it }
+        }
+    }
 
     init {
         val albumIdString: String? = savedStateHandle.get("albumId")
@@ -84,6 +111,7 @@ class AlbumDetailViewModel @Inject constructor(
                     }
                     .collect { newState ->
                         _uiState.value = newState
+                        newState.album?.let(::loadAbout)
                     }
 
             } catch (e: Exception) {

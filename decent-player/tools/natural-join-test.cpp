@@ -47,6 +47,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <fcntl.h>
 #include <map>
 #include <memory>
@@ -107,6 +108,22 @@ struct Pending {
     bool feedback;
 };
 
+/** B41-fix1: what the fake DAC's feedback endpoint answers at a moment, and how the transfer came back. */
+struct FeedbackAnswer {
+    double fpmf = 0.0;
+    int urbStatus = 0;
+    int packetStatus = 0;
+    int length = 4;
+};
+
+/** B41-fix1: one audio URB as the kernel received it: when, how many frames in how many packets, and whether the output called the feedback stuck then. */
+struct SubmittedUrb {
+    int64_t atUs;
+    int frames;
+    int packets;
+    bool stuck;
+};
+
 struct FakeUsb {
     std::mutex mu;
     std::deque<Pending> inflight;
@@ -115,6 +132,10 @@ struct FakeUsb {
     int rate = 96000;
     int bytesPerFrame = 8;
     double feedbackFpmf = 12.0;
+    // B41-fix1: a script for the feedback endpoint (a function of the moment the transfer is submitted), which beats the constant
+    // and the blips, and a log of the audio URBs with their moment, for tests that ask what went on the wire after a given reading.
+    std::function<FeedbackAnswer(int64_t)> feedbackScript;
+    std::vector<SubmittedUrb> submitted;
     int audioUrbs = 0;
     int audioDiscards = 0;         // DISCARDURB that cut a data URB which had not completed
     // The DAC found nothing queued when a data URB arrived: empty microframes (B9). A pause or a
@@ -166,6 +187,8 @@ struct FakeUsb {
         outputGapLines.clear();
         feedbackBlipEvery = 0;
         feedbackReads = 0;
+        feedbackScript = nullptr;
+        submitted.clear();
         packetFrames.clear();
         feedbackGlitches.clear();
         hold = false;
@@ -198,17 +221,23 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
                 if (g_usb.feedbackBlipEvery > 0 && ++g_usb.feedbackReads % g_usb.feedbackBlipEvery == 0) {
                     answer = g_usb.feedbackBlipFpmf;
                 }
-                const uint32_t raw = (uint32_t)llround(answer * 65536.0);
+                FeedbackAnswer scripted;
+                scripted.fpmf = answer;
+                if (g_usb.feedbackScript) scripted = g_usb.feedbackScript(now);
+                const uint32_t raw = (uint32_t)llround(scripted.fpmf * 65536.0);
                 memcpy(u->buffer, &raw, 4);
-                u->iso_frame_desc[0].actual_length = 4;
-                u->iso_frame_desc[0].status = 0;
-                u->status = 0;
+                u->iso_frame_desc[0].actual_length = (unsigned int)scripted.length;
+                u->iso_frame_desc[0].status = (unsigned int)scripted.packetStatus;
+                u->status = scripted.urbStatus;
                 p.feedback = true;
                 p.completeAtUs = now + 1000;
             } else {
                 const uint8_t *bytes = static_cast<const uint8_t *>(u->buffer);
                 g_usb.capture.insert(g_usb.capture.end(), bytes, bytes + u->buffer_length);
                 g_usb.audioUrbs++;
+                int64_t feedbackNow[USB_FEEDBACK_STATS_COUNT];
+                usbFeedbackStats(feedbackNow);   // atomics only: safe under the fake kernel's lock, on the thread that is submitting
+                g_usb.submitted.push_back(SubmittedUrb{now, u->buffer_length / g_usb.bytesPerFrame, u->number_of_packets, feedbackNow[1] != 0});
                 for (int i = 0; i < u->number_of_packets; i++) {
                     g_usb.packetFrames.push_back((uint8_t)(u->iso_frame_desc[i].length / g_usb.bytesPerFrame));
                     u->iso_frame_desc[i].actual_length = u->iso_frame_desc[i].length;
@@ -328,7 +357,7 @@ extern "C" int __android_log_print(int prio, const char *tag, const char *fmt, .
             g_usb.outputGapLines.push_back(line);
         }
         if (kind && strncmp(kind, "FEEDBACK_", 9) == 0 &&
-            (strstr(kind, "STUCK") != nullptr || strstr(kind, "REJECTED") != nullptr)) {
+            (strstr(kind, "STUCK") != nullptr || strstr(kind, "REJECTED") != nullptr || strstr(kind, "INVALID") != nullptr)) {
             // the whole line, as logcat shows it: "<KIND> at hh:mm:ss.mmm mono=...ms total=... heldBack=... <detail>"
             char line[600];
             va_list copy;
@@ -861,15 +890,15 @@ struct Writer {
         return it->second;
     }
 
-    Writer() {
+    explicit Writer(int streamRate = kRate) {
         table.GetArrayLength = simGetLength;
         table.GetByteArrayElements = simGetBytes;
         table.ReleaseByteArrayElements = simReleaseBytes;
         table.GetFloatArrayElements = simGetFloats;
         table.ReleaseFloatArrayElements = simReleaseFloats;
         env.functions = &table;
-        g_usb.reset(kRate, 8);
-        usb = createStream(kRate, 32);
+        g_usb.reset(streamRate, 8);
+        usb = createStream(streamRate, 32);
         ctx = reinterpret_cast<UsbAudioContext *>(usb);
     }
     ~Writer() {
@@ -1975,6 +2004,347 @@ void testDefaultAutoRefusesImplausibleFeedback(int policyAtStart) {
            refused.mean, nominal, followed.mean);
 }
 
+
+// ── B41-fix1 (A1b): a reading the policy refuses reaches the rest of the block that is being written ───────────────────────
+//
+// 2026-10-25, the owner's HONOR, Melody, 44.1 kHz, after a seek: the feedback went +0.36 % → ... → `FEEDBACK_REJECTED absurd +20851 ppm`
+// with `sending=5.5724` (+1.09 %), then +5.0 % for more than 24 s. The log's `sending` is what the packetizer was last given. The
+// output hands it a rate when a block of PCM (about 100 ms of audio) begins and keeps it to the block's end, while the reap that
+// paces the block handles the DAC's feedback: the absurd reading itself was judged in the very call that reaped it, but the block in
+// progress went on at the rate of the reading BEFORE it, a plausible +1.09 %. The same holds for the moment the feedback is judged
+// stuck. Here a fake DAC answers the Melody's ramp (timed to a block's middle, as the log has it); what the URBs carry after the
+// reading is what is measured, at the kernel, URB by URB.
+
+constexpr int kRate441 = 44100;
+constexpr int kBlock441 = 4608;                  // the decoder's block in the owner's log (104.5 ms at 44.1 kHz)
+constexpr double kNominal441 = kRate441 / 8000.0;
+
+/** Frames per packet of the audio URBs submitted in [fromUs, toUs); 0 if none. */
+double meanFramesPerPacket(int64_t fromUs, int64_t toUs, int *urbCount = nullptr) {
+    std::lock_guard<std::mutex> lock(g_usb.mu);
+    long frames = 0, packets = 0;
+    int n = 0;
+    for (const SubmittedUrb &u : g_usb.submitted) {
+        if (u.atUs < fromUs || u.atUs >= toUs) continue;
+        frames += u.frames;
+        packets += u.packets;
+        n++;
+    }
+    if (urbCount) *urbCount = n;
+    return packets ? (double)frames / (double)packets : 0.0;
+}
+
+void setFeedbackScript(std::function<FeedbackAnswer(int64_t)> script) {
+    std::lock_guard<std::mutex> lock(g_usb.mu);
+    g_usb.feedbackScript = std::move(script);
+}
+
+/** The Melody when it is healthy: its nominal, and a +0.271 % blip every 80th reading. */
+FeedbackAnswer healthyMelody() {
+    static int64_t reads = 0;
+    FeedbackAnswer a;
+    a.fpmf = (++reads % 80 == 0) ? kNominal441 * 1.00271 : kNominal441;
+    return a;
+}
+
+/**
+ * A pause, a seek while paused, and a resume, the way UsbStreamingThread drives them: the old position fades out, the new one
+ * fades in at the resume. [source] is any audio; [pos] the writer's place in it, moved on by what is written.
+ */
+void quickSeek(Writer &w, const Pcm &source, int &pos, int blocksBefore) {
+    for (int i = 0; i < blocksBefore; i++) {
+        w.write(source, pos, kBlock441);
+        pos += kBlock441;
+    }
+    int next = pos;
+    pauseProtocol(w, source, next, kBlock441);
+    pos = next;
+    w.beginSeek();
+    w.markIdle();
+    listen(100);
+    w.resume();
+}
+
+/**
+ * [sign] +1: +0.36 → +1.09 → +2.08 → +5.0 %; -1: the mirror of 17:00:08 (-0.36 → -1.09 → -2.08 → -5.0 %). The ramp is timed to the middle of
+ * the block that begins [rampAtUs] after now: the reading in force when that block begins is the +-1.09 % one, and the absurd reading
+ * arrives 40 ms into it.
+ */
+void testSeekRampDoesNotLeak(int sign) {
+    const Pcm source = makeNoise(kRate441 * 14, 24, 0x5eed441u + (uint32_t)(sign > 0));
+    Writer w(kRate441);
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    int64_t rampB = INT64_MAX;
+    setFeedbackScript([&](int64_t t) -> FeedbackAnswer {
+        FeedbackAnswer a = healthyMelody();
+        if (rampB == INT64_MAX) return a;
+        const int64_t d = t - rampB;
+        double pct = 0.0;
+        if (d < -40000) pct = 0.36;
+        else if (d < 40000) pct = 1.09;
+        else if (d < 100000) pct = 2.08;
+        else pct = 5.0;
+        a.fpmf = kNominal441 * (1.0 + sign * pct / 100.0);
+        return a;
+    });
+    int pos = 0;
+    for (int i = 0; i < 20; i++) { w.write(source, pos, kBlock441); pos += kBlock441; }   // ~2 s healthy
+    // three quick seeks
+    for (int s = 0; s < 3; s++) {
+        quickSeek(w, source, pos, 2);
+        if (s < 2) for (int i = 0; i < 3; i++) { w.write(source, pos, kBlock441); pos += kBlock441; }
+    }
+    // The next block but one is the one the ramp is timed to: arm it one block ahead, with the block's length as the writer paces it.
+    const int64_t blockUs = (int64_t)kBlock441 * 1000000 / kRate441;
+    w.write(source, pos, kBlock441); pos += kBlock441;                  // the first block after the resume (fades in)
+    const int64_t armedAt = nowUs();
+    rampB = armedAt + blockUs;                                          // the block that starts about now + one block
+    for (int i = 0; i < 8; i++) { w.write(source, pos, kBlock441); pos += kBlock441; }
+    // What went on the wire from the absurd reading (+40 ms, +1 ms to complete, + the reap) to the end of that block, and for the
+    // second after it, where the latched +-5 % goes on being refused.
+    int n1 = 0, n2 = 0;
+    const double rest = meanFramesPerPacket(rampB + 50000, rampB + 95000, &n1);
+    const double later = meanFramesPerPacket(rampB + 150000, rampB + 450000, &n2);
+    const double band = kNominal441 * 0.005;                            // the healthy band: +-0.5 % (USB_FEEDBACK_SUSTAINED_PPM)
+    CHECK(n1 >= 30, "only %d URBs between the absurd reading and the end of its block: the scenario did not happen", n1);
+    CHECK(std::fabs(rest - kNominal441) < band,
+          "%+d: the rest of the block carried %.5f frames a packet (%+.2f %% off nominal) after the DAC's reading was refused as absurd; healthy is within %.2f %%",
+          sign, rest, (rest / kNominal441 - 1.0) * 100.0, 0.5);
+    CHECK(n2 >= 100 && std::fabs(later - kNominal441) < band, "%+d: the next blocks carried %.5f frames a packet while the DAC latched at %+d %%", sign, later, sign * 5);
+    int64_t stats[USB_FEEDBACK_STATS_COUNT];
+    usbFeedbackStats(stats);
+    CHECK(std::fabs(stats[11] / 1e6 - kNominal441) < band, "sending %.5f at the end, expected the healthy rate", stats[11] / 1e6);
+    CHECK(stats[13] >= 1, "no streak of implausible readings was counted");
+    printf("seek ramp %+d: the block in progress when the absurd reading came carried %.5f frames a packet after it (nominal %.4f, band +-%.4f), the next blocks %.5f\n",
+           sign, rest, kNominal441, band, later);
+    setFeedbackScript(nullptr);
+}
+
+/** An honest DAC that is really 300 ppm off is followed after three quick seeks as before: nothing here made `auto` timid. */
+void testHonestDacIsStillFollowedAfterSeeks() {
+    const Pcm source = makeNoise(kRate441 * 14, 24, 0x0e57a0d1u);
+    Writer w(kRate441);
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    const double honest = kNominal441 * (1.0 + 300e-6);
+    setFeedbackScript([&](int64_t) { FeedbackAnswer a; a.fpmf = honest; return a; });
+    int pos = 0;
+    for (int i = 0; i < 10; i++) { w.write(source, pos, kBlock441); pos += kBlock441; }
+    for (int s = 0; s < 3; s++) quickSeek(w, source, pos, 2);
+    for (int i = 0; i < 4; i++) { w.write(source, pos, kBlock441); pos += kBlock441; }   // let the fade-in pass
+    const int64_t from = nowUs();
+    for (int i = 0; i < 12; i++) { w.write(source, pos, kBlock441); pos += kBlock441; }
+    int n = 0;
+    const double mean = meanFramesPerPacket(from, nowUs(), &n);
+    CHECK(n > 800, "%d URBs measured", n);
+    CHECK(mean > kNominal441 + 0.0008 && mean < kNominal441 + 0.0026,
+          "an honest DAC 300 ppm off: %.5f frames a packet after three seeks, expected %.5f (nominal %.5f)", mean, honest, kNominal441);
+    printf("honest DAC +300 ppm after three seeks: followed (%.5f frames a packet, expected %.5f)\n", mean, honest);
+    setFeedbackScript(nullptr);
+}
+
+/**
+ * The feedback judged stuck while a block is half written: the DAC answers +0.8 % from the stream's start (the plateau of "Ciega,
+ * Sordomuda"); `auto` follows it for 5 s and then, at the reading that makes it stuck, must stop at that reading, not at the end of
+ * the block it is writing.
+ */
+void testStuckReachesTheBlockInProgress() {
+    const Pcm source = makeNoise(kRate441 * 14, 24, 0x57acc0deu);
+    const double plateau = 5.5575;   // 17:39:57 on the HONOR, +0.816 %
+    Writer w(kRate441);              // (the Writer resets the fake DAC: the script comes after it, as in the other tests)
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    setFeedbackScript([&](int64_t) { FeedbackAnswer a; a.fpmf = plateau; return a; });
+    int pos = 0;
+    for (int i = 0; i < 80; i++) { w.write(source, pos % (source.frames() - kBlock441), kBlock441); pos += kBlock441; }   // ~8.4 s
+    int64_t stuckAt = -1;
+    std::vector<SubmittedUrb> urbs;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        urbs = g_usb.submitted;
+    }
+    for (const SubmittedUrb &u : urbs) {
+        if (u.stuck) { stuckAt = u.atUs; break; }
+    }
+    CHECK(stuckAt > 0, "the feedback was never called stuck in 8 s of an identical +0.8 %% reading");
+    int nBefore = 0, nAfter = 0;
+    const double during = meanFramesPerPacket(urbs.front().atUs + 2000000, stuckAt - 2000, &nBefore);
+    const double after = meanFramesPerPacket(stuckAt + 3000, stuckAt + 60000, &nAfter);
+    CHECK(nBefore > 500 && std::fabs(during - plateau) < 0.003, "before it was stuck the plateau was followed: %.5f frames a packet (%d URBs), expected %.4f", during, nBefore, plateau);
+    CHECK(nAfter >= 40 && std::fabs(after - kNominal441) < kNominal441 * 0.002,
+          "within 3 ms of the feedback being called stuck the packets were still %.5f frames each (%d URBs), expected the healthy rate %.4f", after, nAfter, kNominal441);
+    printf("stuck feedback reaches the block in progress: followed at %.5f until it was stuck, then %.5f frames a packet within 3 ms (nominal %.4f)\n", during, after, kNominal441);
+    setFeedbackScript(nullptr);
+}
+
+
+// ── B41-fix1 (A1c): what the noise mark records about the feedback ─────────────────────────────────────────────────────────────
+
+/** The fields of a second's line that B41-fix1 added, after the twelve B27-A5 parses. */
+struct EvidenceLine {
+    long ago = -1;
+    int readings = -1, refused = -1, held = -1, dropUrb = -1, dropPacket = -1, dropLength = -1, lastUrb = 99, lastPacket = 99, lastLength = -1;
+    long long ageMs = -2;
+    double sentMin = 0, sentMax = 0, applied = 0, mean = 0;
+    int sentCalls = -1;
+    long long wireFrames = -1, wirePackets = -1;
+};
+
+bool parseEvidenceLine(const char *line, EvidenceLine *out) {
+    return sscanf(line,
+                  "t-%lds feedback n=%d fpmf min=%*f max=%*f mean=%lf nominal=%*f deviating=%*d refused=%d | iso urbs=%*d packets=%*d errors=%*d short=%*d"
+                  " | fb held=%d dropped urb=%d packet=%d length=%d last=%d/%d/%d age=%lldms | sent min=%lf max=%lf calls=%d | wire frames=%lld packets=%lld applied=%lf",
+                  &out->ago, &out->readings, &out->mean, &out->refused, &out->held, &out->dropUrb, &out->dropPacket, &out->dropLength, &out->lastUrb,
+                  &out->lastPacket, &out->lastLength, &out->ageMs, &out->sentMin, &out->sentMax, &out->sentCalls, &out->wireFrames, &out->wirePackets,
+                  &out->applied) == 18;
+}
+
+std::vector<EvidenceLine> evidenceLines(const char *text) {
+    std::vector<EvidenceLine> lines;
+    for (const char *line = strstr(text, "\nt-"); line != nullptr; line = strstr(line + 1, "\nt-")) {
+        EvidenceLine l;
+        if (parseEvidenceLine(line + 1, &l)) lines.push_back(l);
+        else CHECK(false, "a line is not in the documented shape: %.200s", line + 1);
+    }
+    return lines;
+}
+
+/**
+ * A stream that goes through the four things the 2026-10-25 marks could not tell apart, against a fake DAC: (1) healthy, (2) a
+ * stretch in which every feedback transfer comes back with a packet error and four bytes, (3) a +0.8 % plateau `auto` answers with
+ * the nominal rate, which used to read `refused=0`, (4) a different reading that ends it. The dump must say, second by second, what
+ * was received, what was dropped and why, how old the last valid reading was, what the packetizer was given and what went out, and
+ * list the changes of what the policy obeys with the stream's number.
+ */
+void testFeedbackEvidenceInTheDump() {
+    const Pcm source = makeNoise(kRate441 * 30, 24, 0xe71d3ce5u);
+    Writer w(kRate441);
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    simclock::advanceTo((simclock::nowNs() / 1000000000LL + 1) * 1000000000LL);
+    const int64_t startSecond = nowUs() / 1000000;
+    int64_t t0 = nowUs();
+    int stage = 1;
+    int64_t stageStart[6] = {0, 0, 0, 0, 0, 0};
+    setFeedbackScript([&](int64_t t) -> FeedbackAnswer {
+        FeedbackAnswer a = healthyMelody();
+        const int64_t s = (t - t0) / 1000000;            // seconds into the run
+        if (s >= 4 && s < 7) {                           // (2) three seconds of errors: four bytes and -EILSEQ on the packet
+            a.fpmf = kNominal441 * 1.008;
+            a.packetStatus = -EILSEQ;
+        } else if (s >= 7 && s < 15) {                   // (3) the plateau, valid: +0.816 %
+            a.fpmf = 5.5575;
+        } else if (s >= 15) {                            // (4) back to the healthy DAC
+            a = healthyMelody();
+        }
+        return a;
+    });
+    (void)stage; (void)stageStart;
+    int pos = 0;
+    bool seeked = false;
+    while (nowUs() - t0 < 18 * 1000000LL) {
+        if (!seeked && nowUs() - t0 > 2 * 1000000LL) {   // one gesture cycle in the healthy part: pause, seek while paused, resume
+            seeked = true;
+            quickSeek(w, source, pos, 1);
+        }
+        w.write(source, pos, kBlock441);
+        pos += kBlock441;
+        if (pos + kBlock441 > source.frames()) pos = 0;
+    }
+    sleepMs(1500);
+    const int64_t windowMs = (nowUs() / 1000000 - startSecond) * 1000 + 3000;   // (the stream began a moment before the second it is counted from)
+    static char text[65536];
+    const size_t used = usbSecondSummaries(windowMs, text, sizeof(text));
+    CHECK(used == strlen(text), "reported %zu bytes, the text is %zu", used, strlen(text));
+    CHECK(strstr(text, "\nlegend:") != nullptr, "the dump does not explain its fields");
+    const std::vector<EvidenceLine> lines = evidenceLines(text);
+    CHECK(lines.size() >= 12, "%zu seconds in the dump after 18 s", lines.size());
+    // seconds counted from the oldest line of this stream: t-N is N seconds before the dump
+    int healthySecs = 0, errorSecs = 0, plateauSecs = 0, plateauHeld = 0;
+    long dropped = 0;
+    long long maxAge = 0;
+    for (const EvidenceLine &l : lines) {
+        if (l.dropPacket > 500) {          // (2) a second in which the transfers came back with the packet error
+            errorSecs++;
+            dropped += l.dropPacket;
+            CHECK(l.dropUrb == 0 && l.dropLength == 0, "a packet error was filed as %d URB / %d length errors", l.dropUrb, l.dropLength);
+            CHECK(l.lastUrb == 0 && l.lastPacket == -EILSEQ && l.lastLength == 4, "the codes of the last one are %d/%d/%d, expected 0/%d/4", l.lastUrb, l.lastPacket, l.lastLength, -EILSEQ);
+            CHECK(l.readings <= 5, "%d readings in a second in which every transfer was an error: a transfer with an error was counted as a reading", l.readings);
+            // (the follower keeps the last valid reading, a healthy blip of at most +0.27 %: what the errors carried, +0.8 %, must not be followed)
+            CHECK(std::fabs(l.sentMax - kNominal441) < kNominal441 * 0.005 && std::fabs(l.sentMin - kNominal441) < kNominal441 * 0.005,
+                  "sent %.4f..%.4f while the transfers were errors: the +0.8 %% they carried must not be followed", l.sentMin, l.sentMax);
+            maxAge = std::max(maxAge, l.ageMs);
+        } else if (l.held > 500) {         // (3) the plateau
+            plateauSecs++;
+            plateauHeld += l.held;
+            CHECK(l.refused == 0, "refused=%d on a plateau inside +-5 %%: refused counts only the beyond-5 %% ones", l.refused);
+            CHECK(std::fabs(l.mean - 5.5575) < 0.001, "received mean %.5f on the plateau", l.mean);
+            CHECK(std::fabs(l.sentMax - kNominal441) < 0.01, "sent up to %.5f while held: the packetizer should have the healthy rate", l.sentMax);
+            CHECK(std::fabs(l.applied - kNominal441) < 0.01, "applied %.5f while held", l.applied);
+            CHECK(l.dropPacket == 0 && l.ageMs >= 0 && l.ageMs < 100, "plateau second: dropped %d age %lld ms", l.dropPacket, l.ageMs);
+        } else if (l.readings >= 900 && l.held == 0) {
+            healthySecs++;
+            // (a reading submitted just before a boundary is reaped just after it: the second next to the errors may hold one)
+            CHECK(l.dropPacket <= 2 && l.dropUrb == 0 && l.dropLength == 0, "a healthy second dropped %d/%d/%d", l.dropUrb, l.dropPacket, l.dropLength);
+            CHECK(l.ageMs >= 0 && l.ageMs < 100, "a healthy second ended %lld ms after its last reading", l.ageMs);
+        }
+        // the three rates are three numbers: received (mean above), given (sent), gone (applied = frames / packets)
+        CHECK(l.sentCalls >= 1 && l.wirePackets > 0 && std::fabs(l.applied - (double)l.wireFrames / (double)l.wirePackets) < 1e-4, "wire %lld frames in %lld packets, applied %.5f", l.wireFrames, l.wirePackets, l.applied);
+    }
+    CHECK(healthySecs >= 3, "%d healthy seconds", healthySecs);
+    CHECK(errorSecs >= 2 && dropped >= 2000, "%d seconds of errors, %ld dropped transfers (about a thousand a second)", errorSecs, dropped);
+    CHECK(maxAge >= 2000, "the age of the last valid reading only reached %lld ms in 3 s of errors", maxAge);
+    CHECK(plateauSecs >= 3 && plateauHeld >= 2900, "%d plateau seconds, %d held (the 5 s window follows it first, then refuses)", plateauSecs, plateauHeld);
+    // the changes of what the policy obeys, with the stream's number, in order
+    std::string dump(text);
+    const size_t seqAt = dump.find("seq=");
+    const long long seq = seqAt == std::string::npos ? -1 : atoll(dump.c_str() + seqAt + 4);
+    CHECK(seq >= 1, "no stream number in the header");
+    const size_t stuckBegin = dump.find("stuck-begin identical");
+    const size_t refuseBegin = dump.find("refuse-begin sustained");
+    const size_t stuckEnd = dump.find("stuck-end changed");
+    CHECK(stuckBegin != std::string::npos, "no stuck-begin event: %s", dump.substr(dump.find("\nevent") == std::string::npos ? 0 : dump.find("\nevent")).c_str());
+    CHECK(refuseBegin != std::string::npos, "no refuse-begin event for the sustained plateau");
+    CHECK(stuckEnd != std::string::npos, "no stuck-end event when the plateau ended");
+    // the stream's gestures, in the same list and in order: start, then the pause, the idle, the seek and the resume of the cycle above
+    {
+        const size_t gStart = dump.find(" start initial-reading policy=auto");
+        const size_t gPause = dump.find(" pause fade-out policy=auto");
+        // (the pause protocol announces the idle at its end, so it comes before the seek, whose own announcement is within the 100 ms
+        // that one gesture of a kind is kept for)
+        const size_t gIdle = dump.find(" idle announced policy=auto", gPause == std::string::npos ? 0 : gPause);
+        const size_t gSeek = dump.find(" seek ", gIdle == std::string::npos ? 0 : gIdle);
+        const size_t gResume = dump.find(" resume ", gSeek == std::string::npos ? 0 : gSeek);
+        CHECK(gStart != std::string::npos && gPause != std::string::npos && gSeek != std::string::npos && gIdle != std::string::npos && gResume != std::string::npos,
+              "gestures missing from the dump: start %d pause %d seek %d idle %d resume %d", gStart != std::string::npos, gPause != std::string::npos,
+              gSeek != std::string::npos, gIdle != std::string::npos, gResume != std::string::npos);
+        if (gStart != std::string::npos && gPause != std::string::npos) {
+            const size_t startLine = dump.rfind("event ", gStart);
+            CHECK(dump.compare(startLine, 9, "event t-1") == 0 || dump.compare(startLine, 9, "event t-2") == 0, "the start is not the oldest event: %.60s", dump.c_str() + startLine);
+            CHECK(dump.find("stream=" + std::to_string(seq), startLine) < gPause, "the gestures do not name the stream");
+            CHECK(gStart < gPause && gPause < gIdle && gIdle < gSeek && gSeek < gResume, "the gestures are out of order");
+        }
+    }
+    if (stuckBegin != std::string::npos) {
+        const size_t lineStart = dump.rfind("event ", stuckBegin);
+        const std::string line = dump.substr(lineStart, dump.find('\n', lineStart) - lineStart);
+        CHECK(line.find("stream=" + std::to_string(seq)) != std::string::npos && line.find("rate=44100") != std::string::npos, "the event does not name its stream: %s", line.c_str());
+        CHECK(line.find("reading=5.5575") != std::string::npos && line.find("policy=auto") != std::string::npos, "the event lacks the reading or the policy: %s", line.c_str());
+        // what the packetizer was being given before, and from now on: the plateau, then the healthy rate
+        const double before = fieldOf(line, "sending=");
+        const size_t arrow = line.find("->");
+        const double after = arrow == std::string::npos ? -1.0 : atof(line.c_str() + arrow + 2);
+        CHECK(std::fabs(before - 5.5575) < 0.001 && std::fabs(after - kNominal441) < 0.01, "sending %.5f->%.5f in the event, expected the plateau then the healthy rate", before, after);
+    }
+    // and a feedback transfer that was not a reading is also one rate-limited line in the log, with the codes
+    const auto invalid = feedbackGlitchLines("FEEDBACK_INVALID");
+    CHECK(invalid.size() >= 2 && invalid.size() <= 4, "%zu FEEDBACK_INVALID lines for 3 s of errors (one a second at most)", invalid.size());
+    if (!invalid.empty()) {
+        CHECK(invalid[0].find("packet-status urb=0 packet=-84 length=4 rate=44100") != std::string::npos, "the line does not say what was wrong: %s", invalid[0].c_str());
+    }
+    printf("feedback evidence: %zu seconds; %d healthy / %d of errors (%ld dropped, last valid reading up to %lld ms old) / %d on the plateau (%d held, refused 0); "
+           "events with stream=%lld: stuck-begin, refuse-begin, stuck-end\n",
+           lines.size(), healthySecs, errorSecs, dropped, maxAge, plateauSecs, plateauHeld, seq);
+    setFeedbackScript(nullptr);
+}
+
 }  // namespace
 
 // ── B27-A5 (review N-07): the one-second summaries ──────────────────────────────────────────────────────────────
@@ -2303,6 +2673,13 @@ int main(int argc, char **argv) {
         testHealthyFeedbackIsNotAnEpisode();
     }
     if (only.empty() || only == "feedback" || only == "default-auto") testDefaultAutoRefusesImplausibleFeedback(policyAtStart);
+    if (only.empty() || only == "feedback" || only == "seek-ramp") {
+        testSeekRampDoesNotLeak(+1);
+        testSeekRampDoesNotLeak(-1);
+        testHonestDacIsStillFollowedAfterSeeks();
+        testStuckReachesTheBlockInProgress();
+    }
+    if (only.empty() || only == "feedback" || only == "evidence") testFeedbackEvidenceInTheDump();
     if (only.empty() || only == "output-gap") testOutputGap();
     if (only.empty() || only == "summaries") testStreamSecondSummaries();
     if (g_failures) {

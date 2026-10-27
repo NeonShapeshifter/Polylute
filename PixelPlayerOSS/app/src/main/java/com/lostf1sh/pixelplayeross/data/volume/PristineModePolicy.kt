@@ -155,7 +155,7 @@ object PristineModePolicy {
             Status.ACTIVE -> when (dacEq) {
                 DacEqLabel.ON -> Status.DAC_EQ_ON
                 DacEqLabel.UNKNOWN -> Status.DAC_EQ_UNKNOWN
-                DacEqLabel.OFF_OR_FLAT, DacEqLabel.NOT_APPLICABLE -> Status.ACTIVE
+                DacEqLabel.OFF, DacEqLabel.FLAT, DacEqLabel.NOT_APPLICABLE -> Status.ACTIVE
             }
             else -> base
         }

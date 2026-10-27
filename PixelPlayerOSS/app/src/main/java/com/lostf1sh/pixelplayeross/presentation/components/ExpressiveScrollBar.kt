@@ -6,8 +6,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -31,17 +31,21 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
+import androidx.compose.ui.util.fastFirstOrNull
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.abs
@@ -209,8 +213,30 @@ private fun observeGridLayoutMetrics(
     return visibleLines
 }
 
+/** What the bar does with a touch, set by the bar's content and run by the input on its outer box (see [sharedPointerInput]). Null: nothing to scroll. */
+private class ScrollbarGestures {
+    var gesture: ScrollbarGesture? = null
+}
+
+/** One touch, from its first [down] to its last up. An interface because the scope it runs in is restricted: a function value cannot be invoked in it. */
+private interface ScrollbarGesture {
+    suspend fun AwaitPointerEventScope.run(down: PointerInputChange)
+}
+
+/**
+ * The fast-scroll bar, drawn **over** the end margin of the list (B41-fix1, B9: see [ScrollbarGutter]): it takes no room of its own, and its
+ * touch target is [ScrollbarGutter.TouchWidth] wide, invisible, over the margin and the content's edge. A press in that target grabs the thumb
+ * only where the thumb is (and while it can be seen), or anywhere along the thin strip at the very edge; every other touch, a tap on a row's
+ * trailing control or a scroll that happens to start near the edge, is not touched by the bar and reaches the list (the bar's input is
+ * [sharedPointerInput]: an ordinary one would have taken the hit from the list under it).
+ *
+ * @param contentEndMargin how far from the end edge the list's content stops (its end padding, plus what its rows pad themselves by): where that is
+ *   less than the idle thumb's reach ([ScrollbarGutter.thumbCoversContent]) the thumb is shown only while the list scrolls or is held.
+ * @param endInset how far the caller inset the bar from the end edge (`Modifier.padding(end = ...)`), which moves the thumb in.
+ */
 @Composable
 fun ExpressiveScrollBar(
+    contentEndMargin: Dp,
     modifier: Modifier = Modifier,
     listState: LazyListState? = null,
     gridState: LazyGridState? = null,
@@ -220,6 +246,7 @@ fun ExpressiveScrollBar(
     indicatorExpandedWidthBoost: Dp = 0.dp,
     indicatorRightCornerRadius: Dp = 2.dp,
     paddingEnd: Dp = 3.dp,
+    endInset: Dp = ScrollbarGutter.DefaultInset,
     dragLabelProvider: ((Int) -> String?)? = null,
     dragLabelSize: Dp = 32.dp,
     dragLabelGap: Dp = 10.dp
@@ -243,7 +270,26 @@ fun ExpressiveScrollBar(
     val expandedIndicatorWidth = (indicatorExpandedWidth + indicatorExpandedWidthBoost).coerceAtLeast(thickness)
     val indicatorRightCornerRadiusPx = with(LocalDensity.current) { indicatorRightCornerRadius.toPx() }
 
+    val gestures = remember { ScrollbarGestures() }
     val isInteracting = isPressed || isDragging
+
+    // B41-fix1 (B9): a thumb that would sit over the content when idle is there only while the list scrolls or is held, and fades out after a moment.
+    val fadesWhenIdle = ScrollbarGutter.thumbCoversContent(contentEndMargin, endInset)
+    val sourceScrolling = listState?.isScrollInProgress == true || gridState?.isScrollInProgress == true
+    var recentlyActive by remember { mutableStateOf(true) }
+    LaunchedEffect(isInteracting || sourceScrolling) {
+        if (isInteracting || sourceScrolling) {
+            recentlyActive = true
+        } else {
+            kotlinx.coroutines.delay(ScrollbarGutter.IDLE_FADE_DELAY_MS)
+            recentlyActive = false
+        }
+    }
+    val thumbAlpha by animateFloatAsState(
+        targetValue = if (!fadesWhenIdle || recentlyActive) 1f else 0f,
+        animationSpec = tween(durationMillis = 250),
+        label = "ThumbAlpha"
+    )
 
     val animatedWidth by animateDpAsState(
         targetValue = if (isInteracting) expandedIndicatorWidth else thickness,
@@ -254,7 +300,15 @@ fun ExpressiveScrollBar(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxHeight()
-            .width(expandedIndicatorWidth + paddingEnd)
+            .width(maxOf(ScrollbarGutter.TouchWidth, expandedIndicatorWidth + paddingEnd))
+            .testTag(ScrollbarGutter.TOUCH_TAG)
+            // On the outermost node of the bar: a shared input shares the hit with the list only from there (one nested inside is not shared).
+            .sharedPointerInput {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    gestures.gesture?.let { with(it) { run(down) } }
+                }
+            }
     ) {
         val density = LocalDensity.current
         val constraintsMaxWidth = maxWidth
@@ -265,7 +319,10 @@ fun ExpressiveScrollBar(
         val canScrollForward by remember { derivedStateOf { listState?.canScrollForward ?: gridState?.canScrollForward ?: false } }
         val canScrollBackward by remember { derivedStateOf { listState?.canScrollBackward ?: gridState?.canScrollBackward ?: false } }
         
-        if (!canScrollForward && !canScrollBackward) return@BoxWithConstraints
+        if (!canScrollForward && !canScrollBackward) {
+            SideEffect { gestures.gesture = null }
+            return@BoxWithConstraints
+        }
 
         fun getScrollStats(): ScrollMetrics {
             val totalItemsCount: Int
@@ -523,65 +580,66 @@ fun ExpressiveScrollBar(
 
         val indicatorPath = remember { Path() }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = {
-                            isPressed = true
-                            try {
-                                awaitRelease()
-                            } finally {
-                                isPressed = false
+        // One gesture for the whole 48 dp target. A press is the bar's only where it grabs something: anywhere along the thin strip at the
+        // end edge (the track: jump there, or take the thumb), or on the thumb (a little above and below it) while it can be seen. Any other
+        // press is not looked at again: nothing is consumed, so a row's trailing control gets its tap and a list gets the scroll that starts
+        // near the edge, as if the bar were not there. It runs from the outer box's input (see [ScrollbarGestures]), which is where sharing the hit
+        // with the list under the bar works.
+        SideEffect {
+            gestures.gesture = object : ScrollbarGesture {
+                override suspend fun AwaitPointerEventScope.run(down: PointerInputChange) {
+                    val stats = getScrollStats()
+                    val scrollableHeight = stats.scrollableHeight
+                    val handleHeightPx = minHeight.toPx()
+                    val visualProgress = displayedProgress.value
+                    val handleY = visualProgress * scrollableHeight
+                    val inStrip = down.position.x >= size.width - ScrollbarGutter.JumpStripWidth.toPx()
+                    val slackPx = ScrollbarGutter.GrabSlack.toPx()
+                    val onHandle = down.position.y >= handleY - slackPx && down.position.y <= handleY + handleHeightPx + slackPx
+                    val visible = thumbAlpha > 0.3f
+                    if (!inStrip && !(onHandle && visible)) return
+
+                    isPressed = true
+                    try {
+                        // Read in the Initial pass, which the bar (it is above the list in the hit path) gets before the list does: the moves of
+                        // a drag it has taken are consumed there, so the list under it, which gives up a drag whose changes are consumed, never scrolls.
+                        var grabOffset = 0f
+                        var started = false
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.fastFirstOrNull { it.id == down.id } ?: return
+                            if (!change.pressed) return
+                            if (!started) {
+                                if ((change.position - down.position).getDistance() < viewConfiguration.touchSlop) continue
+                                started = true
+                                isDragging = true
+                                if (down.position.y >= handleY && down.position.y <= handleY + handleHeightPx) {
+                                    grabOffset = down.position.y - handleY
+                                    dragProgress = visualProgress
+                                    pendingScrollIndex =
+                                        listState?.firstVisibleItemIndex
+                                            ?: gridState?.firstVisibleItemIndex
+                                            ?: 0
+                                } else {
+                                    grabOffset = handleHeightPx / 2f
+                                    updateProgressFromTouch(down.position.y, grabOffset)
+                                }
                             }
-                        }
-                    )
-                }
-                .pointerInput(Unit) {
-                    var grabOffset = 0f
-
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            isDragging = true
-
-                            val stats = getScrollStats()
-                            val scrollableHeight = stats.scrollableHeight
-                            val handleHeightPx = with(density) { minHeight.toPx() }
-
-                            val visualProgress = displayedProgress.value
-                            val handleY = visualProgress * scrollableHeight
-
-                            val isTouchOnHandle = offset.y >= handleY && offset.y <= (handleY + handleHeightPx)
-
-                            if (isTouchOnHandle) {
-                                grabOffset = offset.y - handleY
-                                dragProgress = visualProgress
-                                pendingScrollIndex =
-                                    listState?.firstVisibleItemIndex
-                                        ?: gridState?.firstVisibleItemIndex
-                                        ?: 0
-                            } else {
-                                grabOffset = handleHeightPx / 2f
-                                updateProgressFromTouch(offset.y, grabOffset)
-                            }
-                        },
-                        onDragEnd = {
-                            isDragging = false
-                            dragProgress = -1f
-                            pendingScrollIndex = -1
-                        },
-                        onDragCancel = {
-                            isDragging = false
-                            dragProgress = -1f
-                            pendingScrollIndex = -1
-                        },
-                        onDrag = { change, _ ->
                             change.consume()
                             updateProgressFromTouch(change.position.y, grabOffset)
                         }
-                    )
+                    } finally {
+                        isPressed = false
+                        isDragging = false
+                        dragProgress = -1f
+                        pendingScrollIndex = -1
+                    }
                 }
+            }
+        }
+
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
             val rightAnchorX = with(density) { (constraintsMaxWidth - paddingEnd).toPx() }
 
@@ -617,7 +675,8 @@ fun ExpressiveScrollBar(
                 )
                 drawPath(
                     path = indicatorPath,
-                    color = primaryColor
+                    color = primaryColor,
+                    alpha = thumbAlpha
                 )
             }
             

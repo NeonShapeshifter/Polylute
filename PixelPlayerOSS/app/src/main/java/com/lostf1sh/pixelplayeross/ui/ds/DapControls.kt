@@ -99,7 +99,7 @@ fun DapSecondaryButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        background = Dap.surfaceRaised,
+        background = Dap.panelRaised,
         contentColor = Dap.primaryText,
     ) {
         if (leading != null) {
@@ -125,7 +125,7 @@ private fun DapButtonShell(
             .clip(RoundedCornerShape(DapRadius.Surface))
             // A disabled button keeps its shape and loses its weight, rather than disappearing —
             // the same way DapTextAction and the rows treat disabled.
-            .background(if (enabled) background else Dap.surfaceRaised)
+            .background(if (enabled) background else Dap.panelRaised)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = DapSpacing.Gutter),
         verticalAlignment = Alignment.CenterVertically,
@@ -216,7 +216,7 @@ fun DapCollectionActions(
             modifier = Modifier
                 .size(DapHeights.Control)
                 .clip(CircleShape)
-                .background(Dap.surfaceRaised)
+                .background(Dap.panelRaised)
                 .semantics { contentDescription = shuffleLabel }
                 .clickable(role = Role.Button, onClickLabel = shuffleLabel, onClick = onShuffle),
             contentAlignment = Alignment.Center,
@@ -252,7 +252,7 @@ fun DapSwitch(
                 .width(40.dp)
                 .height(22.dp)
                 .clip(CircleShape)
-                .background(if (checked) accent else Dap.surfaceRaised)
+                .background(if (checked) accent else Dap.panelRaised)
                 .then(
                     if (checked) Modifier
                     else Modifier.border(1.dp, Dap.interactiveTrack, CircleShape)
@@ -366,7 +366,7 @@ fun <T> DapSegmentedControl(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(DapRadius.Surface))
-            .background(Dap.surface)
+            .background(Dap.panel)
             .padding(2.dp)
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -473,7 +473,7 @@ fun DapProgressBar(progress: Float, modifier: Modifier = Modifier) {
         modifier = modifier
             .height(2.dp)
             .clip(RoundedCornerShape(1.dp))
-            .background(Dap.surfaceRaised)
+            .background(Dap.panelRaised)
             .progressSemantics(progress.coerceIn(0f, 1f)),
     ) {
         Box(
@@ -509,7 +509,7 @@ fun DapIndeterminateBar(modifier: Modifier = Modifier) {
         modifier = modifier
             .height(2.dp)
             .clip(RoundedCornerShape(1.dp))
-            .background(Dap.surfaceRaised),
+            .background(Dap.panelRaised),
     ) {
         val segmentWidth = maxWidth * 0.35f
         Box(

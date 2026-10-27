@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B39-A6: two equalizers, named for where they are applied. -->
+    <string name="eq_polylute_title">Polylute EQ</string>
+    <string name="eq_polylute_where">Applied on the phone · works with any DAC</string>
+    <!-- %1$s = the DAC's name. -->
+    <string name="eq_dac_eq_note_on">%1$s also has its own EQ, and it is on. It is a separate equalizer, applied inside the DAC.</string>
+    <string name="eq_dac_eq_note_off">%1$s also has its own EQ, and it is off. It is a separate equalizer, inside the DAC.</string>
+    <string name="eq_dac_eq_note_flat">%1$s also has its own EQ, on but flat: every band at 0 dB. It is a separate equalizer, inside the DAC.</string>
+    <string name="eq_dac_eq_note_unknown">%1$s also has its own EQ, which could not be read. It is a separate equalizer, inside the DAC.</string>
+    <string name="dac_eq_title">DAC EQ</string>
+    <string name="dac_eq_where">%1$s · applied inside the DAC</string>
+    <string name="dac_eq_not_polylute">This is the DAC\'s own equalizer, applied inside the DAC. Polylute EQ is a separate one, applied on the phone.</string>
+    <string name="audio_dac_eq_title">DAC EQ</string>
+    <string name="audio_dac_eq_sub">%1$s · applied inside the DAC · Polylute only reads it for now</string>
+    <string name="audio_dac_eq_on">On · shaping the sound</string>
+    <!-- B41: what the DAC holds. %1$s = the DAC's name. Closed is the DAC's real state (its own "Close EQ"), not a failed read. -->
+    <string name="audio_dac_eq_closed">Off in %1$s (no EQ)</string>
+    <string name="audio_dac_eq_flat">On, flat: every band at 0 dB</string>
+    <string name="audio_dac_eq_use">Use the DAC\'s EQ</string>
+    <string name="audio_dac_eq_sub_writable">%1$s · applied inside the DAC</string>
+    <string name="audio_dac_eq_unknown">Could not be read</string>
+    <string name="eq_the_dac">The DAC</string>
+</resources>

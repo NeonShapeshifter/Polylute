@@ -2,6 +2,7 @@ package com.lostf1sh.pixelplayeross.presentation.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.mutableFloatStateOf
@@ -11,6 +12,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
+import com.lostf1sh.pixelplayeross.presentation.components.player.LocalPlayerPageSignal
 import com.lostf1sh.pixelplayeross.presentation.components.player.QueueFoldedStrip
 import com.lostf1sh.pixelplayeross.presentation.components.player.upNextSong
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -34,6 +37,7 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.SettingsViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.StablePlayerState
+import com.lostf1sh.pixelplayeross.ui.ds.DapMotion
 import com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent
 import kotlinx.collections.immutable.ImmutableList
 import kotlin.math.roundToInt
@@ -141,6 +145,15 @@ internal fun QueueSurface(
     // B33-U1: the folded state. The sheet is one object at one offset (the controller's); at rest it is drawn with its top showing, and that top
     // is the "Up next" strip of the player. How open it is comes from that one offset, read where it is drawn.
     val folded = foldedStripPx > 0f
+    // B42-fix1: the folded strip is the Player page's. On Menu, Lyrics or Details the sheet rests one strip lower, wholly off screen (so nothing of
+    // it is drawn and nothing of it takes a touch from the page: the lyrics' bar is where the strip would be), and slides back with Player.
+    val pageSignal = LocalPlayerPageSignal.current
+    val strip = foldedStripPx
+    val hideStripOffset by animateFloatAsState(
+        targetValue = if (folded && !visible && pageSignal?.onPlayerPage == false) strip else 0f,
+        animationSpec = DapMotion.surface(),
+        label = "queue strip off the player page",
+    )
     val hiddenOffsetState = rememberUpdatedState(queueHiddenOffsetPx)
     val foldProgress: () -> Float = remember(queueSheetOffset, folded) {
         // a sheet with no folded state (the landscape player) is just the sheet: always "open" to its own header
@@ -182,7 +195,7 @@ internal fun QueueSurface(
                   Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .offset { IntOffset(0, queueSheetOffset.value.roundToInt()) }
+                        .offset { IntOffset(0, (queueSheetOffset.value + hideStripOffset).roundToInt()) }
                         .graphicsLayer {
                             alpha = if (visible || folded) 1f else 0f
                         }

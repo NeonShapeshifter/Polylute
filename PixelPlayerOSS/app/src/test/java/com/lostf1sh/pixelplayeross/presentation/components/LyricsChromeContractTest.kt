@@ -37,12 +37,12 @@ class LyricsChromeContractTest {
     fun `keep screen on has exactly one lifecycle observer path`() {
         // Guard against a vacuous pass: the mechanism must still exist.
         // B11-2 added `isPlaying` to the keys: the one owner now also releases the screen on pause.
-        assertThat(sheet).contains("DisposableEffect(keepScreenOn, isPlaying, lifecycleOwner)")
+        assertThat(sheet).contains("DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, lifecycleOwner)")
 
         // The block was written twice, identically. Both copies keyed on the same pair, so they
         // were created and disposed together and both registered a LifecycleObserver on the same
         // owner: two observers per ON_STOP, two DataStore writes, two competing view owners.
-        val effects = Regex("""DisposableEffect\(keepScreenOn, isPlaying, lifecycleOwner\)""").findAll(sheet).count()
+        val effects = Regex("""DisposableEffect\(keepScreenOn, isPlaying, lockSurfaceShowing, lifecycleOwner\)""").findAll(sheet).count()
         assertThat(effects).isEqualTo(1)
 
         val observers = Regex("""lifecycleOwner\.lifecycle\.addObserver\(""").findAll(sheet).count()
@@ -181,10 +181,12 @@ class LyricsChromeContractTest {
         assertThat(sheet).contains("onSeekTo = onSeekTo")
         assertThat(sheet).contains("onSeekPreviewChange = { previewSeekPositionMs = it }")
 
-        // Back is the system Back (predictive) and the player header's Lyrics button; the lyrics have no header of their own.
-        assertThat(sheet).contains("onBack = onBackClick")
-        // Prev/next stay on the swipe gesture, which is unchanged.
-        assertThat(sheet).contains("if (dragOffset > 0) onPrev() else onNext()")
+        // B42-fix1: the lyrics are a page of the player's pager. Back (the system's, from either edge) and the swipe between pages are the
+        // pager's, and the player header's Lyrics icon is the way in and out; the page has no header, no back handling and no swipe of its own.
+        assertThat(sheet).doesNotContain("onBackClick")
+        assertThat(sheet).doesNotContain("PredictiveBackHandler")
+        assertThat(sheet).doesNotContain("onPrev")
+        assertThat(sheet).doesNotContain("dragOffset")
     }
 
     @Test

@@ -62,6 +62,16 @@ data class SyncProgress(
         get() = totalCount > 0
     }
 
+/**
+ * What the library sync is doing right now, read from **one** snapshot of WorkManager's list (B39-A1): whether a sync is running and
+ * what it has reached. `isSyncing` and `progress` used to come from two separate readings, so the page that draws both could hold one
+ * from before a pause and the other from after it; they cannot disagree about a moment that is one reading.
+ */
+data class SyncState(
+    val isSyncing: Boolean = false,
+    val progress: SyncProgress = SyncProgress(),
+)
+
 @Singleton
 class SyncManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -91,21 +101,30 @@ class SyncManager @Inject constructor(
         log = { message -> Timber.tag(TAG).i(message) },
     )
 
-    val isSyncing: Flow<Boolean> =
+    /**
+     * B39-A1: how a stream that is shared between pages lets go of what it last saw. After [SYNC_STOP_TIMEOUT_MS] with nobody listening the
+     * upstream stops, and with the default `replayExpirationMillis` (never) the last value stayed in the replay cache for good: a page that
+     * came back after the screen had been off for a sync (`replay = 1`) was handed that sync's last *running* snapshot, "Saving 0/26" with
+     * the buttons greyed out, as if it were the present. Zero forgets it when the upstream stops, so a listener only ever receives a reading
+     * taken since it started listening.
+     */
+    private val sharedWhileListened = SharingStarted.WhileSubscribed(
+        stopTimeoutMillis = SYNC_STOP_TIMEOUT_MS,
+        replayExpirationMillis = 0,
+    )
+
+    val syncState: Flow<SyncState> =
         workManager.getWorkInfosForUniqueWorkFlow(SyncWorker.WORK_NAME)
-            .map { workInfos ->
-                val isRunning = workInfos.any { it.state == WorkInfo.State.RUNNING }
-                val isFreshlyEnqueued = workInfos.any {
-                    it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 0
-                }
-                isRunning || isFreshlyEnqueued
+            .combine(currentSyncWorkId) { workInfos, requestedId ->
+                SyncState(
+                    isSyncing = isSyncingOf(workInfos),
+                    progress = foregroundSyncProgress(trackForegroundSyncWork(workInfos, requestedId)),
+                )
             }
             .distinctUntilChanged()
-            .shareIn(
-                scope = sharingScope,
-                started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
-                replay = 1
-            )
+            .shareIn(scope = sharingScope, started = sharedWhileListened, replay = 1)
+
+    val isSyncing: Flow<Boolean> = syncState.map { it.isSyncing }.distinctUntilChanged()
 
     /**
      * Emits once each time the library sync finishes in a FAILED state with no other
@@ -120,7 +139,7 @@ class SyncManager @Inject constructor(
             .distinctUntilChanged()
             .filter { it }
             .map { }
-            .shareIn(sharingScope, SharingStarted.WhileSubscribed(5_000), replay = 0)
+            .shareIn(sharingScope, SharingStarted.WhileSubscribed(SYNC_STOP_TIMEOUT_MS), replay = 0)
 
     private val started = AtomicBoolean(false)
 
@@ -154,17 +173,7 @@ class SyncManager @Inject constructor(
     /**
      * Flow that exposes the detailed sync progress including song count.
      */
-    val syncProgress: Flow<SyncProgress> =
-        workManager.getWorkInfosForUniqueWorkFlow(SyncWorker.WORK_NAME)
-            .combine(currentSyncWorkId) { workInfos, requestedId ->
-                foregroundSyncProgress(trackForegroundSyncWork(workInfos, requestedId))
-            }
-            .distinctUntilChanged()
-            .shareIn(
-                scope = sharingScope,
-                started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
-                replay = 1
-            )
+    val syncProgress: Flow<SyncProgress> = syncState.map { it.progress }.distinctUntilChanged()
 
     /**
      * Emits `true` while the worker is in the early "library changes" phases —
@@ -177,11 +186,7 @@ class SyncManager @Inject constructor(
             progress.isRunning && progress.phase in CHANGE_PHASES
         }
         .distinctUntilChanged()
-        .shareIn(
-            scope = sharingScope,
-            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
-            replay = 1
-        )
+        .shareIn(scope = sharingScope, started = sharedWhileListened, replay = 1)
 
     /**
      * Emits `true` while the worker is performing background maintenance that does
@@ -194,11 +199,7 @@ class SyncManager @Inject constructor(
             progress.isRunning && progress.phase in MAINTENANCE_PHASES
         }
         .distinctUntilChanged()
-        .shareIn(
-            scope = sharingScope,
-            started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
-            replay = 1
-        )
+        .shareIn(scope = sharingScope, started = sharedWhileListened, replay = 1)
 
     fun sync() {
         sharingScope.launch {
@@ -230,7 +231,8 @@ class SyncManager @Inject constructor(
     fun incrementalSync() {
         Timber.tag(TAG).i("Incremental sync requested - Scheduling incremental worker")
         enqueueSyncWork(
-            request = SyncWorker.incrementalSyncWork(runMaintenance = false),
+            // the pull to refresh is the listener's own ask: files Android has not indexed yet are looked for first (B40-F3)
+            request = SyncWorker.incrementalSyncWork(runMaintenance = false, walkFolders = true),
             policy = ExistingWorkPolicy.REPLACE
         )
     }
@@ -268,7 +270,8 @@ class SyncManager @Inject constructor(
     fun forceRefresh() {
         Timber.tag(TAG).i("Manual local refresh requested - Scheduling incremental worker")
         enqueueSyncWork(
-            request = SyncWorker.incrementalSyncWork(runMaintenance = false),
+            // "Update library" is the listener's own ask: files Android has not indexed yet are looked for first (B40-F3)
+            request = SyncWorker.incrementalSyncWork(runMaintenance = false, walkFolders = true),
             policy = ExistingWorkPolicy.REPLACE
         )
     }
@@ -354,6 +357,9 @@ class SyncManager @Inject constructor(
 
     companion object {
         private const val TAG = "SyncManager"
+
+        /** How long the work-state streams keep running after the last listener has gone (a page that is left and re-entered at once keeps them). */
+        const val SYNC_STOP_TIMEOUT_MS = 5_000L
         private const val MIN_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000L
         private const val MEDIASTORE_CHANGE_DEBOUNCE_MS = 1_500L
         private const val FOREGROUND_SYNC_COOLDOWN_MS = 60_000L
@@ -371,6 +377,13 @@ class SyncManager @Inject constructor(
             SyncProgress.SyncPhase.COMPLETING
         )
     }
+}
+
+/** Whether a library sync is running or about to: any run in progress, or a request that has not started its first attempt. */
+internal fun isSyncingOf(workInfos: List<WorkInfo>): Boolean {
+    val isRunning = workInfos.any { it.state == WorkInfo.State.RUNNING }
+    val isFreshlyEnqueued = workInfos.any { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 0 }
+    return isRunning || isFreshlyEnqueued
 }
 
 /** A pending replacement cannot inherit a previous run's success or error. */

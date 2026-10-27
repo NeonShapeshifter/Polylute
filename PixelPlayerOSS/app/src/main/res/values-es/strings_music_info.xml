@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B40-F4: the About section of an artist or album, and the credit that goes with a downloaded picture. -->
+    <string name="music_info_about_title">Acerca de</string>
+    <string name="music_info_from_wikipedia">De Wikipedia</string>
+    <string name="music_info_text_license">Texto disponible bajo CC BY-SA 4.0</string>
+    <string name="music_info_photo_credit">Foto: %1$s · %2$s</string>
+    <string name="music_info_photo_credit_no_author">Foto de Wikimedia Commons · %1$s</string>
+    <string name="music_info_photo_credit_plain">Foto de Wikimedia Commons</string>
+</resources>

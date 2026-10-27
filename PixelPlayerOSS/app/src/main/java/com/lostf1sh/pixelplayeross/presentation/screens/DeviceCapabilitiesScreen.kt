@@ -1,6 +1,5 @@
 package com.lostf1sh.pixelplayeross.presentation.screens
 
-import android.content.Intent
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -58,7 +57,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -77,13 +75,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -114,9 +110,6 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.LocalMusicStorageSumma
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.MemorySummary
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaybackCompatibilitySummary
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.launch
 import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 import kotlin.math.roundToInt
@@ -207,9 +200,6 @@ fun DeviceCapabilitiesScreen(
                 state = state,
                 lazyListState = lazyListState,
                 topPadding = currentTopBarHeightDp,
-                onGenerateReport = viewModel::generatePerformanceReport,
-                onAdvancedDiagnosticsChange = viewModel::setAdvancedPerformanceDiagnosticsEnabled,
-                onMarkLagNow = viewModel::markLagNow,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -231,9 +221,6 @@ private fun DeviceCapabilitiesContent(
     state: DeviceCapabilitiesState,
     lazyListState: LazyListState,
     topPadding: Dp,
-    onGenerateReport: () -> Unit,
-    onAdvancedDiagnosticsChange: (Boolean) -> Unit,
-    onMarkLagNow: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -290,198 +277,8 @@ private fun DeviceCapabilitiesContent(
         item {
             DeviceInfoPanel(deviceInfo = state.deviceInfo)
         }
-
-        item {
-            PerformanceReportCard(
-                report = state.performanceReport,
-                isGenerating = state.isGeneratingReport,
-                advancedDiagnosticsEnabled = state.advancedDiagnosticsEnabled,
-                advancedDiagnosticsExpiresAtEpochMs = state.advancedDiagnosticsExpiresAtEpochMs,
-                onGenerate = onGenerateReport,
-                onAdvancedDiagnosticsChange = onAdvancedDiagnosticsChange,
-                onMarkLagNow = onMarkLagNow
-            )
-        }
     }
 }
-
-@Composable
-private fun PerformanceReportCard(
-    report: String?,
-    isGenerating: Boolean,
-    advancedDiagnosticsEnabled: Boolean,
-    advancedDiagnosticsExpiresAtEpochMs: Long?,
-    onGenerate: () -> Unit,
-    onAdvancedDiagnosticsChange: (Boolean) -> Unit,
-    onMarkLagNow: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
-    val copiedMessage = stringResource(R.string.device_capabilities_report_copied)
-    val shareTitle = stringResource(R.string.device_capabilities_report_share_title)
-    val lagMarkedMessage = stringResource(R.string.device_capabilities_advanced_diagnostics_marked)
-
-    CapabilityCard(
-        title = stringResource(R.string.device_capabilities_report_title),
-        icon = Icons.Rounded.Assessment,
-        modifier = modifier
-    ) {
-        Text(
-            text = stringResource(R.string.device_capabilities_report_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        AdvancedDiagnosticsToggleRow(
-            enabled = advancedDiagnosticsEnabled,
-            expiresAtEpochMs = advancedDiagnosticsExpiresAtEpochMs,
-            onEnabledChange = onAdvancedDiagnosticsChange
-        )
-
-        if (advancedDiagnosticsEnabled) {
-            DapSecondaryButton(
-                label = stringResource(R.string.device_capabilities_advanced_diagnostics_mark_lag),
-                onClick = {
-                    onMarkLagNow()
-                    Toast.makeText(context, lagMarkedMessage, Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        DapPrimaryButton(
-            label = stringResource(
-                if (report == null) R.string.device_capabilities_report_generate
-                else R.string.device_capabilities_report_regenerate
-            ),
-            onClick = onGenerate,
-            enabled = !isGenerating,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (isGenerating) {
-            DapIndeterminateBar(modifier = Modifier.fillMaxWidth())
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (report != null) {
-                DapSecondaryButton(
-                    label = stringResource(R.string.device_capabilities_report_copy),
-                    onClick = {
-                        clipboardManager.setText(AnnotatedString(report))
-                        Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.weight(1f),
-                    leading = {
-                        Icon(
-                            imageVector = Icons.Rounded.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = Dap.secondaryText,
-                        )
-                    },
-                )
-
-                DapSecondaryButton(
-                    label = stringResource(R.string.device_capabilities_report_share),
-                    onClick = {
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, shareTitle)
-                            putExtra(Intent.EXTRA_TEXT, report)
-                        }
-                        context.startActivity(Intent.createChooser(sendIntent, shareTitle))
-                    },
-                    modifier = Modifier.weight(1f),
-                    leading = {
-                        Icon(
-                            imageVector = Icons.Rounded.Share,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = Dap.secondaryText,
-                        )
-                    },
-                )
-            }
-        }
-
-        if (report != null) {
-            Surface(
-                shape = AbsoluteSmoothCornerShape(18.dp, 60),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                SelectionContainer {
-                    Text(
-                        text = report,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .heightIn(max = 260.dp)
-                            .verticalScroll(rememberScrollState())
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AdvancedDiagnosticsToggleRow(
-    enabled: Boolean,
-    expiresAtEpochMs: Long?,
-    onEnabledChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = AbsoluteSmoothCornerShape(18.dp, 60),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.device_capabilities_advanced_diagnostics_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = if (enabled && expiresAtEpochMs != null) {
-                        stringResource(
-                            R.string.device_capabilities_advanced_diagnostics_expires,
-                            formatDiagnosticsExpiry(expiresAtEpochMs)
-                        )
-                    } else {
-                        stringResource(R.string.device_capabilities_advanced_diagnostics_description)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = enabled,
-                onCheckedChange = onEnabledChange
-            )
-        }
-    }
-}
-
-private fun formatDiagnosticsExpiry(epochMs: Long): String =
-    SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(epochMs))
 
 @Composable
 private fun PlaybackReadinessCard(

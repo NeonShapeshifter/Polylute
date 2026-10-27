@@ -65,16 +65,18 @@
 
 -keep class * extends androidx.glance.appwidget.action.ActionCallback { <init>(); }
 
+# Verbose and debug lines are not in a release build. Info lines are (B40-F7): the app logs what it does at INFO (the DAC's HID
+# conversation, the route, the volume ceiling, Dedicated mode), and Detailed logging in Maintenance records them for a half hour. With
+# the switch off nothing takes them (ReleaseTree keeps warnings and errors), and none of them is in a hot path. android.util.Log's
+# info calls (the USB driver's) stay out of release: their facts reach the log through the sampler's snapshots instead.
 -assumenosideeffects class timber.log.Timber {
     public static void v(...);
     public static void d(...);
-    public static void i(...);
     public static timber.log.Timber$Tree tag(java.lang.String);
 }
 -assumenosideeffects class timber.log.Timber$Tree {
     public void v(...);
     public void d(...);
-    public void i(...);
 }
 -assumenosideeffects class android.util.Log {
     public static int v(...);

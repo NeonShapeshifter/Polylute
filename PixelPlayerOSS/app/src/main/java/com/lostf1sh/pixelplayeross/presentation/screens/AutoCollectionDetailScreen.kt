@@ -48,7 +48,6 @@ import com.lostf1sh.pixelplayeross.presentation.components.player.TrackDetailsHo
 import com.lostf1sh.pixelplayeross.presentation.navigation.Screen
 import com.lostf1sh.pixelplayeross.presentation.navigation.navigateSafely
 import com.lostf1sh.pixelplayeross.presentation.stats.RowCover
-import com.lostf1sh.pixelplayeross.presentation.stats.StatsTarget
 import com.lostf1sh.pixelplayeross.presentation.stats.route
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistViewModel
@@ -74,9 +73,10 @@ import kotlinx.coroutines.flow.map
  * One automatic collection: its name and the line that says why these songs, how many and for how long, Play and Shuffle, and the songs.
  *
  * The list that is open is the list that plays: Play queues exactly these songs in this order and Shuffle puts random on top of the
- * same list, never a different one. A row names a song and a tap opens it in the Library (B32-Q2; it used to play from there: playing one
- * song is the overflow's "Play"), and the overflow opens the same song actions as everywhere else.
- * An empty collection says why it is empty.
+ * same list, never a different one. **A tap on a row plays that song with this collection as the queue**, in the collection's order, starting
+ * at it (B42-fix1): a collection is a list of songs, like a playlist, and not a page of Stats. (B32-Q2 had made a row open the song in the
+ * Library, as Stats' rows do, and play nothing; Stats keeps that rule, a collection does not.) The overflow opens the same song actions as
+ * everywhere else. An empty collection says why it is empty.
  */
 @Composable
 fun AutoCollectionDetailScreen(
@@ -184,9 +184,9 @@ fun AutoCollectionDetailScreen(
         onShow = { id?.let(viewModel::show) },
         onPlay = { playerViewModel.playSongs(items, items.first(), name, source = source) },
         onShuffle = { playerViewModel.playSongsShuffled(items, name, startAtZero = true, source = source) },
-        // B32-Q2: a row names a song and opens it in the Library (its Songs tab, scrolled to it and marked), as in Stats; it plays nothing.
-        // Play and Shuffle above play the collection, and the row's overflow has "Play" for one song.
-        onOpenSong = { song -> navController.navigateSafely(StatsTarget.Song(song.id).route()) },
+        // B42-fix1: a row plays its song with the collection as the queue: the same call the row's overflow "Play" makes, with the collection's
+        // own listen source. Nothing navigates. (Stats' rows still open the song in the Library, B32-Q2.) Play and Shuffle above are as they were.
+        onPlaySong = { song -> playerViewModel.showAndPlaySong(song, items, name, updatesLastPlaylistShortcut = false, source = source) },
         onMore = { song ->
             playerViewModel.selectSongForInfo(song)
             showSongInfoSheet = true
@@ -205,7 +205,8 @@ internal fun CollectionPage(
     onShow: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
-    onOpenSong: (com.lostf1sh.pixelplayeross.data.model.Song) -> Unit,
+    /** A tap on a row: the song starts, with this collection as the queue. */
+    onPlaySong: (com.lostf1sh.pixelplayeross.data.model.Song) -> Unit,
     onMore: (com.lostf1sh.pixelplayeross.data.model.Song) -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -303,7 +304,7 @@ internal fun CollectionPage(
                                 state = if (currentSongId == song.id) DapRowState.Current else DapRowState.Normal,
                                 leading = { RowCover(song.albumArtUriString, item.title) },
                                 trailing = { DapOverflowButton(onClick = { onMore(song) }) },
-                                onClick = { onOpenSong(song) },
+                                onClick = { onPlaySong(song) },
                             )
                         }
                     }

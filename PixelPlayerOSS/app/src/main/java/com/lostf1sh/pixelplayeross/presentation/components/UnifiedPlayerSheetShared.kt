@@ -67,6 +67,8 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapType
 import com.lostf1sh.pixelplayeross.ui.theme.RoundedSans
 import com.lostf1sh.pixelplayeross.presentation.components.songTitleLabel
 import com.lostf1sh.pixelplayeross.presentation.components.songArtistLabel
+import com.lostf1sh.pixelplayeross.presentation.components.scoped.MiniPlayerSeekLine
+import com.lostf1sh.pixelplayeross.presentation.components.scoped.MiniSeekPolicy
 
 // Not static (AUD-113): a static local recomposes the whole subtree under its provider whenever the
 // value changes, readers or not, and this value changes with every cover — the retained queue of 60
@@ -135,6 +137,14 @@ internal fun MiniPlayerContentInternal(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * B40-F6: the progress line at the shelf's top edge, which a sideways drag on seeks ([MiniPlayerSeekLine]). Off (the plain hairline)
+     * when [seekPositionProvider] is null or the song has no length yet. New parameters last: callers pass the others by position.
+     */
+    seekPositionProvider: (() -> Long)? = null,
+    seekDurationMs: Long = 0L,
+    onSeek: ((Long) -> Unit)? = null,
+    seekActiveProvider: () -> Boolean = { true },
 ) {
     // Keep metadata and transport in one row; the expanded player shows the complete title.
     val hapticFeedback = LocalHapticFeedback.current
@@ -142,87 +152,104 @@ internal fun MiniPlayerContentInternal(
     val albumArtModel = song.albumArtUriString?.takeIf { it.isNotBlank() }
     val artShape = RoundedCornerShape(DapRadius.Surface)
 
-    Column(
+    val seekAvailable = seekPositionProvider != null && onSeek != null && MiniSeekPolicy.available(seekDurationMs, isPreparingPlayback)
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(Dap.surface)
+            // B42-fix3 (item 8): over the cover glass the docked player is frosted by the sheet around it (one veil, `playerAreaBackground`); a
+            // second, opaque one here hid the glass behind a grey slab
+            .then(if (Dap.glass != null) Modifier else Modifier.background(Dap.surface))
     ) {
-        DapDivider()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = DapSpacing.Md, vertical = DapSpacing.Sm),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // the line replaces the hairline when it is there; the 1 dp stays so nothing below it moves
+            if (seekAvailable) Spacer(modifier = Modifier.height(1.dp)) else DapDivider()
+            Row(
                 modifier = Modifier
-                    .size(DapSizes.ThumbRow)
-                    .clip(artShape),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(horizontal = DapSpacing.Md, vertical = DapSpacing.Sm),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                key(song.id) {
-                    SmartImage(
-                        model = albumArtModel,
-                        contentDescription = null,
-                        shape = artShape,
-                        targetSize = Size(120, 120),
-                        modifier = Modifier.size(DapSizes.ThumbRow)
+                Box(
+                    modifier = Modifier
+                        .size(DapSizes.ThumbRow)
+                        .clip(artShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    key(song.id) {
+                        SmartImage(
+                            model = albumArtModel,
+                            contentDescription = null,
+                            shape = artShape,
+                            targetSize = Size(120, 120),
+                            modifier = Modifier.size(DapSizes.ThumbRow)
+                        )
+                    }
+                    if (isPreparingPlayback) {
+                        CircularWavyProgressIndicator(modifier = Modifier.size(20.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(DapSpacing.Md))
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = if (isPreparingPlayback) stringResource(R.string.player_preparing_playback) else songTitleLabel(song),
+                        style = DapType.MediaRow.copy(fontWeight = FontWeight.SemiBold),
+                        color = Dap.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
+                    val artist = if (isPreparingPlayback) stringResource(R.string.player_loading_audio) else songArtistLabel(song)
+                    artist?.let { Text(it, style = DapType.Note, color = Dap.secondaryText,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-                if (isPreparingPlayback) {
-                    CircularWavyProgressIndicator(modifier = Modifier.size(20.dp))
-                }
-            }
 
-            Spacer(modifier = Modifier.width(DapSpacing.Md))
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = if (isPreparingPlayback) stringResource(R.string.player_preparing_playback) else songTitleLabel(song),
-                    style = DapType.MediaRow.copy(fontWeight = FontWeight.SemiBold),
-                    color = Dap.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                Spacer(modifier = Modifier.width(DapSpacing.Sm))
+                MiniPlayerGlyphButton(
+                    kind = DapIconKind.SkipPrevious,
+                    tint = Dap.secondaryText,
+                    description = stringResource(R.string.previous_track),
+                    enabled = controlsEnabled,
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onPrevious()
+                    }
                 )
-                val artist = if (isPreparingPlayback) stringResource(R.string.player_loading_audio) else songArtistLabel(song)
-                artist?.let { Text(it, style = DapType.Note, color = Dap.secondaryText,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                // B33-U2: a plain glyph the size and weight of its neighbours, not a filled circle; the touch target is the same 48 dp.
+                MiniPlayerGlyphButton(
+                    kind = if (isPlaying) DapIconKind.PauseMini else DapIconKind.PlaySmall,
+                    tint = Dap.primaryText,
+                    description = stringResource(
+                        if (isPlaying) R.string.cd_pause else R.string.cd_play
+                    ),
+                    enabled = controlsEnabled,
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onPlayPause()
+                    }
+                )
+                MiniPlayerGlyphButton(
+                    kind = DapIconKind.SkipNextMini,
+                    tint = Dap.secondaryText,
+                    description = stringResource(R.string.next_track),
+                    enabled = controlsEnabled,
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNext()
+                    }
+                )
             }
-
-            Spacer(modifier = Modifier.width(DapSpacing.Sm))
-            MiniPlayerGlyphButton(
-                kind = DapIconKind.SkipPrevious,
-                tint = Dap.secondaryText,
-                description = stringResource(R.string.previous_track),
-                enabled = controlsEnabled,
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onPrevious()
-                }
-            )
-            // B33-U2: a plain glyph the size and weight of its neighbours, not a filled circle; the touch target is the same 48 dp.
-            MiniPlayerGlyphButton(
-                kind = if (isPlaying) DapIconKind.PauseMini else DapIconKind.PlaySmall,
-                tint = Dap.primaryText,
-                description = stringResource(
-                    if (isPlaying) R.string.cd_pause else R.string.cd_play
-                ),
-                enabled = controlsEnabled,
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onPlayPause()
-                }
-            )
-            MiniPlayerGlyphButton(
-                kind = DapIconKind.SkipNextMini,
-                tint = Dap.secondaryText,
-                description = stringResource(R.string.next_track),
-                enabled = controlsEnabled,
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onNext()
-                }
+        }
+        if (seekAvailable) {
+            MiniPlayerSeekLine(
+                songId = song.id,
+                positionProvider = seekPositionProvider!!,
+                durationMs = seekDurationMs,
+                onSeek = onSeek!!,
+                modifier = Modifier.align(Alignment.TopStart),
+                activeProvider = seekActiveProvider,
             )
         }
     }

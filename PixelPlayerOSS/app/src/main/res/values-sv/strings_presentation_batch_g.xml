@@ -71,19 +71,6 @@
     <string name="device_capabilities_output_wired">Kabelanslutet ljud</string>
     <string name="device_capabilities_output_digital">Digital utgång</string>
     <string name="device_capabilities_output_other">Annan utgång</string>
-    <string name="device_capabilities_report_title">Prestandarapport</string>
-    <string name="device_capabilities_report_description">Skapa en delbar diagnostikrapport som hjälper oss att klassificera fördröjning vid uppspelning eller genomsökning. Den innehåller bara enhets-, biblioteks- och tidsdata – inga filsökvägar, titlar eller artister.</string>
-    <string name="device_capabilities_report_generate">Skapa rapport</string>
-    <string name="device_capabilities_report_regenerate">Skapa på nytt</string>
-    <string name="device_capabilities_report_copy">Kopiera</string>
-    <string name="device_capabilities_report_share">Dela</string>
-    <string name="device_capabilities_report_copied">Rapporten kopierades till Urklipp</string>
-    <string name="device_capabilities_report_share_title">Polylute-prestandarapport</string>
-    <string name="device_capabilities_advanced_diagnostics_title">Avancerad prestandadiagnostik</string>
-    <string name="device_capabilities_advanced_diagnostics_description">Av som standard. Spelar in en kort fördröjningstidslinje för felsökning av betaversioner.</string>
-    <string name="device_capabilities_advanced_diagnostics_expires">Aktiv till %1$s</string>
-    <string name="device_capabilities_advanced_diagnostics_mark_lag">Markera fördröjning nu</string>
-    <string name="device_capabilities_advanced_diagnostics_marked">Fördröjningen markerades</string>
     <string name="presentation_batch_g_artist_section_multi_parsing">Tolkning av flera artister</string>
     <string name="presentation_batch_g_artist_item_char_delimiters">Teckenavgränsare</string>
     <string name="presentation_batch_g_artist_item_char_delimiters_current">Nuvarande: %1$s</string>
@@ -134,7 +121,6 @@ Omvänt snedstreck (\\) kan användas för att escapa teckenavgränsare.</string
     <string name="presentation_batch_g_file_explorer_cd_refresh">Uppdatera</string>
     <string name="presentation_batch_g_file_explorer_cd_done">Klart</string>
     <string name="presentation_batch_g_file_explorer_done">Klart</string>
-    <string name="presentation_batch_g_file_explorer_hint">Allt ingår som standard. Undanta en mapp för att hoppa över den, eller öppna en undantagen mapp och inkludera en undermapp som undantag.</string>
     <string name="presentation_batch_g_file_explorer_empty_folders">Inga undermappar här</string>
     <string name="presentation_batch_g_file_explorer_cd_navigate_up">Navigera uppåt</string>
     <string name="presentation_batch_g_file_explorer_cd_go_root">Gå till roten</string>

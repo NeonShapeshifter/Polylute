@@ -466,7 +466,7 @@ fun DapArtworkPlaceholder(
     glyphTint: Color = Dap.disabledText,
 ) {
     Box(
-        modifier.background(Dap.surfaceRaised, androidx.compose.foundation.shape.RoundedCornerShape(DapRadius.Surface)),
+        modifier.background(Dap.panelRaised, androidx.compose.foundation.shape.RoundedCornerShape(DapRadius.Surface)),
         contentAlignment = Alignment.Center,
     ) {
         if (showGlyph) {

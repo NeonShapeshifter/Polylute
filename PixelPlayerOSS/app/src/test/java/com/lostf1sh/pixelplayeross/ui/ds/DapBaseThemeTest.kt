@@ -69,10 +69,11 @@ class DapBaseThemeTest {
     }
 
     @Test
-    fun `there are exactly three base themes`() {
-        assertThat(DapBaseTheme.entries).hasSize(3)
+    fun `there are exactly five base themes - the three that shipped and gray and navy`() {
+        // B40-F1 added gray and navy. The first three keys are the data contract of every existing install: they do not change.
+        assertThat(DapBaseTheme.entries).hasSize(5)
         assertThat(DapBaseTheme.entries.map { it.storageKey })
-            .containsExactly("graphite", "black", "light")
+            .containsExactly("graphite", "black", "light", "gray", "navy").inOrder()
     }
 
     @Test
@@ -80,6 +81,8 @@ class DapBaseThemeTest {
         assertThat(DapBaseTheme.Graphite.palette).isEqualTo(DapPalette.Graphite)
         assertThat(DapBaseTheme.Black.palette).isEqualTo(DapPalette.Black)
         assertThat(DapBaseTheme.Light.palette).isEqualTo(DapPalette.Light)
+        assertThat(DapBaseTheme.Gray.palette).isEqualTo(DapPalette.Gray)
+        assertThat(DapBaseTheme.Navy.palette).isEqualTo(DapPalette.Navy)
     }
 
     // --- Graphite parity --------------------------------------------------------------------------
@@ -247,14 +250,17 @@ class DapBaseThemeTest {
         assertThat(theme).doesNotContain("internal fun darkScheme(")
         assertThat(theme).contains("internal fun dapColorScheme(accent: Color, palette: DapPalette)")
         // Every surface role must come from the palette.
-        assertThat(theme).contains("background = palette.background")
+        // B41: the Material background is the page's fill: the palette's background, or nothing over the cover glass (`palette.page`)
+        assertThat(theme).contains("background = palette.page")
+        assertThat(theme).contains("surface = palette.background")
         assertThat(theme).contains("surfaceContainerHighest = palette.surfaceRaised")
     }
 
     @Test
-    fun `the theme presents the accent before providing it`() {
+    fun `the theme resolves the named accent on its own palette before providing it`() {
         val theme = source("ui/ds/DapTheme.kt")
-        assertThat(theme).contains("val accentColor = palette.presentedAccent(accent.color)")
+        // B40-F1: the listener picks a name; the theme decides how that name looks (DapAccentTablesTest pins the contrast)
+        assertThat(theme).contains("val accentColor = accentColorOverride ?: palette.accentColor(accent)")
         assertThat(theme).contains("LocalDapAccent provides accentColor")
         // The raw accent must not leak past the presentation step.
         assertThat(theme).doesNotContain("LocalDapAccent provides accent.color")

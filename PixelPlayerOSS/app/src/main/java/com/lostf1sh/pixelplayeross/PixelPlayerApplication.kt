@@ -13,7 +13,6 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
-import com.lostf1sh.pixelplayeross.data.diagnostics.AdvancedPerformanceDiagnosticsController
 import com.lostf1sh.pixelplayeross.data.dac.DacProfileRepository
 import com.lostf1sh.pixelplayeross.data.startup.LegacyCloudDataCleanup
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
@@ -64,9 +63,6 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
     lateinit var syncManager: dagger.Lazy<com.lostf1sh.pixelplayeross.data.worker.SyncManager>
 
     @Inject
-    lateinit var advancedPerformanceDiagnosticsController: dagger.Lazy<AdvancedPerformanceDiagnosticsController>
-
-    @Inject
     lateinit var dacProfileRepository: dagger.Lazy<DacProfileRepository>
 
     @Inject
@@ -80,6 +76,9 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
 
     @Inject
     lateinit var libraryMetadataRepair: dagger.Lazy<com.lostf1sh.pixelplayeross.data.metadata.LibraryMetadataRepair>
+
+    @Inject
+    lateinit var detailedLogging: dagger.Lazy<com.lostf1sh.pixelplayeross.data.diagnostics.DetailedLogging>
 
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -112,6 +111,8 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
         } else {
             Timber.plant(ReleaseTree())
         }
+        // B40-F7: takes lines only while the Maintenance switch is on (and carries on after a restart inside its half hour)
+        Timber.plant(detailedLogging.get().tree)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -127,7 +128,6 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
 
         syncManager.get().start()
 
-        advancedPerformanceDiagnosticsController.get().start(startupScope)
         dacProfileRepository.get().start()
         dacHeadphoneAssociationController.get().start()
         // B30: idle until a FiiO/Snowsky DAC is attached and USB Direct carries a stream; then one read-only GET pass.
@@ -152,6 +152,8 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
             if (savedLimit != null) {
                 AlbumArtCacheManager.configuredCacheLimitMb = savedLimit.toLong()
             }
+            // B40-F4: Deezer is gone; artist picture addresses it left in the library are cleared, so none is shown
+            runCatching { artistImageRepository.get().retireDeezerOnce() }
         }
     }
 

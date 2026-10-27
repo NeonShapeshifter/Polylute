@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -25,7 +26,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,9 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lostf1sh.pixelplayeross.BuildConfig
 import com.lostf1sh.pixelplayeross.R
-import com.lostf1sh.pixelplayeross.data.diagnostics.DebugHooks
 import com.lostf1sh.pixelplayeross.data.media.CoverArtUpdate
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.components.player.formatHz
@@ -89,6 +87,17 @@ import com.lostf1sh.pixelplayeross.presentation.components.songArtistLabel
  * The only technical reading on the surface is the format line under the title, and it goes through
  * the same formatter the details page uses so the two cannot drift apart again.
  */
+/** How the song's options are drawn: in a bottom sheet (everywhere), or as the player's Menu page. */
+enum class SongOptionsPresentation { SHEET, PAGE }
+
+/** The editor keeps its opening track and save target while the Menu follows playback. */
+private class SongEditSession(
+    val song: Song,
+    val save: (
+        String, String, String, String, String, String, String, Int, Int?, String, String, CoverArtUpdate?
+    ) -> Unit,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SongInfoBottomSheet(
@@ -103,6 +112,8 @@ fun SongInfoBottomSheet(
     onDeleteFromDevice: (activity: Activity, song: Song, onResult: (Boolean) -> Unit) -> Unit,
     onNavigateToAlbum: () -> Unit,
     onNavigateToArtist: () -> Unit,
+    /** The page's own room when [presentation] is [SongOptionsPresentation.PAGE]; the sheet has no use for it. The first optional parameter, by the rule. */
+    modifier: Modifier = Modifier,
     onNavigateToArtistById: (Long) -> Unit = { onNavigateToArtist() },
     onNavigateToGenre: () -> Unit,
     /**
@@ -126,10 +137,16 @@ fun SongInfoBottomSheet(
         coverArtUpdate: CoverArtUpdate?
     ) -> Unit,
     removeFromListTrigger: () -> Unit,
-    songInfoViewModel: SongInfoBottomSheetViewModel = hiltViewModel()
+    songInfoViewModel: SongInfoBottomSheetViewModel = hiltViewModel(),
+    /**
+     * B42-fix1: the same options as the player's **Menu page** (the page to the left of Player), not a sheet: this body, these rows, these
+     * actions, with no bottom sheet around it.
+     */
+    presentation: SongOptionsPresentation = SongOptionsPresentation.SHEET,
 ) {
     val context = LocalContext.current
     var showEditSheet by remember { mutableStateOf(false) }
+    var editSession by remember { mutableStateOf<SongEditSession?>(null) }
     var showArtistPicker by remember { mutableStateOf(false) }
     val audioMeta by songInfoViewModel.audioMeta.collectAsStateWithLifecycle()
     val resolvedArtists by songInfoViewModel.resolvedArtists.collectAsStateWithLifecycle()
@@ -185,24 +202,11 @@ fun SongInfoBottomSheet(
         songInfoViewModel.dismissMusicBrainz()
     }
 
-    ModalBottomSheet(
-        onDismissRequest = {
-            if (!showEditSheet) {
-                onDismiss()
-            }
-        },
-        sheetState = sheetState,
-        containerColor = Dap.surface,
-        contentColor = Dap.primaryText,
-        shape = RoundedCornerShape(topStart = DapRadius.SheetTop, topEnd = DapRadius.SheetTop),
-        contentWindowInsets = { WindowInsets(top = 0, bottom = 0) },
-    ) {
-        // This window is its own surface, so the activity's volume-key path does not
-        // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
-        ModalInputBridge()
-        CompositionLocalProvider(LocalOverscrollFactory provides null) {
+    // The options themselves: one column, drawn in a bottom sheet or as the player's Menu page (B42-fix1). Every row and every action is this one
+    // body; what differs is only the frame around it. [frame] is where the page tells it to fill its room.
+    val optionsColumn: @Composable (Modifier) -> Unit = { frame ->
             Column(
-                modifier = Modifier
+                modifier = frame
                     .fillMaxWidth()
                     .padding(horizontal = DapSpacing.Gutter)
                     .verticalScroll(rememberScrollState())
@@ -363,7 +367,10 @@ fun SongInfoBottomSheet(
                     if (isEditable) {
                         DapNavRow(
                             label = stringResource(R.string.edit_song_toolbar_title),
-                            onClick = { showEditSheet = true },
+                            onClick = {
+                                editSession = SongEditSession(song, onEditSong)
+                                showEditSheet = true
+                            },
                         )
                     }
                     // B32-Q5: one row, one word. It was a row called "Delete" with a "Delete" button inside it; the confirmation
@@ -385,52 +392,73 @@ fun SongInfoBottomSheet(
                     )
                 }
 
-                // B27-A5 (N-07): debug builds only, and only in the Now Playing menu. "I heard noise just now": writes the last
-                // seconds of the USB output's summaries and the stream's state to a file (see NoiseMark in the debug source set).
-                val markNoise = DebugHooks.markNoise
-                if (BuildConfig.DEBUG && onViewTrackDetails != null && markNoise != null) {
+                // B27-A5 (N-07), in every build since B39-S2, and only in the Now Playing menu. "I heard noise just now": writes the last
+                // seconds of the USB output's summaries and the stream's state to a file and offers to share it (see NoiseMark).
+                if (onViewTrackDetails != null) {
                     Spacer(Modifier.height(DapSpacing.SectionGap))
 
-                    val markedText = stringResource(R.string.debug_mark_noise_done)
-                    val markFailedText = stringResource(R.string.debug_mark_noise_failed)
-                    DapGroup(title = stringResource(R.string.more_group_debug)) {
+                    val noiseMark = rememberNoiseMarkState()
+                    DapGroup(title = stringResource(R.string.more_group_diagnostics)) {
                         DapNavRow(
-                            label = stringResource(R.string.debug_mark_noise),
-                            description = stringResource(R.string.debug_mark_noise_supporting),
-                            onClick = {
-                                val name = markNoise(context)
-                                Toast.makeText(context, if (name != null) "$markedText $name" else markFailedText, Toast.LENGTH_LONG).show()
-                            },
+                            label = stringResource(R.string.noise_mark),
+                            description = stringResource(R.string.noise_mark_supporting),
+                            onClick = { noiseMark.mark(context) },
                             divider = false,
                         )
                     }
+                    NoiseMarkDialog(noiseMark)
                 }
             }
+    }
+    if (presentation == SongOptionsPresentation.PAGE) {
+        CompositionLocalProvider(LocalOverscrollFactory provides null) { optionsColumn(modifier.fillMaxSize()) }
+    } else {
+    GlassModalBottomSheet(
+        onDismissRequest = {
+            if (!showEditSheet) {
+                onDismiss()
+            }
+        },
+        sheetState = sheetState,
+        containerColor = Dap.surface,
+        contentColor = Dap.primaryText,
+        shape = RoundedCornerShape(topStart = DapRadius.SheetTop, topEnd = DapRadius.SheetTop),
+        contentWindowInsets = { WindowInsets(top = 0, bottom = 0) },
+    ) {
+        // This window is its own surface, so the activity's volume-key path does not
+        // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
+        ModalInputBridge()
+        CompositionLocalProvider(LocalOverscrollFactory provides null) {
+            optionsColumn(Modifier)
         }
     }
+    }
 
-    EditSongSheet(
-        visible = showEditSheet,
-        song = song,
-        onDismiss = { showEditSheet = false },
-        onSave = { title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArt ->
-            onEditSong(
-                title,
-                artist,
-                album,
-                albumArtist,
-                composer,
-                genre,
-                lyrics,
-                trackNumber,
-                discNumber,
-                replayGainTrackGainDb,
-                replayGainAlbumGainDb,
-                coverArt
-            )
-            showEditSheet = false
-        },
-    )
+    // Retain the snapshot during the closing animation too; a later edit captures a new one.
+    editSession?.let { session ->
+        EditSongSheet(
+            visible = showEditSheet,
+            song = session.song,
+            onDismiss = { showEditSheet = false },
+            onSave = { title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArt ->
+                session.save(
+                    title,
+                    artist,
+                    album,
+                    albumArtist,
+                    composer,
+                    genre,
+                    lyrics,
+                    trackNumber,
+                    discNumber,
+                    replayGainTrackGainDb,
+                    replayGainAlbumGainDb,
+                    coverArt
+                )
+                showEditSheet = false
+            },
+        )
+    }
 
     when (val state = musicBrainzState) {
         SongInfoBottomSheetViewModel.MusicBrainzUiState.Idle,

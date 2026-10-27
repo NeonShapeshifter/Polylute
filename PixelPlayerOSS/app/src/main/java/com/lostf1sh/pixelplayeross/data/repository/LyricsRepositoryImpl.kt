@@ -23,6 +23,8 @@ import com.lostf1sh.pixelplayeross.utils.LyricsUtils
 import com.lostf1sh.pixelplayeross.utils.NetworkRetryUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
@@ -156,8 +158,27 @@ private data class RemoteSearchStrategy(
 
 private data class RemoteSearchBatch(
     val strategyName: String,
-    val responses: List<LrcLibResponse>
+    val responses: List<LrcLibResponse>,
+    /** The strategy ended in an error (after its retries): it did not answer, not even "nothing". */
+    val failed: Boolean = false,
 )
+
+/**
+ * What the strategies run together found (B41-fix2). [allAnswered] is true only when **every** strategy answered, and none of them failed or was
+ * left unexamined (B42-fix1): it is false when one failed, and false when the run came back early on a useful answer and cancelled the rest.
+ */
+private class RemoteStrategiesRun(val responses: List<LrcLibResponse>, val allAnswered: Boolean)
+
+/**
+ * What a search of LRCLIB brought back, apart from what any one file takes from it (B41-fix2). The callers that are the same song to LRCLIB share
+ * this; **each of them chooses from it for its own duration and version**. [conclusive]: every search that was made answered and was examined (an
+ * empty answer is an answer). Then an empty [responses] is "LRCLIB has nothing", and a [responses] with nothing that fits a file is that file's
+ * definitive miss (B42-fix1). False when any search failed or was left unexamined: both are a failure to try again after the cooldown.
+ */
+private class RemoteSearchAnswers(val responses: List<LrcLibResponse>, val conclusive: Boolean)
+
+/** A finished search that may have nobody left to use it (B42-fix1): when it ended, and what it brought back. */
+private class CompletedAnswers(val answers: RemoteSearchAnswers, val atMs: Long)
 
 private enum class RemoteLyricsMatchMode {
     AUTOMATIC,
@@ -188,6 +209,13 @@ class LyricsRepositoryImpl @Inject constructor(
         private const val MAX_CALLS_PER_MINUTE = 30
         private const val NETWORK_RETRY_ATTEMPTS = 3
         private const val NETWORK_RETRY_INITIAL_DELAY_MS = 500L
+
+        /** B41-fix1 (B8): how long a search that ended in an error is not started again for the same song. */
+        private const val REMOTE_FAILURE_COOLDOWN_MS = 30_000L
+
+        /** B42-fix1: how many finished searches are kept for a caller that comes back (a song change cancelled its caller), and for how long. */
+        private const val COMPLETED_ANSWERS_MAX = 16
+        private const val COMPLETED_ANSWERS_TTL_MS = 10 * 60_000L
 
         private val BRACKETED_QUALIFIER_REGEX = Regex("""[\(\[\{]([^)\]\}]*)[\)\]\}]""")
         private val FEATURE_QUALIFIER_REGEX = Regex("""\b(feat(?:uring)?|ft)\.?\b""", RegexOption.IGNORE_CASE)
@@ -253,56 +281,129 @@ class LyricsRepositoryImpl @Inject constructor(
     private val lastApiCalls = ConcurrentHashMap<String, Long>()
     private val apiCallCounts = ConcurrentHashMap<String, RateLimitWindow>()
 
+    // B41-fix1 (B8): one search of LRCLIB per song, whoever asks. Every song load used to make about four identical pairs of searches
+    // within a minute (`api/search?track_name=&artist_name=` and `api/search?q=`): the full player, the lyrics sheet and the rest each ask
+    // `getLyrics`, a newer ask cancelled the older one in the middle of its search and started the same search again, and "not found" was
+    // remembered nowhere. Now the search is a job of the repository's own scope that the callers wait for, so a caller that is cancelled
+    // neither stops it for the others nor makes the next one start it again; what it finds is kept as it always was (memory, database, the
+    // JSON file) and what it does not find is remembered for the session.
+    // B41-fix2: what is shared is the **answer** (the strategies' raw results), not the lyrics chosen from it: the choice is made per file, by its
+    // own duration and version, after the shared wait (two files of one title, 180 s and 360 s, used to get the first one's lyrics).
+    private val remoteSearches = ConcurrentHashMap<String, Deferred<CompletedAnswers>>()
+
+    /** The songs LRCLIB has nothing for at all (every search answered, all empty), this session: asked again only when the listener asks for a refresh. */
+    private val remoteNotFound: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /** The files LRCLIB answered for, with nothing that fits **them** (their duration, their version): per file, never shared with another version. */
+    private val remoteNoFit: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * When a search of a song ended in an error (offline, a server fault, one of its strategies failing), so it is not hammered while it keeps failing.
+     * Keyed by the song ([remoteSearchKey]); B42-fix1 also keys it by a file ([remoteSongKey]) for a search that was incomplete and found nothing that fits it.
+     */
+    private val remoteFailedAtMs = ConcurrentHashMap<String, Long>()
+
+    // B42-fix1: since B41-fix2 nothing is stored inside the shared job (the callers store what they take from the answer), so an answer that came
+    // after its only caller was cancelled (a song change) was thrown away, and the listener coming back asked LRCLIB again. The job now leaves its
+    // answer here, before it ends and whether or not anyone is left to read it: a few entries, for a while. The choice from it is still each file's.
+    private val completedAnswers = object : LinkedHashMap<String, CompletedAnswers>(COMPLETED_ANSWERS_MAX, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CompletedAnswers>?): Boolean = size > COMPLETED_ANSWERS_MAX
+    }
+
+    private fun rememberAnswers(key: String, answers: RemoteSearchAnswers): CompletedAnswers {
+        val completed = CompletedAnswers(answers, clockMs())
+        synchronized(completedAnswers) { completedAnswers[key] = completed }
+        return completed
+    }
+
+    private fun completedAnswersFor(key: String): CompletedAnswers? {
+        synchronized(completedAnswers) {
+            val kept = completedAnswers[key] ?: return null
+            if (clockMs() - kept.atMs >= COMPLETED_ANSWERS_TTL_MS) {
+                completedAnswers.remove(key)
+                return null
+            }
+            return kept
+        }
+    }
+
+    /** Drops the kept answer of a song: all of it, or only [answers] (a reader that judged it a failure must not drop a newer one). */
+    private fun forgetAnswers(key: String, answers: RemoteSearchAnswers? = null) {
+        synchronized(completedAnswers) {
+            val kept = completedAnswers[key] ?: return
+            if (answers == null || kept.answers === answers) completedAnswers.remove(key)
+        }
+    }
+
+    /** The clock the error cooldown reads; a test moves it instead of waiting for it. */
+    internal var clockMs: () -> Long = System::currentTimeMillis
+
     private val gson = Gson()
 
     private suspend fun isExternalLyricsEnabled(): Boolean =
         userPreferencesRepository.externalLyricsEnabledFlow.first()
 
     /**
-     * Executes multiple remote search strategies in parallel and returns the first non-empty result set.
+     * Executes multiple remote search strategies in parallel and returns the first useful result set.
      * This keeps search responsive while preserving the existing "first useful strategy wins" behavior.
+     *
+     * "Useful" is [isUseful]: by default any non-empty answer. A caller that knows what it needs (B42-fix1: lyrics that fit **this** file) says so,
+     * and an answer that is not useful does not end the run, so the other strategies are still examined and a miss is a miss of all of them.
      */
     private suspend fun runSearchStrategiesFast(
-        strategies: List<RemoteSearchStrategy>
-    ): List<LrcLibResponse> = coroutineScope {
-        if (strategies.isEmpty()) return@coroutineScope emptyList()
+        strategies: List<RemoteSearchStrategy>,
+        isUseful: (List<LrcLibResponse>) -> Boolean = { true },
+    ): RemoteStrategiesRun = coroutineScope {
+        if (strategies.isEmpty()) return@coroutineScope RemoteStrategiesRun(emptyList(), allAnswered = true)
 
         val channel = Channel<RemoteSearchBatch>(capacity = strategies.size)
         val jobs = strategies.map { strategy ->
             launch {
-                val responses = runCatching {
+                val answer = runCatching {
                     withNetworkRetry(operationName = "lrclib_strategy:${strategy.name}") {
                         strategy.request()
                     }
                 }.getOrElse { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
                     Timber.tag(TAG).d(
                         "Strategy ${strategy.name} failed after retries: ${error.message}"
                     )
                     null
                 }
-                    ?.toList()
-                    .orEmpty()
                 channel.trySend(
                     RemoteSearchBatch(
                         strategyName = strategy.name,
-                        responses = responses
+                        // an answer, even an empty one: the server was asked and said so; no answer at all is a failure
+                        responses = answer?.toList().orEmpty(),
+                        failed = answer == null,
                     )
                 )
             }
         }
 
+        var anyFailed = false
+        var received = 0
+        // what answered but was not useful: kept, because another file that shares this search may find its own lyrics in it
+        val unused = mutableListOf<LrcLibResponse>()
         repeat(strategies.size) {
             val batch = channel.receive()
+            received++
+            if (batch.failed) anyFailed = true
             if (batch.responses.isNotEmpty()) {
-                Timber.tag(TAG).d("Fast search hit from strategy: ${batch.strategyName} (${batch.responses.size} results)")
-                jobs.forEach { it.cancel() }
-                channel.close()
-                return@coroutineScope batch.responses.distinctBy { it.id }
+                unused += batch.responses
+                if (isUseful(batch.responses)) {
+                    Timber.tag(TAG).d("Fast search hit from strategy: ${batch.strategyName} (${batch.responses.size} results)")
+                    // coming back now leaves the others unexamined: it only proves the search complete if they had all answered by then
+                    val examinedAll = received == strategies.size && !anyFailed
+                    jobs.forEach { it.cancel() }
+                    channel.close()
+                    return@coroutineScope RemoteStrategiesRun(unused.distinctBy { it.id }, allAnswered = examinedAll)
+                }
             }
         }
 
         channel.close()
-        emptyList()
+        RemoteStrategiesRun(unused.distinctBy { it.id }, allAnswered = !anyFailed)
     }
 
     private suspend fun <T> withNetworkRetry(
@@ -415,7 +516,7 @@ class LyricsRepositoryImpl @Inject constructor(
 
         val remoteLyricsEnabled = isExternalLyricsEnabled()
         val fetchers: Map<String, suspend () -> Lyrics?> = mapOf(
-            SOURCE_API to { fetchLyricsFromAPI(song) },
+            SOURCE_API to { fetchLyricsFromAPI(song, forceRefresh) },
             SOURCE_EMBEDDED to { loadEmbeddedLyricsFromMetadata(song) },
             SOURCE_SIDECAR to { findLocalLyricsFile(song) }
         )
@@ -468,6 +569,12 @@ class LyricsRepositoryImpl @Inject constructor(
         }.onFailure { Timber.tag(TAG).w(it, "Unable to cache local lyrics for ${song.title}") }
     }
 
+    override suspend fun prepareForOffline(song: Song): Lyrics? = withContext(Dispatchers.IO) {
+        // A manual batch is explicit consent for these tracks; it never changes the automatic-download preference.
+        // Use the same per-version matching and durable cache as normal playback, preserving existing/local lyrics.
+        getLyrics(song, LyricsSourcePreference.EMBEDDED_FIRST) ?: fetchLyricsFromAPI(song)?.also { saveLocalLyricsJson(song, it) }
+    }
+
     override suspend fun getStoredLyrics(song: Song): Pair<Lyrics, String>? = withContext(Dispatchers.IO) {
         val cacheKey = generateCacheKey(song.id)
         loadStoredLyrics(song, cacheKey, includeMemoryCache = true)?.also { stored ->
@@ -478,13 +585,80 @@ class LyricsRepositoryImpl @Inject constructor(
     /**
      * Fetches lyrics from LRCLIB API with rate limiting (matching Rhythm)
      */
-    private suspend fun fetchLyricsFromAPI(song: Song): Lyrics? = withContext(Dispatchers.IO) {
+    private suspend fun fetchLyricsFromAPI(song: Song, forceRefresh: Boolean = false): Lyrics? = withContext(Dispatchers.IO) {
         val cachedJson = loadLocalLyricsJson(song)
         if (cachedJson != null) {
             Timber.tag(TAG).d("===== LOADED LYRICS FROM JSON DISK CACHE =====")
             return@withContext cachedJson
         }
 
+        val key = remoteSearchKey(song)
+        val songKey = remoteSongKey(key, song)
+        if (!forceRefresh) {
+            if (key in remoteNotFound) {
+                Timber.tag(TAG).d("LRCLIB has nothing for '${song.title}' (asked already this session): not asking again")
+                return@withContext null
+            }
+            if (songKey in remoteNoFit) {
+                Timber.tag(TAG).d("LRCLIB has nothing that fits this version of '${song.title}' (asked already this session): not asking again")
+                return@withContext null
+            }
+            val failedAt = listOfNotNull(remoteFailedAtMs[key], remoteFailedAtMs[songKey]).maxOrNull()
+            if (failedAt != null && clockMs() - failedAt < REMOTE_FAILURE_COOLDOWN_MS) {
+                Timber.tag(TAG).d("LRCLIB failed for '${song.title}' a moment ago: not asking again yet")
+                return@withContext null
+            }
+        } else {
+            remoteNotFound.remove(key)
+            remoteNoFit.remove(songKey)
+            remoteFailedAtMs.remove(key)
+            remoteFailedAtMs.remove(songKey)
+            forgetAnswers(key)
+        }
+
+        val completed = awaitRemoteAnswers(key, song)
+        val lyrics = lyricsFromAnswers(song, key, songKey, completed.answers, completed.atMs)
+        if (lyrics != null || completed.answers.conclusive || clockMs() - completed.atMs < REMOTE_FAILURE_COOLDOWN_MS) {
+            return@withContext lyrics
+        }
+
+        // A cancelled caller may have left an incomplete answer whose cooldown has already elapsed. The reader above dropped that miss,
+        // retaining its original failure time; retry now, once, instead of making the listener return again. A useful cached answer returned
+        // above stays reusable, including for another file's duration/version.
+        val retried = awaitRemoteAnswers(key, song)
+        lyricsFromAnswers(song, key, songKey, retried.answers, retried.atMs)
+    }
+
+    private suspend fun awaitRemoteAnswers(key: String, song: Song): CompletedAnswers {
+        // The first caller starts the search in the repository's own scope and the others wait for the same one. (Started only once it is in
+        // the map, so that its end can never remove an entry that is not there yet.) B42-fix1: a search that ended with nobody to read it left its
+        // answer in `completedAnswers` before the slot was freed, so the job that takes the slot after it reads that instead of asking again.
+        val created = repositoryScope.async(start = CoroutineStart.LAZY) {
+            completedAnswersFor(key) ?: rememberAnswers(key, searchLrcLib(song))
+        }
+        val running = remoteSearches.putIfAbsent(key, created)
+        val search = running ?: created.also { job ->
+            job.invokeOnCompletion { remoteSearches.remove(key, job) }
+            job.start()
+        }
+        if (running != null) created.cancel()
+        // what was answered is shared; what is taken from it is this file's own
+        return search.await().also { remoteSearches.remove(key, search) }
+    }
+
+    /** What two songs that are the same song to LRCLIB share: its words for the artist and the title. */
+    private fun remoteSearchKey(song: Song): String =
+        "${song.displayArtist.trim().replace(Regex("\\(.*?\\)"), "").trim()}|${song.title.trim().replace(Regex("\\(.*?\\)"), "").trim()}".lowercase()
+
+    /** One file: the song's key and what picks a version of it out. */
+    private fun remoteSongKey(key: String, song: Song): String = "$key#${song.id}#${song.duration}"
+
+    /**
+     * The search itself, with the rate limit: the strategies in parallel, the first that finds something wins. It returns what the server
+     * answered and whether every search answered ([RemoteSearchAnswers]); it chooses nothing, because the callers that share it are not all the
+     * same file.
+     */
+    private suspend fun searchLrcLib(song: Song): RemoteSearchAnswers = withContext(Dispatchers.IO) {
         val currentTime = System.currentTimeMillis()
         val delayNeeded = calculateApiDelay("lrclib", currentTime)
         if (delayNeeded > 0) {
@@ -529,7 +703,14 @@ class LyricsRepositoryImpl @Inject constructor(
                 }
             }
 
-            var results = runSearchStrategiesFast(searchStrategies)
+            // an answer is the end of the run when something in it fits the file that started the search; if not, the others are still asked,
+            // so that "nothing fits" is only said when every strategy was examined (B42-fix1)
+            val run = runSearchStrategiesFast(searchStrategies) { answer ->
+                rankRemoteLyricsMatches(song, answer, RemoteLyricsMatchMode.AUTOMATIC).isNotEmpty()
+            }
+            var results = run.responses
+            // every search that is made counts, the fallback too: "nothing" is only what all of them said
+            var conclusive = run.allAnswered
 
             if (results.isEmpty()) {
                  val separators = charArrayOf('-', ',', '(', ')', '$', '#', ':', '%')
@@ -538,11 +719,16 @@ class LyricsRepositoryImpl @Inject constructor(
                      val superCleanTitle = cleanTitle.substring(0, index).trim()
                      if (superCleanTitle.isNotEmpty()) {
                           Timber.tag(TAG).d("Strategy 4: Searching with super simplified title: '$superCleanTitle' (no artist)")
-                          val fallbackResults = runCatching {
+                          val fallback = runCatching {
                                 withNetworkRetry(operationName = "lrclib_super_clean_search") {
                                     lrcLibApiService.searchLyrics(trackName = superCleanTitle)
                                 }
-                          }.getOrNull()
+                          }
+                          fallback.exceptionOrNull()?.let { error ->
+                              if (error is kotlinx.coroutines.CancellationException) throw error
+                              conclusive = false
+                          }
+                          val fallbackResults = fallback.getOrNull()
                           if (!fallbackResults.isNullOrEmpty()) {
                               results = fallbackResults.toList()
                           }
@@ -550,47 +736,81 @@ class LyricsRepositoryImpl @Inject constructor(
                  }
             }
 
-            if (results.isEmpty()) {
-                Timber.tag(TAG).d("No results from LRCLIB API")
-                return@withContext null
-            }
-
-            val bestMatch = rankRemoteLyricsMatches(
-                song = song,
-                responses = results,
-                mode = RemoteLyricsMatchMode.AUTOMATIC
-            ).firstOrNull()?.response
-
-            if (bestMatch != null) {
-                val rawLyrics = bestMatch.syncedLyrics ?: bestMatch.plainLyrics
-                if (!rawLyrics.isNullOrBlank()) {
-                    val parsedLyrics = LyricsUtils.parseLyrics(rawLyrics).copy(areFromRemote = true)
-                    if (parsedLyrics.isValid()) {
-                        Timber.tag(TAG).d("LRCLIB lyrics found - Synced: ${!bestMatch.syncedLyrics.isNullOrBlank()}, Plain: ${!bestMatch.plainLyrics.isNullOrBlank()}")
-                        
-                        try {
-                            lyricsDao.insert(
-                                com.lostf1sh.pixelplayeross.data.database.LyricsEntity(
-                                    songId = song.id.toLong(),
-                                    content = rawLyrics,
-                                    isSynced = !bestMatch.syncedLyrics.isNullOrBlank(),
-                                    source = "remote"
-                                )
-                            )
-                        } catch (e: NumberFormatException) {
-                            Timber.tag(TAG).w("Skipping database save for non-numeric song ID: ${song.id}. Lyrics will be cached in JSON.")
-                        }
-                        
-                        return@withContext parsedLyrics
-                    }
-                }
-            }
-
-            return@withContext null
+            RemoteSearchAnswers(results, conclusive)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "LRCLIB lyrics fetch failed: ${e.message}")
-            return@withContext null
+            RemoteSearchAnswers(emptyList(), conclusive = false)
         }
+    }
+
+    /**
+     * What this file takes from what LRCLIB answered. Empty and conclusive: LRCLIB has nothing for the song, for the session. Empty and not
+     * conclusive: a failure, for the cooldown. Something, and nothing in it fits this file's duration and version: that is **this file's**
+     * miss, and says nothing about another version of the song. It is a miss for the session only if the search was conclusive (B42-fix1); if
+     * a search failed or was not examined, it is the cooldown's, for this file, and the kept answer is dropped so the retry asks again.
+     */
+    private suspend fun lyricsFromAnswers(song: Song, key: String, songKey: String, answers: RemoteSearchAnswers, completedAtMs: Long): Lyrics? {
+        if (answers.responses.isEmpty()) {
+            if (answers.conclusive) {
+                // Every search was asked and has nothing: not asked again this session.
+                Timber.tag(TAG).d("No results from LRCLIB API")
+                remoteNotFound.add(key)
+            } else {
+                // At least one search ended in an error: that is not an answer, and is not remembered as one.
+                Timber.tag(TAG).d("LRCLIB did not answer completely")
+                remoteFailedAtMs[key] = completedAtMs
+                forgetAnswers(key, answers)
+            }
+            return null
+        }
+
+        val bestMatch = rankRemoteLyricsMatches(
+            song = song,
+            responses = answers.responses,
+            mode = RemoteLyricsMatchMode.AUTOMATIC
+        ).firstOrNull()?.response
+
+        if (bestMatch != null) {
+            val rawLyrics = bestMatch.syncedLyrics ?: bestMatch.plainLyrics
+            if (!rawLyrics.isNullOrBlank()) {
+                val parsedLyrics = LyricsUtils.parseLyrics(rawLyrics).copy(areFromRemote = true)
+                if (parsedLyrics.isValid()) {
+                    Timber.tag(TAG).d("LRCLIB lyrics found - Synced: ${!bestMatch.syncedLyrics.isNullOrBlank()}, Plain: ${!bestMatch.plainLyrics.isNullOrBlank()}")
+
+                    try {
+                        lyricsDao.insert(
+                            com.lostf1sh.pixelplayeross.data.database.LyricsEntity(
+                                songId = song.id.toLong(),
+                                content = rawLyrics,
+                                isSynced = !bestMatch.syncedLyrics.isNullOrBlank(),
+                                source = "remote"
+                            )
+                        )
+                    } catch (e: NumberFormatException) {
+                        Timber.tag(TAG).w("Skipping database save for non-numeric song ID: ${song.id}. Lyrics will be cached in JSON.")
+                    }
+
+                    remoteNotFound.remove(key)
+                    remoteNoFit.remove(songKey)
+                    remoteFailedAtMs.remove(key)
+                    remoteFailedAtMs.remove(songKey)
+                    return parsedLyrics
+                }
+            }
+        }
+
+        if (answers.conclusive) {
+            // LRCLIB answered, every search was examined, and nothing in the answer is this file's lyrics: remembered for this file only.
+            remoteNoFit.add(songKey)
+        } else {
+            // Nothing in what was seen fits this file, but a search failed or was not examined, and could have found it: after the cooldown.
+            Timber.tag(TAG).d("Nothing that fits '${song.title}' in an incomplete search: asking again after the cooldown")
+            remoteFailedAtMs[songKey] = completedAtMs
+            forgetAnswers(key, answers)
+        }
+        return null
     }
 
     private fun hasLyrics(response: LrcLibResponse): Boolean =
@@ -1283,7 +1503,7 @@ class LyricsRepositoryImpl @Inject constructor(
                 })
             }
 
-            val uniqueResults = runSearchStrategiesFast(strategies)
+            val uniqueResults = runSearchStrategiesFast(strategies).responses
 
             if (uniqueResults.isNotEmpty()) {
                 val rankedMatches = rankRemoteLyricsMatches(
@@ -1354,7 +1574,7 @@ class LyricsRepositoryImpl @Inject constructor(
                 }
             }
 
-            val responses = runSearchStrategiesFast(strategies)
+            val responses = runSearchStrategiesFast(strategies).responses
 
             if (responses.isEmpty()) {
                 return@withContext Result.failure(NoLyricsFoundException(query))

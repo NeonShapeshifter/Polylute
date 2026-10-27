@@ -136,7 +136,7 @@ class B32MaintenanceBoundaryTest {
     /** The strings a listener sees that named the app "PixelPlayer(OSS)" and now name it Polylute. */
     private val rebranded = listOf(
         "maintenance_package_version", "maintenance_persistent_home_pixelplayer", "dac_forget_message",
-        "device_capabilities_report_share_title", "home_empty_placeholder_subtitle", "crash_report_share_subject",
+        "home_empty_placeholder_subtitle", "crash_report_share_subject",
         "backup_validation_format_unknown", "song_info_ringtone_permission_prompt", "presentation_batch_g_artist_info_body",
         "dap_device_admin_label",
     )

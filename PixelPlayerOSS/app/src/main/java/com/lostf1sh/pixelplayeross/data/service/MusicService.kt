@@ -1,5 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.service
 
+import com.lostf1sh.pixelplayeross.DevelopmentToolsPolicy
+
 import android.app.BackgroundServiceStartNotAllowedException
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.PendingIntent
@@ -46,7 +48,6 @@ import com.lostf1sh.pixelplayeross.PixelPlayerApplication
 import com.lostf1sh.pixelplayeross.MainActivity
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.audio.dsp.HeadphoneGraphicEqController.Companion.toDspSettings
-import com.lostf1sh.pixelplayeross.data.diagnostics.AdvancedPerformanceDiagnostics
 import com.lostf1sh.pixelplayeross.data.model.PlayerInfo
 import com.lostf1sh.pixelplayeross.data.model.PlaybackQueueItemSnapshot
 import com.lostf1sh.pixelplayeross.data.model.PlaybackQueueSnapshot
@@ -190,6 +191,8 @@ class MusicService : MediaSessionService() {
     lateinit var safetyVolumeController: dagger.Lazy<com.lostf1sh.pixelplayeross.data.volume.SafetyVolumeController>
     @Inject
     lateinit var directDuckController: com.lostf1sh.pixelplayeross.data.service.player.DirectDuckController
+    @Inject
+    lateinit var fixedOutputNotice: dagger.Lazy<com.lostf1sh.pixelplayeross.data.volume.FixedOutputNoticeCoordinator>
     @Inject
     lateinit var themePreferencesRepository: ThemePreferencesRepository
     @Inject
@@ -341,7 +344,7 @@ class MusicService : MediaSessionService() {
 
     /** The two ends of the bracket that times what the session does with a timeline change (B19-S4); see [SessionPublicationMeter]. */
     private val publicationHandler by lazy(LazyThreadSafetyMode.NONE) { Handler(Looper.getMainLooper()) }
-    private val publicationMeter = SessionPublicationMeter(
+    private val publicationMeter = if (DevelopmentToolsPolicy.enabled()) SessionPublicationMeter(
         clockMs = { SystemClock.elapsedRealtime() },
         post = { block -> publicationHandler.post(block) },
         log = { sessionMs, controllersMs, items, reason ->
@@ -361,7 +364,7 @@ class MusicService : MediaSessionService() {
                 controllersMs, busiest.joinToString("; ") { "${it.ms} ms ${it.what}" },
             )
         },
-    )
+    ) else null
 
     private fun wrapFadingPlayer(player: Player): Player {
         val fadingPlayer = com.lostf1sh.pixelplayeross.data.service.player.FadingPlayer(
@@ -381,8 +384,13 @@ class MusicService : MediaSessionService() {
             onPause = engine::notifyExternalPauseInitiated,
             // What the listener asked of the transport is how the listen it closes is recorded to have ended (B28).
             onUserTransport = listeningStatsTracker::noteUserDeparture,
+            // B39-S1: a play on a DAC with no volume the app can set waits for the notice, whoever asked for it.
+            // B39-A7: and a play while the DAC is handed back for other apps waits for focus and the DAC (never both apps at once).
+            playGate = { fixedOutputNotice.get().allowPlay() && engine.allowPlayForDacShare() },
+            // B40-fix2: and a pause or a stop, from any controller, cancels the play that is waiting for the protection to take effect.
+            onPlaybackCancelled = { fixedOutputNotice.get().cancelOwedPlay() },
         // Before the session registers its own listener on it: the start of the bracket that times a publication (B19-S4).
-        ).also { it.addListener(publicationMeter.begin) }
+        ).also { player -> publicationMeter?.let { player.addListener(it.begin) } }
     }
 
     private fun publishMediaSessionPlayer(player: Player, logMessage: String) {
@@ -391,11 +399,13 @@ class MusicService : MediaSessionService() {
         val unwrappedOld = oldPlayer.unwrapMappingPlayer().unwrapFadingPlayer()
         if (unwrappedOld !== player) {
             oldPlayer.removeListener(playerListener)
-            oldPlayer.removeListener(publicationMeter.begin)
-            oldPlayer.removeListener(publicationMeter.end)
+            publicationMeter?.let {
+                oldPlayer.removeListener(it.begin)
+                oldPlayer.removeListener(it.end)
+            }
             val wrappedPlayer = wrapFadingPlayer(player)
             session.player = wrappedPlayer
-            wrappedPlayer.addListener(publicationMeter.end)
+            publicationMeter?.let { wrappedPlayer.addListener(it.end) }
             wrappedPlayer.addListener(playerListener)
         }
 
@@ -669,6 +679,16 @@ class MusicService : MediaSessionService() {
         val safetyRefusalNotifier = com.lostf1sh.pixelplayeross.data.volume.SafetyMaxRefusalNotifier(this)
         serviceScope.launch {
             safetyVolumeController.get().refusals.collect { safetyRefusalNotifier.post() }
+        }
+
+        // B39-A7: "Share the DAC with other apps" (Resonance only): the engine does not read preferences itself.
+        serviceScope.launch {
+            userPreferencesRepository.dacShareEnabledFlow.collect { enabled -> engine.setDacShareEnabled(enabled) }
+        }
+
+        // B40-F8: Resonance's peak limiter (Android route): the engine does not read preferences itself.
+        serviceScope.launch {
+            userPreferencesRepository.resonanceLimiterEnabledFlow.collect { enabled -> engine.setResonanceLimiterEnabled(enabled) }
         }
 
         serviceScope.launch {
@@ -977,10 +997,14 @@ class MusicService : MediaSessionService() {
             .setBitmapLoader(CoilBitmapLoader(this, serviceScope))
             .build()
         // The session has registered its listener: the end of the bracket that times a publication goes right behind it (B19-S4).
-        mediaSession?.player?.addListener(publicationMeter.end)
+        publicationMeter?.let { mediaSession?.player?.addListener(it.end) }
+        // B39-S1: "Play" on the fixed-output notice starts the playback it held, through the session's own player (and its gate, now open).
+        // B40-fix3: the coordinator calls this on the main thread, from its own Runnable, and only if the play is still wanted when that runs
+        // (no pause or stop since, the same attachment): this is the action, so it does not post anything itself.
+        fixedOutputNotice.get().resumePlayback = { mediaSession?.player?.play() }
 
         val localOnlyProvider = LocalOnlyMediaNotificationProvider(this).also {
-            it.setSmallIcon(R.drawable.monochrome_player)
+            it.setSmallIcon(R.drawable.ic_stat_polylute)
         }
         setMediaNotificationProvider(localOnlyProvider)
         if (temporaryForegroundStartedInOnCreate) {
@@ -1024,7 +1048,7 @@ class MusicService : MediaSessionService() {
             this,
             PixelPlayerApplication.NOTIFICATION_CHANNEL_ID
         )
-            .setSmallIcon(R.drawable.monochrome_player)
+            .setSmallIcon(R.drawable.ic_stat_polylute)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.service_processing_action))
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -1454,15 +1478,6 @@ class MusicService : MediaSessionService() {
         override fun onPlayerError(error: PlaybackException) {
             val player = mediaSession?.player ?: engine.masterPlayer
             Timber.tag(TAG).e(error, "Player error on item %s", player.currentMediaItem?.mediaId)
-            AdvancedPerformanceDiagnostics.recordEventIfEnabled(
-                type = AdvancedPerformanceDiagnostics.EventTypes.PLAYBACK,
-                name = "player_error"
-            ) {
-                mapOf(
-                    "code" to error.errorCodeName,
-                    "message" to (error.message ?: error.javaClass.simpleName)
-                )
-            }
             if (player.hasNextMediaItem() && consecutivePlaybackErrors < maxConsecutivePlaybackErrors) {
                 consecutivePlaybackErrors++
                 player.seekToNextMediaItem()

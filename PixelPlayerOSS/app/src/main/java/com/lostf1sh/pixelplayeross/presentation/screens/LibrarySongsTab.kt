@@ -56,6 +56,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.LoadState
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.presentation.components.ExpressiveScrollBar
+import com.lostf1sh.pixelplayeross.presentation.components.symmetricSidePadding
 import com.lostf1sh.pixelplayeross.presentation.components.LocalArtworkLoadDeferred
 import com.lostf1sh.pixelplayeross.presentation.components.rememberFlingState
 import com.lostf1sh.pixelplayeross.presentation.components.songFastScrollLabel
@@ -267,7 +268,7 @@ fun LibrarySongsTab(
                         CompositionLocalProvider(LocalArtworkLoadDeferred provides flinging) {
                         LazyColumn(
                             modifier = Modifier
-                                .padding(start = 12.dp, end = if (listState.canScrollForward || listState.canScrollBackward) 22.dp else 12.dp, bottom = 6.dp)
+                                .symmetricSidePadding(horizontal = 12.dp, bottom = 6.dp)
                                 .clip(
                                     RoundedCornerShape(
                                         topStart = 26.dp,
@@ -334,6 +335,7 @@ fun LibrarySongsTab(
                             bottomBarHeight + 16.dp
 
                         ExpressiveScrollBar(
+                            contentEndMargin = 12.dp,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .padding(end = 4.dp, top = 16.dp, bottom = bottomPadding),

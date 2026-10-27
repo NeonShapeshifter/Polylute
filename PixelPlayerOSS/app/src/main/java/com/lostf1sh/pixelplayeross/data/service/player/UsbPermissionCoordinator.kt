@@ -44,6 +44,16 @@ class UsbPermissionCoordinator(private val timeoutMs: Long = DEFAULT_TIMEOUT_MS)
         pendingSince.remove(device)
     }
 
+    /**
+     * B39-A8: the listener asked to be asked again. A denial (or a dialog dismissed) is remembered for the attachment so that it is not
+     * re-raised on every refresh, which left a DAC that was never allowed on the Android route with nothing saying so and no way to ask: this
+     * forgets that for one device, and a request still pending (one that never produced a dialog) is dropped, so the next one is made.
+     */
+    fun forget(device: String) {
+        denied -= device
+        pendingSince.remove(device)
+    }
+
     fun onAllDetached() {
         pendingSince.clear()
         denied.clear()

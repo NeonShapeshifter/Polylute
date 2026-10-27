@@ -44,14 +44,17 @@ class PlaybackSemanticsBoundaryTest {
         assertThat(eot).doesNotContain("playerCtrl.seekTo(0L)")
     }
 
-    /** AUD-050: elapsed-time alarms, immune to wall-clock and time-zone changes. */
+    /**
+     * AUD-050: elapsed-time alarms, immune to wall-clock and time-zone changes. B40-F9c: the alarm is armed in one place, `SleepTimerAlarm`,
+     * which both the service and the view model's sleep timer use.
+     */
     @Test
     fun `sleep timers use ELAPSED_REALTIME_WAKEUP`() {
-        for (path in listOf("$java/data/service/PlaybackTimerController.kt", "$java/presentation/viewmodel/SleepTimerStateHolder.kt")) {
-            val source = read(path)
-            assertThat(source).doesNotContain("RTC_WAKEUP")
-            assertThat(source).contains("ELAPSED_REALTIME_WAKEUP")
+        for (path in listOf("$java/data/service/PlaybackTimerController.kt", "$java/presentation/viewmodel/SleepTimerStateHolder.kt", "$java/data/service/SleepTimerAlarm.kt")) {
+            assertThat(read(path)).doesNotContain("RTC_WAKEUP")
         }
+        assertThat(read("$java/data/service/SleepTimerAlarm.kt")).contains("ELAPSED_REALTIME_WAKEUP")
+        assertThat(read("$java/presentation/viewmodel/SleepTimerStateHolder.kt")).contains("SleepTimerAlarm.schedule(context, SystemClock.elapsedRealtime() + durationMillis)")
         assertThat(read("$java/data/service/PlaybackTimerController.kt")).contains("SystemClock.elapsedRealtime()")
     }
 

@@ -15,8 +15,11 @@ class DailyMixDayBoundaryWiringTest {
     private val activity = File("$base/MainActivity.kt").readText()
 
     @Test
-    fun `the holder decides the day with the schedule rules`() {
-        assertThat(holder).contains("DailyMixSchedule.isNewDay(")
+    fun `the holder asks the collections whether the mix they hold is for today`() {
+        // B42-fix1: the day the mix was made for (stored with it), against today's in the zone in force now. It used to compare the day of
+        // the last build's instant with today's, which a time-zone change that moves the local date does not touch.
+        assertThat(holder).contains("collections.refreshIfDayChanged()")
+        assertThat(holder).doesNotContain("DailyMixSchedule.isNewDay(")
         assertThat(holder).doesNotContain("fun localEpochDay(")
     }
 

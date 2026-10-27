@@ -27,6 +27,10 @@
     <string name="home_mode_open_security">Abrir ajustes de seguridad</string>
     <string name="home_mode_dedicated_body">Dedicado bloquea Polylute con el Lock Task de Android y gestiona la pantalla de bloqueo. Necesita Device Owner.</string>
     <string name="home_mode_guide_title">Hacer a Polylute propietaria del dispositivo</string>
+    <string name="home_mode_guide_who">Dedicado es para un móvil que solo será reproductor, idealmente uno de sobra. En un móvil de uso diario, Modo app o Fijado encajan mejor.</string>
+    <string name="home_mode_guide_why_clear">Por qué hay que quitar las cuentas: Android solo nombra un propietario del dispositivo en un móvil que parece sin usar. Es una regla de seguridad y solo importa en el momento del comando; vuelve a añadir tus cuentas justo después.</string>
+    <string name="home_mode_guide_extra_users">La Carpeta segura de Samsung y los perfiles de trabajo cuentan como usuarios adicionales. Al eliminarlos se borran sus datos.</string>
+    <string name="home_mode_guide_leave">Puedes dejar Dedicado cuando quieras desde esta página (Dejar de ser propietario del dispositivo). Sin restablecer.</string>
     <string name="home_mode_guide_requirements">Requisitos: ningún usuario ni cuenta en el dispositivo al hacerlo (un móvil nuevo o restablecido, o quita antes todas las cuentas), depuración USB activada y un ordenador con adb.</string>
     <string name="home_mode_guide_command_label">Ejecuta esto en el ordenador:</string>
     <string name="home_mode_guide_copy">Copiar comando</string>

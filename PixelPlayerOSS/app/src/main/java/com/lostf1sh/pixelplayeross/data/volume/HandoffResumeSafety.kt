@@ -2,6 +2,7 @@ package com.lostf1sh.pixelplayeross.data.volume
 
 import com.lostf1sh.pixelplayeross.data.headphones.SafetyVolumeBackendKind
 import com.lostf1sh.pixelplayeross.data.service.player.HandoffVolumeVerdict
+import com.lostf1sh.pixelplayeross.data.service.player.UserPlayLevel
 
 /**
  * Whether the automatic Direct handoff may give playback back, read from the published Safety state.
@@ -37,6 +38,27 @@ object HandoffResumeSafety {
                     ceiling != null -> HandoffVolumeVerdict.RESUME
                     (state.hardwareDecibels ?: Float.MAX_VALUE) <= CONSERVATIVE_RESUME_DB -> HandoffVolumeVerdict.RESUME
                     else -> HandoffVolumeVerdict.HOLD
+                }
+            }
+        }
+    }
+
+    /**
+     * B40-P1: whether a play the listener asked for may start on the DAC now. Only a level nobody read (or one above an armed ceiling the
+     * reconcile has not yet clamped) waits; a loud level without a ceiling does not: that holds *automatic* resumes ([verdict]) and nothing
+     * else. A fixed-output DAC has no level to confirm; its own notice (B39-S1) decides what the listener hears first.
+     */
+    fun userPlayLevel(state: SafetyVolumeState): UserPlayLevel {
+        val backend = state.backend
+        return when (backend.kind) {
+            SafetyVolumeBackendKind.FIXED_OUTPUT -> UserPlayLevel.CONFIRMED
+            SafetyVolumeBackendKind.ANDROID_MEDIA, SafetyVolumeBackendKind.UNKNOWN -> UserPlayLevel.UNCONFIRMED
+            SafetyVolumeBackendKind.USB_HARDWARE_VOLUME -> {
+                val ceiling = state.calibration?.ceilingRaw?.takeIf { state.safetyEnabled }
+                when {
+                    !backend.levelVerified -> UserPlayLevel.UNCONFIRMED
+                    ceiling != null && backend.rawLevel > ceiling -> UserPlayLevel.UNCONFIRMED
+                    else -> UserPlayLevel.CONFIRMED
                 }
             }
         }

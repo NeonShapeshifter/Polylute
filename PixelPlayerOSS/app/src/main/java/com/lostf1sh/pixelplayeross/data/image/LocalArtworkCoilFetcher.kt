@@ -15,7 +15,9 @@ import javax.inject.Inject
 
 class LocalArtworkCoilFetcher(
     private val uri: Uri,
-    private val options: Options
+    private val options: Options,
+    /** B40-F4: the cover of an album with none of its own, if one was downloaded; null when there is no such thing or it is switched off. */
+    private val downloadedCover: (suspend (songId: Long) -> java.io.File?)? = null,
 ) : Fetcher {
 
     override suspend fun fetch(): FetchResult? {
@@ -35,7 +37,7 @@ class LocalArtworkCoilFetcher(
                     songId = songId
                 )
             }
-        ) ?: return null
+        ) ?: downloadedCover?.invoke(songId) ?: return null
 
         return SourceResult(
             source = coil.decode.ImageSource(
@@ -56,10 +58,16 @@ class LocalArtworkCoilFetcher(
         }
     }
 
-    class Factory @Inject constructor() : Fetcher.Factory<Uri> {
+    class Factory @Inject constructor(
+        private val musicInfo: dagger.Lazy<com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository>,
+    ) : Fetcher.Factory<Uri> {
         override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
             return if (LocalArtworkUri.isLocalArtworkUri(data)) {
-                LocalArtworkCoilFetcher(data, options)
+                LocalArtworkCoilFetcher(data, options) { songId ->
+                    // the cache only; a miss queues the album (if covers are on) and the placeholder stays until the cover arrives
+                    val repository = musicInfo.get()
+                    repository.cachedCoverForSong(songId) ?: run { repository.noteMissingCover(songId); null }
+                }
             } else {
                 null
             }

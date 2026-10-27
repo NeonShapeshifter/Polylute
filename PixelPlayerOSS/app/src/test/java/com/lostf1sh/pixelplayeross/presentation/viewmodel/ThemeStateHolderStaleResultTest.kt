@@ -6,11 +6,15 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import com.google.common.truth.Truth.assertThat
 import com.lostf1sh.pixelplayeross.data.preferences.ThemePreferencesRepository
+import io.mockk.every
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import com.lostf1sh.pixelplayeross.data.model.Song
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -36,6 +40,28 @@ class ThemeStateHolderStaleResultTest {
         light = lightColorScheme(primary = Color(seed)),
         dark = darkColorScheme(primary = Color(seed)),
     )
+
+    @Test
+    fun `a pending track between songs does not request a black background, a known coverless track does`() = runTest {
+        fun song(art: String?) = mockk<Song> { every { albumArtUriString } returns art }
+        val a = StablePlayerState(currentSong = song("content://a"))
+        val b = StablePlayerState(currentSong = song("content://b"))
+        val pending = StablePlayerState(currentSong = null)
+        val noCover = StablePlayerState(currentSong = song(null))
+        val requests = flowOf(pending, a, pending, b, pending, noCover).artworkRequests().toList()
+        assertThat(requests).containsExactly("content://a", "content://b", null).inOrder()
+    }
+
+    @Test
+    fun `a proven empty queue clears the cover while a transient missing song retains it`() = runTest {
+        fun song(art: String?) = mockk<Song> { every { albumArtUriString } returns art }
+        val a = StablePlayerState(currentSong = song("content://a"))
+        val pending = StablePlayerState()
+        val empty = StablePlayerState(queueConfirmedEmpty = true)
+        val b = StablePlayerState(currentSong = song("content://b"))
+        val requests = flowOf(a, pending, empty, pending, b).artworkRequests().toList()
+        assertThat(requests).containsExactly("content://a", null, "content://b").inOrder()
+    }
 
     @Test
     fun `a late palette for the song before does not replace the one for the song that plays`() = runTest(StandardTestDispatcher()) {

@@ -37,10 +37,15 @@ object FiioEqReader {
         val count = readByte(session, CMD_COUNT, "eq_count")
         val preset = readByte(session, CMD_PRESET, "eq_preset")
         val gain = readGain(session)
-        val switch = when (val raw = readByte(session, CMD_SWITCH, "eq_switch")) {
-            is EqRead.Read -> EqRead.Read(raw.value != 0)
-            is EqRead.Unknown -> raw
-            is EqRead.Failed -> raw
+        val switch = if (!profile.answersEqSwitch) {
+            // B40-F2: not asked: the model gives the tail of the previous reply for it, and nothing may be read into that
+            EqRead.Unknown("${profile.displayName} does not answer the EQ switch command")
+        } else {
+            when (val raw = readByte(session, CMD_SWITCH, "eq_switch")) {
+                is EqRead.Read -> EqRead.Read(raw.value != 0)
+                is EqRead.Unknown -> raw
+                is EqRead.Failed -> raw
+            }
         }
         val bandsToRead = when {
             count is EqRead.Read && count.value in 1..profile.bandCount -> count.value

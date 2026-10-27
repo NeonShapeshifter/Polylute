@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import com.lostf1sh.pixelplayeross.R
+import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel
 import com.lostf1sh.pixelplayeross.data.audio.dsp.GraphicEqBands
 import com.lostf1sh.pixelplayeross.data.audio.dsp.GraphicEqResponse
 import com.lostf1sh.pixelplayeross.data.equalizer.EqualizerPreset
@@ -105,6 +107,9 @@ fun EqualizerScreen(
     equalizerViewModel: EqualizerViewModel = hiltViewModel(),
     headphoneProfilesViewModel: HeadphoneProfilesViewModel = hiltViewModel(),
     deviceControlViewModel: DeviceControlViewModel = hiltViewModel(),
+    /** B40-F2: the DAC's own EQ, offered when the attached DAC has one Polylute can edit and the listener has not allowed it. */
+    dacOffer: com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqOffer? = null,
+    onUseDacEq: () -> Unit = {},
 ) {
     val eq by equalizerViewModel.uiState.collectAsStateWithLifecycle()
     val outputContext by equalizerViewModel.outputContext.collectAsStateWithLifecycle()
@@ -115,11 +120,15 @@ fun EqualizerScreen(
         deviceControlViewModel.uiState.map { it.audioRouteKind }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = DapAudioRouteKind.ANDROID_AUDIO)
     val profile = profiles.profiles.firstOrNull { it.profile.profileId == equalizerViewModel.editedProfileId }
-    val state = remember(eq, outputContext, audioStatus, profile, outputKind) {
-        EqualizerScreenState.from(eq, outputContext, audioStatus, profile, outputKind)
+    val state = remember(eq, outputContext, audioStatus, profile, outputKind, dacOffer) {
+        EqualizerScreenState.from(eq, outputContext, audioStatus, profile, outputKind).copy(dacOffer = dacOffer)
     }
+    val currentUseDacEq by rememberUpdatedState(onUseDacEq)
     val actions = remember(equalizerViewModel, navController) {
-        EqualizerScreenActionsImpl(equalizerViewModel) { route -> navController.navigateSafely(route) }
+        val base = EqualizerScreenActionsImpl(equalizerViewModel) { route -> navController.navigateSafely(route) }
+        object : EqualizerScreenActions by base {
+            override fun onUseDacEq() = currentUseDacEq()
+        }
     }
     EqualizerScreenContent(state, actions)
 }
@@ -165,7 +174,14 @@ fun EqualizerScreenContent(state: EqualizerScreenState, actions: EqualizerScreen
             ) {
                 item(key = "eq_title") {
                     Column {
-                        DapScreenTitle(text = stringResource(R.string.settings_category_equalizer_title))
+                        // B39-A6: this equalizer is Polylute's own, applied on the phone; the DAC's is another one, named on its own screen.
+                        DapScreenTitle(text = stringResource(R.string.eq_polylute_title))
+                        Text(
+                            text = stringResource(R.string.eq_polylute_where),
+                            style = DapType.CaptionMedium,
+                            color = LocalDapAccent.current,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
                         Text(
                             text = subtitle,
                             style = DapType.Body,
@@ -179,6 +195,29 @@ fun EqualizerScreenContent(state: EqualizerScreenState, actions: EqualizerScreen
 
                 item(key = "eq_status") {
                     EqualizerStatusRow(state, frozen) { actions.onOpenPurityLock() }
+                }
+
+                // B39-A6: when the DAC has an EQ of its own, say so here, and whether it is on: the two are applied in different places.
+                dacEqNoteRes(state.audio.dacEq)?.let { note ->
+                    item(key = "eq_dac_eq_note") {
+                        Text(
+                            text = stringResource(note, state.audio.route.deviceName ?: state.dacName ?: stringResource(R.string.eq_the_dac)),
+                            style = DapType.Caption,
+                            color = Dap.tertiaryText,
+                            modifier = Modifier.padding(top = DapSpacing.Sm),
+                        )
+                    }
+                }
+
+                // B40-F2: the DAC's own EQ, offered once, with the permission asked for on the next screen's dialog; nothing is written by this.
+                state.dacOffer?.let { offer ->
+                    item(key = "eq_dac_offer") {
+                        DapNavRow(
+                            label = stringResource(R.string.dac_eq_offer_title),
+                            description = stringResource(R.string.dac_eq_offer_sub, offer.dacName),
+                            onClick = actions::onUseDacEq,
+                        )
+                    }
                 }
 
                 item(key = "eq_mode") {
@@ -473,4 +512,13 @@ private fun equalizerPresetLabel(preset: EqualizerPreset): String {
         else -> null
     }
     return if (res != null) stringResource(res) else preset.displayName
+}
+
+/** B39-A6: the note under the Polylute EQ's status about the DAC's own EQ; null when the DAC has none the app can ask about. */
+internal fun dacEqNoteRes(label: DacEqLabel): Int? = when (label) {
+    DacEqLabel.NOT_APPLICABLE -> null
+    DacEqLabel.ON -> R.string.eq_dac_eq_note_on
+    DacEqLabel.OFF -> R.string.eq_dac_eq_note_off
+    DacEqLabel.FLAT -> R.string.eq_dac_eq_note_flat
+    DacEqLabel.UNKNOWN -> R.string.eq_dac_eq_note_unknown
 }

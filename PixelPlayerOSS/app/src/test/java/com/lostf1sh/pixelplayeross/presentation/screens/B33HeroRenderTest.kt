@@ -38,6 +38,7 @@ import com.lostf1sh.pixelplayeross.presentation.components.DapBackScaffold
 import com.lostf1sh.pixelplayeross.presentation.navigation.DapBackAuthority
 import com.lostf1sh.pixelplayeross.presentation.navigation.LocalDapBackNavigation
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumDetailUiState
+import com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumDetailViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.ArtistAlbumSection
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.ArtistDetailUiState
@@ -156,6 +157,7 @@ open class B33HeroRenderTest {
         )
         val viewModel = mockk<AlbumDetailViewModel>(relaxed = true)
         every { viewModel.uiState } returns MutableStateFlow(AlbumDetailUiState(album = album(art), songs = songs))
+        every { viewModel.about } returns MutableStateFlow(MusicInfoAboutState())
         show {
             AlbumDetailScreen(
                 albumId = "1", navController = rememberNavController(), playerViewModel = player,
@@ -181,6 +183,7 @@ open class B33HeroRenderTest {
             )
         )
         every { viewModel.artistColorScheme } returns MutableStateFlow(null)
+        every { viewModel.about } returns MutableStateFlow(MusicInfoAboutState())
         show {
             ArtistDetailScreen(
                 artistId = "1", navController = rememberNavController(), playerViewModel = player,
@@ -193,6 +196,7 @@ open class B33HeroRenderTest {
     fun `an album that is still loading keeps its skeleton clear of the chevron`() {
         val viewModel = mockk<AlbumDetailViewModel>(relaxed = true)
         every { viewModel.uiState } returns MutableStateFlow(AlbumDetailUiState(isLoading = true))
+        every { viewModel.about } returns MutableStateFlow(MusicInfoAboutState())
         show {
             AlbumDetailScreen(
                 albumId = "1", navController = rememberNavController(), playerViewModel = player,

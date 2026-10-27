@@ -47,7 +47,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -107,7 +106,7 @@ fun SongPickerBottomSheet(
         }
     }
 
-    ModalBottomSheet(
+    GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -430,7 +429,7 @@ fun SongPickerPagingList(
                         bottom = contentPadding.calculateBottomPadding(),
                         top = contentPadding.calculateTopPadding(),
                         start = contentPadding.calculateLeftPadding(LayoutDirection.Ltr),
-                        end = if (listState.canScrollForward || listState.canScrollBackward) 12.dp else 0.dp
+                        end = ScrollbarGutter.endMargin(contentPadding.calculateLeftPadding(LayoutDirection.Ltr))
                     ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -481,6 +480,9 @@ fun SongPickerPagingList(
                 }
 
                 ExpressiveScrollBar(
+                    // the rows pad themselves by 10 dp (SongPickerRow)
+                    contentEndMargin = contentPadding.calculateLeftPadding(LayoutDirection.Ltr) + 10.dp,
+                    endInset = 0.dp,
                     listState = listState,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
@@ -750,7 +752,7 @@ fun SongPickerList(
                     bottom = contentPadding.calculateBottomPadding(),
                     top = contentPadding.calculateTopPadding(),
                     start = contentPadding.calculateLeftPadding(LayoutDirection.Ltr),
-                    end = if (listState.canScrollForward || listState.canScrollBackward) 12.dp else 0.dp
+                    end = ScrollbarGutter.endMargin(contentPadding.calculateLeftPadding(LayoutDirection.Ltr))
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -764,6 +766,9 @@ fun SongPickerList(
             }
 
             ExpressiveScrollBar(
+                // the rows pad themselves by 10 dp (SongPickerRow)
+                contentEndMargin = contentPadding.calculateLeftPadding(LayoutDirection.Ltr) + 10.dp,
+                endInset = 0.dp,
                 listState = listState,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)

@@ -122,7 +122,9 @@ class B34BoundaryTest {
         assertThat(page).contains("onOpenMaintenance")
         // the host reads the shortcuts from the live product mode
         val host = codeOnly(source("presentation/settings/SystemSettingsHost.kt"))
-        assertThat(host).contains("showAndroidShortcuts = mode.product.offersAndroidShortcuts")
+        // B39-A5: through the mode-surface table, whose Dedicated-only scope is, unchanged, `offersAndroidShortcuts` (U6)
+        assertThat(host).contains("showAndroidShortcuts = ModeSurfacePolicy.isVisible(ModeSurfacePolicy.Entry.SYSTEM_ANDROID_SETTINGS, mode.product)")
+        assertThat(codeOnly(source("presentation/settings/ModeSurfacePolicy.kt"))).contains("Scope.DEDICATED_ONLY -> product.offersAndroidShortcuts")
         assertThat(host).contains("ProductModeLiveEffect(productModeViewModel)")
     }
 

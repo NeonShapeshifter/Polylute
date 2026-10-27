@@ -220,7 +220,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import androidx.compose.material3.ModalBottomSheet
+import com.lostf1sh.pixelplayeross.presentation.components.GlassModalBottomSheet
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -244,6 +244,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.LoadState
 import com.lostf1sh.pixelplayeross.presentation.components.ExpressiveScrollBar
+import com.lostf1sh.pixelplayeross.presentation.components.symmetricSidePadding
 import com.lostf1sh.pixelplayeross.presentation.components.LibrarySortBottomSheet
 import com.lostf1sh.pixelplayeross.presentation.components.subcomps.EnhancedSongListItem
 import timber.log.Timber
@@ -253,9 +254,7 @@ import com.lostf1sh.pixelplayeross.presentation.components.rememberModalSheetSta
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.rememberScrollState
 import com.lostf1sh.pixelplayeross.ui.ds.DapAlbumGridItem
 import com.lostf1sh.pixelplayeross.ui.ds.DapAlbumRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapArtistRow
@@ -278,7 +277,6 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapSkeletonRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
 import com.lostf1sh.pixelplayeross.ui.ds.DapState
 import com.lostf1sh.pixelplayeross.ui.ds.DapStateKind
-import com.lostf1sh.pixelplayeross.ui.ds.DapTabUnderline
 import com.lostf1sh.pixelplayeross.ui.ds.DapTextAction
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
 import com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent
@@ -737,8 +735,8 @@ fun LibraryScreen(
         else if (fabShowLocate && fabTab != LibraryTabId.FOLDERS) 136.dp else 80.dp
 
     Scaffold(
-        modifier = Modifier.background(Dap.background),
-        containerColor = Dap.background,
+        modifier = Modifier.background(Dap.page),
+        containerColor = Dap.page,
         floatingActionButtonPosition = FabPosition.Center,
         floatingActionButton = {
             LibraryFloatingActions(
@@ -776,7 +774,7 @@ fun LibraryScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Dap.background)
+                    .background(Dap.page)
                     .statusBarsPadding()
             ) {
                 Row(
@@ -861,26 +859,18 @@ fun LibraryScreen(
                 }
 
                 if (!isCompactNavigation) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(
-                                start = DapSpacing.Gutter - DapSpacing.Xs,
-                                end = DapSpacing.Gutter
-                            ),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        tabTitles.forEachIndexed { index, rawId ->
-                            val tabId = rawId.toLibraryTabIdOrNull() ?: LibraryTabId.SONGS
-                            DapTabUnderline(
-                                label = stringResource(tabId.titleRes).uppercase(currentLocale()),
-                                selected = visualTabIndex == index,
-                                onClick = { animateToLibraryTab(index) },
-                                modifier = Modifier.padding(horizontal = DapSpacing.Sm)
-                            )
-                        }
+                    // B42-fix1: the strip follows the selected tab (it used to be a Row nothing scrolled, so swiping the pages walked the
+                    // selection off the end of it).
+                    val stripLocale = currentLocale()
+                    val tabLabels = tabTitles.map { rawId ->
+                        val tabId = rawId.toLibraryTabIdOrNull() ?: LibraryTabId.SONGS
+                        stringResource(tabId.titleRes).uppercase(stripLocale)
                     }
+                    LibraryTabStrip(
+                        labels = tabLabels,
+                        selectedIndex = visualTabIndex,
+                        onTabClick = animateToLibraryTab,
+                    )
                     DapDivider()
                 } else {
                     CompactLibraryPagerIndicator(
@@ -915,7 +905,7 @@ fun LibraryScreen(
         ) {
             Column(
                 modifier = Modifier
-                    .background(Dap.background)
+                    .background(Dap.page)
                     .fillMaxSize()
             ) {
                 Column(Modifier.fillMaxSize()) {
@@ -2049,7 +2039,7 @@ private fun LibrarySyncOverlay(syncManager: com.lostf1sh.pixelplayeross.data.wor
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Dap.background)
+            .background(Dap.page)
             .padding(horizontal = DapSpacing.Xl, vertical = DapSpacing.GroupGap),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -2142,7 +2132,7 @@ private fun LibraryNavigationCompactTitle(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryTabSwitcherSheet(
+internal fun LibraryTabSwitcherSheet(
     tabs: ImmutableList<String>,
     currentIndex: Int,
     onTabSelected: (Int) -> Unit,
@@ -2151,7 +2141,7 @@ private fun LibraryTabSwitcherSheet(
 ) {
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(
+    GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = Dap.surface,
@@ -2248,24 +2238,25 @@ private fun LibraryTabGridItem(
     }
 }
 
-private fun positiveMod(value: Int, mod: Int): Int {
+// B42-fix1: internal, so the page-to-tab mapping the tab strip and the pager share is pinned by tests; exact for any page, in Long arithmetic.
+internal fun positiveMod(value: Int, mod: Int): Int {
     if (mod <= 0) return 0
     return ((value % mod) + mod) % mod
 }
 
-private fun infinitePagerInitialPage(tabCount: Int, selectedTabIndex: Int): Int {
+internal fun infinitePagerInitialPage(tabCount: Int, selectedTabIndex: Int): Int {
     if (tabCount <= 0) return 0
     val midpoint = Int.MAX_VALUE / 2
     val aligned = midpoint - positiveMod(midpoint, tabCount)
     return aligned + positiveMod(selectedTabIndex, tabCount)
 }
 
-private fun resolveTabIndex(page: Int, tabCount: Int, compactMode: Boolean): Int {
+internal fun resolveTabIndex(page: Int, tabCount: Int, compactMode: Boolean): Int {
     if (tabCount <= 0) return 0
     return if (compactMode) positiveMod(page, tabCount) else page.coerceIn(0, tabCount - 1)
 }
 
-private fun targetPageForTabIndex(
+internal fun targetPageForTabIndex(
     currentPage: Int,
     targetTabIndex: Int,
     tabCount: Int,
@@ -2275,14 +2266,15 @@ private fun targetPageForTabIndex(
     val safeTarget = positiveMod(targetTabIndex, tabCount)
     if (!compactMode) return safeTarget
 
-    val currentBase = currentPage - positiveMod(currentPage, tabCount)
-    val candidate = currentBase + safeTarget
-    val prevCandidate = candidate - tabCount
-    val nextCandidate = candidate + tabCount
-
-    return listOf(prevCandidate, candidate, nextCandidate)
-        .minByOrNull { abs(it - currentPage) }
-        ?: candidate
+    // The page of that tab nearest to the current one, among the pages that exist (0 until Int.MAX_VALUE). Long, so that a page near either
+    // end of the range cannot overflow while a neighbour is worked out.
+    val current = currentPage.toLong().coerceIn(0L, Int.MAX_VALUE - 1L)
+    val count = tabCount.toLong()
+    val base = current - (current % count)
+    val candidates = listOf(base - count, base, base + count)
+        .map { it + safeTarget }
+        .filter { it in 0L until Int.MAX_VALUE.toLong() }
+    return (candidates.minByOrNull { abs(it - current) } ?: (base + safeTarget).coerceIn(0L, Int.MAX_VALUE - 1L)).toInt()
 }
 
 private fun LibraryTabId.iconRes(): Int = when (this) {
@@ -2537,7 +2529,7 @@ fun LibraryFoldersTab(
                         Box(modifier = Modifier.fillMaxSize()) {
                             LazyColumn(
                                 modifier = Modifier
-                                    .padding(start = 12.dp, end = if (listState.canScrollForward || listState.canScrollBackward) 22.dp else 12.dp)
+                                    .symmetricSidePadding(horizontal = 12.dp)
                                     .fillMaxSize()
                                     .clip(
                                         RoundedCornerShape(
@@ -2596,6 +2588,7 @@ fun LibraryFoldersTab(
                                 bottomBarHeight + 16.dp
 
                             ExpressiveScrollBar(
+                                contentEndMargin = 12.dp,
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
                                     .padding(end = 4.dp, top = 16.dp, bottom = bottomPadding),

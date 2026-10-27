@@ -58,6 +58,7 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.model.SortOption
 import com.lostf1sh.pixelplayeross.data.model.StorageFilter
 import com.lostf1sh.pixelplayeross.presentation.components.ExpressiveScrollBar
+import com.lostf1sh.pixelplayeross.presentation.components.symmetricSidePadding
 import com.lostf1sh.pixelplayeross.presentation.components.LocalArtworkLoadDeferred
 import com.lostf1sh.pixelplayeross.ui.ds.LocalDapPlayerShelfHeight
 import com.lostf1sh.pixelplayeross.presentation.components.rememberFlingState
@@ -203,7 +204,7 @@ fun LibraryFavoritesTab(
                     LazyColumn(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
-                            .padding(start = 12.dp, end = if (listState.canScrollForward || listState.canScrollBackward) 22.dp else 12.dp, bottom = 6.dp)
+                            .symmetricSidePadding(horizontal = 12.dp, bottom = 6.dp)
                             .clip(
                                 RoundedCornerShape(
                                     topStart = 26.dp,
@@ -259,6 +260,7 @@ fun LibraryFavoritesTab(
                         bottomBarHeight + 16.dp
 
                     ExpressiveScrollBar(
+                        contentEndMargin = 12.dp,
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .padding(end = 4.dp, top = 16.dp, bottom = bottomPadding),

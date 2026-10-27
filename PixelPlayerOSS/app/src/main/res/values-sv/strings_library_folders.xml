@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B39-A9: the library includes folders instead of excluding them. -->
+    <string name="library_folders_title">Mappar i biblioteket</string>
+    <string name="library_folders_subtitle">Bara musiken i de här mapparna finns i biblioteket.</string>
+    <string name="library_folders_hint">Bara de mappar som är markerade här finns i biblioteket, med allt som ligger i dem. Tryck på en ruta för att ta med en mapp eller lämna den utanför.</string>
+    <string name="folder_state_in_library">I biblioteket</string>
+    <string name="folder_state_not_in_library">Utanför</string>
+    <string name="library_find_folders_title">Hitta mappar med musik</string>
+    <string name="library_find_folders_subtitle">Letar efter mappar med musik som inte finns i biblioteket än.</string>
+    <string name="library_find_folders_searching">Letar efter mappar med musik…</string>
+    <string name="library_find_folders_none">Hittade inga nya mappar med musik.</string>
+    <string name="library_find_folders_not_ready">Bibliotekets mappar kunde inte ändras just nu. Försök igen om en stund.</string>
+    <string name="folder_proposal_title">Mappar med musik</string>
+    <string name="folder_proposal_body">De här mapparna har musik men finns inte i biblioteket än. Avmarkera de du inte vill ha.</string>
+    <string name="folder_proposal_not_now">Inte nu</string>
+    <string name="folder_proposal_nothing_chosen">Lägg till</string>
+    <plurals name="folder_proposal_add">
+        <item quantity="one">Lägg till %d låt</item>
+        <item quantity="other">Lägg till %d låtar</item>
+    </plurals>
+    <plurals name="folder_proposal_songs">
+        <item quantity="one">%d låt</item>
+        <item quantity="other">%d låtar</item>
+    </plurals>
+    <string name="file_explorer_scanning">Söker igenom…</string>
+    <string name="file_explorer_songs_99_plus">Över 99 låtar</string>
+    <plurals name="file_explorer_songs">
+        <item quantity="one">%d låt</item>
+        <item quantity="other">%d låtar</item>
+    </plurals>
+    <string name="file_explorer_preparing">Förbereder mappar…</string>
+    <string name="file_explorer_loading">Läser in mappar…</string>
+    <string name="file_explorer_preparing_hint">Det kan ta en stund medan Polylute söker igenom de tillgängliga undermapparna.</string>
+    <string name="library_empty_find_folders">Det finns inget i biblioteket än. Hitta mapparna med din musik och lägg till dem.</string>
+</resources>

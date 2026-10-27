@@ -15,7 +15,10 @@ def archive(entries):
     return path
 
 
-WANTED = [("class", "dap/admin/NoiseMark"), ("action", "com.lostf1sh.pixelplayeross.debug.SET_VOLUME"), ("row text", "Mark noise now")]
+WANTED = [("class", "dap/admin/DapDebugPolicyReceiver"), ("action", "com.lostf1sh.pixelplayeross.debug.SET_VOLUME"), ("row text", "Trigger a test crash")]
+
+# What a release carries (B39-S2): the noise mark's row and its native call. A toy archive that is to be clean has to have them.
+NOISE_MARK = {"base/resources.pb": b"Mark noise now", "base/dex/classes.dex": b"nativeGetSecondSummaries nativeUsbResetForRebind"}
 
 
 class CheckReleaseSurface(unittest.TestCase):
@@ -35,26 +38,43 @@ class CheckReleaseSurface(unittest.TestCase):
 
     def test_a_class_an_action_and_a_row_are_each_found(self):
         hits, _ = self.run_scan({
-            "base/dex/classes.dex": b"Lcom/lostf1sh/pixelplayeross/dap/admin/NoiseMark;",
+            "base/dex/classes.dex": b"Lcom/lostf1sh/pixelplayeross/dap/admin/DapDebugPolicyReceiver;",
             "base/manifest/AndroidManifest.xml": b"com.lostf1sh.pixelplayeross.debug.SET_VOLUME",
-            "base/resources.pb": b"..Mark noise now..",
+            "base/resources.pb": b"..Trigger a test crash..",
         })
         self.assertEqual({kind for _, kind, _ in hits}, {"class", "action", "row text"})
 
     def test_a_string_in_the_utf16_pool_of_an_apk_is_found(self):
-        hits, _ = self.run_scan({"resources.arsc": "Mark noise now".encode("utf-16-le")})
-        self.assertEqual([needle for _, _, needle in hits], ["Mark noise now"])
+        hits, _ = self.run_scan({"resources.arsc": "Trigger a test crash".encode("utf-16-le")})
+        self.assertEqual([needle for _, _, needle in hits], ["Trigger a test crash"])
 
     def test_files_that_are_not_code_or_resources_are_not_read(self):
-        hits, inspected = self.run_scan({"assets/readme.txt": b"Mark noise now"})
+        hits, inspected = self.run_scan({"assets/readme.txt": b"Trigger a test crash"})
         self.assertEqual((hits, inspected), ([], 0))
 
     def test_the_needles_come_from_the_debug_manifest_and_the_resources(self):
         wanted = check.needles(check.DEFAULT_DEBUG_MANIFEST, check.DEFAULT_DEBUG_MANIFEST.parents[1] / "main/res")
         actions = [needle for kind, needle in wanted if kind == "action"]
         self.assertIn("com.lostf1sh.pixelplayeross.debug.SET_DAC_EQ_WRITES_ALLOWED", actions)
-        self.assertIn("com.lostf1sh.pixelplayeross.debug.MARK_NOISE", actions)
-        self.assertGreater(len([1 for kind, _ in wanted if kind == "row text"]), 3)   # the noise row and the crash row, in three languages
+        self.assertIn("com.lostf1sh.pixelplayeross.debug.MARK_NOISE", actions)   # the broadcast stays debug; the row it shares an action with does not
+        self.assertGreater(len([1 for kind, _ in wanted if kind == "row text"]), 3)   # the crash row's title and subtitle, in three languages
+        self.assertNotIn(("row text", "Mark noise now"), wanted)
+
+    def test_development_session_profiling_is_rejected_in_a_release(self):
+        path = archive({"base/dex/classes.dex": check.DEBUG_INSTRUMENTATION[0].encode()})
+        self.paths = [path]
+        wanted = check.needles(check.DEFAULT_DEBUG_MANIFEST, check.DEFAULT_DEBUG_MANIFEST.parents[1] / "main/res")
+        hits, _ = check.scan(path, wanted)
+        self.assertIn(("base/dex/classes.dex", "development instrumentation", check.DEBUG_INSTRUMENTATION[0]), hits)
+
+    def test_every_class_of_the_debug_source_set_is_looked_for_without_naming_it_here(self):
+        wanted = check.needles(check.DEFAULT_DEBUG_MANIFEST, check.DEFAULT_DEBUG_MANIFEST.parents[1] / "main/res")
+        classes = {needle for kind, needle in wanted if kind == "class"}
+        for name in ("DapDebugPolicyReceiver", "DirectPathCapture", "DacEqDebugCommands", "DapButtonSheetActivity", "DualPlayerEngineDebugEntryPoint"):
+            self.assertTrue(any(c.endswith("/" + name) for c in classes), name)
+        # B39-S2: the mark is main code now, so its new class is not a debug class
+        self.assertNotIn("com/lostf1sh/pixelplayeross/data/diagnostics/NoiseMark", classes)
+        self.assertNotIn("data/diagnostics/NoiseMark", classes)
 
 
 class CheckOldProductName(unittest.TestCase):
@@ -91,11 +111,60 @@ class CheckOldProductName(unittest.TestCase):
         self.assertEqual(hits, [])
 
     def test_the_main_command_fails_on_the_old_name_and_passes_without_it(self):
-        clean = archive({"base/dex/classes.dex": b"Lcom/x;", "base/resources.pb": b"Polylute Music Playback"})
-        dirty = archive({"base/dex/classes.dex": b"Lcom/x;", "base/resources.pb": b"PixelPlayerOSS Music Playback"})
+        clean = archive({"base/dex/classes.dex": b"Lcom/x; nativeGetSecondSummaries nativeUsbResetForRebind", "base/resources.pb": b"Polylute Music Playback Mark noise now"})
+        dirty = archive({"base/dex/classes.dex": b"Lcom/x; nativeGetSecondSummaries nativeUsbResetForRebind", "base/resources.pb": b"PixelPlayerOSS Music Playback Mark noise now"})
         self.paths = [clean, dirty]
         self.assertEqual(check.main([clean]), 0)
         self.assertEqual(check.main([dirty]), 1)
+
+
+class CheckNoiseMarkIsInTheRelease(unittest.TestCase):
+    """B39-S2: the release carries the noise mark, and only that, of what the debug build has."""
+
+    def tearDown(self):
+        for path in getattr(self, "paths", []):
+            os.unlink(path)
+
+    def test_a_release_with_the_row_and_the_native_call_is_clean(self):
+        clean = archive(NOISE_MARK)
+        self.paths = [clean]
+        self.assertEqual(check.missing_required(clean), [])
+        self.assertEqual(check.main([clean]), 0)
+
+    def test_a_release_that_lost_the_row_or_the_native_call_fails(self):
+        no_row = archive({"base/resources.pb": b"Polylute", "base/dex/classes.dex": b"nativeGetSecondSummaries nativeUsbResetForRebind"})
+        no_call = archive({"base/resources.pb": b"Mark noise now", "base/dex/classes.dex": b"Lcom/x;"})
+        self.paths = [no_row, no_call]
+        self.assertEqual(check.missing_required(no_row), [("noise mark row", "Mark noise now")])
+        self.assertEqual(
+            check.missing_required(no_call),
+            [("noise mark native call", "nativeGetSecondSummaries"), ("DAC release reset native call", "nativeUsbResetForRebind")],
+        )
+        self.assertEqual(check.main([no_row]), 1)
+        self.assertEqual(check.main([no_call]), 1)
+
+    def test_a_release_that_lost_only_the_dac_reset_call_fails(self):
+        # B39-A7: the reset that hands a DAC back to Android is bound by name from the native library, like the noise mark's call
+        no_reset = archive({"base/resources.pb": b"Mark noise now", "base/dex/classes.dex": b"nativeGetSecondSummaries"})
+        self.paths = [no_reset]
+        self.assertEqual(check.missing_required(no_reset), [("DAC release reset native call", "nativeUsbResetForRebind")])
+        self.assertEqual(check.main([no_reset]), 1)
+
+    def test_the_noise_mark_alone_does_not_excuse_a_debug_receiver_or_a_debug_action(self):
+        receiver = archive({**NOISE_MARK, "base/dex/classes.dex": b"nativeGetSecondSummaries nativeUsbResetForRebind Lcom/lostf1sh/pixelplayeross/dap/admin/DapDebugPolicyReceiver;"})
+        action = archive({**NOISE_MARK, "base/manifest/AndroidManifest.xml": b"com.lostf1sh.pixelplayeross.debug.SET_VOLUME"})
+        marker = archive({**NOISE_MARK, "base/manifest/AndroidManifest.xml": b"com.lostf1sh.pixelplayeross.debug.MARK_NOISE"})
+        self.paths = [receiver, action, marker]
+        self.assertEqual(check.main([receiver]), 1)
+        self.assertEqual(check.main([action]), 1)
+        # the shell broadcast is a debug action: a release that declared it would fail, with or without the mark
+        self.assertEqual(check.main([marker]), 1)
+
+    def test_the_old_debug_provider_and_hook_coming_back_are_found(self):
+        for name in (b"Lcom/lostf1sh/pixelplayeross/dap/admin/DebugHooksProvider;", b"Lcom/lostf1sh/pixelplayeross/data/diagnostics/DebugHooks;"):
+            path = archive({**NOISE_MARK, "base/dex/classes.dex": b"nativeGetSecondSummaries nativeUsbResetForRebind " + name})
+            self.paths = getattr(self, "paths", []) + [path]
+            self.assertEqual(check.main([path]), 1)
 
 
 class CheckAssets(unittest.TestCase):
@@ -134,8 +203,8 @@ class CheckAssets(unittest.TestCase):
         self.assertEqual(self.stray({"base/assets/": b"", "base/assets/licenses/": b""}), [])
 
     def test_the_main_command_fails_on_a_stray_asset_and_passes_without_one(self):
-        clean = archive({"base/dex/classes.dex": b"Lcom/x;", "base/assets/licenses/LICENSE": b"x"})
-        dirty = archive({"base/dex/classes.dex": b"Lcom/x;", "base/assets/vm_new.js": b"x"})
+        clean = archive({**NOISE_MARK, "base/assets/licenses/LICENSE": b"x"})
+        dirty = archive({**NOISE_MARK, "base/assets/vm_new.js": b"x"})
         self.paths = [clean, dirty]
         self.assertEqual(check.main([clean]), 0)
         self.assertEqual(check.main([dirty]), 1)

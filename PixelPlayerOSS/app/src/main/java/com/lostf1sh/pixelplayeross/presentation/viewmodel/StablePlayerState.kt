@@ -8,6 +8,8 @@ import com.lostf1sh.pixelplayeross.data.model.Lyrics
 @Immutable
 data class StablePlayerState(
     val currentSong: Song? = null,
+    /** A proven empty timeline, distinct from a song whose metadata has not arrived yet. */
+    val queueConfirmedEmpty: Boolean = false,
     val currentMediaItemIndex: Int = -1,
     val isPlaying: Boolean = false,
     val playWhenReady: Boolean = false,

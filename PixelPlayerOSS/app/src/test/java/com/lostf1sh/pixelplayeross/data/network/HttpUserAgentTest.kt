@@ -8,6 +8,7 @@ import com.lostf1sh.pixelplayeross.di.AppModule
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -23,7 +24,8 @@ import org.junit.jupiter.api.Test
  * The three clients said `PixelPlayerOSS/1.0` (twice) and `PixelPlayerOSS/<version> (https://github.com/PixelPlayerHQ/PixelPlayerOSS)`, which is
  * the upstream's address, handed to MusicBrainz as the way to reach us. What each client **sends** is read here: a recording interceptor is
  * added as the last interceptor of the client the app builds, so it sees the request after every header the client adds, and answers without
- * touching a network. The Retrofit services for LRCLIB and Deezer are driven through the same clients.
+ * touching a network. The Retrofit service for LRCLIB is driven through the same client. (B40-F4: Deezer is gone; the music-info clients,
+ * which ask MusicBrainz, Wikidata, Commons, Wikipedia and the Cover Art Archive, send the project-address User-Agent on every request.)
  */
 class HttpUserAgentTest {
 
@@ -78,22 +80,30 @@ class HttpUserAgentTest {
     }
 
     @Test
-    fun `LRCLIB and Deezer requests carry the same User-Agent as their client`() {
+    fun `LRCLIB requests carry the same User-Agent as their client`() {
         val lyrics = Recorder()
         val lrclib = AppModule.provideRetrofit(recording(AppModule.provideFastOkHttpClient(), lyrics))
             .create(LrcLibApiService::class.java)
         runCatching { runBlocking { lrclib.getLyrics("t", "a", "b", 1) } }
 
-        val artists = Recorder()
-        val deezer = AppModule.provideDeezerApiService(
-            AppModule.provideDeezerRetrofit(recording(AppModule.provideOkHttpClient(), artists)),
-        )
-        runCatching { runBlocking { deezer.searchArtist("a") } }
-
         assertThat(lyrics.seen.single().url.encodedPath).isEqualTo("/api/get")
-        assertThat(artists.seen.single().url.encodedPath).isEqualTo("/search/artist")
-        listOf(lyrics, artists).forEach {
-            assertThat(it.seen.single().header("User-Agent")).isEqualTo("Polylute/$version (Android; Music Player)")
+        assertThat(lyrics.seen.single().header("User-Agent")).isEqualTo("Polylute/$version (Android; Music Player)")
+    }
+
+    @Test
+    fun `B40-F4 - every music-info request names the project, so MusicBrainz and Wikimedia can reach it`() {
+        val recorder = Recorder()
+        val http = com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoHttp(
+            recording(OkHttpClient(), recorder), nowMs = { 0L }, sleep = {},
+        )
+        runBlocking {
+            val artist = "https://musicbrainz.org/ws/2/artist".toHttpUrlOrNull()!!
+            runCatching { http.json(artist) }
+            runCatching { http.bytes("https://upload.wikimedia.org/x.jpg".toHttpUrlOrNull()!!, 1_000L) }
+        }
+        assertThat(recorder.seen).hasSize(2)
+        recorder.seen.forEach {
+            assertThat(it.header("User-Agent")).isEqualTo("Polylute/$version ( https://github.com/NeonShapeshifter/Polylute )")
         }
     }
 
@@ -120,8 +130,8 @@ class HttpUserAgentTest {
         val setters = main.walkTopDown().filter { it.isFile && it.extension == "kt" }
             .associate { it.name to Regex("\"User-Agent\"").findAll(it.readText()).count() }
             .filterValues { it > 0 }
-        assertThat(setters).containsExactly("AppModule.kt", 2, "MusicBrainzApiService.kt", 1)
-        listOf("di/AppModule.kt", "data/musicbrainz/MusicBrainzApiService.kt").forEach { relative ->
+        assertThat(setters).containsExactly("AppModule.kt", 2, "MusicBrainzApiService.kt", 1, "MusicInfoClients.kt", 1)
+        listOf("di/AppModule.kt", "data/musicbrainz/MusicBrainzApiService.kt", "data/musicinfo/MusicInfoClients.kt").forEach { relative ->
             val text = File(main, "com/lostf1sh/pixelplayeross/$relative").readText()
             assertThat(text).doesNotContain("PixelPlayerOSS")
             assertThat(text).doesNotContain("PixelPlayerHQ")

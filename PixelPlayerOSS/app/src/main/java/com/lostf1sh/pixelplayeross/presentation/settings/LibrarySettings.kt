@@ -2,10 +2,16 @@ package com.lostf1sh.pixelplayeross.presentation.settings
 
 import android.widget.Toast
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -13,17 +19,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.lostf1sh.pixelplayeross.R
+import com.lostf1sh.pixelplayeross.data.preferences.MUSIC_INFO_CACHE_CHOICES_MB
+import com.lostf1sh.pixelplayeross.data.worker.SyncManager
 import com.lostf1sh.pixelplayeross.data.worker.SyncProgress
+import com.lostf1sh.pixelplayeross.data.worker.SyncState
 import com.lostf1sh.pixelplayeross.presentation.screens.RefreshLibraryItem
 import com.lostf1sh.pixelplayeross.presentation.screens.SettingsItem
 import com.lostf1sh.pixelplayeross.presentation.screens.SliderSettingsItem
 import com.lostf1sh.pixelplayeross.presentation.screens.SwitchSettingItem
+import com.lostf1sh.pixelplayeross.presentation.screens.ThemeSelectorItem
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.SettingsUiState
+import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapChevron
+import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
+import com.lostf1sh.pixelplayeross.ui.ds.DapType
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.stateIn
 
 /** What the Library page draws. */
 @Immutable
@@ -31,7 +54,11 @@ data class LibrarySettingsState(
     val minSongDuration: Int,
     val minTracksPerAlbum: Int,
     val albumArtCacheLimitMb: Int,
-    val externalArtistImagesEnabled: Boolean,
+    val musicInfoCoversEnabled: Boolean,
+    val musicInfoArtistPhotosEnabled: Boolean,
+    val musicInfoDescriptionsEnabled: Boolean,
+    val musicInfoCacheLimitMb: Int,
+    val musicInfoUsedBytes: Long,
     val isSyncing: Boolean,
     val syncProgress: SyncProgress,
 ) {
@@ -40,21 +67,59 @@ data class LibrarySettingsState(
             minSongDuration = ui.minSongDuration,
             minTracksPerAlbum = ui.minTracksPerAlbum,
             albumArtCacheLimitMb = ui.albumArtCacheLimitMb,
-            externalArtistImagesEnabled = ui.externalArtistImagesEnabled,
+            musicInfoCoversEnabled = ui.musicInfoCoversEnabled,
+            musicInfoArtistPhotosEnabled = ui.musicInfoArtistPhotosEnabled,
+            musicInfoDescriptionsEnabled = ui.musicInfoDescriptionsEnabled,
+            musicInfoCacheLimitMb = ui.musicInfoCacheLimitMb,
+            musicInfoUsedBytes = ui.musicInfoUsedBytes,
             isSyncing = isSyncing,
             syncProgress = syncProgress,
         )
     }
 }
 
+/**
+ * The state the Library page draws, from the preferences it edits and the library sync ([SyncState], one reading of both the
+ * "is it running" and the "how far" half).
+ *
+ * B39-A1: the page's state is held only while the page is listened to ([SharingStarted.WhileSubscribed] with
+ * `replayExpirationMillis = 0`): once nobody has been listening for [SyncManager.SYNC_STOP_TIMEOUT_MS] it goes back to idle instead of
+ * keeping the last thing it was told, so a page that comes back (the screen was off, another page was on top) starts from "idle" and the
+ * sync's current state, never from the running snapshot of a sync that has finished since. The controls it enables ([LibrarySettingsState.isSyncing])
+ * are exactly as live as the state they come from.
+ */
+internal fun libraryStateFlow(
+    ui: Flow<SettingsUiState>,
+    sync: Flow<SyncState>,
+    scope: CoroutineScope,
+    initialUi: SettingsUiState,
+): StateFlow<LibrarySettingsState> =
+    combine(ui, sync) { preferences, state -> LibrarySettingsState.from(preferences, state.isSyncing, state.progress) }
+        .distinctUntilChanged()
+        .stateIn(
+            scope,
+            SharingStarted.WhileSubscribed(SyncManager.SYNC_STOP_TIMEOUT_MS, replayExpirationMillis = 0),
+            LibrarySettingsState.from(initialUi, false, SyncProgress()),
+        )
+
 /** Everything the Library page can do. */
 interface LibrarySettingsActions {
     fun onMinSongDurationChange(value: Int)
     fun onMinTracksPerAlbumChange(value: Int)
     fun onAlbumArtCacheLimitMbChange(value: Int)
-    fun onExternalArtistImagesEnabledChange(value: Boolean)
-    /** Opens the directory explorer over this page (the host owns the dialog). */
-    fun onOpenExcludedDirectories()
+    /** B40-F4: album covers that are missing, from the Cover Art Archive. Off by default. */
+    fun onMusicInfoCoversChange(value: Boolean)
+    /** B40-F4: artist photos, from Wikimedia Commons by way of MusicBrainz and Wikidata. Off by default. */
+    fun onMusicInfoArtistPhotosChange(value: Boolean)
+    /** B40-F4: artist and album descriptions, from Wikipedia. Off by default. */
+    fun onMusicInfoDescriptionsChange(value: Boolean)
+    fun onMusicInfoCacheLimitChange(megabytes: Int)
+    /** B40-F4: removes everything that was downloaded; [onDone] gets the bytes freed. */
+    fun onDeleteMusicInfo(onDone: (Long) -> Unit)
+    /** Opens the folders sheet over this page (the host owns the dialog): the folders that are in the library. */
+    fun onOpenLibraryFolders()
+    /** B39-A9: looks for folders that hold music and are not in the library, and offers them (the host owns the dialog). */
+    fun onFindFolders()
     fun onOpenArtistSettings()
     fun onOpenDuplicates()
     /** An incremental scan. */
@@ -65,7 +130,10 @@ interface LibrarySettingsActions {
 
 @Composable
 fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsActions) {
+    var showOfflineDownloads by remember { mutableStateOf(false) }
+    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.OfflineDownloadsDialog(null, { showOfflineDownloads = false })
     val context = LocalContext.current
+    val resources = LocalResources.current
     var refreshRequested by remember { mutableStateOf(false) }
     var syncRequestObservedRunning by remember { mutableStateOf(false) }
     var syncIndicatorLabel by remember { mutableStateOf<String?>(null) }
@@ -97,11 +165,18 @@ fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsA
 
     SettingsSubsection(title = stringResource(R.string.setcat_library_structure)) {
         SettingsItem(
-            title = stringResource(R.string.setcat_excluded_directories_title),
-            subtitle = stringResource(R.string.setcat_excluded_directories_subtitle),
+            title = stringResource(R.string.library_folders_title),
+            subtitle = stringResource(R.string.library_folders_subtitle),
             leadingIcon = { Icon(Icons.Outlined.Folder, null, tint = MaterialTheme.colorScheme.secondary) },
             trailingIcon = { DapChevron() },
-            onClick = { actions.onOpenExcludedDirectories() }
+            onClick = { actions.onOpenLibraryFolders() }
+        )
+        SettingsItem(
+            title = stringResource(R.string.library_find_folders_title),
+            subtitle = stringResource(R.string.library_find_folders_subtitle),
+            leadingIcon = { Icon(Icons.Outlined.FolderOpen, null, tint = MaterialTheme.colorScheme.secondary) },
+            trailingIcon = { DapChevron() },
+            onClick = { actions.onFindFolders() }
         )
         SettingsItem(
             title = stringResource(R.string.setcat_artists_title),
@@ -187,20 +262,63 @@ fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsA
         )
     }
 
-    // Online metadata for the library itself. Lyrics sources used to sit
-    // beside this under one "Online services" heading, which made the
-    // heading mean two different subjects: where track metadata comes from,
-    // and how lyrics are looked up. Lyrics has its own category now.
+    // B40-F4: music info from the internet. Three switches, each off until the listener turns it on; everything downloaded stays on the
+    // phone within the limit set here and is deleted from here. (Lyrics have their own category.) Deezer, which used to be the one switch
+    // here, is gone.
     SettingsSubsection(
-        title = stringResource(R.string.setcat_online_services),
+        title = stringResource(R.string.setcat_music_info),
         addBottomSpace = false
     ) {
+        Text(
+            text = stringResource(R.string.setcat_music_info_note),
+            style = DapType.Caption,
+            color = Dap.secondaryText,
+            modifier = Modifier.padding(horizontal = DapSpacing.Gutter, vertical = DapSpacing.Sm),
+        )
         SwitchSettingItem(
-            title = stringResource(R.string.setcat_external_artist_images_title),
-            subtitle = stringResource(R.string.setcat_external_artist_images_subtitle),
-            checked = state.externalArtistImagesEnabled,
-            onCheckedChange = { actions.onExternalArtistImagesEnabledChange(it) },
+            title = stringResource(R.string.setcat_music_info_covers_title),
+            subtitle = stringResource(R.string.setcat_music_info_covers_subtitle),
+            checked = state.musicInfoCoversEnabled,
+            onCheckedChange = { actions.onMusicInfoCoversChange(it) },
+            leadingIcon = { Icon(Icons.Outlined.Image, null, tint = MaterialTheme.colorScheme.secondary) },
+        )
+        SwitchSettingItem(
+            title = stringResource(R.string.setcat_music_info_photos_title),
+            subtitle = stringResource(R.string.setcat_music_info_photos_subtitle),
+            checked = state.musicInfoArtistPhotosEnabled,
+            onCheckedChange = { actions.onMusicInfoArtistPhotosChange(it) },
             leadingIcon = { Icon(painterResource(R.drawable.rounded_artist_24), null, tint = MaterialTheme.colorScheme.secondary) },
+        )
+        SwitchSettingItem(
+            title = stringResource(R.string.setcat_music_info_descriptions_title),
+            subtitle = stringResource(R.string.setcat_music_info_descriptions_subtitle),
+            checked = state.musicInfoDescriptionsEnabled,
+            onCheckedChange = { actions.onMusicInfoDescriptionsChange(it) },
+            leadingIcon = { Icon(Icons.Outlined.Description, null, tint = MaterialTheme.colorScheme.secondary) },
+        )
+
+        SettingsItem(
+            title = stringResource(R.string.offline_download_title),
+            leadingIcon = { Icon(Icons.Outlined.Description, null, tint = MaterialTheme.colorScheme.secondary) },
+            subtitle = stringResource(R.string.offline_download_all),
+            onClick = { showOfflineDownloads = true },
+        )
+        SettingsItem(
+            title = stringResource(R.string.setcat_music_info_delete_title),
+            subtitle = stringResource(
+                R.string.setcat_music_info_delete_subtitle,
+                android.text.format.Formatter.formatShortFileSize(context, state.musicInfoUsedBytes),
+            ),
+            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.secondary) },
+            onClick = {
+                actions.onDeleteMusicInfo { freed ->
+                    Toast.makeText(
+                        context,
+                        resources.getString(R.string.setcat_music_info_deleted, android.text.format.Formatter.formatShortFileSize(context, freed)),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            },
         )
     }
 }

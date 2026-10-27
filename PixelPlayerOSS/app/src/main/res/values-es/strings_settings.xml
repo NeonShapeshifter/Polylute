@@ -113,15 +113,11 @@
     <string name="setcat_default_tab_desc">Elige la pestaña de inicio predeterminada.</string>
     <string name="setcat_default_tab_label">Pestaña predeterminada</string>
     <string name="setcat_diagnostics">Diagnóstico</string>
-    <string name="setcat_excluded_directories_subtitle">Estas carpetas se omitirán al escanear la biblioteca.</string>
-    <string name="setcat_excluded_directories_title">Directorios excluidos</string>
     <string name="setcat_experimental_subtitle">Experimentos y opciones de carga de la interfaz del reproductor.</string>
     <string name="setcat_experimental_title">Experimental</string>
     <string name="setcat_experiments">Experimentos</string>
     <string name="setcat_export_backup_subtitle">%1$s Crea un archivo de copia de seguridad .pxpl.</string>
     <string name="setcat_export_backup_title">Exportar copia</string>
-    <string name="setcat_external_artist_images_subtitle">Permitir que las imágenes de artista que falten se obtengan de Deezer y se guarden en la caché local.</string>
-    <string name="setcat_external_artist_images_title">Imágenes de artista desde Deezer</string>
     <string name="setcat_external_lyrics_subtitle">Permitir búsquedas y descargas manuales desde lrclib.net cuando no haya letras locales.</string>
     <string name="setcat_external_lyrics_title">Letras en línea desde LRCLIB</string>
     <string name="setcat_filtering">Filtrado</string>
@@ -145,7 +141,7 @@
     <string name="setcat_headphones_resume_subtitle">Si la reproducción se pausó al quitar los auriculares, reanudar al volver a conectarlos.</string>
     <string name="setcat_headphones_resume_title">Reanudar al reconectar auriculares</string>
     <string name="setcat_home_collage">Collage de inicio</string>
-    <string name="setcat_immersive_lyrics_subtitle">Ocultar controles automáticamente y agrandar el texto.</string>
+    <string name="setcat_immersive_lyrics_subtitle">Mientras suena una canción, oculta los controles y agranda el texto tras un momento sin tocar. Un toque los devuelve.</string>
     <string name="setcat_immersive_lyrics_title">Letras inmersivas</string>
     <string name="setcat_import_backup_subtitle">Busca o elige entre copias de seguridad recientes. Los datos seleccionados reemplazarán los datos actuales.</string>
     <string name="setcat_import_backup_title">Importar copia</string>
@@ -178,8 +174,7 @@
     <string name="setcat_navbar_style_full_width">Ancho completo</string>
     <string name="setcat_navbar_style_label">Estilo de la barra</string>
     <string name="setcat_navigation_bar">Barra de navegación</string>
-    <string name="setcat_now_playing">Reproduciendo ahora</string>
-    <string name="setcat_online_services">Servicios en línea opcionales</string>
+    <string name="setcat_now_playing">Reproductor</string>
     <string name="setcat_random_mode_title">Modo aleatorio</string>
     <string name="random_mode_classic">Clásico</string>
     <string name="random_mode_fast">Rápido</string>
@@ -222,7 +217,7 @@
     <string name="settings_category_audio_title">Audio</string>
     <string name="settings_category_audio_subtitle">Dispositivos, sonido y transiciones</string>
     <string name="settings_category_lyrics_title">Letras</string>
-    <string name="settings_category_lyrics_subtitle">Fuentes y presentación</string>
+    <string name="settings_category_lyrics_subtitle">De dónde salen las letras</string>
     <string name="settings_category_device_title">Dispositivo</string>
     <string name="settings_category_device_subtitle">Pantalla, almacenamiento y radios</string>
     <string name="settings_category_home_mode_title">Inicio y modo DAP</string>
@@ -231,7 +226,7 @@
     <string name="settings_category_system_subtitle">Ajustes de Android y reparación</string>
     <string name="settings_category_about_subtitle">Versión y licencias</string>
     <string name="settings_category_about_title">Acerca de</string>
-    <string name="settings_category_appearance_subtitle">Tema y diseño</string>
+    <string name="settings_category_appearance_subtitle">Tema, reproductor, letras y bloqueo</string>
     <string name="settings_category_appearance_title">Apariencia</string>
     <string name="settings_category_backup_subtitle">Listas, ajustes y perfiles</string>
     <string name="settings_category_backup_title">Copia y restauración</string>
@@ -263,8 +258,6 @@
     <string name="setcat_device_storage">Almacenamiento</string>
     <string name="setcat_queue_behaviour">Cola</string>
     <string name="setcat_lyrics_sources">Fuentes</string>
-    <string name="setcat_lyrics_reading">Lectura</string>
-    <string name="setcat_lyrics_effects">Efectos</string>
     <string name="setcat_lyrics_alignment_label">Alineación</string>
     <string name="setcat_lyrics_alignment_desc">Dónde se sitúan las líneas de la letra en pantalla</string>
     <string name="setcat_lyrics_alignment_left">Izquierda</string>
@@ -395,4 +388,31 @@
     <string name="back_navigation_mode_buttons_hint">Muestra el control de atrás. El gesto propio de la app queda desactivado.</string>
     <string name="back_navigation_mode_gestures_hint">Desliza desde el borde izquierdo. El control de atrás se oculta donde solo servía para volver.</string>
     <string name="back_navigation_mode_both_hint">Funcionan los dos, y hacen lo mismo.</string>
+    <!-- B40-F1: two more themes, and the app's colours from the song's cover. -->
+    <string name="setcat_theme_option_gray">Gris</string>
+    <string name="setcat_theme_option_navy">Azul marino</string>
+    <string name="setcat_app_colors_label">Colores de la app</string>
+    <string name="setcat_app_colors_desc">El tema y el acento, o la carátula de la canción: dos de sus colores detrás de la app, o la propia carátula como un cristal suave. La carátula decide claro u oscuro.</string>
+    <string name="setcat_app_colors_theme">Tema y acento</string>
+    <string name="setcat_app_colors_album_art">De la carátula</string>
+    <string name="setcat_app_colors_cover_glass">Cristal de la carátula</string>
+    <string name="setcat_moving_background_title">Fondo en movimiento</string>
+    <string name="setcat_moving_background_subtitle">El cristal detrás del reproductor completo y de la pantalla de bloqueo se desplaza despacio mientras suena una canción. En el resto de la app se queda quieto.</string>
+    <string name="setcat_lyrics_under_cover_title">Letras bajo la carátula</string>
+    <string name="setcat_lyrics_under_cover_subtitle">Muestra la línea actual y la siguiente bajo la carátula cuando la canción tiene letra sincronizada. Tócalas para abrir la letra.</string>
+    <string name="setcat_lock_screen_section">Pantalla de bloqueo</string>
+    <string name="setcat_accent_desc_album_art">Se usa cuando una canción no tiene carátula. La carátula decide el resto, ajustada hasta que se lea bien.</string>
+    <string name="setcat_accent_without_cover_label">Acento sin carátula</string>
+    <!-- B40-F4: music info from the internet (Deezer is gone). -->
+    <string name="setcat_music_info">Información musical de Internet</string>
+    <string name="setcat_music_info_note">Todo esto está desactivado hasta que lo actives. Cada opción envía solo el nombre de un artista o de un álbum (y lo que devolvió la respuesta anterior), una vez por segundo como máximo, y guarda la respuesta en este teléfono. No se envía nada sobre ti ni sobre tu biblioteca.</string>
+    <string name="setcat_music_info_covers_title">Carátulas de álbum que faltan</string>
+    <string name="setcat_music_info_covers_subtitle">Del Cover Art Archive, encontradas con MusicBrainz. Solo para álbumes sin carátula propia.</string>
+    <string name="setcat_music_info_photos_title">Fotos de artistas</string>
+    <string name="setcat_music_info_photos_subtitle">Primero MusicBrainz y después Wikimedia Commons. Los créditos y las licencias disponibles están en Información.</string>
+    <string name="setcat_music_info_descriptions_title">Descripciones de artistas y álbumes</string>
+    <string name="setcat_music_info_descriptions_subtitle">Primero MusicBrainz y después Wikipedia en el idioma de la app o en inglés. Toca para ampliar; los créditos se abren dentro de la app.</string>
+    <string name="setcat_music_info_delete_title">Borrar los datos descargados</string>
+    <string name="setcat_music_info_delete_subtitle">Imágenes y descripciones guardadas en este teléfono: %1$s</string>
+    <string name="setcat_music_info_deleted">Se borraron %1$s</string>
 </resources>

@@ -72,6 +72,7 @@ class DapSurfacePolicyTest {
             Screen.Duplicates.route,
             Screen.ArtistSettings.route,
             Screen.Equalizer.createRoute("hp1"),
+            Screen.Equalizer.createRoute("hp1", askDacEq = true),
             Screen.KnownDacs.route,
             Screen.DacProfile.createRoute("dac1"),
             Screen.KnownHeadphones.route,

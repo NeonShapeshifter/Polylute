@@ -1,9 +1,11 @@
 package com.lostf1sh.pixelplayeross.presentation.components.player
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -12,8 +14,11 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.LiveAudioFormat
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
 import com.lostf1sh.pixelplayeross.presentation.components.ModalInputBridge
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.TrackDetailsUiState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.TrackDetailsViewModel
 import kotlinx.coroutines.flow.map
+import com.lostf1sh.pixelplayeross.ui.glass.GlassWindowBackdrop
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
 
 /**
  * Hosts the canonical [TrackDetailsSheet] for a song opened from a list's action menu.
@@ -40,6 +45,63 @@ fun TrackDetailsHost(
     playerViewModel: PlayerViewModel,
     onDismiss: () -> Unit,
 ) {
+    val details = rememberTrackDetailsBinding(song, playerViewModel)
+
+    // A dialog rather than a sheet: the action menu behind this is a ModalBottomSheet and owns its
+    // own window, so the details have to be drawn in a window above it.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        // This window is its own surface, so the activity's volume-key path does not
+        // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
+        ModalInputBridge()
+        // B42: a window of its own that is a whole screen carries its own copy of the cover glass; the page in it is see-through over it
+        GlassWindowBackdrop(LocalCoverGlass.current)
+        TrackDetailsSheet(
+            state = details.state,
+            currentPositionProvider = details.positionProvider,
+            totalDurationMs = details.totalDurationMs,
+            onSeek = details.onSeek,
+            onBackClick = onDismiss,
+        )
+    }
+}
+
+/**
+ * The player's **Details page** (B42-fix1): the same surface and the same binding as [TrackDetailsHost], without a window and without a Back
+ * row of its own. It sits under the player's header and over the player's glass, as one of its pages; it is composed only while it is on or
+ * next to the screen. [song] is the one playing, so it follows playback.
+ */
+@Composable
+internal fun TrackDetailsPage(
+    song: Song,
+    playerViewModel: PlayerViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val details = rememberTrackDetailsBinding(song, playerViewModel)
+    TrackDetailsBody(
+        state = details.state,
+        currentPositionProvider = details.positionProvider,
+        totalDurationMs = details.totalDurationMs,
+        onSeek = details.onSeek,
+        modifier = modifier.fillMaxSize(),
+    )
+}
+
+/** What a details surface reads and calls: the bound state, the player's position, the duration the waveform was built from, and its seek. */
+private class TrackDetailsBinding(
+    val state: TrackDetailsUiState,
+    val positionProvider: () -> Long,
+    val totalDurationMs: Long,
+    val onSeek: (Long) -> Unit,
+)
+
+@Composable
+private fun rememberTrackDetailsBinding(song: Song, playerViewModel: PlayerViewModel): TrackDetailsBinding {
     val trackDetailsViewModel: TrackDetailsViewModel = hiltViewModel()
     val trackDetailsState by trackDetailsViewModel.uiState.collectAsStateWithLifecycle()
 
@@ -70,29 +132,14 @@ fun TrackDetailsHost(
     val onSeekFromWaveform = remember(playerViewModel) { { ms: Long ->
         playerViewModel.seekTo(ms)
     } }
-
-    // A dialog rather than a sheet: the action menu behind this is a ModalBottomSheet and owns its
-    // own window, so the details have to be drawn in a window above it.
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        // This window is its own surface, so the activity's volume-key path does not
-        // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
-        ModalInputBridge()
-        // The marker and the seek mapping use the duration the waveform was actually built from, so
-        // 100% lands on the end of the drawn envelope. The stored duration is only a fallback while
-        // the waveform is still loading.
-        val waveformDurationMs = trackDetailsState.waveform?.durationMs ?: 0L
-        TrackDetailsSheet(
-            state = trackDetailsState,
-            currentPositionProvider = positionProvider,
-            totalDurationMs = waveformDurationMs.takeIf { it > 0L } ?: song.duration,
-            onSeek = onSeekFromWaveform,
-            onBackClick = onDismiss,
-        )
-    }
+    // The marker and the seek mapping use the duration the waveform was actually built from, so
+    // 100% lands on the end of the drawn envelope. The stored duration is only a fallback while
+    // the waveform is still loading.
+    val waveformDurationMs = trackDetailsState.waveform?.durationMs ?: 0L
+    return TrackDetailsBinding(
+        state = trackDetailsState,
+        positionProvider = positionProvider,
+        totalDurationMs = waveformDurationMs.takeIf { it > 0L } ?: song.duration,
+        onSeek = onSeekFromWaveform,
+    )
 }

@@ -2,7 +2,7 @@ package com.lostf1sh.pixelplayeross
 
 import com.lostf1sh.pixelplayeross.ui.ds.DapBaseTheme
 import com.lostf1sh.pixelplayeross.ui.ds.DapAccent
-import com.lostf1sh.pixelplayeross.ui.theme.resolveBaseTheme
+import com.lostf1sh.pixelplayeross.ui.theme.resolveDrawnBaseTheme
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -21,6 +21,7 @@ import com.lostf1sh.pixelplayeross.presentation.components.external.ExternalPlay
 import com.lostf1sh.pixelplayeross.ui.theme.PixelPlayerTheme
 import android.content.Intent.EXTRA_STREAM
 import androidx.media3.common.util.UnstableApi
+import com.lostf1sh.pixelplayeross.data.preferences.AppColorSource
 import com.lostf1sh.pixelplayeross.data.preferences.AppThemeMode
 import com.lostf1sh.pixelplayeross.data.preferences.ThemePreferencesRepository
 import javax.inject.Inject
@@ -59,7 +60,10 @@ class ExternalPlayerActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle(initialValue = DapAccent.DEFAULT)
             val dapBaseTheme by themePreferencesRepository.baseThemeFlow
                 .collectAsStateWithLifecycle(initialValue = DapBaseTheme.DEFAULT)
-            val drawnBaseTheme = resolveBaseTheme(appThemeMode, dapBaseTheme, systemDarkTheme)
+            // B41-fix1 (B1) / B42-fix3: the same base theme the app shows while the cover decides its colours (Graphite).
+            val appColorSource by themePreferencesRepository.appColorSourceFlow
+                .collectAsStateWithLifecycle(initialValue = AppColorSource.THEME)
+            val drawnBaseTheme = resolveDrawnBaseTheme(appColorSource, appThemeMode, dapBaseTheme, systemDarkTheme)
             PixelPlayerTheme(
                 darkTheme = !drawnBaseTheme.palette.isLight,
                 accent = dapAccent,

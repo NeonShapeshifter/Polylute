@@ -236,7 +236,7 @@ class DacEqEditOwnershipTest {
         assertThat(ui.error).isEqualTo(DacEqError.Dropped(DacEqDropReason.PURITY_ON))
         assertThat(ui.pendingWrite).isFalse()
         // And what Purity says about the DAC is still what the DAC read: closed.
-        assertThat(r.service.controller.label.value).isEqualTo(DacEqLabel.OFF_OR_FLAT)
+        assertThat(r.service.controller.label.value).isEqualTo(DacEqLabel.OFF)
     }
 
     @Test
@@ -373,7 +373,7 @@ class DacEqEditOwnershipTest {
         val ui = r.screen.uiState.value
         val label = r.service.controller.label.value
         assertThat(ui.label).isEqualTo(label)
-        assertThat(label).isNotEqualTo(DacEqLabel.OFF_OR_FLAT)
+        assertThat(label).isNotEqualTo(DacEqLabel.OFF)
         assertThat(ui.error).isNotNull()
         assertThat(ui.busy).isFalse()
     }

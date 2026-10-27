@@ -54,6 +54,8 @@ import kotlinx.collections.immutable.toImmutableList
 import com.lostf1sh.pixelplayeross.presentation.components.DapBackScaffold
 import com.lostf1sh.pixelplayeross.presentation.navigation.LocalBackNavigationMode
 import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
+import com.lostf1sh.pixelplayeross.ui.glass.GlassWindowBackdrop
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
 
 @Composable
 fun QuickFillDialog(
@@ -73,6 +75,8 @@ fun QuickFillDialog(
             // This window is its own surface, so the activity's volume-key path does not
             // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
             ModalInputBridge()
+            // B42: a window of its own that is a whole screen carries its own copy of the cover glass; the page in it is see-through over it
+            GlassWindowBackdrop(LocalCoverGlass.current)
             QuickFillContent(
                 songs = songs,
                 customGenres = customGenres,

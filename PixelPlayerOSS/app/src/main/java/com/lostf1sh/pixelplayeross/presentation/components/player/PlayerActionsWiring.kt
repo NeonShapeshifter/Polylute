@@ -11,8 +11,7 @@ import com.lostf1sh.pixelplayeross.utils.ValidatedLyricsImport
 import kotlinx.collections.immutable.ImmutableList
 
 /**
- * What the sheet around the full player already does for it: transport, collapsing, the queue and details
- * entries, the queue drag. The sheet hands these to `FullPlayerContent`; they are gathered here so the actions
+ * What the sheet around the full player already does for it: transport, collapsing, the queue drag. The sheet hands these to `FullPlayerContent`; they are gathered here so the actions
  * can reach the latest of them without the full player taking thirteen parameters.
  */
 @Stable
@@ -22,7 +21,6 @@ internal class PlayerSheetCallbacks(
     val onNext: () -> Unit,
     val onPrevious: () -> Unit,
     val onCollapse: () -> Unit,
-    val onShowDetails: () -> Unit,
     val onQueueDragStart: () -> Unit,
     val onQueueDrag: (Float) -> Unit,
     val onQueueRelease: (Float, Float) -> Unit,
@@ -55,7 +53,6 @@ internal class PlayerViewModelFullPlayerActions(
     override fun onFavoriteToggle() = callbacks.value.onFavoriteToggle()
 
     override fun onCollapse() = callbacks.value.onCollapse()
-    override fun onShowDetails() = callbacks.value.onShowDetails()
     override fun onQueueDragStart() = callbacks.value.onQueueDragStart()
     override fun onQueueDrag(dragAmount: Float) = callbacks.value.onQueueDrag(dragAmount)
     override fun onQueueRelease(totalDrag: Float, velocity: Float) = callbacks.value.onQueueRelease(totalDrag, velocity)

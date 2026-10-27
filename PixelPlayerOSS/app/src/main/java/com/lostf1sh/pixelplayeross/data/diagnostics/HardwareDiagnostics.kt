@@ -167,8 +167,8 @@ object HardwareDiagnostics {
                     "Signal path",
                     when {
                         !route.isDirectActive -> "—"
-                        route.signalMode == DirectSignalMode.PROCESSED -> "Processed"
-                        else -> "Pristine"
+                        route.signalMode == DirectSignalMode.PROCESSED -> "Resonance (processed)"
+                        else -> "Purity (untouched)"
                     },
                     isUnknown = !route.isDirectActive,
                 ),
@@ -324,10 +324,11 @@ object HardwareDiagnostics {
         AudioRouteReason.CROSSFADE_REQUIRES_ANDROID -> "Crossfade requires Android"
         AudioRouteReason.ANDROID_EFFECT_REQUIRES_ANDROID -> "Android effect requires Android"
         AudioRouteReason.SAFETY_TRANSITION_DEFERRED -> "Transition deferred (audible)"
+        AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS -> "DAC shared with other apps"
         // The two Direct reasons name the signal path, because that is the part of a Direct route a
         // listener can actually hear the difference between.
-        AudioRouteReason.DIRECT_PRISTINE -> "Direct — pristine"
-        AudioRouteReason.DIRECT_PROCESSED -> "Direct — processed"
+        AudioRouteReason.DIRECT_PRISTINE -> "Direct — Purity"
+        AudioRouteReason.DIRECT_PROCESSED -> "Direct — Resonance"
         AudioRouteReason.DIRECT_ACTIVE -> "Direct active"
         AudioRouteReason.DIRECT_FAILED_FALLBACK -> "Direct failed → Android"
         AudioRouteReason.MAINTENANCE_FORCE_ANDROID -> "Maintenance: force Android"

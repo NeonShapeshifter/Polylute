@@ -51,8 +51,6 @@
     <string name="setup_external_services_title">Optional Online Services</string>
     <string name="setup_external_lyrics_title">Online lyrics from LRCLIB</string>
     <string name="setup_external_lyrics_description">Search lrclib.net when local or embedded lyrics are missing.</string>
-    <string name="setup_external_artist_images_title">Artist artwork from Deezer</string>
-    <string name="setup_external_artist_images_description">Fetch missing artist photos from Deezer and cache them locally.</string>
     <string name="setup_external_services_footer">You can change these later in Settings &gt; Music Management &gt; Optional online services.</string>
     <string name="setup_library_layout_title">Library Layout</string>
     <string name="setup_library_layout_subtitle">Choose your preferred way to navigate your library.</string>

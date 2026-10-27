@@ -85,6 +85,53 @@ class UsbHardwareVolumeTest {
         }
     }
 
+    // ── B39-S1: a DAC nothing is known about is lowered before any audio reaches it ──────────────────
+
+    @Test
+    fun `the first-use level is minus 30 dB on the step grid, never louder`() {
+        val units = UsbHardwareVolumePolicy.firstUseUnits(range)
+        assertTrue(units <= -30 * 256)
+        // Exactly a step the app itself can show and write back.
+        assertEquals(units, UsbHardwareVolumePolicy.unitsFor(UsbHardwareVolumePolicy.stepFor(units, range), range))
+        // The loudest such step: one more would be louder than -30 dB.
+        assertTrue(units + UsbHardwareVolumePolicy.stepUnits(range) > -30 * 256)
+    }
+
+    @Test
+    fun `a DAC whose whole range is louder than the first-use level goes to its quietest step`() {
+        val loudOnly = UsbVolumeRange(minUnits = -20 * 256, maxUnits = 0, resolutionUnits = 256)
+        assertEquals(loudOnly.minUnits, UsbHardwareVolumePolicy.firstUseUnits(loudOnly))
+        // And one whose range ends below it is never asked for a level it cannot hold.
+        val quietOnly = UsbVolumeRange(minUnits = -80 * 256, maxUnits = -40 * 256, resolutionUnits = 256)
+        assertTrue(UsbHardwareVolumePolicy.firstUseUnits(quietOnly) in quietOnly.minUnits..quietOnly.maxUnits)
+        assertEquals(quietOnly.maxUnits, UsbHardwareVolumePolicy.firstUseUnits(quietOnly) .coerceAtMost(quietOnly.maxUnits))
+    }
+
+    @Test
+    fun `an unknown DAC that boots at its loudest is lowered to the first-use level, not left at full`() {
+        val firstUse = UsbHardwareVolumePolicy.firstUseUnits(range)
+        // 100 percent: 0 dB. Before B39 nothing was known, so nothing was asked of it.
+        assertNull(UsbHardwareVolumePolicy.openTarget(0, savedUnits = null, ceilingUnits = null))
+        assertEquals(firstUse, UsbHardwareVolumePolicy.openTarget(0, savedUnits = null, ceilingUnits = null, firstUseUnits = firstUse))
+    }
+
+    @Test
+    fun `an unknown DAC is first use, and one with a saved level or a calibration or a standing override is not`() {
+        assertTrue(UsbHardwareVolumePolicy.isFirstUse(savedUnits = null, calibrated = false, overrideStands = false))
+        assertTrue(!UsbHardwareVolumePolicy.isFirstUse(savedUnits = -20 * 256, calibrated = false, overrideStands = false))
+        assertTrue(!UsbHardwareVolumePolicy.isFirstUse(savedUnits = null, calibrated = true, overrideStands = false))
+        assertTrue(!UsbHardwareVolumePolicy.isFirstUse(savedUnits = null, calibrated = false, overrideStands = true))
+    }
+
+    @Test
+    fun `a known DAC keeps its remembered level and the first-use level never raises it`() {
+        // A listener who chose -12 dB on this DAC: nothing about first use applies, and a DAC already at -40 is never raised to anything.
+        val saved = -12 * 256
+        assertEquals(saved, UsbHardwareVolumePolicy.openTarget(0, savedUnits = saved, ceilingUnits = null))
+        val firstUse = UsbHardwareVolumePolicy.firstUseUnits(range)
+        assertNull(UsbHardwareVolumePolicy.openTarget(-40 * 256, savedUnits = null, ceilingUnits = null, firstUseUnits = firstUse))
+    }
+
     private fun featureUnitOffset(raw: ByteArray): Int =
         (0 until raw.size - 3).first {
             raw[it] == 0x12.toByte() && raw[it + 1] == 0x24.toByte() && raw[it + 2] == 0x06.toByte()

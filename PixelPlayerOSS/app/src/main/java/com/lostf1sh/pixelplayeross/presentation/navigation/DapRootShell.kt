@@ -1,5 +1,8 @@
 package com.lostf1sh.pixelplayeross.presentation.navigation
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -61,9 +64,19 @@ internal fun DapRootShell(
     onSearchBarActiveChange: (Boolean) -> Unit,
     onOpenSidebar: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * B41: the cover glass is behind the app, so the pages are see-through. A detail page then must not have the root under it showing
+     * through: the root gives way to it as it comes in (and returns as it leaves), over the same time the navigation takes.
+     */
+    glassBehind: Boolean = false,
 ) {
     val rootStateHolder = rememberSaveableStateHolder()
     val selectedRootTab = DapRootTab.fromRouteOrHome(selectedRootRouteState.value)
+    val detailProgress = animateFloatAsState(
+        targetValue = if (glassBehind && isDetailVisible) 1f else 0f,
+        animationSpec = tween(TRANSITION_DURATION),
+        label = "GlassDetailProgress",
+    )
 
     Box(modifier = modifier.fillMaxSize()) {
         DapRootTab.entries.forEach { rootTab ->
@@ -71,7 +84,13 @@ internal fun DapRootShell(
             val rootModifier = Modifier
                 .fillMaxSize()
                 .zIndex(if (isSelected) 1f else 0f)
-                .alpha(if (isSelected) 1f else 0f)
+                .then(
+                    if (glassBehind) {
+                        Modifier.graphicsLayer { alpha = if (isSelected) 1f - detailProgress.value else 0f }
+                    } else {
+                        Modifier.alpha(if (isSelected) 1f else 0f)
+                    }
+                )
                 // Only the selected root takes touches, and it takes all of them: alpha 0 does not
                 // stop input, so a touch on an empty part of the visible root used to fall through
                 // to a hidden root underneath and press one of its rows.

@@ -46,8 +46,8 @@ data class HardwareEvent(
  * nothing leaves the device, and the buffer is dropped with the process — a permanent verbose
  * hardware database would be a liability, not a diagnostic.
  *
- * Follows [PerformanceMetrics] rather than the DataStore-backed stores: a plain object with
- * synchronous access, so a broadcast receiver can record into it without a coroutine scope.
+ * A plain object rather than a DataStore-backed store, with synchronous access, so a broadcast receiver can record into it without a
+ * coroutine scope.
  */
 object HardwareEventLog {
 
@@ -71,6 +71,8 @@ object HardwareEventLog {
                 )
             )
         }
+        // B40-F7: into the detailed log too, while that is on (a unit's serial number, which the USB label ends with, stays out)
+        DetailedLog.record("Hardware") { "$type ${detail?.let(LogScrubber::withoutBracketedSerial).orEmpty()}".trimEnd() }
     }
 
     /** Newest first, which is the order a diagnostic list wants to read. */

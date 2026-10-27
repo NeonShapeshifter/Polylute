@@ -150,8 +150,6 @@
     <string name="playlist_songs_added_toast">Låtarna lades till i spellistorna</string>
     <string name="playlist_created_songs_added_toast">Spellistan skapades och låtarna lades till</string>
     <string name="playlist_saved_toast">Sparad</string>
-    <string name="folder_state_excluded">Undantagen</string>
-    <string name="folder_state_included">Inkluderad</string>
     <string name="back_action">Tillbaka</string>
     <string name="track_details_title">Spårdetaljer</string>
     <string name="track_details_section_file">Spår</string>

@@ -165,7 +165,7 @@ open class EqualizerRenderTest {
     fun `state 3, DAC and Resonance - the title names the headphones and the DAC, the curve is applied, and the route says Resonance`() {
         setScreen(state(dacResonance))
         assertShows(
-            s(R.string.settings_category_equalizer_title), s(R.string.eq_subtitle_with, "TYGR", "SNOWSKY Melody"),
+            s(R.string.eq_polylute_title), s(R.string.eq_polylute_where), s(R.string.eq_subtitle_with, "TYGR", "SNOWSKY Melody"),
             s(R.string.audio_status_applied), s(R.string.eq_route_resonance),
             s(R.string.eq_mode_saved_in, "TYGR"), s(R.string.headphone_eq_mode_off), s(R.string.headphone_eq_mode_10), s(R.string.headphone_eq_mode_15),
             s(R.string.eq_preset_row), s(R.string.eq_save_preset), s(R.string.eq_section_response), s(R.string.eq_section_bands),
@@ -173,6 +173,35 @@ open class EqualizerRenderTest {
             s(R.string.eq_reset_flat), s(R.string.eq_saved_note, "TYGR"),
         )
         fits("state 3")
+    }
+
+    @Test
+    fun `B39-A6 - with a DAC whose own EQ is on, the Polylute EQ says it is another equalizer, inside the DAC`() {
+        setScreen(state(dacResonance.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.ON)))
+        assertShows(s(R.string.eq_polylute_title), s(R.string.eq_polylute_where), s(R.string.eq_dac_eq_note_on, "SNOWSKY Melody"))
+        // and it never calls itself the DAC's
+        compose.onAllNodesWithText(s(R.string.dac_eq_title)).assertCountEquals(0)
+    }
+
+    @Test
+    fun `B39-A6 - with a DAC whose EQ is off, flat or unreadable, the note says which`() {
+        setScreen(state(dacResonance.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.OFF)))
+        assertShows(s(R.string.eq_dac_eq_note_off, "SNOWSKY Melody"))
+    }
+
+    @Test
+    fun `B41 - a DAC whose EQ is on but flat says so, apart from one that is closed`() {
+        setScreen(state(dacResonance.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.FLAT)))
+        assertShows(s(R.string.eq_dac_eq_note_flat, "SNOWSKY Melody"))
+    }
+
+    @Test
+    fun `B39-A6 - with no DAC EQ to ask about there is no note`() {
+        setScreen(state(dacResonance))
+        assertShows(s(R.string.eq_polylute_title), s(R.string.eq_polylute_where))
+        for (res in listOf(R.string.eq_dac_eq_note_on, R.string.eq_dac_eq_note_off, R.string.eq_dac_eq_note_flat, R.string.eq_dac_eq_note_unknown)) {
+            compose.onAllNodesWithText(s(res, "SNOWSKY Melody")).assertCountEquals(0)
+        }
     }
 
     @Test

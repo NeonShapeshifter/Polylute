@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,9 +74,13 @@ internal fun LazyListScope.statsTop(
     lastMonth: YearMonth,
     actions: TopActions,
     isFailed: Boolean = false,
+    /** This month on the device's clock (B42-fix1): what "so far" is judged against. */
+    thisMonth: YearMonth = YearMonth.now(),
+    /** The month the listening history begins in, when it is known (B42-fix1): said under the pickers, so a missing earlier month is not a bug. */
+    historyStart: YearMonth? = null,
 ) {
-    item(key = "top-title") { TopTitle(state, look) }
-    item(key = "top-period") { PeriodControls(state, look, firstMonth, lastMonth, actions) }
+    item(key = "top-title") { TopTitle(state, look, thisMonth) }
+    item(key = "top-period") { PeriodControls(state, look, firstMonth, lastMonth, actions, historyStart) }
     item(key = "top-size") {
         Column(Modifier.fillMaxWidth().padding(top = DapSpacing.Lg)) {
             Text(text = stringResource(R.string.stats_top_size), style = DapType.Note, color = Dap.tertiaryText)
@@ -135,7 +140,7 @@ internal fun LazyListScope.statsTop(
 
 /** "Top 50 · 2026", and "so far" when the period is not over. */
 @Composable
-private fun TopTitle(state: TopUiState, look: StatsLook) {
+private fun TopTitle(state: TopUiState, look: StatsLook, thisMonth: YearMonth) {
     val period = state.period
     val label = StatsFormat.periodLabel(period, look.locale)
     Column(Modifier.fillMaxWidth().padding(top = DapSpacing.Lg)) {
@@ -146,7 +151,7 @@ private fun TopTitle(state: TopUiState, look: StatsLook) {
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        val inProgress = state.report?.inProgress ?: !period.to.isBefore(YearMonth.now())
+        val inProgress = state.report?.inProgress ?: !period.to.isBefore(thisMonth)
         if (inProgress) {
             Spacer(Modifier.height(DapSpacing.Xs))
             DapState(kind = DapStateKind.Connected, label = stringResource(R.string.stats_top_in_progress))
@@ -165,6 +170,7 @@ private fun PeriodControls(
     firstMonth: YearMonth,
     lastMonth: YearMonth,
     actions: TopActions,
+    historyStart: YearMonth?,
 ) {
     val years = (firstMonth.year..lastMonth.year).toList().reversed()
     val period = state.period
@@ -197,6 +203,15 @@ private fun PeriodControls(
             onBack = { actions.onMonths(state.from, state.to.minusMonths(1)) },
             onForward = { actions.onMonths(state.from, state.to.plusMonths(1)) },
         )
+        // B42-fix1: months before the first listen are not offered, because nothing was recorded then; this says so, in one line
+        if (historyStart != null) {
+            Text(
+                text = stringResource(R.string.stats_top_history_starts, StatsFormat.monthLong(historyStart, look.locale)),
+                style = DapType.Note,
+                color = Dap.tertiaryText,
+                modifier = Modifier.padding(top = DapSpacing.Xs).testTag("top-history-starts"),
+            )
+        }
     }
 }
 

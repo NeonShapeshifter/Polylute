@@ -27,6 +27,10 @@
     <string name="home_mode_open_security">Öppna säkerhetsinställningar</string>
     <string name="home_mode_dedicated_body">Dedikerat låser Polylute med Androids Lock Task och hanterar låsskärmen. Det kräver Device Owner.</string>
     <string name="home_mode_guide_title">Gör Polylute till enhetsägare</string>
+    <string name="home_mode_guide_who">Dedikerat är för en telefon som bara ska vara spelare, helst en reservtelefon. På en telefon du använder varje dag passar appläge eller Fäst bättre.</string>
+    <string name="home_mode_guide_why_clear">Därför ska kontona bort: Android utser bara en enhetsägare på en telefon som ser oanvänd ut. Det är en säkerhetsregel och gäller bara i det ögonblick kommandot körs; lägg tillbaka dina konton direkt efter.</string>
+    <string name="home_mode_guide_extra_users">Samsungs Säker mapp och jobbprofiler räknas som extra användare. Tar du bort dem raderas deras data.</string>
+    <string name="home_mode_guide_leave">Du kan lämna Dedikerat när du vill från den här sidan (Sluta vara enhetsägare). Ingen återställning.</string>
     <string name="home_mode_guide_requirements">Krav: inga konton eller extra användare på enheten när du gör det (en ny eller fabriksåterställd telefon, eller ta bort alla konton först), USB-felsökning på och en dator med adb.</string>
     <string name="home_mode_guide_command_label">Kör detta på datorn:</string>
     <string name="home_mode_guide_copy">Kopiera kommandot</string>

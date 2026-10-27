@@ -17,7 +17,8 @@ enum UsbGlitchKind {
     USB_GLITCH_FEEDBACK_STUCK = 6,   // B10: the DAC's feedback has not moved for seconds, away from nominal
     USB_GLITCH_FEEDBACK_UNSTUCK = 7, // B10: it moved again (or the stream ended): the episode's total
     USB_GLITCH_OUTPUT_GAP = 8,       // B23-P2: a submit gap longer than the lead the ring held: the model estimates the bus had nothing queued
-    USB_GLITCH_KIND_COUNT = 9,
+    USB_GLITCH_FEEDBACK_INVALID = 9, // B41-fix1: a feedback transfer that was not a reading (an error status, or not the four bytes asked for)
+    USB_GLITCH_KIND_COUNT = 10,
 };
 
 typedef struct {
@@ -182,6 +183,30 @@ double usbFeedbackDeviation(double fpmf, double nominalFpmf);
  * is; an implausible one (a misparsed format is off by a power of two) keeps [currentFpmf].
  */
 double usbFeedbackApply(double currentFpmf, double reportedFpmf, double nominalFpmf);
+
+// ── Is a completed feedback transfer a reading at all? (B41-fix1, A1a) ──────────────────────────────
+//
+// The driver is UAC2-only and runs at high speed (125 us microframes), where the explicit feedback endpoint answers one Q16.16 value
+// of exactly four bytes. (UAC1 at full speed answers three bytes in 10.14; the driver does not drive such a device, and the URB asks
+// for four bytes in any case.) The kernel reports a transfer's outcome twice, in the URB's `status` and in each packet's `status`, and
+// it can deliver bytes together with an error: a positive length is not a good completion. A transfer that is not clean and exactly
+// the size asked for says nothing about the DAC's clock and must not move the rate the host sends.
+
+/** What a feedback packet carries: one Q16.16 frames-per-microframe value. */
+#define USB_FEEDBACK_BYTES 4
+
+enum UsbFeedbackPacket {
+    USB_FEEDBACK_PACKET_OK = 0,
+    USB_FEEDBACK_PACKET_URB_STATUS = 1,     // the URB completed with an error (a cancel, a reset, a stall)
+    USB_FEEDBACK_PACKET_PACKET_STATUS = 2,  // its packet did (-EILSEQ, -EPROTO, -EOVERFLOW, ...)
+    USB_FEEDBACK_PACKET_LENGTH = 3,         // both clean, but not exactly USB_FEEDBACK_BYTES (empty, short, long)
+    USB_FEEDBACK_PACKET_KIND_COUNT = 4,
+};
+
+/** Judges one completed feedback URB: the URB's status first, then its packet's, then the length. */
+enum UsbFeedbackPacket usbFeedbackPacketVerdict(int urbStatus, int packetStatus, unsigned int actualLength);
+
+const char *usbFeedbackPacketName(int verdict);
 
 // ── Frozen feedback (B10, AUD-124 "shh") ────────────────────────────────────────────────────────
 //

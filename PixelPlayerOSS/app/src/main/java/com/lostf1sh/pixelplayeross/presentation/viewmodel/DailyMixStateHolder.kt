@@ -45,6 +45,10 @@ class DailyMixStateHolder @Inject constructor(
     private var midnightJob: Job? = null
     private var dayChangeReceiver: BroadcastReceiver? = null
 
+    /** The clock and the zone the midnight timer reads, replaceable by a test. */
+    internal var clock: () -> Long = System::currentTimeMillis
+    internal var zone: () -> TimeZone = TimeZone::getDefault
+
     /** Both ask within milliseconds of each other at a start; one check is enough. */
     private val dayCheckMutex = Mutex()
 
@@ -87,15 +91,15 @@ class DailyMixStateHolder @Inject constructor(
     /**
      * The day-boundary check.
      *
-     * The day is computed in **local** time, for both the last build and now, which is the same idea of a day the collections seed the mix by,
-     * so the two cannot disagree about when a mix goes stale.
+     * B42-fix1: it asks the collections whether the mix they hold is **for today**, which is the day they stored it for (`Built.epochDay`, in
+     * the zone in force when it was made) against today's in the zone in force now. It used to compare the day of *when the last build ran*
+     * with today's, both in the current zone, so a time-zone change that moves the local date without the build's instant straddling midnight
+     * (built 10:00 in Madrid, the phone put on Pacific time the same afternoon) left a mix that was another day's.
      */
     fun checkAndUpdateIfNeeded() {
         appScope.launch {
             dayCheckMutex.withLock {
-                if (DailyMixSchedule.isNewDay(collections.builtAtMs, System.currentTimeMillis(), TimeZone.getDefault())) {
-                    collections.refresh("local day boundary crossed")
-                }
+                collections.refreshIfDayChanged()
             }
         }
     }
@@ -125,7 +129,7 @@ class DailyMixStateHolder @Inject constructor(
         midnightJob?.cancel()
         midnightJob = appScope.launch {
             while (true) {
-                val wait = DailyMixSchedule.msUntilNextLocalMidnight(System.currentTimeMillis(), TimeZone.getDefault())
+                val wait = DailyMixSchedule.msUntilNextLocalMidnight(clock(), zone())
                 delay(wait + MIDNIGHT_MARGIN_MS)
                 checkAndUpdateIfNeeded()
             }

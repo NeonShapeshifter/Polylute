@@ -42,7 +42,7 @@ fun DapBackScaffold(
     val backLabel = stringResource(R.string.auth_cd_back)
     val goBack = { if (onBack != null) onBack() else back.back() }
     if (overHeaderArt) {
-        Box(modifier.fillMaxSize().background(Dap.background)) {
+        Box(modifier.fillMaxSize().background(Dap.page)) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -64,7 +64,7 @@ fun DapBackScaffold(
         }
         return
     }
-    Column(modifier.fillMaxSize().background(Dap.background).statusBarsPadding()) {
+    Column(modifier.fillMaxSize().background(Dap.page).statusBarsPadding()) {
         if (showsBack) {
             Row(Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Md, vertical = DapSpacing.Xs)) {
                 DapOverlayAction(

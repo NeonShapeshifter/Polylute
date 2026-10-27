@@ -1,7 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.settings
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -23,7 +22,6 @@ data class BehaviorSettingsState(
     val backNavigationMode: BackNavigationMode,
     val keepPlayingInBackground: Boolean,
     val resumeOnHeadsetReconnect: Boolean,
-    val dapLockScreenEnabled: Boolean,
     val showQueueHistory: Boolean,
     val folderBackGestureNavigation: Boolean,
     val tapBackgroundClosesPlayer: Boolean,
@@ -34,7 +32,6 @@ data class BehaviorSettingsState(
             backNavigationMode = ui.backNavigationMode,
             keepPlayingInBackground = ui.keepPlayingInBackground,
             resumeOnHeadsetReconnect = ui.resumeOnHeadsetReconnect,
-            dapLockScreenEnabled = ui.dapLockScreenEnabled,
             showQueueHistory = ui.showQueueHistory,
             folderBackGestureNavigation = ui.folderBackGestureNavigation,
             tapBackgroundClosesPlayer = ui.tapBackgroundClosesPlayer,
@@ -48,7 +45,6 @@ interface BehaviorSettingsActions {
     fun onBackNavigationModeChange(value: BackNavigationMode)
     fun onKeepPlayingInBackgroundChange(value: Boolean)
     fun onResumeOnHeadsetReconnectChange(value: Boolean)
-    fun onDapLockScreenEnabledChange(value: Boolean)
     fun onShowQueueHistoryChange(value: Boolean)
     fun onFolderBackGestureNavigationChange(value: Boolean)
     fun onTapBackgroundClosesPlayerChange(value: Boolean)
@@ -95,13 +91,6 @@ fun BehaviorSettingsScreen(state: BehaviorSettingsState, actions: BehaviorSettin
             checked = state.resumeOnHeadsetReconnect,
             onCheckedChange = { actions.onResumeOnHeadsetReconnectChange(it) },
             leadingIcon = { Icon(painterResource(R.drawable.rounded_headphones_24), null, tint = MaterialTheme.colorScheme.secondary) },
-        )
-        SwitchSettingItem(
-            title = stringResource(R.string.setcat_dap_lock_screen_title),
-            subtitle = stringResource(R.string.setcat_dap_lock_screen_subtitle),
-            checked = state.dapLockScreenEnabled,
-            onCheckedChange = { actions.onDapLockScreenEnabledChange(it) },
-            leadingIcon = { Icon(Icons.Outlined.Lock, null, tint = MaterialTheme.colorScheme.secondary) },
         )
     }
 

@@ -12,7 +12,7 @@ object HttpUserAgent {
     /** This project's address: MusicBrainz asks the client's author to be reachable, so it is the one request that carries it. */
     const val PROJECT_URL = "https://github.com/NeonShapeshifter/Polylute"
 
-    /** `Polylute/<versionName> (Android; Music Player)`: LRCLIB, Deezer and the image loader. */
+    /** `Polylute/<versionName> (Android; Music Player)`: the lyrics service (LRCLIB) and the image loader. */
     const val DEFAULT = "Polylute/${BuildConfig.VERSION_NAME} (Android; Music Player)"
 
     /** `Polylute/<versionName> ( <project address> )`: MusicBrainz. */

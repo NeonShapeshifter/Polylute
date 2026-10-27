@@ -54,7 +54,7 @@ fun SystemSettingsHost(
             purgeableDormantCount = purgeable,
             isRebuilding = isRebuilding,
             usbSettingsAvailable = usbAvailable,
-            showAndroidShortcuts = mode.product.offersAndroidShortcuts,
+            showAndroidShortcuts = ModeSurfacePolicy.isVisible(ModeSurfacePolicy.Entry.SYSTEM_ANDROID_SETTINGS, mode.product),
         ),
         actions = actions,
     )

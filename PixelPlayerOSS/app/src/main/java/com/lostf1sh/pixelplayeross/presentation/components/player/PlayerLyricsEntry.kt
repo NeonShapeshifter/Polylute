@@ -4,11 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,7 +24,6 @@ import com.lostf1sh.pixelplayeross.presentation.components.LocalMaterialTheme
 import com.lostf1sh.pixelplayeross.presentation.components.LyricsSheet
 import com.lostf1sh.pixelplayeross.presentation.components.subcomps.FetchLyricsDialog
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.LyricsSearchUiState
-import com.lostf1sh.pixelplayeross.ui.ds.DapMotion
 import com.lostf1sh.pixelplayeross.utils.LyricsImportFailureReason
 import com.lostf1sh.pixelplayeross.utils.LyricsImportSecurity
 import com.lostf1sh.pixelplayeross.utils.LyricsImportValidationResult
@@ -72,22 +66,21 @@ internal suspend fun validateLyricsImport(
 }
 
 /**
- * Where the lyrics surface is opened from, and what it needs to stay open: the "is it showing" flag, the fetch
- * dialog's, and the file picker the dialog and the sheet both offer. One object per player so the header's Lyrics
- * tab, the sheet and the dialog agree on all three.
+ * Where the lyrics page is opened from, and what it needs to stay open: the fetch dialog's flag, and the file picker the dialog and the page
+ * both offer. One object per player so the header's Lyrics icon, the page and the dialog agree on both.
+ *
+ * B42-fix1: the lyrics are a page of the player's pager, so "is it showing" is the pager's (`PlayerPagesState`), and opening them is
+ * [showPage]: a jump to that page.
  */
 @Stable
 internal class PlayerLyricsEntry {
-    var isShowing by mutableStateOf(false)
     var isFetchDialogShowing by mutableStateOf(false)
+    internal var showPage: () -> Unit = {}
     internal var openLyrics: () -> Unit = {}
     internal var pickFile: () -> Unit = {}
 
-    /** The Lyrics tab, or a tap on the lyrics affordance. */
+    /** The Lyrics icon: the page, or the search when the song has no lyrics at all. */
     fun open() = openLyrics()
-    fun close() {
-        isShowing = false
-    }
 }
 
 @Composable
@@ -95,8 +88,11 @@ internal fun rememberPlayerLyricsEntry(
     currentSongId: String?,
     lyrics: PlayerLyricsState,
     actions: FullPlayerActions,
+    showPage: () -> Unit,
 ): PlayerLyricsEntry {
     val entry = remember { PlayerLyricsEntry() }
+    val latestShowPage by rememberUpdatedState(showPage)
+    entry.showPage = { latestShowPage() }
     val context = LocalContext.current
     // Resolved here, not inside the launcher: the import path is a coroutine with a try/catch,
     // and neither is a place a composable call can live.
@@ -131,7 +127,7 @@ internal fun rememberPlayerLyricsEntry(
 
                         latestActions.onImportLyricsFromFile(currentSongId, validatedImport)
                         entry.isFetchDialogShowing = false
-                        entry.isShowing = true
+                        entry.showPage()
                     } catch (e: Exception) {
                         Timber.e(e, "Error reading imported lyrics file")
                         latestActions.onToast(lyricsImportReadError)
@@ -145,13 +141,13 @@ internal fun rememberPlayerLyricsEntry(
         val current = latestLyrics.lyricsProvider()
         val hasLyrics = !current?.synced.isNullOrEmpty() || !current?.plain.isNullOrEmpty()
         when {
-            hasLyrics -> entry.isShowing = true
+            hasLyrics -> entry.showPage()
 
-            // Local sources have not been consulted yet for this song. Open the lyrics view,
+            // Local sources have not been consulted yet for this song. Open the lyrics page,
             // which resolves local-first, rather than offering a network search up front.
             !latestLyrics.lyricsResolveCompletedProvider() -> {
                 latestActions.onEnsureLyricsResolved()
-                entry.isShowing = true
+                entry.showPage()
             }
 
             // Embedded tags, sidecar files and the local cache are all genuinely empty.
@@ -164,7 +160,7 @@ internal fun rememberPlayerLyricsEntry(
             is LyricsSearchUiState.Success -> {
                 if (entry.isFetchDialogShowing) {
                     entry.isFetchDialogShowing = false
-                    entry.isShowing = true
+                    entry.showPage()
                     latestActions.onResetLyricsSearch()
                 }
             }
@@ -176,14 +172,13 @@ internal fun rememberPlayerLyricsEntry(
     return entry
 }
 
-/** The fetch dialog and the lyrics sheet. Composed after the player's own surface, over it. */
+/** The fetch dialog: a window of its own, so it is composed beside the pages, not on one of them (a page is only composed while it is near). */
 @Composable
-internal fun PlayerLyricsLayer(
+internal fun PlayerLyricsDialogs(
     entry: PlayerLyricsEntry,
     song: Song,
     lyrics: PlayerLyricsState,
     actions: FullPlayerActions,
-    modifier: Modifier = Modifier,
 ) {
     if (entry.isFetchDialogShowing) {
         MaterialTheme(
@@ -213,53 +208,51 @@ internal fun PlayerLyricsLayer(
             )
         }
     }
+}
 
-    AnimatedVisibility(
-        visible = entry.isShowing,
-        modifier = modifier,
-        enter = slideInVertically(
-            initialOffsetY = { it / 5 },
-            animationSpec = DapMotion.surface()
-        ) + fadeIn(animationSpec = DapMotion.content()),
-        exit = slideOutVertically(
-            targetOffsetY = { it / 6 },
-            animationSpec = DapMotion.surfaceExit()
-        ) + fadeOut(animationSpec = DapMotion.contentExit())
-    ) {
-        LyricsSheet(
-            stablePlayerStateFlow = lyrics.stablePlayerStateFlow,
-            playbackPositionFlow = lyrics.playbackPositionFlow,
-            lyricsSearchUiState = lyrics.searchState,
-            resetLyricsForCurrentSong = {
-                entry.close()
-                actions.onResetLyrics()
-            },
-            onSearchLyrics = { forcePick -> actions.onFetchLyrics(forcePick) },
-            onPickResult = { actions.onAcceptLyricsResult(it) },
-            onManualSearch = { title, artist -> actions.onSearchLyricsManually(title, artist) },
-            onImportLyrics = { entry.pickFile() },
-            onDismissLyricsSearch = { actions.onResetLyricsSearch() },
-            lyricsSyncOffset = lyrics.lyricsSyncOffset,
-            onLyricsSyncOffsetChange = { actions.onLyricsSyncOffsetChange(song.id, it) },
-            lyricsTextStyle = MaterialTheme.typography.titleLarge,
-            colorScheme = LocalMaterialTheme.current,
-            // Display preferences are edited from the lyrics surface too, but they are written
-            // through the ViewModel so the repository stays the only writer of these keys.
-            onLyricsAlignmentChange = { actions.onLyricsAlignmentChange(it) },
-            onShowLyricsTranslationChange = { actions.onShowLyricsTranslationChange(it) },
-            onShowLyricsRomanizationChange = { actions.onShowLyricsRomanizationChange(it) },
-            onBackClick = { entry.close() },
-            onSaveLyricsToFile = actions::onSaveLyricsToFile,
-            onSeekTo = { actions.onSeek(it) },
-            onPlayPause = {
-                actions.onPlayPause()
-            },
-            onNext = actions::onNext,
-            onPrev = actions::onPrevious,
-            immersiveLyricsEnabled = lyrics.immersiveLyricsEnabled,
-            immersiveLyricsTimeout = lyrics.immersiveLyricsTimeout,
-            isImmersiveTemporarilyDisabled = lyrics.isImmersiveTemporarilyDisabled,
-            externalLyricsEnabled = lyrics.externalLyricsEnabled
-        )
+/**
+ * The lyrics page (B42-fix1): the lyrics view as one of the player's pages. It is composed only while it is on or next to the screen, so
+ * arriving on it (a swipe, or the header's icon) is what makes sure the song's lyrics have been looked for locally, as opening them used to.
+ */
+@Composable
+internal fun PlayerLyricsPage(
+    entry: PlayerLyricsEntry,
+    song: Song,
+    lyrics: PlayerLyricsState,
+    actions: FullPlayerActions,
+    modifier: Modifier = Modifier,
+) {
+    LaunchedEffect(song.id) {
+        if (!lyrics.lyricsResolveCompletedProvider()) actions.onEnsureLyricsResolved()
     }
+    LyricsSheet(
+        stablePlayerStateFlow = lyrics.stablePlayerStateFlow,
+        playbackPositionFlow = lyrics.playbackPositionFlow,
+        lyricsSearchUiState = lyrics.searchState,
+        resetLyricsForCurrentSong = { actions.onResetLyrics() },
+        onSearchLyrics = { forcePick -> actions.onFetchLyrics(forcePick) },
+        onPickResult = { actions.onAcceptLyricsResult(it) },
+        onManualSearch = { title, artist -> actions.onSearchLyricsManually(title, artist) },
+        onImportLyrics = { entry.pickFile() },
+        onDismissLyricsSearch = { actions.onResetLyricsSearch() },
+        lyricsSyncOffset = lyrics.lyricsSyncOffset,
+        onLyricsSyncOffsetChange = { actions.onLyricsSyncOffsetChange(song.id, it) },
+        lyricsTextStyle = MaterialTheme.typography.titleLarge,
+        colorScheme = LocalMaterialTheme.current,
+        // Display preferences are edited from the lyrics surface too, but they are written
+        // through the ViewModel so the repository stays the only writer of these keys.
+        onLyricsAlignmentChange = { actions.onLyricsAlignmentChange(it) },
+        onShowLyricsTranslationChange = { actions.onShowLyricsTranslationChange(it) },
+        onShowLyricsRomanizationChange = { actions.onShowLyricsRomanizationChange(it) },
+        onSaveLyricsToFile = actions::onSaveLyricsToFile,
+        onSeekTo = { actions.onSeek(it) },
+        onPlayPause = {
+            actions.onPlayPause()
+        },
+        immersiveLyricsEnabled = lyrics.immersiveLyricsEnabled,
+        immersiveLyricsTimeout = lyrics.immersiveLyricsTimeout,
+        isImmersiveTemporarilyDisabled = lyrics.isImmersiveTemporarilyDisabled,
+        externalLyricsEnabled = lyrics.externalLyricsEnabled,
+        modifier = modifier,
+    )
 }

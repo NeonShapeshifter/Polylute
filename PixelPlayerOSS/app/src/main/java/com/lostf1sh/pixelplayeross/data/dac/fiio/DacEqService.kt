@@ -23,9 +23,15 @@ enum class DacEqWriteAvailability {
 
     /** Only the debug override lets the gate through (a debug build, a reviewer verifying on this phone). */
     DEBUG_OVERRIDE,
+
+    /** B40-F2: the profile is not verified, and the listener has allowed writes to it ([DacEqWriteConsent]): their writes go through the gate. */
+    USER_CONFIRMED,
     ;
 
-    val canWrite: Boolean get() = this == VERIFIED || this == DEBUG_OVERRIDE
+    val canWrite: Boolean get() = this == VERIFIED || this == DEBUG_OVERRIDE || this == USER_CONFIRMED
+
+    /** B40-F2: the model can be written and is waiting for the listener's yes: the screen shows what it is for, and the editing stays shut. */
+    val needsConsent: Boolean get() = this == NEEDS_VERIFICATION
 }
 
 /**
@@ -49,6 +55,8 @@ class DacEqService(
     private val playbackActive: () -> Boolean = { false },
     /** Where the backup file is read: never the main thread. The tests hand in theirs. */
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** B40-F2: the listener's yes to writes to a model nobody has verified yet; null where there is none (the older tests). */
+    val consent: DacEqWriteConsent? = null,
 ) {
     private val _backup = MutableStateFlow(DacEqBackupState(null, null))
 
@@ -81,6 +89,7 @@ class DacEqService(
         gate = DacEqWriteGate(options),
         backups = backups,
         overrideAllowsWrites = writeSwitch::isAllowed,
+        userConsent = { profile -> consent?.isGiven(profile.id) == true },
         elapsedMs = elapsedMs,
         wallClockMs = wallClockMs,
         publish = controller::publish,
@@ -102,7 +111,24 @@ class DacEqService(
         att == null || !att.profile.canBeWritten -> DacEqWriteAvailability.READ_ONLY_MODEL
         att.profile.verified -> DacEqWriteAvailability.VERIFIED
         writeSwitch.isAllowed() -> DacEqWriteAvailability.DEBUG_OVERRIDE
+        consent?.isGiven(att.profile.id) == true -> DacEqWriteAvailability.USER_CONFIRMED
         else -> DacEqWriteAvailability.NEEDS_VERIFICATION
+    }
+
+    /**
+     * B40-F2: the listener's yes to writes to [att]'s model (from the DAC's screen, after it said what will happen). Nothing is written to
+     * the DAC by this. False where this build has no consent store.
+     */
+    fun giveConsent(att: AttachedFiio): Boolean {
+        val store = consent ?: return false
+        if (!att.profile.canBeWritten) return false
+        store.give(att.profile.id, wallClockMs())
+        return true
+    }
+
+    /** B40-F2: takes the yes back. Writes nothing. */
+    fun withdrawConsent(att: AttachedFiio) {
+        consent?.withdraw(att.profile.id)
     }
 
     /** Reads the whole state now (whatever the route), logs it through [sink], and hands it to the labels. Null when it could not be read at all. */

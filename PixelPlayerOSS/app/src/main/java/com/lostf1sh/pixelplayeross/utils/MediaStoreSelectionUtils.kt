@@ -14,6 +14,19 @@ private val MIDI_EXTENSION_SELECTION_ARGS = arrayOf(
 )
 
 /**
+ * B40-fix1: whether a row Android indexed is **incomplete** for the library: the sync's selection ([buildLocalAudioSelection]) would leave
+ * it out for want of metadata Android had not read yet, not because the listener's minimum duration says so. That is an unknown duration
+ * (null, or not above zero; a short song has a duration) on anything but MIDI, or a blank title, or no path. It sits beside the
+ * selection and is pinned to it by a test that runs both over the same rows in SQLite, so the two cannot drift apart.
+ */
+fun isMediaRowIncomplete(durationMs: Long?, title: String?, mimeType: String?, data: String?): Boolean {
+    if (data == null || title.isNullOrEmpty()) return true
+    val midi = (mimeType?.lowercase() ?: "") in MIDI_MIME_SELECTION_ARGS ||
+        MIDI_EXTENSION_SELECTION_ARGS.any { pattern -> data.lowercase().endsWith(pattern.removePrefix("%")) }
+    return !midi && (durationMs == null || durationMs <= 0L)
+}
+
+/**
  * Builds the baseline MediaStore selection for user-facing local audio.
  *
  * We intentionally do not rely on [MediaStore.Audio.Media.IS_MUSIC] here because some devices

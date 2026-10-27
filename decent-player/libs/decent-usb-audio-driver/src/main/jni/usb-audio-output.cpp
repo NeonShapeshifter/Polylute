@@ -263,7 +263,7 @@ static bool waitForCompletion(UsbAudioContext *ctx, int maxWaitMs) {
 
 static const char *const kGlitchNames[USB_GLITCH_KIND_COUNT] = {
     "ISO_PACKET", "RING_EMPTY", "REAP_SLOW", "FEEDBACK_DEVIATION", "FEEDBACK_REJECTED", "READ_SLOW",
-    "FEEDBACK_STUCK", "FEEDBACK_UNSTUCK", "OUTPUT_GAP",
+    "FEEDBACK_STUCK", "FEEDBACK_UNSTUCK", "OUTPUT_GAP", "FEEDBACK_INVALID",
 };
 static GlitchCounter g_glitchCounters[USB_GLITCH_KIND_COUNT];
 static pthread_mutex_t g_glitchLock = PTHREAD_MUTEX_INITIALIZER;
@@ -466,7 +466,7 @@ static size_t feedbackUrbBytes() {
 }
 
 static struct usbdevfs_urb *newFeedbackUrb() {
-    return (struct usbdevfs_urb *)calloc(1, feedbackUrbBytes() + 4);
+    return (struct usbdevfs_urb *)calloc(1, feedbackUrbBytes() + USB_FEEDBACK_BYTES);
 }
 
 /** The four data bytes behind [ctx]'s current continuous feedback URB. */
@@ -494,14 +494,14 @@ static bool submitFeedbackUrb(UsbAudioContext *ctx) {
         return false;
 
     struct usbdevfs_urb *u = ctx->feedbackUrb;
-    memset(u, 0, feedbackUrbBytes() + 4);
+    memset(u, 0, feedbackUrbBytes() + USB_FEEDBACK_BYTES);
     u->type = USBDEVFS_URB_TYPE_ISO;
     u->flags = USBDEVFS_URB_ISO_ASAP;
     u->endpoint = (unsigned char)ctx->endpointFeedback;
     u->buffer = feedbackData(ctx);
-    u->buffer_length = 4;
+    u->buffer_length = USB_FEEDBACK_BYTES;
     u->number_of_packets = 1;
-    u->iso_frame_desc[0].length = 4;
+    u->iso_frame_desc[0].length = USB_FEEDBACK_BYTES;
 
     u->usercontext = &ctx->feedbackCookie;
     ctx->feedbackCookie.slot = -1;
@@ -590,7 +590,7 @@ struct StreamFacts {
 static StreamFacts g_streamFacts = {};
 static pthread_mutex_t g_streamFactsLock = PTHREAD_MUTEX_INITIALIZER;
 
-static void noteStreamFacts(const UsbAudioContext *ctx) {
+static void noteStreamFacts(UsbAudioContext *ctx) {
     pthread_mutex_lock(&g_streamFactsLock);
     g_streamFacts.seq++;
     g_streamFacts.valid = true;
@@ -601,6 +601,7 @@ static void noteStreamFacts(const UsbAudioContext *ctx) {
     g_streamFacts.endpointOut = ctx->endpointOut;
     g_streamFacts.endpointFeedback = ctx->endpointFeedback;
     g_streamFacts.maxPacket = ctx->maxPacketSize;
+    ctx->streamSeq = g_streamFacts.seq;  // B41-fix1: the policy events name the stream they happened in
     pthread_mutex_unlock(&g_streamFactsLock);
 }
 
@@ -620,8 +621,10 @@ size_t usbSecondSummaries(int64_t windowMs, char *out, size_t capacity) {
     if (windowMs <= 0) windowMs = 30000;
     if (windowMs > (int64_t)USB_SECOND_RING_CAPACITY * 1000) windowMs = (int64_t)USB_SECOND_RING_CAPACITY * 1000;
     const int64_t nowMs = monotonicMs();
-    UsbSecondSample samples[USB_SECOND_RING_CAPACITY];  // ~9 KB of stack, on demand
+    UsbSecondSample samples[USB_SECOND_RING_CAPACITY];  // ~25 KB of stack, on demand
     const int n = usbSecondRingLast(&g_secondRing, nowMs, windowMs, samples, USB_SECOND_RING_CAPACITY);
+    UsbPolicyEvent events[USB_POLICY_EVENT_CAPACITY];
+    const int eventCount = usbSecondRingEvents(&g_secondRing, nowMs, windowMs, events, USB_POLICY_EVENT_CAPACITY);
     StreamFacts f;
     pthread_mutex_lock(&g_streamFactsLock);
     f = g_streamFacts;
@@ -632,7 +635,22 @@ size_t usbSecondSummaries(int64_t windowMs, char *out, size_t capacity) {
                         f.valid ? "known" : "none", (long long)f.seq, f.rate, f.channels, f.slotBits, f.endpointOut, f.endpointFeedback,
                         f.maxPacket, (long long)(f.valid ? nowMs - f.openedMs : 0));
     if (used < 0 || (size_t)used >= capacity) return capacity - 1;
-    return (size_t)used + usbSecondRingFormat(samples, n, nowMs, out + used, capacity - (size_t)used);
+    // B41-fix1: what the extra fields of a second's line are (the first twelve are B27-A5's, unchanged).
+    static const char kLegend[] =
+        "legend: fb held=readings the policy did not obey (auto: stuck or implausible; refused counts only the beyond-5% ones); "
+        "dropped urb/packet/length=feedback transfers that were not a reading (URB status, packet status, length not 4) and "
+        "last=<urb>/<packet>/<length> of the last one; age=ms since the last valid reading at the end of the second (-1: none); "
+        "sent=the rate the packetizer was given, frames per microframe, calls=how many times; "
+        "wire applied=frames/packets of the audio URBs submitted, the rate that went out; fpmf min/max/mean is the rate received\n";
+    int more = snprintf(out + used, capacity - (size_t)used, "%s", kLegend);
+    if (more < 0 || (size_t)more >= capacity - (size_t)used) return capacity - 1;
+    used += more;
+    size_t total = (size_t)used + usbSecondRingFormat(samples, n, nowMs, out + used, capacity - (size_t)used);
+    if (total + 1 >= capacity) return total;
+    if (eventCount > 0) {
+        total += usbSecondRingFormatEvents(events, eventCount, nowMs, feedbackPolicyName, out + total, capacity - total);
+    }
+    return total;
 }
 
 /**
@@ -645,7 +663,71 @@ static double effectiveFpmf(UsbAudioContext *ctx) {
     const double fpmf = usbFeedbackPolicyFpmf(usbFeedbackPolicy(), ctx->calibratedFpmf, nominal,
                                               &ctx->feedbackWatch);
     g_fbSendingFpmf.store(fpmf, std::memory_order_relaxed);
+    usbSecondRingSent(&g_secondRing, monotonicMs(), fpmf);  // B41-fix1: what the packetizer was given, a second at a time
     return fpmf;
+}
+
+/**
+ * B41-fix1 (A1b): what the policy would give the packetizer right now, without recording it as given. The policy events
+ * read it for "from now on".
+ */
+static double policyFpmfNow(const UsbAudioContext *ctx) {
+    return usbFeedbackPolicyFpmf(usbFeedbackPolicy(), ctx->calibratedFpmf, ctx->sampleRate / 8000.0, &ctx->feedbackWatch);
+}
+
+/**
+ * B41-fix1 (A1c): one change of what the policy obeys into the one-second ring (usb-second-ring.h), with the stream's identity
+ * and what the packetizer was being given before it and is given after. Rare (a few a minute at the most): the ring takes its
+ * lock for it, and nothing is logged here.
+ */
+static void notePolicyEvent(const UsbAudioContext *ctx, enum UsbPolicyEventKind kind, const char *what, double fpmf, double ppm) {
+    UsbPolicyEvent e;
+    memset(&e, 0, sizeof(e));
+    e.atMs = monotonicMs();
+    e.stream = ctx->streamSeq;
+    e.rate = ctx->sampleRate;
+    e.kind = kind;
+    e.what = what;
+    e.fpmf = fpmf;
+    e.ppm = ppm;
+    e.sentBefore = g_fbSendingFpmf.load(std::memory_order_relaxed);
+    e.sentAfter = policyFpmfNow(ctx);
+    e.policy = usbFeedbackPolicy();
+    usbSecondRingPolicyEvent(&g_secondRing, &e);
+}
+
+/**
+ * B41-fix1 (A1c): a gesture of the stream (start, pause, idle, seek, resume) into the same ring as the policy's changes. A drag of the
+ * seek bar is many of them: one of a kind per 100 ms is kept, so that the rare policy events are not pushed out of the ring.
+ */
+static void noteGesture(const UsbAudioContext *ctx, enum UsbPolicyEventKind kind, const char *what) {
+    static int64_t lastMs[USB_POLICY_EVENT_KIND_COUNT];
+    const int64_t nowMs = monotonicMs();
+    if (lastMs[kind] != 0 && nowMs - lastMs[kind] < 100) return;
+    lastMs[kind] = nowMs;
+    notePolicyEvent(ctx, kind, what, 0.0, 0.0);
+}
+
+/**
+ * B41-fix1 (A1b): after a reading, is the policy refusing the feedback (stuck or implausible)? The turn from obeying to refusing
+ * bumps [UsbAudioContext::refusalEpoch]: the block of PCM being packetized took its rate when it began, and the loop that writes it
+ * looks at the epoch between two URBs.
+ */
+static void updateRefusal(UsbAudioContext *ctx) {
+    const bool refusing = ctx->feedbackWatch.stuck || ctx->feedbackWatch.implausible;
+    if (refusing && !ctx->refusing) ctx->refusalEpoch++;
+    ctx->refusing = refusing;
+}
+
+/**
+ * B41-fix1 (A1a): a feedback transfer that was not a reading. Counted in the one-second ring with the codes the kernel gave, and one
+ * rate-limited USB_GLITCH line says it. It moves nothing: the rate stays what the last valid reading made it.
+ */
+static void noteFeedbackDropped(const UsbAudioContext *ctx, enum UsbFeedbackPacket verdict, int urbStatus, int packetStatus,
+                                unsigned int length) {
+    usbSecondRingFeedbackDropped(&g_secondRing, monotonicMs(), (int)verdict, urbStatus, packetStatus, length);
+    reportUsbGlitch(USB_GLITCH_FEEDBACK_INVALID, "%s urb=%d packet=%d length=%u rate=%d", usbFeedbackPacketName(verdict), urbStatus,
+                    packetStatus, length, ctx->sampleRate);
 }
 
 /** An episode began or ended: the counters, and one USB_GLITCH line with what a reviewer needs to see. */
@@ -704,32 +786,66 @@ static void announceImplausible(const UsbFeedbackEvent &ev, double nominal, int 
 static void watchFeedbackReading(UsbAudioContext *ctx, uint32_t raw, double nominal) {
     g_fbLastFpmf.store(raw / 65536.0, std::memory_order_relaxed);
     g_fbRate.store(ctx->sampleRate, std::memory_order_relaxed);
+    const bool wasImplausible = ctx->feedbackWatch.implausible;
+    const char *wasWhy = usbFeedbackImplausibleName(ctx->feedbackWatch.implausibleWhy);
     UsbFeedbackEvent ev;
     usbFeedbackWatchObserve(&ctx->feedbackWatch, raw, nominal, monotonicMs(), &ev);
+    updateRefusal(ctx);
     if (ev.kind != USB_FEEDBACK_EVENT_NONE) announceFeedbackEvent(ev, nominal, ctx->sampleRate);
     if (ev.implausibleStarted) announceImplausible(ev, nominal, ctx->sampleRate, ctx->calibratedFpmf);
+    // B41-fix1 (A1c): the start and the end of each change of what the policy obeys, with the stream's identity (the ring keeps them).
+    if (ev.kind == USB_FEEDBACK_EVENT_STUCK) notePolicyEvent(ctx, USB_POLICY_STUCK_BEGIN, "identical", ev.fpmf, ev.ppm);
+    if (ev.kind == USB_FEEDBACK_EVENT_UNSTUCK) {
+        notePolicyEvent(ctx, USB_POLICY_STUCK_END, ev.reason == USB_FEEDBACK_END_CHANGED ? "changed" : "gap", ev.fpmf, ev.ppm);
+    }
+    if (ev.implausibleStarted) {
+        notePolicyEvent(ctx, USB_POLICY_REFUSE_BEGIN, usbFeedbackImplausibleName(ev.implausibleWhy), ev.implausibleFpmf, ev.implausiblePpm);
+    }
+    if (wasImplausible && !ctx->feedbackWatch.implausible) {
+        notePolicyEvent(ctx, USB_POLICY_REFUSE_END, wasWhy, raw / 65536.0, usbFeedbackPpm(raw / 65536.0, nominal));
+    }
     if (ctx->feedbackWatch.stuck) g_fbStuckReadings.fetch_add(1, std::memory_order_relaxed);
     if (ctx->feedbackWatch.implausible && usbFeedbackPolicy() == USB_FEEDBACK_AUTO) {
         g_fbRejectedReadings.fetch_add(1, std::memory_order_relaxed);
     }
+    // A reading `auto` did not obey (stuck or implausible) is counted here, not in `refused`, which is only the beyond-5 % branch.
+    if (ctx->refusing && usbFeedbackPolicy() == USB_FEEDBACK_AUTO) usbSecondRingHeld(&g_secondRing, monotonicMs());
 }
 
 /** The stream ends or restarts: an open episode is over (the DAC is about to be told something new). */
 static void endFeedbackWatch(UsbAudioContext *ctx) {
+    const bool wasImplausible = ctx->feedbackWatch.implausible;
+    const char *wasWhy = usbFeedbackImplausibleName(ctx->feedbackWatch.implausibleWhy);
     UsbFeedbackEvent ev;
     usbFeedbackWatchEnd(&ctx->feedbackWatch, ctx->sampleRate / 8000.0, &ev);
+    ctx->refusing = false;
     if (ev.kind != USB_FEEDBACK_EVENT_NONE) announceFeedbackEvent(ev, ctx->sampleRate / 8000.0, ctx->sampleRate);
+    if (ev.kind == USB_FEEDBACK_EVENT_UNSTUCK) notePolicyEvent(ctx, USB_POLICY_STUCK_END, "stream-end", ev.fpmf, ev.ppm);
+    if (wasImplausible) notePolicyEvent(ctx, USB_POLICY_REFUSE_END, wasWhy, 0.0, 0.0);
 }
 
 /**
  * Process a completed feedback URB: parse the DAC's clock rate and
  * update calibratedFpmf for real-time clock tracking.
+ *
+ * B41-fix1 (A1a): a transfer is a reading only if the URB and its packet completed clean and it delivered the four bytes that were
+ * asked for. The kernel can deliver bytes together with an error (-EILSEQ on the packet, -ECONNRESET on the URB, ...), and a positive
+ * length is not a good completion: such a transfer is counted (the one-second ring, one USB_GLITCH line) and moves nothing.
+ *
+ * B41-fix1 (A1b): the reading is judged BEFORE the follower (`calibratedFpmf`) takes it. Under `auto` a reading the policy refuses
+ * (absurd, sustained, or beyond +-5 %) never enters the follower, so nothing that reads the follower can pick it up; under the other
+ * policies the follower takes every reading in the window, as `follow` always did.
  */
 static void handleFeedbackCompletion(UsbAudioContext *ctx) {
     ctx->feedbackInFlight = false;
     g_feedbackCount.fetch_add(1, std::memory_order_relaxed);
 
-    if (ctx->feedbackUrb->iso_frame_desc[0].actual_length >= 4) {
+    const struct usbdevfs_urb *done = ctx->feedbackUrb;
+    const enum UsbFeedbackPacket verdict =
+        usbFeedbackPacketVerdict(done->status, done->iso_frame_desc[0].status, done->iso_frame_desc[0].actual_length);
+    if (verdict != USB_FEEDBACK_PACKET_OK) {
+        noteFeedbackDropped(ctx, verdict, done->status, done->iso_frame_desc[0].status, done->iso_frame_desc[0].actual_length);
+    } else {
         uint8_t *fb = feedbackData(ctx);
         uint32_t raw = fb[0] | (fb[1] << 8) | (fb[2] << 16) | (fb[3] << 24);
         double newFpmf = raw / 65536.0;
@@ -738,7 +854,7 @@ static void handleFeedbackCompletion(UsbAudioContext *ctx) {
         double nominal = ctx->sampleRate / 8000.0;
         const double applied = usbFeedbackApply(ctx->calibratedFpmf, newFpmf, nominal);
         if (applied == newFpmf) {
-            ctx->calibratedFpmf = newFpmf;
+            ctx->readingFpmf = newFpmf;
             const double deviation = usbFeedbackDeviation(newFpmf, nominal);
             const bool deviating = deviation > 0.002 || deviation < -0.002;
             usbSecondRingFeedback(&g_secondRing, monotonicMs(), newFpmf, nominal, deviating);  // B27-A5
@@ -748,6 +864,8 @@ static void handleFeedbackCompletion(UsbAudioContext *ctx) {
             }
             // B10: the same reading again, for seconds, away from nominal (a stuck endpoint, the "shh")
             watchFeedbackReading(ctx, raw, nominal);
+            // The follower takes the reading unless the policy refuses it (A1b above).
+            if (!(ctx->refusing && usbFeedbackPolicy() == USB_FEEDBACK_AUTO)) ctx->calibratedFpmf = newFpmf;
             // Log only every 10000th feedback — logging in the audio path is expensive
             if (g_feedbackCount.load(std::memory_order_relaxed) % 10000 == 0) {
                 LOGI("Feedback #%lld: fpmf=%.4f (%.1f Hz)",
@@ -760,7 +878,11 @@ static void handleFeedbackCompletion(UsbAudioContext *ctx) {
             usbSecondRingRefused(&g_secondRing, monotonicMs());  // B27-A5
             UsbFeedbackEvent ev;
             usbFeedbackWatchOutOfWindow(&ctx->feedbackWatch, raw, nominal, &ev);
-            if (ev.implausibleStarted) announceImplausible(ev, nominal, ctx->sampleRate, ctx->calibratedFpmf);
+            updateRefusal(ctx);
+            if (ev.implausibleStarted) {
+                announceImplausible(ev, nominal, ctx->sampleRate, ctx->calibratedFpmf);
+                notePolicyEvent(ctx, USB_POLICY_REFUSE_BEGIN, usbFeedbackImplausibleName(ev.implausibleWhy), ev.implausibleFpmf, ev.implausiblePpm);
+            }
         }
     }
 
@@ -817,19 +939,19 @@ static OwnReap reapUntilOwn(UsbAudioContext *ctx, const struct usbdevfs_urb *own
  * receives it frees it. If it cannot be parked either, it is leaked on purpose: a leak is a few dozen bytes, a
  * free of a URB the kernel still holds is a write into freed memory.
  */
-static double readFeedback(UsbAudioContext *ctx, int ep) {
+static double readFeedback(UsbAudioContext *ctx, int ep, enum UsbFeedbackPacket *verdictOut) {
     const int fd = ctx->fd;
     const size_t urbBytes = sizeof(struct usbdevfs_urb) + sizeof(struct usbdevfs_iso_packet_desc);
-    auto *u = (struct usbdevfs_urb *)calloc(1, urbBytes + 4);
+    auto *u = (struct usbdevfs_urb *)calloc(1, urbBytes + USB_FEEDBACK_BYTES);
     if (!u) return 0;
     uint8_t *fb = (uint8_t *)u + urbBytes;
     u->type = USBDEVFS_URB_TYPE_ISO;
     u->flags = USBDEVFS_URB_ISO_ASAP;
     u->endpoint = (unsigned char)ep;
     u->buffer = fb;
-    u->buffer_length = 4;
+    u->buffer_length = USB_FEEDBACK_BYTES;
     u->number_of_packets = 1;
-    u->iso_frame_desc[0].length = 4;
+    u->iso_frame_desc[0].length = USB_FEEDBACK_BYTES;
     // The kernel refused it: it never held it, so this free is safe.
     if (ioctl(fd, USBDEVFS_SUBMITURB, u) < 0) { free(u); return 0; }
 
@@ -855,10 +977,19 @@ static double readFeedback(UsbAudioContext *ctx, int ep) {
         cancelled = true;  // late, and reaped only now: not a reading
     }
 
+    // B41-fix1 (A1a): a transfer that came back with an error status, or with anything but the four bytes asked for, is not a
+    // reading, even if it carries bytes: the start then keeps the nominal rate, as when no answer comes.
     double r = 0;
-    if (!cancelled && u->iso_frame_desc[0].actual_length >= 4) {
-        uint32_t raw = fb[0] | (fb[1]<<8) | (fb[2]<<16) | (fb[3]<<24);
-        r = raw / 65536.0;
+    if (!cancelled) {
+        const enum UsbFeedbackPacket verdict =
+            usbFeedbackPacketVerdict(u->status, u->iso_frame_desc[0].status, u->iso_frame_desc[0].actual_length);
+        if (verdictOut != nullptr) *verdictOut = verdict;
+        if (verdict == USB_FEEDBACK_PACKET_OK) {
+            uint32_t raw = fb[0] | (fb[1]<<8) | (fb[2]<<16) | (fb[3]<<24);
+            r = raw / 65536.0;
+        } else {
+            noteFeedbackDropped(ctx, verdict, u->status, u->iso_frame_desc[0].status, u->iso_frame_desc[0].actual_length);
+        }
     }
     free(u);
     return r;
@@ -917,6 +1048,8 @@ static int submitRingUrb(UsbAudioContext *ctx, const int *pktSizes, int numPacke
     ctx->urbsInFlight++;
     ctx->urbSubmits.fetch_add(1, std::memory_order_relaxed);
     observeOutputGap(ctx, numPackets);
+    // B41-fix1 (A1c): the rate that went out, a second at a time: this URB's frames and packets, which is all the plan says.
+    usbSecondRingWire(&g_secondRing, monotonicMs(), ctx->bytesPerFrame > 0 ? totalBytes / ctx->bytesPerFrame : 0, numPackets);
     return 0;
 }
 
@@ -1582,7 +1715,9 @@ JNIEXPORT void JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeMarkIdle(
         JNIEnv *, jobject, jlong h) {
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
-    if (ctx) ctx->lastSubmitMs = 0;
+    if (!ctx) return;
+    ctx->lastSubmitMs = 0;
+    noteGesture(ctx, USB_POLICY_IDLE, "announced");
 }
 
 JNIEXPORT jboolean JNICALL
@@ -1620,18 +1755,28 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(
     // Pipeline is empty here, so REAPURBNDELAY can only return the feedback URB.
     double nominalFpmf = ctx->sampleRate / 8000.0;
     ctx->calibratedFpmf = nominalFpmf;
+    ctx->readingFpmf = nominalFpmf;
+    ctx->refusing = false;
+    const char *startWhat = "no-feedback-endpoint";   // B41-fix1: how the start's feedback read went, for the ring's gesture line
 
     if (ctx->endpointFeedback > 0) {
-        double fb = readFeedback(ctx, ctx->endpointFeedback);
+        enum UsbFeedbackPacket startVerdict = USB_FEEDBACK_PACKET_OK;
+        double fb = readFeedback(ctx, ctx->endpointFeedback, &startVerdict);
+        startWhat = fb > 0 ? "initial-reading" : startVerdict != USB_FEEDBACK_PACKET_OK ? usbFeedbackPacketName(startVerdict) : "no-answer";
         if (fb > 0) {
             // The same window as every later reading (B12a-2: nothing is applied blindly): a reading outside
             // +-5 % leaves the nominal rate in charge until the first plausible one.
             ctx->calibratedFpmf = usbFeedbackApply(nominalFpmf, fb, nominalFpmf);
+            ctx->readingFpmf = ctx->calibratedFpmf;
             LOGI("Start: initial feedback=%.4f fpmf (%.1f Hz), nominal=%.4f (%.1f Hz)%s",
                  fb, fb * 8000.0, nominalFpmf, nominalFpmf * 8000.0,
                  ctx->calibratedFpmf == fb ? "" : " — outside +-5 %, not applied");
         } else {
-            LOGW("Start: feedback not responding, using nominal %.4f fpmf", nominalFpmf);
+            if (startVerdict != USB_FEEDBACK_PACKET_OK) {
+                LOGW("Start: the feedback read was not a reading (%s), using nominal %.4f fpmf", usbFeedbackPacketName(startVerdict), nominalFpmf);
+            } else {
+                LOGW("Start: feedback not responding, using nominal %.4f fpmf", nominalFpmf);
+            }
         }
 
         // Start continuous feedback: submit a feedback URB that will be
@@ -1641,6 +1786,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(
         submitFeedbackUrb(ctx);
     }
 
+    noteGesture(ctx, USB_POLICY_STREAM_START, startWhat);
     LOGI("Start: rate=%d ch=%d bits=%d ring=%d slots×%dpkt fpmf=%.4f feedback=%s",
          ctx->sampleRate, ctx->channelCount, ctx->bitDepth,
          USB_AUDIO_NUM_URBS, USB_AUDIO_PACKETS_PER_URB,
@@ -1699,7 +1845,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWrite(
     if (ctx->framesWritten % ctx->sampleRate < (int64_t)totalFrames) {
         LOGI("Write: %lld frames (~%.0f sec) inflight=%d fpmf=%.4f (%.1f Hz) sending=%.4f",
              (long long)ctx->framesWritten, (double)ctx->framesWritten/ctx->sampleRate,
-             ctx->urbsInFlight, ctx->calibratedFpmf, ctx->calibratedFpmf * 8000.0,
+             ctx->urbsInFlight, ctx->readingFpmf, ctx->readingFpmf * 8000.0,
              g_fbSendingFpmf.load(std::memory_order_relaxed));
     }
 }
@@ -1969,6 +2115,18 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbReset(
     return 0;
 }
 
+// B39-A7: a bus reset with nothing claimed afterwards (unlike nativeUsbReset, which re-claims interfaces for Direct). With the interfaces
+// released, usb_reset_device() unbinds and rebinds the drivers of the interfaces, so snd-usb-audio is probed again as at a plug-in. Used once,
+// by the hand-back, and only when an interface still has no driver after the CONNECT.
+JNIEXPORT jint JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeUsbResetForRebind(
+        JNIEnv *, jclass, jint fd) {
+    LOGI("USBDEVFS_RESET (rebind) fd=%d", fd);
+    int ret = ioctl(fd, USBDEVFS_RESET, 0);
+    if (ret < 0) { LOGE("RESET (rebind) FAILED errno=%d", errno); return -errno; }
+    return 0;
+}
+
 // Re-binds the kernel driver (snd-usb-audio) to one interface, the inverse of the forced claim's
 // USBDEVFS_DISCONNECT — but only if the interface has no driver. On the HONOR the kernel rebinds
 // snd-usb-audio by itself when an interface is released; a CONNECT on an already-bound interface
@@ -2065,6 +2223,7 @@ static bool submitPcmToUrbsImpl(UsbAudioContext *ctx, const uint8_t *pcmData, in
     // allows (B10: `follow` is this exactly). This matches the DAC's actual hardware clock instead of
     // the nominal rate.
     double fpmf = effectiveFpmf(ctx);
+    uint32_t refusalSeen = ctx->refusalEpoch;   // B41-fix1 (A1b): see the check after the reap below
 
     while (offset < dataLen && ctx->running.load()) {
         // B12a-6: a pause asked for while this block is being written starts its fade here, between two URBs,
@@ -2100,6 +2259,20 @@ static bool submitPcmToUrbsImpl(UsbAudioContext *ctx, const uint8_t *pcmData, in
             }
         }
 
+        // B41-fix1 (A1b): the rate was taken when this block began, about 100 ms of audio ago, and the reap above handles the
+        // DAC's feedback too. A reading that made the policy refuse (absurd, sustained, stuck, beyond +-5 %) while the block
+        // was half written used to reach only the NEXT block: the rest of this one went out at the rate of the reading before
+        // it, which on the Melody's ramp (+0.36 % ... +1.09 % ... +2.1 % ...) was still a plausible one. The policy is asked
+        // again, between two URBs, only when it turned to refusing; the URB planned above is planned again at the answer
+        // (the plan is pure: the accumulator is not touched until it is submitted). Following the DAC stays at block
+        // granularity, as it was.
+        if (ctx->refusalEpoch != refusalSeen) {
+            refusalSeen = ctx->refusalEpoch;
+            fpmf = effectiveFpmf(ctx);
+            plan = planUsbPcmUrb(dataLen - offset, ctx->bytesPerFrame, ctx->maxPacketSize, fpmf, ctx->frameAccumulator, false);
+            if (plan.packetCount == 0 || plan.totalBytes == 0) break;
+        }
+
         // AUD-124: checked only when the ring is well below full (unusual while streaming), so the
         // steady state pays one comparison. Nothing queued since the last submit means the DAC just
         // received empty microframes. A faded cut awaiting the next engine (AUD-123) is meant to run
@@ -2109,7 +2282,7 @@ static bool submitPcmToUrbsImpl(UsbAudioContext *ctx, const uint8_t *pcmData, in
             const int64_t starvedMs = usbRingStarvedMs(ctx->lastSubmitMs, monotonicMs(), ctx->playOutBeforeDrain);
             if (starvedMs >= 0 && usbQueuedFrames(ctx) == 0) {
                 reportUsbGlitch(USB_GLITCH_RING_EMPTY, "queue ran dry: last submit %lld ms ago, fpmf=%.4f",
-                                (long long)starvedMs, ctx->calibratedFpmf);
+                                (long long)starvedMs, ctx->readingFpmf);
             }
         }
 
@@ -2372,6 +2545,7 @@ bool pipelineBeginPause(UsbAudioContext *ctx) {
     if (seekCutFor(g.hasAudio, usbQueuedFrames(ctx), false) != SEEK_CUT_FADE) return false;
     armFadeOut(ctx, true, true);
     g.pauseFades++;
+    noteGesture(ctx, USB_POLICY_PAUSE, "fade-out");
     return true;
 }
 
@@ -2410,6 +2584,7 @@ int pipelineBeginSeek(UsbAudioContext *ctx) {
         ctx->lastSubmitMs = 0;
         plan = PIPELINE_SEEK_NONE;
     }
+    noteGesture(ctx, USB_POLICY_SEEK, plan == PIPELINE_SEEK_FADE ? "fade" : plan == PIPELINE_SEEK_SILENCE ? "silence" : "none");
     LOGI("Pipeline seek: %s, %lld frames unplayed (%.1f ms), fade-in %lld frames",
          plan == PIPELINE_SEEK_FADE ? "ring ends in a fade of the old continuation"
          : plan == PIPELINE_SEEK_SILENCE ? "ring already ends in a fade, silence only"
@@ -2434,6 +2609,7 @@ void pipelineResume(UsbAudioContext *ctx) {
     g.fadeInRemaining = g.fadeInTotal;
     LOGI("Pipeline resume: %d frames of the faded block replayed, fade-in %lld frames", g.pendingFrames > 0 ? g.pendingFrames : 0,
          (long long)g.fadeInTotal);
+    noteGesture(ctx, USB_POLICY_RESUME, g.pendingFrames > 0 ? "replays-the-rest" : "fade-in");
     if (g.pendingFrames <= 0) return;
     const int frames = g.pendingFrames;
     g.pendingFrames = 0;
@@ -2532,7 +2708,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWriteRaw(
     if (ctx->framesWritten % ctx->sampleRate < (int64_t)totalFrames) {
         LOGI("WriteRaw: %lld frames (~%.0f sec) inflight=%d inputBits=%d fpmf=%.4f fb#%lld sending=%.4f",
              (long long)ctx->framesWritten, (double)ctx->framesWritten/ctx->sampleRate,
-             ctx->urbsInFlight, inputBitDepth, ctx->calibratedFpmf,
+             ctx->urbsInFlight, inputBitDepth, ctx->readingFpmf,
              (long long)g_feedbackCount.load(std::memory_order_relaxed),
              g_fbSendingFpmf.load(std::memory_order_relaxed));
     }

@@ -132,14 +132,17 @@ class B19WiringBoundaryTest {
 
     @Test
     fun `the publication of the session is timed with a bracket around its own listener and logged with the size`() {
-        // The beginning goes on the wrapped player before the session registers on it; the end right after, on both paths.
-        assertThat(service).contains(").also { it.addListener(publicationMeter.begin) }")
+        assertThat(service).contains("private val publicationMeter = if (DevelopmentToolsPolicy.enabled()) SessionPublicationMeter(")
+        // Development only: the beginning goes on the wrapped player before the session registers; the end right after, on both paths.
+        assertThat(service).contains("publicationMeter?.let { mediaSession?.player?.addListener(it.end) }")
+        assertThat(service).contains("publicationMeter?.let { wrappedPlayer.addListener(it.end) }")
+        assertThat(service).contains(").also { player -> publicationMeter?.let { player.addListener(it.begin) } }")
         val build = block(service, "        mediaSession = MediaSession.Builder(this, wrapFadingPlayer(engine.masterPlayer))", "        val localOnlyProvider")
-        assertThat(build.indexOf(".build()")).isLessThan(build.indexOf("mediaSession?.player?.addListener(publicationMeter.end)"))
+        assertThat(build.indexOf(".build()")).isLessThan(build.indexOf("mediaSession?.player?.addListener(it.end)"))
         val swap = block(service, "    private fun publishMediaSessionPlayer(", "    private fun syncLocalListeningStatsFromPlayer(")
-        assertThat(swap.indexOf("session.player = wrappedPlayer")).isLessThan(swap.indexOf("wrappedPlayer.addListener(publicationMeter.end)"))
-        assertThat(swap).contains("oldPlayer.removeListener(publicationMeter.begin)")
-        assertThat(swap).contains("oldPlayer.removeListener(publicationMeter.end)")
+        assertThat(swap.indexOf("session.player = wrappedPlayer")).isLessThan(swap.indexOf("wrappedPlayer.addListener(it.end)"))
+        assertThat(swap).contains("oldPlayer.removeListener(it.begin)")
+        assertThat(swap).contains("oldPlayer.removeListener(it.end)")
         assertThat(service).contains("\"session publication %d ms (session %d ms, controllers %d ms) items=%d reason=%d\"")
     }
 

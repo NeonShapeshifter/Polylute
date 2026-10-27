@@ -24,7 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.lostf1sh.pixelplayeross.presentation.components.GlassModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -127,6 +127,12 @@ interface DacEqScreenActions {
 
     /** Leads to the Audio page: where the Pure Direct switch, crossfade and speed live. */
     fun onOpenAudioSettings()
+
+    /** B40-F2: takes back the permission to change the DAC; the screen goes back to Polylute's own EQ. */
+    fun onBackToSoftwareEq() {}
+
+    /** B40-F2: switches the headphones' software EQ off (kept as it is) because the DAC applies a correction now. */
+    fun onTurnOffSoftwareEq() {}
 }
 
 internal class DacEqScreenActionsImpl(
@@ -149,6 +155,8 @@ internal class DacEqScreenActionsImpl(
     override fun onSelectDacPreset(presetId: Int, confirmed: Boolean) = controller.selectDacPreset(presetId, confirmed)
     override fun onDismissConfirmSelect() = controller.dismissConfirmSelect()
     override fun onOpenAudioSettings() = navigate(Screen.SettingsCategory.createRoute(SettingsCategory.AUDIO.id))
+    override fun onBackToSoftwareEq() = controller.withdrawConsent()
+    override fun onTurnOffSoftwareEq() = controller.turnOffSoftwareEq()
 }
 
 /** The route's own composable: joins the controller's state with the navigation. */
@@ -166,7 +174,7 @@ fun DacEqualizerScreen(navController: NavController, controller: DacEqScreenCont
 fun DacEqReadingContent() {
     DapBackScaffold(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(top = DapSpacing.Md, start = DapSpacing.Gutter, end = DapSpacing.Gutter)) {
-            DapScreenTitle(text = stringResource(R.string.settings_category_equalizer_title))
+            DapScreenTitle(text = stringResource(R.string.dac_eq_title))
             Text(
                 text = stringResource(R.string.dac_eq_reading),
                 style = DapType.Body,
@@ -190,7 +198,8 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
     var showRestoreFactory by remember { mutableStateOf(false) }
 
     val profileName = state.profileName ?: stringResource(R.string.settings_category_equalizer_title)
-    val subtitle = state.dacName?.let { stringResource(R.string.eq_subtitle_with, profileName, it) } ?: profileName
+    // B39-A6: this is the DAC's own equalizer, applied inside the DAC: the title and the line under it say so, and name the DAC.
+    val subtitle = stringResource(R.string.dac_eq_where, state.dacName ?: profileName)
     val frozen = state.frozenByPurity
     val showCurve = state.eqOn || state.pendingWrite || state.busy
     val modeLabels = mapOf(
@@ -211,13 +220,19 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
             ) {
                 item(key = "dac_eq_title") {
                     Column {
-                        DapScreenTitle(text = stringResource(R.string.settings_category_equalizer_title))
+                        DapScreenTitle(text = stringResource(R.string.dac_eq_title))
                         Text(
                             text = subtitle,
-                            style = DapType.Body,
-                            color = Dap.secondaryText,
+                            style = DapType.CaptionMedium,
+                            color = LocalDapAccent.current,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.dac_eq_not_polylute),
+                            style = DapType.Body,
+                            color = Dap.secondaryText,
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
@@ -251,7 +266,41 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
                     item(key = "dac_eq_takeover") { DacEqTakeOverCard(state, actions) }
                 }
 
-                item(key = "dac_eq_mode") {
+                // B40-F2: a DAC whose EQ was not read (or not settled) is not shown as off, flat and 0 dB: the screen says it could not read it.
+                if (state.unread) {
+                    item(key = "dac_eq_unread") {
+                        Column(Modifier.fillMaxWidth().padding(top = DapSpacing.Md)) {
+                            Text(stringResource(R.string.dac_eq_unread_title), style = DapType.Body, color = Dap.warning)
+                            Text(
+                                text = stringResource(R.string.dac_eq_unread_body),
+                                style = DapType.Body,
+                                color = Dap.secondaryText,
+                                modifier = Modifier.padding(top = DapSpacing.Xs),
+                            )
+                            DapTextAction(
+                                label = stringResource(R.string.dac_eq_read_again),
+                                onClick = actions::onRefresh,
+                                color = LocalDapAccent.current,
+                            )
+                        }
+                    }
+                }
+
+                // B40-F2: the same correction is not applied twice: the DAC shapes the sound and so does Polylute's EQ for these headphones.
+                if (state.softwareEqAlsoOn && !state.unread) {
+                    item(key = "dac_eq_twice") {
+                        Column(Modifier.fillMaxWidth().padding(top = DapSpacing.Md)) {
+                            Text(stringResource(R.string.dac_eq_twice_note), style = DapType.Body, color = Dap.warning)
+                            DapTextAction(
+                                label = stringResource(R.string.dac_eq_twice_action),
+                                onClick = actions::onTurnOffSoftwareEq,
+                                color = LocalDapAccent.current,
+                            )
+                        }
+                    }
+                }
+
+                if (!state.unread) item(key = "dac_eq_mode") {
                     DapRuledSection(title = stringResource(R.string.dac_eq_mode_on), labelGap = DapSpacing.SectionGap) {
                         Spacer(Modifier.height(DapSpacing.Sm))
                         DapSegmentedPicker(
@@ -386,6 +435,13 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
                                 color = LocalDapAccent.current,
                             )
                         }
+                        if (state.consentGiven) {
+                            DapNavRow(
+                                label = stringResource(R.string.dac_eq_back_to_software),
+                                description = stringResource(R.string.dac_eq_back_to_software_sub),
+                                onClick = actions::onBackToSoftwareEq,
+                            )
+                        }
                         if (state.debugOverride) {
                             Text(
                                 text = stringResource(R.string.dac_eq_debug_override),
@@ -394,11 +450,14 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
                                 modifier = Modifier.padding(top = DapSpacing.Sm),
                             )
                         }
-                        DapTextAction(
-                            label = stringResource(R.string.dac_eq_read_again),
-                            onClick = actions::onRefresh,
-                            color = LocalDapAccent.current,
-                        )
+                        // (an unread DAC has this action in its own block above: one "read again" on the screen)
+                        if (!state.unread) {
+                            DapTextAction(
+                                label = stringResource(R.string.dac_eq_read_again),
+                                onClick = actions::onRefresh,
+                                color = LocalDapAccent.current,
+                            )
+                        }
                     }
                 }
             }
@@ -642,14 +701,14 @@ private fun DacEqErrorBlock(error: DacEqError, actions: DacEqScreenActions) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DacEqFilterSheet(
+internal fun DacEqFilterSheet(
     band: DacEqBand,
     capability: DacEqCapability?,
     onChange: ((DacEqBand) -> DacEqBand) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -740,7 +799,7 @@ private fun DacEqUiTypes(current: FiioFilterType?): List<FiioFilterType> =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DacEqPresetsSheet(
+internal fun DacEqPresetsSheet(
     state: DacEqUiState,
     actions: DacEqScreenActions,
     onSave: () -> Unit,
@@ -748,7 +807,7 @@ private fun DacEqPresetsSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,

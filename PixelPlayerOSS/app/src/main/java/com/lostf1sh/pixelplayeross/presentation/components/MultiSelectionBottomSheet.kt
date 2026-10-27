@@ -47,7 +47,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MediumExtendedFloatingActionButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -106,6 +105,8 @@ fun MultiSelectionBottomSheet(
     onDeleteAll: (activity: Activity, onResult: (Boolean) -> Unit) -> Unit,
     onBatchEdit: () -> Unit
 ) {
+    var showOfflineDownloads by remember { mutableStateOf(false) }
+    if (showOfflineDownloads) OfflineDownloadsDialog(selectedSongs.map { it.id }, { showOfflineDownloads = false })
     val context = LocalContext.current
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
 
@@ -144,7 +145,7 @@ fun MultiSelectionBottomSheet(
         )
     }
     
-    ModalBottomSheet(
+    GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
@@ -237,6 +238,11 @@ fun MultiSelectionBottomSheet(
                     contentPadding = PaddingValues(bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    item {
+                        androidx.compose.material3.TextButton(onClick = { showOfflineDownloads = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.offline_download_title))
+                        }
+                    }
                     item {
                         Row(
                             modifier = Modifier

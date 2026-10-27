@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B40-F7: Detailed logging (Maintenance): a half hour of what the app does, on this phone, shared on purpose. -->
+    <string name="detailed_logging_title">Detaljerad loggning</string>
+    <string name="detailed_logging_switch">Spela in vad appen gör</string>
+    <string name="detailed_logging_off_summary">I 30 minuter, sedan slutar det av sig självt. Det stannar på den här telefonen.</string>
+    <string name="detailed_logging_on_summary">På, %1$d min kvar</string>
+    <string name="detailed_logging_titles_switch">Ta med låttitlar och filsökvägar</string>
+    <string name="detailed_logging_titles_summary">Av som standard. Loggen nämner då låtar och mappar: dela den bara med någon du litar på.</string>
+    <string name="detailed_logging_contents">Skrivs: appens egna rader om DAC:en och dess EQ, ljudvägen och formatet, volymtaket, Dedikerat läge och låsskärmen, insomningstimern och bibliotekssökningens räknare; USB-, väg- och strömhändelser; utgångens sekundsammanfattningar var 10:e sekund och strömmens tillstånd varje minut; telefonens modell samt Android- och appversion. Skrivs inte: titlar, artister, album, spellistor, filnamn och sökvägar, webbadresser, e-post och kontonamn, serienummer eller namn på Bluetooth-enheter. Inget skickas: loggen lämnar telefonen bara om du delar den.</string>
+    <string name="detailed_logging_share">Dela loggen</string>
+    <string name="detailed_logging_share_size">%1$s på den här telefonen</string>
+    <string name="detailed_logging_empty">Inget inspelat än</string>
+    <string name="detailed_logging_delete">Ta bort loggen</string>
+    <string name="detailed_logging_deleted">Loggen har tagits bort</string>
+    <string name="detailed_logging_share_chooser">Dela loggen</string>
+    <string name="detailed_logging_share_failed">Loggen kunde inte delas</string>
+    <!-- B40-fix1 item 6: the log on the phone holds song titles and file paths (lines written while that switch was on) -->
+    <string name="detailed_logging_share_size_with_titles">%1$s på den här telefonen. Den innehåller låttitlar och filsökvägar.</string>
+</resources>

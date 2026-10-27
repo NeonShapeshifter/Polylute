@@ -139,8 +139,8 @@ class ProductNameBoundaryTest {
         // name is gone from them, and this pins the new wording so a revert to a neutral word is also caught.
         fun source(path: String) = File("src/main/java/com/lostf1sh/pixelplayeross/$path").readText()
         assertThat(source("data/backup/AppDataBackupManager.kt")).contains("Your Polylute backup was created successfully.")
-        assertThat(source("presentation/components/FileExplorerBottomSheet.kt")).contains("while Polylute scans the available subfolders.")
-        assertThat(source("data/diagnostics/DebugPerformanceReport.kt")).contains("Polylute performance report (schema v")
+        // B39-A2: the folders sheet's words are resources now (and B39-A10 removed the performance report)
+        assertThat(File("src/main/res/values/strings_library_folders.xml").readText()).contains("while Polylute scans the available subfolders.")
     }
 }
 

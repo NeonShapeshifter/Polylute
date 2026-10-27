@@ -18,6 +18,7 @@
     <exclude domain="file" path="datastore/settings.preferences_pb"/>
     <!-- Cache of downloaded remote tracks; the feature and its tracking table are gone. -->
     <exclude domain="file" path="cloud_downloads/"/>
+        <exclude domain="file" path="offline-downloads/"/>
 
     <exclude domain="sharedpref" path="crash_handler_prefs.xml"/>
     <exclude domain="sharedpref" path="maintenance_security.xml"/>
@@ -26,4 +27,8 @@
     <exclude domain="sharedpref" path="maintenance_overrides.xml"/>
     <exclude domain="sharedpref" path="dap_containment.xml"/>
     <exclude domain="sharedpref" path="product_mode.xml"/>
+    <!-- B40-F7: the detailed log is this phone's, for the listener to send on purpose -->
+    <exclude domain="sharedpref" path="detailed_logging.xml"/>
+    <exclude domain="file" path="detailed-logs/"/>
+    <exclude domain="sharedpref" path="library_file_walk.xml"/>
 </full-backup-content>

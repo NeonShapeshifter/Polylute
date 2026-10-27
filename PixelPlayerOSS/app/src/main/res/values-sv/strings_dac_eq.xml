@@ -10,7 +10,8 @@
     <string name="track_details_route_usb_direct_resonance_both">USB Direct \u00b7 Resonans \u00b7 DAC-EQ + appens DSP</string>
     <string name="track_details_dac_eq">DAC-EQ</string>
     <string name="track_details_dac_eq_unknown">Okänd</string>
-    <string name="track_details_dac_eq_off">Av eller platt</string>
+    <string name="track_details_dac_eq_off">Av i DAC:en</string>
+    <string name="track_details_dac_eq_flat">På, platt</string>
     <string name="track_details_dac_eq_on">På</string>
     <string name="dap_output_resonance_dac">Resonans \u00b7 DAC-EQ</string>
     <string name="dap_output_resonance_app">Resonans \u00b7 Appens DSP</string>
@@ -124,4 +125,17 @@
     <string name="dac_eq_select_confirm_body">Musik spelas. Att välja %1$s ändrar ljudet direkt.</string>
     <string name="dac_eq_select_confirm_action">Välj</string>
     <string name="dac_eq_pregain_sense_note">Appen vet ännu inte om den här DAC:ens förförstärkning förstärker eller dämpar, så den kan bara skriva kurvor som aldrig går över 0 dB.</string>
+    <!-- B40-F2: the DAC's EQ can be changed from Polylute once the listener has allowed it; an unread DAC says so; the same correction is not applied twice. -->
+    <string name="dac_eq_offer_title">Använd DAC:ens egen EQ</string>
+    <string name="dac_eq_offer_sub">%1$s har en egen EQ. Polylute kan redigera den: USB Direct finns kvar och inget equalizas i telefonen.</string>
+    <string name="dac_eq_consent_title">Låta Polylute ändra DAC:ens EQ?</string>
+    <string name="dac_eq_consent_body">Polylute behåller sin egen kurva i %1$s:s plats %2$s. Innan den skriver något sparar den en kopia av det DAC:en håller; den gör aldrig ljudet starkare än originalet; den läser tillbaka DAC:en efter varje ändring och lägger tillbaka kopian om DAC:en inte behöll det som skickades. Du kan återställa DAC:en från den här skärmen när som helst och ta tillbaka tillståndet. Att svara ja skriver ingenting: den första ändringen görs när du redigerar kurvan.</string>
+    <string name="dac_eq_consent_allow">Tillåt</string>
+    <string name="dac_eq_consent_not_now">Inte nu</string>
+    <string name="dac_eq_back_to_software">Använd Polylutes EQ i stället</string>
+    <string name="dac_eq_back_to_software_sub">Tar tillbaka tillståndet att ändra DAC:en. DAC:en behåller det den har.</string>
+    <string name="dac_eq_unread_title">DAC:ens EQ kunde inte läsas</string>
+    <string name="dac_eq_unread_body">Polylute visar inget om den och ändrar ingenting. Läs igen, eller dra ur DAC:en och sätt i den igen.</string>
+    <string name="dac_eq_twice_note">Polylutes EQ för de här hörlurarna är också på, så samma korrigering skulle tillämpas två gånger.</string>
+    <string name="dac_eq_twice_action">Stäng av Polylutes EQ för de här hörlurarna</string>
 </resources>

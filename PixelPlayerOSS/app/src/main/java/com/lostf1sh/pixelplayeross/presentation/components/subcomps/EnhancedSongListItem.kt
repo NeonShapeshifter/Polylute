@@ -123,6 +123,9 @@ private fun RowText(text: String, style: TextStyle, color: Color) {
     )
 }
 
+/** B42-fix3 (item 8): how much of the accent the playing row is washed with over the cover glass. */
+private const val GLASS_HIGHLIGHT_ALPHA = 0.12f
+
 /**
  * Enhanced song list item with multi-selection support.
  * 
@@ -179,7 +182,6 @@ fun EnhancedSongListItem(
 
     // Rows, not cards: a row sits on the page and a hairline separates it from the next one.
     val baseContainerColor = containerColorOverride ?: Color.Transparent
-    val accent = LocalDapAccent.current
     val showSelectionDecoration = selectionVisualProgress > 0.001f
 
     // At rest (the case for nearly every row on screen) nothing is blended, so nothing pays for the
@@ -192,15 +194,24 @@ fun EnhancedSongListItem(
         contentColor = palette.primaryText
         moreTint = palette.tertiaryText
     } else {
-        val playbackContainerColor = lerpColor(baseContainerColor, palette.surface, highlightProgress)
-        containerColor = lerpColor(playbackContainerColor, palette.surface, selectionVisualProgress)
-        val playbackContentColor = lerpColor(palette.primaryText, accent, highlightProgress)
+        // B42-fix3 (item 1): the accent is read only by a row that is playing or being selected. A row at rest does not subscribe to it, so a
+        // song change (which changes the accent in the cover modes) recomposes the two rows it concerns and none of the others.
+        val accent = LocalDapAccent.current
+        // over the cover glass the playing row is not a card but a low-alpha wash of the accent (B42-fix3, item 8); a selected row is a panel
+        val highlightFill = if (palette.glass != null) accent.copy(alpha = GLASS_HIGHLIGHT_ALPHA) else palette.surface
+        val playbackContainerColor = lerpColor(baseContainerColor, highlightFill, highlightProgress)
+        containerColor = lerpColor(playbackContainerColor, palette.panel, selectionVisualProgress)
+        // over the glass the title stays the page's ink: an accent title on an accent wash would not keep AA, and the wash and the mark say it
+        val playbackContentColor = if (palette.glass != null) palette.primaryText else lerpColor(palette.primaryText, accent, highlightProgress)
         contentColor = lerpColor(playbackContentColor, palette.primaryText, selectionVisualProgress)
         moreTint = lerpColor(palette.tertiaryText, palette.secondaryText, highlightProgress)
     }
 
     val resources = LocalContext.current.resources
     val albumArtTargetSizePx = with(LocalDensity.current) { albumArtSize.roundToPx() }
+    // B42-fix3 (item 2): one `Size` per row, not one per recomposition. Coil's `Size` is not a stable type to Compose, so a new one every time made
+    // `SmartImage` (and Coil's painter inside it) run again on every frame of the highlight animation of a row that was playing or is now.
+    val albumArtTargetSize = remember(albumArtTargetSizePx) { Size(albumArtTargetSizePx, albumArtTargetSizePx) }
 
     var rowModifier = modifier.fillMaxWidth()
     if (selectionScaleProgress != 0f) {
@@ -257,13 +268,13 @@ fun EnhancedSongListItem(
                 Box(
                     modifier = Modifier
                         .size(albumArtSize)
-                        .background(palette.surfaceRaised, RowShape)
+                        .background(palette.panelRaised, RowShape)
                 ) {
                     SmartImage(
                         model = song.albumArtUriString,
                         contentDescription = null,
                         shape = RowShape,
-                        targetSize = Size(albumArtTargetSizePx, albumArtTargetSizePx),
+                        targetSize = albumArtTargetSize,
                         modifier = Modifier.fillMaxSize()
                     )
 
@@ -321,7 +332,8 @@ fun EnhancedSongListItem(
                         AutoScrollingText(
                             text = songTitleLabel(song),
                             style = DapType.MediaRow.copy(fontWeight = FontWeight.SemiBold),
-                            gradientEdgeColor = containerColor,
+                            // the marquee's fade is a mask: only its alpha matters, and a translucent fill (the glass's wash) must not fade the title
+                            gradientEdgeColor = containerColor.copy(alpha = 1f),
                         )
                     }
                 } else {
@@ -351,7 +363,7 @@ fun EnhancedSongListItem(
                     modifier = Modifier
                         .padding(start = DapSpacing.Sm)
                         .size(width = 18.dp, height = 16.dp),
-                    color = accent,
+                    color = LocalDapAccent.current,
                     isPlaying = isPlaying
                 )
             }

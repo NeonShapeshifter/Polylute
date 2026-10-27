@@ -16,19 +16,29 @@ enum class DacEqLabel {
     /** A DAC the app can ask, whose EQ has not been read yet or could not be: Purity is not claimed. */
     UNKNOWN,
 
-    /** The DAC's EQ is closed or flat. */
-    OFF_OR_FLAT,
+    /**
+     * B41: the DAC's EQ is **off**: its own "Close EQ" preset is selected (or its switch says off). Read on the owner's Melody twice and
+     * consistently (preset 0xF0, a global gain of +2.0 dB, ten empty bands): the DAC's real state, not a failed read.
+     */
+    OFF,
+
+    /** B41: a preset is selected, every band is a 0 dB filter and the global gain is 0: the EQ is on and does nothing. */
+    FLAT,
 
     /** The DAC's EQ is shaping the sound. */
     ON,
     ;
 
+    /** The DAC's EQ does not shape the sound: closed, or on and flat. */
+    val isQuiet: Boolean get() = this == OFF || this == FLAT
+
     /** Purity may be shown. */
-    val allowsPurity: Boolean get() = this == NOT_APPLICABLE || this == OFF_OR_FLAT
+    val allowsPurity: Boolean get() = this == NOT_APPLICABLE || isQuiet
 
     companion object {
         fun of(verdict: DacEqVerdict): DacEqLabel = when (verdict) {
-            DacEqVerdict.OFF, DacEqVerdict.FLAT -> OFF_OR_FLAT
+            DacEqVerdict.OFF -> OFF
+            DacEqVerdict.FLAT -> FLAT
             DacEqVerdict.ON -> ON
             DacEqVerdict.UNKNOWN -> UNKNOWN
         }

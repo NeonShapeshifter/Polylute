@@ -18,7 +18,6 @@ internal class NoActions : FullPlayerActions {
     override fun onRepeatToggle() {}
     override fun onFavoriteToggle() {}
     override fun onCollapse() {}
-    override fun onShowDetails() {}
     override fun onQueueDragStart() {}
     override fun onQueueDrag(dragAmount: Float) {}
     override fun onQueueRelease(totalDrag: Float, velocity: Float) {}

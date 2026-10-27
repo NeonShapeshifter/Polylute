@@ -96,6 +96,8 @@ class DacEqWriter(
     private val playbackActive: () -> Boolean = { false },
     private val senseOf: (FiioHidProfile) -> PreGainSense = { it.preGainSense },
     private val onBackupChanged: (AttachedFiio, DacEqBackup) -> Unit = { _, _ -> },
+    /** B40-F2: whether the listener allowed writes to this model ([DacEqWriteConsent]); it only counts for a write the listener asked for. */
+    private val userConsent: (FiioHidProfile) -> Boolean = { false },
 ) {
     // ── Backup (read-only) ───────────────────────────────────────────────────────────────────────────────
 
@@ -270,7 +272,7 @@ class DacEqWriter(
     private fun logHeader(name: String, att: AttachedFiio, initiator: WriteInitiator) {
         log(
             "DAC_HID|OP $name dac=${att.displayName} profile=${att.profile.id} verified=${att.profile.verified} " +
-                "override=${overrideAllowsWrites()} initiator=$initiator preGainSense=${senseOf(att.profile)} " +
+                "override=${overrideAllowsWrites()} consent=${userConsent(att.profile)} initiator=$initiator preGainSense=${senseOf(att.profile)} " +
                 "playing=${playbackActive()} backupKey=${att.backupKey}"
         )
     }
@@ -343,6 +345,7 @@ class DacEqWriter(
                     staleReason = if (setsSent == 0) stale() else null,
                     sense = sense,
                     playing = playbackActive(),
+                    userConsent = userConsent(profile),
                 ),
             ).also { decision ->
                 session.logLine(

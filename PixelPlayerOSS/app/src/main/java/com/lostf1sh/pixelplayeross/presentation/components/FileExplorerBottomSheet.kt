@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
@@ -53,10 +54,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -81,6 +83,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.ui.ds.DapScreenTitle
@@ -92,6 +95,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.lostf1sh.pixelplayeross.presentation.screens.TabAnimation
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DirectoryEntry
 import com.lostf1sh.pixelplayeross.ui.theme.RoundedSans
+import com.lostf1sh.pixelplayeross.ui.glass.GlassWindowBackdrop
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
+import com.lostf1sh.pixelplayeross.ui.glass.glassSheetContainer
 import com.lostf1sh.pixelplayeross.utils.StorageInfo
 import java.io.File
 import kotlinx.collections.immutable.ImmutableList
@@ -145,31 +151,38 @@ fun FileExplorerDialog(
                 exit = slideOutVertically(targetOffsetY = { it / 6 }) + fadeOut(animationSpec = tween(200)),
                 label = "file_explorer_dialog"
             ) {
+                // B42: a window of its own that is a whole screen carries its own copy of the cover glass (see GlassWindowBackdrop)
+                val coverGlass = LocalCoverGlass.current
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                    color = glassSheetContainer(MaterialTheme.colorScheme.surfaceContainerLow, coverGlass),
+                    // what the surface made of its text it still does, over the glass
+                    contentColor = contentColorFor(MaterialTheme.colorScheme.surfaceContainerLow),
                 ) {
-                    FileExplorerContent(
-                        currentPath = currentPath,
-                        directoryChildren = directoryChildren,
-                        availableStorages = availableStorages,
-                        selectedStorageIndex = selectedStorageIndex,
-                        isLoading = isLoading,
-                        isPriming = isPriming,
-                        isReady = isReady,
-                        isCurrentDirectoryResolved = isCurrentDirectoryResolved,
-                        isAtRoot = isAtRoot,
-                        rootDirectory = rootDirectory,
-                        onNavigateTo = onNavigateTo,
-                        onNavigateUp = onNavigateUp,
-                        onNavigateHome = onNavigateHome,
-                        onToggleAllowed = onToggleAllowed,
-                        onRefresh = onRefresh,
-                        onStorageSelected = onStorageSelected,
-                        onDone = onDone,
-                        onDismiss = onDismiss,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    Box(Modifier.fillMaxSize()) {
+                        GlassWindowBackdrop(coverGlass)
+                        FileExplorerContent(
+                            currentPath = currentPath,
+                            directoryChildren = directoryChildren,
+                            availableStorages = availableStorages,
+                            selectedStorageIndex = selectedStorageIndex,
+                            isLoading = isLoading,
+                            isPriming = isPriming,
+                            isReady = isReady,
+                            isCurrentDirectoryResolved = isCurrentDirectoryResolved,
+                            isAtRoot = isAtRoot,
+                            rootDirectory = rootDirectory,
+                            onNavigateTo = onNavigateTo,
+                            onNavigateUp = onNavigateUp,
+                            onNavigateHome = onNavigateHome,
+                            onToggleAllowed = onToggleAllowed,
+                            onRefresh = onRefresh,
+                            onStorageSelected = onStorageSelected,
+                            onDone = onDone,
+                            onDismiss = onDismiss,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
@@ -197,7 +210,7 @@ fun FileExplorerContent(
     onStorageSelected: (Int) -> Unit,
     onDone: () -> Unit,
     onDismiss: () -> Unit,
-    title: String = "Excluded folders",
+    title: String = stringResource(R.string.library_folders_title),
     leadingContent: @Composable (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -220,29 +233,23 @@ fun FileExplorerContent(
             isLoading || isPriming || !isReady || !isCurrentDirectoryResolved
         )
     }
-    val loadingMessage = remember(isPriming, isReady) {
-        if (isPriming || !isReady) {
-            "Preparing folders…"
-        } else {
-            "Loading folders…"
-        }
-    }
-    val loadingHint = remember(isPriming, isReady) {
-        if (isPriming || !isReady) {
-            "This can take a moment while Polylute scans the available subfolders."
-        } else {
-            null
-        }
-    }
+    // B39-A2: the loading texts are resources like the rest of the sheet.
+    val preparing = isPriming || !isReady
+    val loadingMessage = stringResource(if (preparing) R.string.file_explorer_preparing else R.string.file_explorer_loading)
+    val loadingHint = if (preparing) stringResource(R.string.file_explorer_preparing_hint) else null
 
     Scaffold(
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        // B42: nothing over the cover glass (the window's own copy, or the page's, is behind it)
+        containerColor = glassSheetContainer(MaterialTheme.colorScheme.surfaceContainerLow, LocalCoverGlass.current),
+        contentColor = contentColorFor(MaterialTheme.colorScheme.surfaceContainerLow),
         topBar = {
             // Inventory of the bar this replaces: the title; a navigation Close calling
             // `onDismiss`; and one trailing action, Refresh calling `onRefresh`. Both callbacks are
             // re-hosted here unchanged. The Done FAB below is not part of the bar and is untouched.
-            Column {
+            // B39-A2: the sheet is its own window drawn edge to edge, and a Scaffold leaves the top inset to its bar, so the bar
+            // takes it: the back chevron and "Actualizar" sat under the status bar.
+            Column(modifier = Modifier.statusBarsPadding()) {
                 DapTopBar(
                     onBack = onDismiss,
                     actions = {
@@ -320,7 +327,7 @@ fun FileExplorerContent(
             }
 
             Text(
-                text = stringResource(R.string.presentation_batch_g_file_explorer_hint),
+                text = stringResource(R.string.library_folders_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -375,7 +382,7 @@ fun FileExplorerContent(
                                     ),
                                 contentPadding = PaddingValues(
                                     bottom = 24.dp,
-                                    end = if (listState.canScrollForward || listState.canScrollBackward) 24.dp else 0.dp
+                                    end = ScrollbarGutter.endMargin(0.dp)
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                                 state = listState
@@ -407,13 +414,17 @@ fun FileExplorerContent(
                             brush = Brush.verticalGradient(
                                 listOf(
                                     Color.Transparent,
-                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                    // B42: over the cover glass there is nothing to fade into: the glass is behind the list
+                                    glassSheetContainer(MaterialTheme.colorScheme.surfaceContainerLow, LocalCoverGlass.current)
                                 )
                             )
                         )
                 )
                 
                 ExpressiveScrollBar(
+                    // the cards (FileExplorerItem) pad themselves by 14 dp at each side, and the page puts its own margin outside them
+                    contentEndMargin = 14.dp,
+                    endInset = 0.dp,
                     listState = listState,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
@@ -499,24 +510,25 @@ private fun FileExplorerItem(
 ) {
     val shape = RoundedCornerShape(18.dp)
 
-    val isAllowed = !isBlocked
+    // B39-A9: the sheet picks the folders that are in the library. A folder that is out is quiet, not an error: nothing is wrong with it.
+    val inLibrary = !isBlocked
 
-    val containerColor = if (isBlocked) {
-        MaterialTheme.colorScheme.errorContainer
-    } else {
+    val containerColor = if (inLibrary) {
         MaterialTheme.colorScheme.surfaceContainerHigh
+    } else {
+        MaterialTheme.colorScheme.surfaceContainer
     }
 
-    val contentColor = if (isBlocked) {
-        MaterialTheme.colorScheme.onErrorContainer
-    } else {
+    val contentColor = if (inLibrary) {
         MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    val badgeColor = if (isBlocked) {
-        MaterialTheme.colorScheme.onErrorContainer
-    } else {
+    val badgeColor = if (inLibrary) {
         MaterialTheme.colorScheme.secondary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Row(
@@ -571,10 +583,9 @@ private fun FileExplorerItem(
             ) {
                 Text(
                     text = when {
-                        audioCount < 0 -> "Scanning..."
-                        audioCount == 1 -> "1 song"
-                        audioCount > 99 -> "99+ songs"
-                        else -> "$audioCount songs"
+                        audioCount < 0 -> stringResource(R.string.file_explorer_scanning)
+                        audioCount > 99 -> stringResource(R.string.file_explorer_songs_99_plus)
+                        else -> pluralStringResource(R.plurals.file_explorer_songs, audioCount, audioCount)
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = badgeColor,
@@ -599,16 +610,16 @@ private fun FileExplorerItem(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = stringResource(if (isBlocked) R.string.folder_state_excluded else R.string.folder_state_included),
+                text = stringResource(if (inLibrary) R.string.folder_state_in_library else R.string.folder_state_not_in_library),
                 style = MaterialTheme.typography.labelMedium,
-                color = if (isBlocked) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            RadioButton(
-                selected = isBlocked,
-                onClick = onToggleAllowed,
-                colors = RadioButtonDefaults.colors(
-                    selectedColor = MaterialTheme.colorScheme.onErrorContainer,
-                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+            Checkbox(
+                checked = inLibrary,
+                onCheckedChange = { onToggleAllowed() },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.secondary,
+                    uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
         }

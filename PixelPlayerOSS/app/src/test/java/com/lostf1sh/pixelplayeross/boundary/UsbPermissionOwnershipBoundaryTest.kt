@@ -53,4 +53,20 @@ class UsbPermissionOwnershipBoundaryTest {
         assertThat(body("override fun onDestroy(")).contains("clearUsbPermissionRequester")
         assertThat(body("override fun onResume(")).contains("dualPlayerEngine.refreshUsbAudioDiagnostics()")
     }
+
+    @Test
+    fun `B40-P2 - a Dedicated device shows the dialog through the System page's lift, and always puts the containment back`() {
+        val requester = body("private fun installUsbPermissionRequester(")
+        // Launcher, Pinned and App mode keep today's path: the decision is still made from the mode and what Android reports
+        assertThat(requester).contains("DapContainmentPolicy.needsLockTaskSuspensionForSystemDialog(")
+        assertThat(requester).contains("showUsbPermissionDialogThroughLiftedLockTask(request)")
+        val flow = body("private fun showUsbPermissionDialogThroughLiftedLockTask(")
+        assertThat(flow).contains("lift = ::releaseLockTaskForMaintenance")           // the System page's two-step lift
+        assertThat(flow).contains("returnToDedicatedModeNow()")                        // the Maintenance exit: also restores the allowlist
+        assertThat(flow).contains("timeoutMs = UsbPermissionCoordinator.DEFAULT_TIMEOUT_MS")
+        // answered (the engine tells us), dismissed (back in front after being behind the dialog), or the bound
+        assertThat(requester).contains("DapSystemDialogLift.Outcome.ANSWERED")
+        assertThat(body("override fun onResume(")).contains("DapSystemDialogLift.Outcome.DISMISSED")
+        assertThat(body("override fun onPause(")).contains("usbDialogFlow?.pausedSinceShown = true")
+    }
 }

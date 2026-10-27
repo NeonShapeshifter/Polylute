@@ -1,7 +1,8 @@
 package com.lostf1sh.pixelplayeross.presentation.components
 
+import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapMotion
-import com.lostf1sh.pixelplayeross.presentation.components.scoped.SongInfoEntry
+import com.lostf1sh.pixelplayeross.ui.glass.glassPanelBackground
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
@@ -29,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -67,6 +69,7 @@ import com.lostf1sh.pixelplayeross.presentation.components.scoped.PlayerArtistNa
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.PlayerSheetPredictiveBackHandler
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.QueueSheetRuntimeEffects
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.SheetMotionController
+import com.lostf1sh.pixelplayeross.presentation.components.scoped.MiniSeekPolicy
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.miniPlayerSwipeGesture
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.playerSheetVerticalDragGesture
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.rememberFullPlayerCompositionPolicy
@@ -83,6 +86,8 @@ import com.lostf1sh.pixelplayeross.presentation.components.scoped.rememberSheetV
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.StablePlayerState
+import com.lostf1sh.pixelplayeross.presentation.components.player.LocalPlayerPageSignal
+import com.lostf1sh.pixelplayeross.presentation.components.player.PlayerPageSignal
 import com.lostf1sh.pixelplayeross.presentation.components.player.QueuePeekBottomGap
 import com.lostf1sh.pixelplayeross.presentation.components.player.QueuePeekHeight
 import com.lostf1sh.pixelplayeross.ui.theme.LocalPixelPlayerDarkTheme
@@ -399,19 +404,6 @@ fun UnifiedPlayerSheetV2(
         sheetCollapsedTargetY = sheetCollapsedTargetY
     )
 
-    // Opens the contextual menu for whatever is playing. Purely a selection change: it touches no
-    // playback, route, profile or volume state.
-    val latestSongForInfo = rememberUpdatedState(infrequentPlayerState.currentSong)
-    val onShowCurrentSongInfo = remember(sheetActionHandlers) {
-        {
-            val song = latestSongForInfo.value
-            if (song != null) {
-                // The player's own DETAILS sibling wants the details, not the action menu.
-                sheetActionHandlers.onSelectedSongForInfoChange(song, SongInfoEntry.DETAILS)
-            }
-        }
-    }
-
     val hapticFeedback = LocalHapticFeedback.current
     val miniSwipeHandler = rememberMiniPlayerSwipeHandler(
         scope = scope,
@@ -546,6 +538,9 @@ fun UnifiedPlayerSheetV2(
         ).joinToString(", ")
     } else playerActionLabel
 
+    // B42-fix1: which page of the full player is showing, for what is drawn beside it (the queue's folded strip is Player's alone)
+    val playerPageSignal = remember { PlayerPageSignal() }
+    CompositionLocalProvider(LocalPlayerPageSignal provides playerPageSignal) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -599,9 +594,20 @@ fun UnifiedPlayerSheetV2(
                                 shape = sheetInteractionState.playerShadowShape,
                                 clip = false
                             )
-                            .background(
-                                color = playerAreaBackground,
-                                shape = sheetInteractionState.playerShadowShape
+                            .then(
+                                // The docked player is opaque cover colour; its fill gives way to the glass as the player opens.
+                                if (Dap.glass != null) {
+                                    Modifier.glassPanelBackground(
+                                        color = playerAreaBackground,
+                                        shape = sheetInteractionState.playerShadowShape,
+                                        fadeOut = { playerContentExpansionFraction.value },
+                                    )
+                                } else {
+                                    Modifier.background(
+                                        color = playerAreaBackground,
+                                        shape = sheetInteractionState.playerShadowShape
+                                    )
+                                }
                             )
                             .clip(sheetInteractionState.playerShadowShape)
                             .layout { measurable, constraints ->
@@ -618,7 +624,17 @@ fun UnifiedPlayerSheetV2(
                             }
                             .miniPlayerSwipeGesture(
                                 enabled = currentSheetContentState == PlayerSheetState.COLLAPSED && !isPreparingPlayback,
-                                handler = miniSwipeHandler
+                                handler = miniSwipeHandler,
+                                // B40-F6: the top of the mini player is the progress line's, when there is a line
+                                seekZoneHeightPx = if (MiniSeekPolicy.available(
+                                        MiniSeekPolicy.durationMs(infrequentPlayerState.totalDuration, infrequentPlayerState.currentSong?.duration ?: 0L),
+                                        isPreparingPlayback,
+                                    )
+                                ) {
+                                    with(density) { MiniSeekPolicy.ZONE_DP.dp.toPx() }
+                                } else {
+                                    0f
+                                },
                             )
                             .playerSheetVerticalDragGesture(
                                 enabled = sheetInteractionState.canDragSheet,
@@ -668,7 +684,9 @@ fun UnifiedPlayerSheetV2(
                             isFavorite = isFavorite,
                             shouldRenderFullPlayer = shouldRenderFullPlayer,
                             miniSwipeOffsetProvider = { offsetAnimatable.value },
-                            onShowSongInfo = onShowCurrentSongInfo,
+                            onNavigateToAlbum = sheetActionHandlers.onNavigateToAlbum,
+                            onNavigateToArtist = sheetActionHandlers.onNavigateToArtist,
+                            onNavigateToGenre = sheetActionHandlers.onNavigateToGenre,
                             onQueueDragStart = sheetActionHandlers.beginQueueDrag,
                             onQueueDrag = sheetActionHandlers.dragQueueBy,
                             onQueueRelease = sheetActionHandlers.endQueueDrag,
@@ -712,6 +730,7 @@ fun UnifiedPlayerSheetV2(
                 onNavigateToGenre = sheetActionHandlers.onNavigateToGenre
             )
         }
+    }
     }
 
     UnifiedPlayerSaveQueueLayer(

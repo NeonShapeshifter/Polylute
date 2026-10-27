@@ -111,6 +111,11 @@ struct Script {
     int64_t ringAnswerUs = 1000;         // an audio URB's own completion (1 ms of audio); kNever: the host never completes it
     int64_t ringLateUs = 0;              // like lateAfterDiscardUs, for the audio URBs
     bool gone = false;                   // every reap and discard fails with ENODEV
+    // B41-fix1 (A1a): what the kernel reports for a feedback transfer that was not cancelled. A positive length is not a good
+    // completion: usbfs can deliver the bytes together with an error on the URB or on its packet.
+    int feedbackUrbStatus = 0;           // the URB's `status`
+    int feedbackPacketStatus = 0;        // its packet's `status`
+    int feedbackActualLength = -1;       // its packet's `actual_length`; -1: all the bytes asked for
 };
 
 pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;  // never held across an allocation or a free
@@ -328,10 +333,14 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
             if (best->planted) {
                 u->status = 0;
             } else {
-                u->status = best->cancelled ? -ENOENT : 0;
+                const bool feedbackTransfer = best->oneShot || best->continuous;
+                u->status = best->cancelled ? -ENOENT : (feedbackTransfer ? g_script.feedbackUrbStatus : 0);
                 for (int i = 0; i < u->number_of_packets; i++) {
-                    u->iso_frame_desc[i].status = 0;
+                    u->iso_frame_desc[i].status = feedbackTransfer && !best->cancelled ? (unsigned int)g_script.feedbackPacketStatus : 0;
                     u->iso_frame_desc[i].actual_length = best->cancelled ? 0 : u->iso_frame_desc[i].length;
+                    if (feedbackTransfer && !best->cancelled && g_script.feedbackActualLength >= 0) {
+                        u->iso_frame_desc[i].actual_length = (unsigned int)g_script.feedbackActualLength;
+                    }
                 }
                 if ((best->oneShot || best->continuous) && !best->cancelled && best->length >= 4) {
                     const uint32_t raw = (uint32_t)llround(g_script.fpmf * 65536.0);
@@ -938,9 +947,72 @@ void testFullQuarantineLateFeedbackDoesNotRetireAudio(bool backpressure, bool al
            allocationFails ? "failed" : "ok", g_failures == failuresBefore ? "PASS" : "FAIL");
 }
 
+// ── B41-fix1 (A1a): a transfer that carries bytes together with an error is not a reading ─────────────────────
+
+/**
+ * Ported from the outside investigation of 2026-10-25 (`feedback-status-review-test.cpp`, which found it by running this file's
+ * fake usbfs against the real output): both reads of the feedback endpoint decoded the four bytes whenever `actual_length >= 4`
+ * and looked at neither `urb->status` nor the packet's status, so a transfer that came back with -EILSEQ or -ECONNRESET and four
+ * bytes moved the rate as if it were the DAC's word. The DAC here answers +0.8 % (inside every window), so a reading that is taken
+ * moves `calibratedFpmf` to it, and one that is not leaves the nominal rate.
+ *
+ * [oneShot]: the read at the stream's start; otherwise the continuous URB, after a start with a clean DAC. The fault is a
+ * [urbStatus], a [packetStatus] or a [length] other than four. A good transfer right after a bad one is followed (nothing latches).
+ */
+void feedbackStatusCase(bool oneShot, int urbStatus, int packetStatus, int length, const char *what) {
+    resetKernel();
+    g_script.fpmf = kNominalFpmf;
+    UsbAudioContext *ctx = createStream();
+    const double reading = kNominalFpmf * 1.008;
+    const bool valid = urbStatus == 0 && packetStatus == 0 && (length < 0 || length == 4);
+    auto setFault = [&](bool on) {
+        pthread_mutex_lock(&g_mu);
+        g_script.fpmf = reading;
+        g_script.feedbackUrbStatus = on ? urbStatus : 0;
+        g_script.feedbackPacketStatus = on ? packetStatus : 0;
+        g_script.feedbackActualLength = on ? length : -1;
+        pthread_mutex_unlock(&g_mu);
+    };
+    if (oneShot) setFault(true);
+    CHECK(startStream(ctx), "%s: the stream did not start", what);
+    if (!oneShot) {
+        setFault(true);
+        runAReapSite(ctx);
+    }
+    const double expected = valid ? reading : kNominalFpmf;
+    CHECK(std::fabs(ctx->calibratedFpmf - expected) < 0.0001, "%s, %s: calibrated %.8f, expected %.8f%s", oneShot ? "start" : "continuous", what,
+          ctx->calibratedFpmf, expected, valid ? "" : " (a transfer with an error was taken as a reading)");
+    if (!valid) {
+        // not latched: the next good transfer is followed
+        setFault(false);
+        runAReapSite(ctx);
+        CHECK(std::fabs(ctx->calibratedFpmf - reading) < 0.0001, "%s, %s: a good reading after the bad one was not followed (%.8f)", oneShot ? "start" : "continuous",
+              what, ctx->calibratedFpmf);
+    }
+    pthread_mutex_lock(&g_mu);
+    g_script = Script();
+    pthread_mutex_unlock(&g_mu);
+    releaseStream(ctx);
+    checkNoViolations(what);
+}
+
+void testFeedbackThatIsNotAReadingMovesNothing() {
+    for (const bool oneShot : {true, false}) {
+        feedbackStatusCase(oneShot, 0, 0, -1, "valid transfer");                              // the two controls
+        feedbackStatusCase(oneShot, 0, -EILSEQ, -1, "packet -EILSEQ with four bytes");        // the review's four
+        feedbackStatusCase(oneShot, -ECONNRESET, 0, -1, "URB -ECONNRESET with four bytes");
+        feedbackStatusCase(oneShot, 0, -EPROTO, -1, "packet -EPROTO with four bytes");        // and the neighbours the guard also covers
+        feedbackStatusCase(oneShot, -EPROTO, 0, -1, "URB -EPROTO with four bytes");
+        feedbackStatusCase(oneShot, 0, 0, 0, "clean but empty");
+        feedbackStatusCase(oneShot, 0, 0, 3, "clean but three bytes (UAC1's 10.14 is not this driver's)");
+    }
+    printf("feedback status: a transfer with an error status or not four bytes moves nothing (start and continuous); a good one after it is followed\n");
+}
+
 }  // namespace
 
 int main() {
+    testFeedbackThatIsNotAReadingMovesNothing();
     testHealthyAnswer();
     testLateCompletionAfterCancel();
     testCancelledCompletionInsideTheWait();

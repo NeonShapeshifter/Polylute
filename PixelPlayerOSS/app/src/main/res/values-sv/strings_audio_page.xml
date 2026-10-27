@@ -12,10 +12,10 @@
     <string name="audio_output_bluetooth">Utgång: Bluetooth</string>
     <string name="audio_output_android">Utgång: Android-ljud</string>
     <string name="audio_digital_warning">Digital volym på %1$d %%: signalen ändras.</string>
-    <string name="audio_eq_title">Equalizer</string>
+    <string name="audio_eq_title">Polylute EQ</string>
     <string name="audio_eq_no_headphones">Välj hörlurar för att justera deras equalizer</string>
-    <string name="audio_eq_sub">%1$s · %2$s</string>
-    <string name="audio_eq_sub_saved">%1$s · sparad: %2$s</string>
+    <string name="audio_eq_sub">I telefonen · %1$s · %2$s</string>
+    <string name="audio_eq_sub_saved">I telefonen · %1$s · sparad: %2$s</string>
     <string name="audio_replaygain_title">ReplayGain</string>
     <string name="audio_replaygain_sub">Normaliserar med filernas taggar</string>
     <string name="audio_gain_of">Förstärkning från</string>
@@ -45,4 +45,23 @@
     <string name="audio_status_safety_unavailable">Tillämpas inte på denna utgång</string>
     <!-- B22: the battery on the DAP lock screen's footer. -->
     <string name="lock_battery_percent">%1$d %%</string>
+    <!-- B39-A7: sharing the DAC with other apps, Resonance only. -->
+    <string name="audio_dac_share_title">Dela DAC:en med andra appar</string>
+    <string name="audio_dac_share_sub">Bara i Resonance: andra appar kan använda DAC:en medan Polylute är pausad. Spela tar tillbaka den.</string>
+    <string name="audio_dac_share_sub_purity">Purity är på och behåller DAC:en. Det här gäller i Resonance.</string>
+    <!-- B39-A8: a DAC is connected and its USB permission was denied or never given. %1$s = the DAC. -->
+    <string name="audio_usb_permission_title">USB-åtkomst behövs</string>
+    <string name="audio_usb_permission_sub">%1$s är ansluten men Polylute har inte tillåtelse att använda den, så ljudet går via Androids egen USB-väg. Tryck för att fråga igen.</string>
+    <!-- B40-P1: a play after the DAC was shared that could not start says why. -->
+    <string name="dac_share_refused_dac_not_back">DAC:en kom inte tillbaka i tid, så uppspelningen förblev pausad.</string>
+    <string name="dac_share_refused_level_unconfirmed">DAC:en är tillbaka men dess volym kunde inte bekräftas, så uppspelningen förblev pausad.</string>
+    <!-- B40-P4: a hand-back that needed a bus reset and could not confirm the DAC's volume afterwards. -->
+    <string name="dac_share_release_unconfirmed">DAC:en delades inte: dess volym kunde inte bekräftas efter bussåterställningen, så Polylute behöll den och lämnade den inte till Android.</string>
+    <!-- B40-F8: Resonance's optional peak limiter (Android route). -->
+    <string name="audio_limiter_title">Toppbegränsare</string>
+    <string name="audio_limiter_sub">Hindrar equalizerns förstärkningar från att klippa. Bara Resonance på Android-vägen.</string>
+    <string name="audio_status_limiter_android_only">Bara på Android-vägen</string>
+    <string name="audio_status_limiter_next_song">Gäller från nästa låt</string>
+    <!-- B40-fix2 item 1: the bus reset left the DAC with Android at a volume Polylute could not confirm -->
+    <string name="dac_share_release_with_android">DAC:en delades inte: efter bussåterställningen kunde Polylute inte hålla kvar den eller bekräfta dess volym, så Android har den. Håll volymen låg tills Polylute tar tillbaka den vid nästa uppspelning.</string>
 </resources>

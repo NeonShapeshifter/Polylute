@@ -141,8 +141,8 @@ internal fun rememberSheetThemeState(
     )
 
     val albumColorScheme = rememberBatchAnimatedColorScheme(rawAlbumColorScheme, animate = animateAlbumScheme)
-    // The docked shelf is graphite; artwork colour never bleeds onto it (see playerAreaBackground), so
-    // nothing draws a crossfade of this scheme and it never animates.
+    // The docked shelf uses the backdrop's already-built cover colour, not this Material scheme.
+    // Nothing draws a crossfade of this scheme, so it never animates.
     val miniPlayerScheme = rememberBatchAnimatedColorScheme(rawMiniPlayerScheme, animate = false)
 
     val miniAppearProgress = remember { Animatable(0f) }
@@ -159,9 +159,9 @@ internal fun rememberSheetThemeState(
 
     val miniReadyAlpha = miniAppearProgress.value
     val miniAppearScale = lerp(0.985f, 1f, miniAppearProgress.value)
-    // The mini-player is part of the device's chrome, so it is graphite like the rest of the
-    // chrome. Artwork colour never bleeds onto it.
-    val playerAreaBackground = Dap.surface
+    // Same opaque cover-coloured shelf as the folded "Up next" strip (QueueGlass).
+    // Scrolling page content cannot show through either control.
+    val playerAreaBackground = Dap.shelf
 
     return SheetThemeState(
         albumColorScheme = albumColorScheme,

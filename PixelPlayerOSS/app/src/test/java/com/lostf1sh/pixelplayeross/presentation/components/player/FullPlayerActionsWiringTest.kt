@@ -31,7 +31,6 @@ class FullPlayerActionsWiringTest {
         onNext = { calls += "next" },
         onPrevious = { calls += "previous" },
         onCollapse = { calls += "collapse" },
-        onShowDetails = { calls += "details" },
         onQueueDragStart = { calls += "dragStart" },
         onQueueDrag = { drags += it },
         onQueueRelease = { total, velocity -> calls += "release:$total:$velocity" },
@@ -50,13 +49,12 @@ class FullPlayerActionsWiringTest {
     )
 
     @Test
-    fun `the transport and the details are the sheet's own callbacks`() {
+    fun `the transport and the queue drag are the sheet's own callbacks`() {
         actions.onPlayPause()
         actions.onSeek(1234L)
         actions.onNext()
         actions.onPrevious()
         actions.onCollapse()
-        actions.onShowDetails()
         actions.onQueueDragStart()
         actions.onQueueDrag(-3f)
         actions.onQueueRelease(-80f, -900f)
@@ -64,7 +62,7 @@ class FullPlayerActionsWiringTest {
         actions.onRepeatToggle()
         actions.onFavoriteToggle()
         assertThat(calls).containsExactly(
-            "playPause", "seek:1234", "next", "previous", "collapse", "details", "dragStart",
+            "playPause", "seek:1234", "next", "previous", "collapse", "dragStart",
             "release:-80.0:-900.0", "shuffle", "repeat", "favorite",
         ).inOrder()
         assertThat(drags).containsExactly(-3f)
@@ -85,7 +83,7 @@ class FullPlayerActionsWiringTest {
         longLived.onPlayPause()
         current = PlayerSheetCallbacks(
             onPlayPause = { calls += "playPause-2" }, onSeek = {}, onNext = {}, onPrevious = {}, onCollapse = {},
-            onShowDetails = {}, onQueueDragStart = {}, onQueueDrag = {}, onQueueRelease = { _, _ -> }, onShuffleToggle = {},
+            onQueueDragStart = {}, onQueueDrag = {}, onQueueRelease = { _, _ -> }, onShuffleToggle = {},
             onRepeatToggle = {}, onFavoriteToggle = {},
         )
         longLived.onPlayPause()

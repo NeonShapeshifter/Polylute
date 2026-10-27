@@ -10,6 +10,9 @@ interface LyricsRepository {
      */
     suspend fun getStoredLyrics(song: Song): Pair<Lyrics, String>?
 
+    /** Explicit offline download: keeps existing/local lyrics, then downloads a missing result with the user's one-shot consent. */
+    suspend fun prepareForOffline(song: Song): Lyrics? = getLyrics(song)
+
     /**
      * Get lyrics for a song with source preference support.
      * 

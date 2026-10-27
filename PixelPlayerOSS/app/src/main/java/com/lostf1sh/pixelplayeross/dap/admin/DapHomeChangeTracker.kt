@@ -16,8 +16,31 @@ package com.lostf1sh.pixelplayeross.dap.admin
  * the caller re-runs the reconciliation, which is idempotent.
  *
  * Pure and not thread-safe: both callers (`onResume`, `onNewIntent`) run on the main thread.
+ *
+ * **B40-F9b: two things this used to get wrong.**
+ *  - It was one per activity instance. MainActivity can have two (see [DapActivityInstancePolicy]), each remembering a different "last
+ *    look", so whether a change was noticed depended on which instance resumed. The activity now uses [process], the one tracker of the
+ *    process, which every instance shares.
+ *  - It only noticed a *difference between two looks*. A home change leaves no trace between them when the listener goes away and
+ *    comes back to the same facts: on the device an exit left "owner, Polylute home, flag off, allowlist off" as the last look, HONOR was
+ *    home for a while (nobody looked), and picking Polylute again produced the same facts, so nothing was reconciled and the device was left
+ *    half-provisioned. [shouldReconcile] therefore also says yes for the state that is wrong by itself ([isUnfinished]), at every look.
  */
 class DapHomeChangeTracker {
+
+    companion object {
+        /** The tracker of the process: every MainActivity instance looks through this one. */
+        val process = DapHomeChangeTracker()
+
+        /**
+         * A Device Owner whose home app is Polylute, no exit pending, and the Dedicated policy not all there (the flag or the Lock Task
+         * allowlist missing). That is what a half-provisioned device looks like, and the restore (which is idempotent and applies nothing
+         * while an exit is chosen) is what completes it.
+         */
+        fun isUnfinished(state: DapDeviceOwnerState): Boolean =
+            state.isDeviceOwner && state.isPixelPlayerHome && !state.isHomeExitChosen &&
+                (!state.isDedicatedModeEnabled || !state.isLockTaskPermitted)
+    }
 
     /** The evidence of one look. */
     data class Evidence(
@@ -39,6 +62,16 @@ class DapHomeChangeTracker {
         val previous = last
         last = evidence
         return previous != null && previous != evidence
+    }
+
+    /**
+     * Whether the reconciliation should run for this look: the facts moved since the last look ([changed], which always records the look), or
+     * the device is [isUnfinished] and nothing else (a Maintenance session, a system surface lifted for a moment) is deliberately holding it
+     * that way ([holding]).
+     */
+    fun shouldReconcile(state: DapDeviceOwnerState, holding: Boolean): Boolean {
+        val moved = changed(state)
+        return moved || (!holding && isUnfinished(state))
     }
 
     fun changed(state: DapDeviceOwnerState): Boolean = changed(

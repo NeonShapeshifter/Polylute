@@ -39,7 +39,7 @@ class SafetyMaxRefusalNotifier(private val context: Context) {
         if (!canPost(appContext, manager)) return
         ensureChannel(appContext)
         val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.monochrome_player)
+            .setSmallIcon(R.drawable.ic_stat_polylute)
             .setContentTitle(appContext.getString(R.string.safety_max_refused_notice))
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setPriority(NotificationCompat.PRIORITY_LOW)

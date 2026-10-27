@@ -58,7 +58,9 @@ import com.lostf1sh.pixelplayeross.presentation.settings.LyricsSettingsActionsIm
 import com.lostf1sh.pixelplayeross.presentation.settings.LyricsSettingsScreen
 import com.lostf1sh.pixelplayeross.presentation.settings.HomeModeHost
 import com.lostf1sh.pixelplayeross.presentation.settings.SystemSettingsHost
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.AudioOutputNoticesViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.AudioTransitionSummaryViewModel
+import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.BackupSettingsViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacProfilesViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DeviceControlViewModel
@@ -214,6 +216,28 @@ private fun LibrarySettingsHost(
         LibrarySettingsActionsImpl(settingsViewModel, navigate, showExplorer)
     }
     LibrarySettingsScreen(state, actions)
+
+    // B39-A9: "Find folders with music": a word while it looks, and the folders it found, checked.
+    val proposal by settingsViewModel.folderProposal.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(settingsViewModel) {
+        settingsViewModel.folderSearchNotices.collect { notice ->
+            val text = when (notice) {
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.FolderSearchNotice.SEARCHING -> R.string.library_find_folders_searching
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.FolderSearchNotice.NONE_FOUND -> R.string.library_find_folders_none
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.FolderSearchNotice.NOT_READY -> R.string.library_find_folders_not_ready
+            }
+            android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    proposal?.let {
+        com.lostf1sh.pixelplayeross.presentation.components.FolderProposalDialog(
+            state = it,
+            onToggle = settingsViewModel::toggleProposedFolder,
+            onAdd = settingsViewModel::addProposedFolders,
+            onDismiss = settingsViewModel::dismissProposedFolders,
+        )
+    }
 }
 
 @Composable
@@ -252,6 +276,7 @@ private fun AudioSettingsHost(
     headphoneProfilesViewModel: HeadphoneProfilesViewModel = hiltViewModel(),
     safetyVolumeViewModel: SafetyVolumeViewModel = hiltViewModel(),
     transitionSummaryViewModel: AudioTransitionSummaryViewModel = hiltViewModel(),
+    outputNoticesViewModel: AudioOutputNoticesViewModel = hiltViewModel(),
 ) {
     val ui by settingsViewModel.uiState.collectAsStateWithLifecycle()
     val playbackSpeed by settingsViewModel.playbackSpeed.collectAsStateWithLifecycle()
@@ -261,11 +286,13 @@ private fun AudioSettingsHost(
     val device by deviceControlViewModel.uiState.collectAsStateWithLifecycle()
     val volume by safetyVolumeViewModel.state.collectAsStateWithLifecycle()
     val transition by transitionSummaryViewModel.globalSettings.collectAsStateWithLifecycle()
-    val state = remember(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition) {
-        AudioSettingsState.from(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition)
+    val fixedOutputDac by outputNoticesViewModel.fixedOutputDac.collectAsStateWithLifecycle()
+    val fixedOutputAnswer by outputNoticesViewModel.answer.collectAsStateWithLifecycle()
+    val state = remember(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer) {
+        AudioSettingsState.from(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer)
     }
-    val actions = remember(settingsViewModel, deviceControlViewModel, navigate) {
-        AudioSettingsActionsImpl(settingsViewModel, deviceControlViewModel, navigate)
+    val actions = remember(settingsViewModel, deviceControlViewModel, outputNoticesViewModel, navigate) {
+        AudioSettingsActionsImpl(settingsViewModel, deviceControlViewModel, navigate, outputNoticesViewModel::showFixedOutputNotice)
     }
     AudioSettingsScreen(state, actions)
 }

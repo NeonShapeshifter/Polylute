@@ -20,6 +20,12 @@ import kotlinx.coroutines.launch
  * route flicker: none of those read again; a new attachment (unplug and plug) does. The state is read again after the app's own
  * write ([publish]) and when the listener asks ([refresh]).
  *
+ * **A quiet reading is not believed on one look** (B40-F2). A DAC that has just powered up answers with its defaults ("Close EQ", no
+ * gain, flat bands) until it has loaded what it holds, which is exactly what "the EQ does nothing" reads as. A reading that says the EQ
+ * is off or flat is published only when a second look, [confirmMs] later, says the same (or the one published before it already did):
+ * until then the label is unknown ("reading…"), never "off", and Purity is not claimed. Readings that shape the sound, or that cannot be
+ * used, are published at once. If the looks keep changing, the DAC is "not readable", which says so and claims nothing.
+ *
  * **What it never does.** It never sends anything but GETs, never on the main thread, and it has no way to write: the write half
  * is a separate object that needs the gate's permit. A failed read, a timeout or a garbled reply leaves the state unknown or
  * unreadable, which no label turns into "Purity"; audio does not depend on any of it.
@@ -36,6 +42,8 @@ class DacEqController(
     private val clock: () -> Long,
     private val settleMs: Long = SETTLE_MS,
     private val log: (String) -> Unit = {},
+    /** B40-F2: how long after a quiet reading the second look is taken. */
+    private val confirmMs: Long = CONFIRM_MS,
     /** The DAC the app can ask, from what is known this instant (no waiting for a flow); used to catch up, never to read. */
     private val attachedNow: () -> AttachedFiio? = { null },
 ) : DacEqLabelSource {
@@ -44,6 +52,9 @@ class DacEqController(
 
     private val _label = MutableStateFlow(DacEqLabel.NOT_APPLICABLE)
     override val label: StateFlow<DacEqLabel> = _label.asStateFlow()
+
+    private val _writable = MutableStateFlow(false)
+    override val writable: StateFlow<Boolean> = _writable.asStateFlow()
 
     @Volatile
     private var readKey: String? = null
@@ -68,6 +79,7 @@ class DacEqController(
     private fun set(value: DacEqReadout) {
         _readout.value = value
         _label.value = value.label
+        _writable.value = value.attachedOrNull?.profile?.canBeWritten == true
     }
 
     /**
@@ -127,8 +139,51 @@ class DacEqController(
         }
     }
 
-    /** One read of [att]'s whole EQ state, published if [att] is still the attached DAC. */
+    /**
+     * One read of [att]'s EQ, published if [att] is still the attached DAC. A reading that says "the EQ does nothing" is looked at again
+     * [confirmMs] later first, unless what was published before already said the same (B40-F2): see the class doc.
+     */
     private suspend fun read(att: AttachedFiio): DacEqReadout {
+        var result = readOnce(att)
+        var looks = 1
+        while (result is DacEqReadout.Known && result.state.isQuiet && !corroborated(att, result.state)) {
+            if (looks >= MAX_LOOKS) {
+                val why = "the readings did not settle: $MAX_LOOKS looks, each different"
+                log("DAC_EQ|${att.displayName} $why")
+                result = DacEqReadout.Unreadable(att, why)
+                break
+            }
+            // not "off" yet: the label is unknown while the second look is awaited
+            if (_readout.value.attachedOrNull?.attachKey == att.attachKey && _readout.value !is DacEqReadout.Known) {
+                set(DacEqReadout.Pending(att))
+            }
+            log("DAC_EQ|${att.displayName} reads as ${result.state.verdict}; looking again in $confirmMs ms before saying so")
+            delay(confirmMs)
+            if (_readout.value.attachedOrNull?.attachKey != att.attachKey) return result
+            val next = readOnce(att)
+            looks++
+            if (next is DacEqReadout.Known && next.state.isQuiet && next.state.sameReading((result as DacEqReadout.Known).state)) {
+                log("DAC_EQ|${att.displayName}: the second look agrees; it is ${next.state.verdict}")
+                result = next
+                break
+            }
+            result = next
+        }
+        if (_readout.value.attachedOrNull?.attachKey == att.attachKey) {
+            set(result)
+            log(summary(result))
+        }
+        return result
+    }
+
+    /** What was published for this attachment already says the same: a look that agrees with it needs no second one. */
+    private fun corroborated(att: AttachedFiio, state: DacEqState): Boolean {
+        val published = _readout.value as? DacEqReadout.Known ?: return false
+        return published.attached.attachKey == att.attachKey && published.state.isQuiet && published.state.sameReading(state)
+    }
+
+    /** One look at [att]'s whole EQ state, not published. */
+    private suspend fun readOnce(att: AttachedFiio): DacEqReadout {
         val use = try {
             access.withSession(att, log) { session -> FiioEqReader.read(session) }
         } catch (cancelled: CancellationException) {
@@ -137,15 +192,10 @@ class DacEqController(
             // A USB error is not a reason to disturb anything else: the state is unreadable, which no label turns into Purity.
             HidUse.Unavailable("the read failed: ${error.javaClass.simpleName}: ${error.message}")
         }
-        val result = when (use) {
+        return when (use) {
             is HidUse.Ran -> DacEqReadout.Known(att, use.value, clock())
             is HidUse.Unavailable -> DacEqReadout.Unreadable(att, use.why)
         }
-        if (_readout.value.attachedOrNull?.attachKey == att.attachKey) {
-            set(result)
-            log(summary(result))
-        }
-        return result
     }
 
     /** Asks again, now (the screen's "read again", or a reviewer command), whatever the route. Null when no DAC is attached. */
@@ -184,5 +234,11 @@ class DacEqController(
     companion object {
         /** After Direct is carrying the stream and before the first read: the stream's first moments are left alone. */
         const val SETTLE_MS = 2_000L
+
+        /** B40-F2: between the two looks at a reading that says the EQ does nothing (a DAC's firmware may need this long after power-up). */
+        const val CONFIRM_MS = 4_000L
+
+        /** B40-F2: looks before the readings are called unsettled. */
+        const val MAX_LOOKS = 3
     }
 }

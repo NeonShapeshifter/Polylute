@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lostf1sh.pixelplayeross.MainActivity
@@ -28,6 +29,7 @@ import com.lostf1sh.pixelplayeross.dap.compat.OptionalPermissionTrigger
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DapManagedRadio
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DeviceControlEvent
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DeviceControlViewModel
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.ProductModeViewModel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -37,8 +39,14 @@ import kotlinx.coroutines.launch
  * and not in [DeviceSettingsScreen], which only says *what* the listener asked for.
  */
 @Composable
-fun DeviceSettingsHost(deviceControlViewModel: DeviceControlViewModel) {
+fun DeviceSettingsHost(
+    deviceControlViewModel: DeviceControlViewModel,
+    productModeViewModel: ProductModeViewModel = hiltViewModel(),
+) {
     val deviceControlState by deviceControlViewModel.uiState.collectAsStateWithLifecycle()
+    // B39-A5: the screen-off setting is the DAP's: it follows the product mode live (App mode hides it).
+    ProductModeLiveEffect(productModeViewModel)
+    val mode by productModeViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var pendingBluetoothOwnerState by remember { mutableStateOf<Boolean?>(null) }
     val writeSettingsLauncher = rememberLauncherForActivityResult(
@@ -217,7 +225,10 @@ fun DeviceSettingsHost(deviceControlViewModel: DeviceControlViewModel) {
         }
     }
 
-    DeviceSettingsScreen(state = DeviceSettingsState(deviceControlState), actions = actions)
+    DeviceSettingsScreen(
+        state = DeviceSettingsState(deviceControlState, showScreenTimeout = ModeSurfacePolicy.showScreenTimeout(mode.product)),
+        actions = actions,
+    )
 }
 
 private tailrec fun Context.findMainActivity(): MainActivity? = when (this) {

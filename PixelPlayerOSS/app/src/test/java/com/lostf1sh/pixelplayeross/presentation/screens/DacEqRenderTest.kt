@@ -203,7 +203,7 @@ open class DacEqRenderTest {
     fun `a Melody with its EQ on - ten filters, the pre-gain, applied in the DAC`() {
         setScreen(uiState())
         assertShows(
-            s(R.string.settings_category_equalizer_title), s(R.string.eq_subtitle_with, "TYGR", "SNOWSKY Melody"),
+            s(R.string.dac_eq_title), s(R.string.dac_eq_where, "SNOWSKY Melody"), s(R.string.dac_eq_not_polylute),
             s(R.string.dac_eq_status_on), s(R.string.dac_eq_active_preset, "USER 3"),
             s(R.string.headphone_eq_mode_off), s(R.string.dac_eq_mode_on),
             s(R.string.dac_eq_preset_row), "Warm", s(R.string.dac_eq_preset_matches), s(R.string.dac_eq_save_preset),
@@ -410,7 +410,7 @@ open class DacEqRenderTest {
                 LocalDapBackNavigation provides DapBackAuthority(androidx.activity.OnBackPressedDispatcher()),
             ) { EqualizerScreenContent(state, NoopEqActions) }
         }
-        assertShows(s(R.string.settings_category_equalizer_title), s(R.string.headphone_eq_mode_10), s(R.string.headphone_eq_mode_15))
+        assertShows(s(R.string.eq_polylute_title), s(R.string.headphone_eq_mode_10), s(R.string.headphone_eq_mode_15))
         // Nothing of the DAC's EQ on it.
         compose.onAllNodesWithText(s(R.string.dac_eq_mode_on)).assertCountEquals(0)
         compose.onAllNodesWithText(s(R.string.dac_eq_section_filters)).assertCountEquals(0)

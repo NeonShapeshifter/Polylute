@@ -172,6 +172,17 @@ data class DacEqState(
 
     /** What the EQ does to the sound, from what was read. See [DacEqVerdicts]. */
     val verdict: DacEqVerdict get() = DacEqVerdicts.of(this)
+
+    /**
+     * B40-F2: the reading says the DAC's EQ does nothing (closed, or every band flat). That is the one answer a DAC gives by default right
+     * after it powers up, before it has loaded what it holds, so it is not believed on one look ([DacEqController]).
+     */
+    val isQuiet: Boolean get() = verdict == DacEqVerdict.OFF || verdict == DacEqVerdict.FLAT
+
+    /** B40-F2: the same preset, count, gain and bands as [other]: two looks that agree (the switch is not compared: it is not asked everywhere). */
+    fun sameReading(other: DacEqState): Boolean =
+        activePreset == other.activePreset && bandCount == other.bandCount && preGainTenthsDb == other.preGainTenthsDb &&
+            bands == other.bands
 }
 
 enum class DacEqVerdict {

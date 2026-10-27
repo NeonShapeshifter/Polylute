@@ -62,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.lostf1sh.pixelplayeross.ui.glass.CoverGlassBackdrop
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.Player
 import com.lostf1sh.pixelplayeross.R
@@ -230,12 +232,18 @@ fun DapLockScreen(
                 )
             }
     ) {
+        // B41: with the cover glass on, the lock screen is a sheet of the glass (its own copy, in step with the app's, so it slides away with
+        // its glass and a reveal never jumps); otherwise the theme's own background, as it was.
+        val glass = LocalCoverGlass.current?.takeIf { it.visible }
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { translationY = offset.px }
-                .background(Dap.background)
+                .then(if (glass == null) Modifier.background(Dap.background) else Modifier)
         ) {
+            if (glass != null) {
+                CoverGlassBackdrop(glass.crossfade, glass.clock, glass.base, expansion = { 1f })
+            }
             LockLayout(
                 modifier = Modifier
                     .fillMaxSize()

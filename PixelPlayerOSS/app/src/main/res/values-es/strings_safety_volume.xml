@@ -39,9 +39,45 @@
     <string name="safety_max_refused_notice">Safety Max · desbloquea para subir más</string>
     <string name="safety_max_volume_write_failed">El DAC no confirmó el volumen más bajo. Su nivel puede ser mayor del que se muestra.</string>
     <string name="safety_max_notice_channel">Límite de volumen</string>
-    <string name="more_group_debug">Depuración</string>
-    <string name="debug_mark_noise">Marcar ruido ahora</string>
-    <string name="debug_mark_noise_supporting">Guarda en un archivo los últimos 30 s de feedback y paquetes de la salida USB y el estado del stream</string>
-    <string name="debug_mark_noise_done">Guardado</string>
-    <string name="debug_mark_noise_failed">No se pudo guardar la marca de ruido</string>
+    <!-- B39-S1 -->
+    <string name="safety_first_use_level">Este DAC es nuevo para Polylute: se baja su volumen a %1$d dB antes de reproducir. Súbelo con las teclas de volumen.</string>
+    <!-- B39-S1 -->
+    <string name="fixed_output_notice_title">Polylute no puede controlar el volumen de este dispositivo</string>
+    <string name="fixed_output_notice_not_now">Ahora no</string>
+    <string name="fixed_output_row_title">Volumen de este dispositivo</string>
+    <string name="fixed_output_notification_title">Reproducción retenida: una pregunta sobre el volumen de este dispositivo</string>
+    <string name="fixed_output_notification_text">Abre Polylute y responde la pregunta sobre %1$s antes de reproducir.</string>
+    <!-- B27-A5 (N-07), en la versión de producción desde B39-S2: la hoja Más de Reproduciendo y Mantenimiento. -->
+    <string name="more_group_diagnostics">Diagnóstico</string>
+    <string name="noise_mark">Marcar ruido ahora</string>
+    <string name="noise_mark_supporting">Guarda en un archivo que puedes enviar los últimos 30 s de feedback y paquetes de la salida USB y el estado del stream</string>
+    <string name="noise_mark_failed">No se pudo guardar la marca de ruido</string>
+    <string name="noise_mark_done_title">Ruido marcado</string>
+    <string name="noise_mark_done_text">Se guardaron como %1$s los últimos 30 segundos de la salida USB y el estado del stream. Contiene la canción, el DAC, el modelo del teléfono y las cifras del stream, nada más, y se queda en este dispositivo salvo que lo envíes.</string>
+    <string name="noise_mark_share">Compartir</string>
+    <string name="noise_mark_close">Cerrar</string>
+    <string name="noise_mark_share_chooser">Compartir la marca de ruido</string>
+    <!-- B40-P3: a device whose volume Polylute cannot set is asked about once (replaces B39's notice). -->
+    <string name="fixed_output_question_body">¿%1$s tiene su propia rueda o botones de volumen?</string>
+    <string name="fixed_output_question_yes">Sí</string>
+    <string name="fixed_output_question_no">No</string>
+    <string name="fixed_output_mode_title">¿Cómo debe sonar %1$s?</string>
+    <string name="fixed_output_mode_body">Resonance (recomendado) empieza el volumen propio de Polylute en un nivel seguro; lo subes desde la barra de volumen. Purity suena al volumen máximo del dispositivo, así que bájalo antes.</string>
+    <string name="fixed_output_mode_resonance">Resonance</string>
+    <string name="fixed_output_mode_purity">Purity</string>
+    <string name="fixed_output_rise_title">Purity sonará más fuerte</string>
+    <string name="fixed_output_rise_body">Pasar %1$s a Purity hace que suene unos %2$d dB más fuerte que ahora. Bájalo antes.</string>
+    <string name="fixed_output_rise_confirm">Usar Purity</string>
+    <string name="fixed_output_toast_no_control">Resonance, con el volumen de Polylute empezando bajo. Purity no se ofrece para este dispositivo.</string>
+    <string name="fixed_output_toast_resonance">Resonance: el volumen de Polylute empieza bajo. Súbelo desde la barra de volumen.</string>
+    <string name="fixed_output_toast_purity">Purity: este dispositivo suena a su volumen máximo. Bájalo antes.</string>
+    <string name="fixed_output_toast_purity_failed">No se pudo activar Purity. Se mantiene Resonance.</string>
+    <string name="fixed_output_row_sub_unanswered">Polylute no puede ajustar su volumen. Toca para contarle cómo es el dispositivo.</string>
+    <string name="fixed_output_row_sub_resonance">Tiene su propio control · Resonance, el volumen de Polylute empieza bajo</string>
+    <string name="fixed_output_row_sub_purity">Tiene su propio control · Purity, suena al volumen máximo del dispositivo</string>
+    <string name="fixed_output_row_sub_no_control">Sin control de volumen · solo Resonance, el volumen de Polylute empieza bajo</string>
+    <string name="pristine_held_off_no_control">No se usa con %1$s: no tiene control de volumen, así que se usa el volumen propio de Polylute (Resonance).</string>
+    <string name="pristine_held_off_resonance">Desactivado para %1$s: elegiste Resonance para él. Cámbialo en la fila de volumen del dispositivo.</string>
+    <!-- B40-fix1 item 1: a held play was not started because the answer's protection could not be confirmed -->
+    <string name="fixed_output_toast_not_confirmed">No se inició la reproducción: Polylute no pudo confirmar a tiempo el bloqueo y el volumen de inicio seguro. Pulsa Play otra vez.</string>
 </resources>

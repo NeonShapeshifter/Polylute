@@ -58,6 +58,7 @@ class ScrollBarDragLabelTest {
                     }
                 }
                 ExpressiveScrollBar(
+                    contentEndMargin = 12.dp,
                     modifier = Modifier.align(Alignment.CenterEnd),
                     listState = state,
                     dragLabelProvider = { index -> lookups++; songFastScrollLabel(songs.getOrNull(index), sort) },

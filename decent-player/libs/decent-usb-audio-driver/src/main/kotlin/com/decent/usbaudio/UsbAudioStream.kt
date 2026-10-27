@@ -414,6 +414,13 @@ class UsbAudioStream(
         external fun nativeGetFeedbackStats(): LongArray
 
         /**
+         * B39-A7: a USBDEVFS_RESET of the device with nothing claimed afterwards, so the kernel probes it again and binds its own driver
+         * (snd-usb-audio) to the interfaces. Only for a hand-back that left an interface without one. Negative on failure.
+         */
+        @JvmStatic
+        external fun nativeUsbResetForRebind(fd: Int): Int
+
+        /**
          * B27-A5 (review N-07): the stream's last [windowMs] in one-second summaries, as text: a line with the stream's facts, then
          * one line per second that streamed (feedback readings' min / max / mean, how many were off nominal or refused, the ISO
          * packets' statuses). Recorded all the time at the cost of a few compares on the thread that reaps; built only here.

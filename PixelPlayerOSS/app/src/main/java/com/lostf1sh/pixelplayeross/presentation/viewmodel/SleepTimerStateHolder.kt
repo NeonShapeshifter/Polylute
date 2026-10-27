@@ -1,18 +1,14 @@
 package com.lostf1sh.pixelplayeross.presentation.viewmodel
 
 import android.os.SystemClock
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.service.MusicNotificationProvider
 import com.lostf1sh.pixelplayeross.data.service.MusicService
-import com.lostf1sh.pixelplayeross.data.service.SleepTimerReceiver
+import com.lostf1sh.pixelplayeross.data.service.SleepTimerAlarm
 import com.lostf1sh.pixelplayeross.data.EotStateHolder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -34,7 +30,7 @@ import javax.inject.Singleton
  * Extracted from PlayerViewModel to improve modularity.
  *
  * Responsibilities:
- * - Duration-based sleep timer with AlarmManager
+ * - Duration-based sleep timer ([SleepTimerAlarm]: an inexact alarm allowed in Doze plus the process's own timer)
  * - End-of-track (EOT) timer functionality
  * - Counted play functionality
  * - Timer display state
@@ -62,28 +58,11 @@ class SleepTimerStateHolder @Inject constructor(
     private var countedStateJob: Job? = null
     private var eotSongMonitorJob: Job? = null
 
-    private val alarmManager: AlarmManager =
-        context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-
     private var scope: CoroutineScope? = null
     private var toastEmitter: (suspend (String) -> Unit)? = null
     private var mediaControllerProvider: (() -> MediaController?)? = null
     private var currentSongIdProvider: (() -> StateFlow<String?>)? = null
     private var songTitleResolver: ((String?) -> String)? = null
-
-    private fun sleepTimerPendingIntent(): PendingIntent {
-        val intent = Intent(context, SleepTimerReceiver::class.java).apply {
-            // UI and service must schedule/cancel the same OS alarm, including session commands.
-            action = MusicService.ACTION_SLEEP_TIMER_EXPIRED
-            setPackage(context.packageName)
-        }
-        return PendingIntent.getBroadcast(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-    }
 
     /**
      * Initialize with dependencies from ViewModel.
@@ -111,7 +90,7 @@ class SleepTimerStateHolder @Inject constructor(
 
     /**
      * Set a duration-based sleep timer.
-     * Uses AlarmManager for reliability + coroutine for UI state clearing.
+     * The alarm is [SleepTimerAlarm] (no exact-alarm permission); a coroutine clears the UI state.
      */
     fun setSleepTimer(durationMinutes: Int) {
         require(durationMinutes in 1..1439)
@@ -133,41 +112,10 @@ class SleepTimerStateHolder @Inject constructor(
             durationMinutes
         )
 
-        val pendingIntent = sleepTimerPendingIntent()
         // The alarm runs on elapsed time (AUD-050): a wall-clock alarm moved with every clock or
-        // time-zone change. `endTime` above is only the countdown shown.
-        val triggerAtElapsed = SystemClock.elapsedRealtime() + durationMillis
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (alarmManager.canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAtElapsed,
-                        pendingIntent,
-                    )
-                } else {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAtElapsed,
-                        pendingIntent,
-                    )
-                }
-            } else {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    triggerAtElapsed,
-                    pendingIntent,
-                )
-            }
-        } catch (e: SecurityException) {
-            Timber.e(e, "Failed to schedule exact alarm for sleep timer")
-            alarmManager.set(
-                AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                triggerAtElapsed,
-                pendingIntent,
-            )
-        }
+        // time-zone change. `endTime` above is only the countdown shown. B40-F9c: an inexact alarm that is allowed in Doze plus the
+        // process's own timer, with no exact-alarm permission (see SleepTimerAlarm).
+        SleepTimerAlarm.schedule(context, SystemClock.elapsedRealtime() + durationMillis)
 
         scope.launch {
             toastEmitter?.invoke(
@@ -276,8 +224,7 @@ class SleepTimerStateHolder @Inject constructor(
         val scope = this.scope ?: return
         val wasAnythingActive = _activeTimerValueDisplay.value != null
 
-        val pendingIntent = sleepTimerPendingIntent()
-        alarmManager.cancel(pendingIntent)
+        SleepTimerAlarm.cancel(context)
 
         sleepTimerJob?.cancel()
         sleepTimerJob = null

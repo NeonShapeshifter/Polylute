@@ -410,7 +410,7 @@ fun DapWirelessControlContent(
         } else if (state.isDeviceOwner && onWifiEnabledChanged != null) {
             SwitchSettingItem(
                 title = stringResource(R.string.dap_wireless_wifi_title),
-                subtitle = state.wifiName ?: stringResource(
+                subtitle = stringResource(
                     if (state.wifiConnected) R.string.dap_wireless_connected else R.string.dap_wireless_not_connected
                 ),
                 checked = state.wifiRadioEnabled,
@@ -421,7 +421,7 @@ fun DapWirelessControlContent(
             DapStatusRow(
                 Icons.Rounded.Wifi,
                 stringResource(if (state.wifiRadioEnabled) R.string.dap_wireless_on else R.string.dap_wireless_off),
-                state.wifiName ?: stringResource(
+                stringResource(
                     if (state.wifiConnected) R.string.dap_wireless_connected else R.string.dap_wireless_not_connected
                 ),
             )

@@ -6,7 +6,7 @@
     <string name="settings_category_audio_title">Audio</string>
     <string name="settings_category_audio_subtitle">Devices, sound and transitions</string>
     <string name="settings_category_lyrics_title">Lyrics</string>
-    <string name="settings_category_lyrics_subtitle">Sources and display</string>
+    <string name="settings_category_lyrics_subtitle">Where lyrics come from</string>
     <string name="settings_category_device_title">Device</string>
     <string name="settings_category_device_subtitle">Screen, storage and radios</string>
     <string name="settings_category_home_mode_title">Home and DAP mode</string>
@@ -16,7 +16,7 @@
     <string name="settings_category_library_title">Library</string>
     <string name="settings_category_library_subtitle">Your music collection</string>
     <string name="settings_category_appearance_title">Appearance</string>
-    <string name="settings_category_appearance_subtitle">Theme and layout</string>
+    <string name="settings_category_appearance_subtitle">Theme, player, lyrics and lock screen</string>
     <string name="settings_category_playback_title">Playback</string>
     <string name="settings_category_playback_subtitle">Audio behavior, crossfade, and background play</string>
     <string name="settings_category_behavior_title">Behavior</string>
@@ -38,8 +38,6 @@
     <string name="cd_close_notice">Close notice</string>
 
     <string name="setcat_library_structure">Library Structure</string>
-    <string name="setcat_excluded_directories_title">Excluded Directories</string>
-    <string name="setcat_excluded_directories_subtitle">Folders here will be skipped when scanning your library.</string>
     <string name="setcat_artists_title">Artists</string>
     <string name="setcat_artists_subtitle">Multi-artist parsing and organization options.</string>
     <string name="setcat_filtering">Filtering</string>
@@ -55,11 +53,8 @@
     <string name="toast_full_rescan_started">Full rescan started…</string>
     <string name="setcat_auto_scan_lrc_title">Auto-scan .lrc files</string>
     <string name="setcat_auto_scan_lrc_subtitle">Automatically scan and assign .lrc files in the same folder during library sync.</string>
-    <string name="setcat_online_services">Optional online services</string>
     <string name="setcat_external_lyrics_title">Online lyrics from LRCLIB</string>
     <string name="setcat_external_lyrics_subtitle">Allow searches and manual fetches from lrclib.net when lyrics are missing locally.</string>
-    <string name="setcat_external_artist_images_title">Artist artwork from Deezer</string>
-    <string name="setcat_external_artist_images_subtitle">Allow missing artist images to be fetched from Deezer and cached locally.</string>
     <string name="setcat_lyrics_management">Lyrics Management</string>
     <string name="setcat_lyrics_source_priority_label">Lyrics Source Priority</string>
     <string name="setcat_lyrics_source_priority_desc">Choose which source to try first when fetching lyrics.</string>
@@ -108,7 +103,7 @@
     <string name="setcat_theme_follow_system">Follow System</string>
     <string name="setcat_smooth_corners_title">Use Smooth Corners</string>
     <string name="setcat_smooth_corners_subtitle">Use complex shaped corners effectively improving aesthetics but may affect performance on low-end devices</string>
-    <string name="setcat_now_playing">Now Playing</string>
+    <string name="setcat_now_playing">Player</string>
     <string name="setcat_player_theme_label">Player colour</string>
     <string name="setcat_player_theme_desc">Whether the player takes its colour from the album art or stays neutral.</string>
     <string name="setcat_player_theme_album_art">From album art</string>
@@ -137,7 +132,7 @@
     <string name="setcat_navbar_corner_subtitle">Adjust the corner radius of the navigation bar.</string>
     <string name="setcat_lyrics_screen">Lyrics Screen</string>
     <string name="setcat_immersive_lyrics_title">Immersive Lyrics</string>
-    <string name="setcat_immersive_lyrics_subtitle">Auto-hide controls and enlarge text.</string>
+    <string name="setcat_immersive_lyrics_subtitle">While a song plays, hide the controls and enlarge the text after a quiet moment. A touch brings them back.</string>
     <string name="setcat_auto_hide_delay_label">Auto-hide Delay</string>
     <string name="setcat_auto_hide_delay_desc">Time before controls hide.</string>
     <string name="setcat_lyrics_delay_3s">3s</string>
@@ -292,8 +287,6 @@
     <string name="setcat_device_storage">Storage</string>
     <string name="setcat_queue_behaviour">Queue</string>
     <string name="setcat_lyrics_sources">Sources</string>
-    <string name="setcat_lyrics_reading">Reading</string>
-    <string name="setcat_lyrics_effects">Effects</string>
     <string name="setcat_lyrics_alignment_label">Alignment</string>
     <string name="setcat_lyrics_alignment_desc">Where lyric lines sit on screen</string>
     <string name="setcat_lyrics_alignment_left">Left</string>
@@ -424,4 +417,31 @@
     <string name="back_navigation_mode_buttons_hint">Show the Back control. The app\'s edge swipe is off.</string>
     <string name="back_navigation_mode_gestures_hint">Swipe in from the left edge. The Back control is hidden where it only went back.</string>
     <string name="back_navigation_mode_both_hint">Both work, and both do the same thing.</string>
+    <!-- B40-F1: two more themes, and the app's colours from the song's cover. -->
+    <string name="setcat_theme_option_gray">Gray</string>
+    <string name="setcat_theme_option_navy">Navy</string>
+    <string name="setcat_app_colors_label">App colours</string>
+    <string name="setcat_app_colors_desc">The theme and accent, or the song\'s cover: two of its colours behind the app, or the cover itself as a soft glass. The cover decides light and dark.</string>
+    <string name="setcat_app_colors_theme">Theme and accent</string>
+    <string name="setcat_app_colors_album_art">From album art</string>
+    <string name="setcat_app_colors_cover_glass">Cover glass</string>
+    <string name="setcat_moving_background_title">Moving background</string>
+    <string name="setcat_moving_background_subtitle">The glass behind the full player and the lock screen drifts slowly while a song plays. Everywhere else it holds still.</string>
+    <string name="setcat_lyrics_under_cover_title">Lyrics under the cover</string>
+    <string name="setcat_lyrics_under_cover_subtitle">Shows the current line and the next one under the cover when the song has synced lyrics. Tap them to open the lyrics.</string>
+    <string name="setcat_lock_screen_section">Lock screen</string>
+    <string name="setcat_accent_desc_album_art">Used when a song has no cover. The cover decides the rest, adjusted until it reads clearly.</string>
+    <string name="setcat_accent_without_cover_label">Accent without a cover</string>
+    <!-- B40-F4: music info from the internet (Deezer is gone). -->
+    <string name="setcat_music_info">Music info from the internet</string>
+    <string name="setcat_music_info_note">Everything here is off until you turn it on. Each switch sends only the name of an artist or an album (and what the previous answer gave back), once a second at most, and keeps the answer on this phone. Nothing about you or your library is sent.</string>
+    <string name="setcat_music_info_covers_title">Missing album covers</string>
+    <string name="setcat_music_info_covers_subtitle">From the Cover Art Archive, found through MusicBrainz. Only for albums with no cover of their own.</string>
+    <string name="setcat_music_info_photos_title">Artist photos</string>
+    <string name="setcat_music_info_photos_subtitle">MusicBrainz first, then Wikimedia Commons. Available credits and licences are in Information.</string>
+    <string name="setcat_music_info_descriptions_title">Artist and album descriptions</string>
+    <string name="setcat_music_info_descriptions_subtitle">MusicBrainz first, then Wikipedia in the app language or English. Tap to expand; credits open inside the app.</string>
+    <string name="setcat_music_info_delete_title">Delete downloaded data</string>
+    <string name="setcat_music_info_delete_subtitle">Pictures and descriptions kept on this phone: %1$s</string>
+    <string name="setcat_music_info_deleted">Deleted %1$s</string>
 </resources>

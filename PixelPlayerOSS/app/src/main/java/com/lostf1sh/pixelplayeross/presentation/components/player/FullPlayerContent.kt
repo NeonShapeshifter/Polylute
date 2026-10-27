@@ -14,6 +14,10 @@ import androidx.media3.common.util.UnstableApi
 import com.lostf1sh.pixelplayeross.data.model.Lyrics
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.preferences.FullPlayerLoadingTweaks
+import com.lostf1sh.pixelplayeross.presentation.components.LocalMaterialTheme
+import com.lostf1sh.pixelplayeross.presentation.components.SongOptionsPresentation
+import com.lostf1sh.pixelplayeross.presentation.components.UnifiedPlayerSongInfoLayer
+import com.lostf1sh.pixelplayeross.presentation.components.scoped.SongInfoEntry
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.AudioBookmarksViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
@@ -64,7 +68,10 @@ fun FullPlayerContent(
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     onCollapse: () -> Unit,
-    onShowSongInfo: () -> Unit,
+    /** Where the Menu page's "Go to album / artist / genre" rows lead (the same the options sheet's lead to). */
+    onNavigateToAlbum: (Song) -> Unit,
+    onNavigateToArtist: (Song) -> Unit,
+    onNavigateToGenre: (Song) -> Unit,
     onQueueDragStart: () -> Unit,
     onQueueDrag: (Float) -> Unit,
     onQueueRelease: (Float, Float) -> Unit,
@@ -99,7 +106,6 @@ fun FullPlayerContent(
             onNext = onNext,
             onPrevious = onPrevious,
             onCollapse = onCollapse,
-            onShowDetails = onShowSongInfo,
             onQueueDragStart = onQueueDragStart,
             onQueueDrag = onQueueDrag,
             onQueueRelease = onQueueRelease,
@@ -152,8 +158,31 @@ fun FullPlayerContent(
             isFavorite = isFavorite,
             lyricsProvider = lyricsProvider,
             lyricsResolveCompletedProvider = lyricsResolveCompletedProvider,
+            underCover = fullPlayerSlice.lyricsUnderCover,
         ),
         isLandscape = isLandscapeNow(),
     )
-    FullPlayerScreen(state, actions)
+    // B42-fix1: the two pages the screen does not draw itself. The Menu is the options sheet's own body, wired by the same layer, as a page; the
+    // Details are the track-details surface, bound to the song that is playing.
+    val pageSlots = PlayerPageSlots(
+        menu = { pages ->
+            UnifiedPlayerSongInfoLayer(
+                selectedSongForInfo = song,
+                songInfoEntry = SongInfoEntry.ACTIONS,
+                albumColorScheme = LocalMaterialTheme.current,
+                playerViewModel = playerViewModel,
+                currentPlaybackQueueProvider = { currentPlaybackQueue },
+                currentQueueSourceNameProvider = { currentQueueSourceName },
+                // what dismissing a sheet did, a page does by going back to Player
+                onDismissSongInfo = { pages.back() },
+                onNavigateToAlbum = onNavigateToAlbum,
+                onNavigateToArtist = onNavigateToArtist,
+                onNavigateToGenre = onNavigateToGenre,
+                presentation = SongOptionsPresentation.PAGE,
+                onShowTrackDetails = { pages.goTo(PlayerPage.DETAILS) },
+            )
+        },
+        details = { TrackDetailsPage(song = song, playerViewModel = playerViewModel) },
+    )
+    FullPlayerScreen(state, actions, pageSlots)
 }

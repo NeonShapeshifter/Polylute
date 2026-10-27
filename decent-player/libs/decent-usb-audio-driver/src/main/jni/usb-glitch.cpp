@@ -141,6 +141,23 @@ double usbFeedbackApply(double currentFpmf, double reportedFpmf, double nominalF
     return currentFpmf;
 }
 
+enum UsbFeedbackPacket usbFeedbackPacketVerdict(int urbStatus, int packetStatus, unsigned int actualLength) {
+    if (urbStatus != 0) return USB_FEEDBACK_PACKET_URB_STATUS;
+    if (packetStatus != 0) return USB_FEEDBACK_PACKET_PACKET_STATUS;
+    if (actualLength != USB_FEEDBACK_BYTES) return USB_FEEDBACK_PACKET_LENGTH;
+    return USB_FEEDBACK_PACKET_OK;
+}
+
+const char *usbFeedbackPacketName(int verdict) {
+    switch (verdict) {
+        case USB_FEEDBACK_PACKET_OK: return "ok";
+        case USB_FEEDBACK_PACKET_URB_STATUS: return "urb-status";
+        case USB_FEEDBACK_PACKET_PACKET_STATUS: return "packet-status";
+        case USB_FEEDBACK_PACKET_LENGTH: return "length";
+        default: return "?";
+    }
+}
+
 // ── Frozen feedback (B10) ───────────────────────────────────────────────────────────────────────
 
 double usbFeedbackPpm(double fpmf, double nominalFpmf) {

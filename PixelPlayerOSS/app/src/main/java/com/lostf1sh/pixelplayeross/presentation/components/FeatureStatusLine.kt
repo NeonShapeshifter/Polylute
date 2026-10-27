@@ -32,7 +32,7 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapType
 @Composable
 fun FeatureStatusLine(status: FeatureStatus, modifier: Modifier = Modifier) {
     DapStatusLine(
-        text = stringResource(status.textRes, stringResource(R.string.pristine_lock_name)),
+        text = stringResource(status.textRes, status.arg ?: stringResource(R.string.pristine_lock_name)),
         tone = when (status.kind) {
             FeatureStatusKind.APPLIED -> DapStatusTone.Applied
             FeatureStatusKind.OFF -> DapStatusTone.Plain

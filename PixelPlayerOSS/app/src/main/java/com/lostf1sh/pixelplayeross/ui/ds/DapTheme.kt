@@ -10,6 +10,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -141,9 +142,12 @@ val LocalDapAccent = compositionLocalOf { DapAccent.DEFAULT.color }
  * [LocalDapAccent] is overridden with the cover's colour on the full player, the queue and the lock surface. The signal mark (filled: the
  * signal reaches the DAC untouched; hollow: something processes it) says a fact about the signal, not a decoration, and in the cover's
  * colour it read like a sample-rate code. It reads this one, which only [DapTheme] provides, so it is one colour for every song.
- * Static: it changes only in Settings.
+ *
+ * **Dynamic, not static** (B42-fix3, item 1). It was static, on the reasoning that it changes only in Settings. In the cover modes the accent
+ * the theme is given is the cover's, so it changes with every song, and a changed static local re-runs everything under its provider (no group
+ * below can skip): that was every Library row, artwork painter and bar on every song change. A dynamic one reaches only what reads it.
  */
-val LocalDapAppAccent = staticCompositionLocalOf { DapAccent.DEFAULT.color }
+val LocalDapAppAccent = compositionLocalOf { DapAccent.DEFAULT.color }
 
 /**
  * The height of the docked player shelf currently occupying the bottom of this surface, or `0.dp`
@@ -175,13 +179,28 @@ fun DapTheme(
     baseTheme: DapBaseTheme = DapBaseTheme.DEFAULT,
     palette: DapPalette = baseTheme.palette,
     colorSchemeOverride: ColorScheme? = null,
+    /** B40-F1: the colour of the accent when the cover decides it (album-art mode); already readable on [palette]. */
+    accentColorOverride: Color? = null,
     content: @Composable () -> Unit,
 ) {
-    // Presentation, not identity: a light palette darkens the accent so it stays legible on an
-    // off-white page. The stored accent is untouched, and dark palettes return it unchanged.
-    val accentColor = palette.presentedAccent(accent.color)
+    // B40-F1: the listener picks an accent by name; the theme decides how that name looks on its own surfaces ([DapAccentTables]), each
+    // at WCAG AA or better. In album-art mode the cover decides it, after the same floor.
+    val accentColor = accentColorOverride ?: palette.accentColor(accent)
+    // B42-fix3 (item 1): **the Material scheme is the listener's own accent, never the song's.** Material3 1.5 hands its scheme to everything below
+    // through ONE static composition local holding the scheme by value (`ColorScheme` is immutable now: no state-backed fields to update in place),
+    // so a scheme that differs by a single colour (the accent of the next song) gave the whole app below this point no group that could skip: every
+    // row, artwork painter and bar ran again on every song change (the trace of the HONOR: `rememberAsyncImagePainter` 1,764 times). The song's accent
+    // goes where it is read granularly instead: [LocalDapAccent] and [LocalDapAppAccent] (dynamic: only a composable that reads one runs), which is what
+    // the design system's own components wear. What reads `MaterialTheme.colorScheme.primary` outside the player (a Material default in a dialog, a
+    // progress bar) is the listener's accent, as with "Theme and accent" (lifted to read, over the glass): the player, the queue and the lock screen draw in their own scheme.
+    // Over the cover glass the listener's accent is lifted to read on it (4.5:1 on the lightest page glass), as the song's is: a Material default that is text on the
+    // glass (a section header, a link) keeps its contrast. It is one colour per listener and theme, the same for every song.
+    val materialAccent = remember(palette, accent) {
+        val own = palette.accentColor(accent)
+        if (palette.glass != null) com.lostf1sh.pixelplayeross.ui.glass.GlassBands.of(palette, own).ink.accent else own
+    }
     val scheme = colorSchemeOverride
-        ?: dapColorScheme(accentColor, palette)
+        ?: remember(palette, materialAccent) { dapColorScheme(materialAccent, palette) }
     CompositionLocalProvider(
         LocalDapAccent provides accentColor,
         LocalDapAppAccent provides accentColor,
@@ -209,7 +228,7 @@ fun DapTheme(
  * ([darkColorScheme] vs [lightColorScheme]) follows [DapPalette.isLight] so the roles it *cannot*
  * fill — the inverse pair, surface tints, the scrim defaults — land on the right side.
  *
- * The accent arrives already presented (see [DapPalette.presentedAccent]), so Material never sees
+ * The accent arrives already resolved for this palette (see [DapPalette.accentColor]), so Material never sees
  * a pastel it cannot draw legibly.
  */
 internal fun dapColorScheme(accent: Color, palette: DapPalette) = baseDapColorScheme(accent, palette)
@@ -270,7 +289,8 @@ private fun baseDapColorScheme(accent: Color, palette: DapPalette) = if (palette
         onSecondaryContainer = palette.primaryText,
         tertiary = accent,
         onTertiary = palette.onFill,
-        background = palette.background,
+        // B41: the Material background is the page's fill (a Scaffold's default container, the root surface): nothing while the glass is on.
+        background = palette.page,
         onBackground = palette.primaryText,
         surface = palette.background,
         onSurface = palette.primaryText,
@@ -299,7 +319,8 @@ private fun baseDapColorScheme(accent: Color, palette: DapPalette) = if (palette
         onSecondaryContainer = palette.primaryText,
         tertiary = accent,
         onTertiary = palette.onFill,
-        background = palette.background,
+        // B41: the Material background is the page's fill (a Scaffold's default container, the root surface): nothing while the glass is on.
+        background = palette.page,
         onBackground = palette.primaryText,
         surface = palette.background,
         onSurface = palette.primaryText,

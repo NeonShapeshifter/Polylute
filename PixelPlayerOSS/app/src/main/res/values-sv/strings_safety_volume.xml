@@ -37,9 +37,45 @@
     <string name="safety_max_refused_notice">Safety Max · lås upp för att gå högre</string>
     <string name="safety_max_volume_write_failed">DAC:en bekräftade inte den lägre volymen. Dess nivå kan vara högre än den som visas.</string>
     <string name="safety_max_notice_channel">Volymgräns</string>
-    <string name="more_group_debug">Felsökning</string>
-    <string name="debug_mark_noise">Markera brus nu</string>
-    <string name="debug_mark_noise_supporting">Sparar de senaste 30 s av USB-utgångens feedback och paket, och strömmens tillstånd, i en fil</string>
-    <string name="debug_mark_noise_done">Sparade</string>
-    <string name="debug_mark_noise_failed">Kunde inte spara brusmarkeringen</string>
+    <!-- B39-S1 -->
+    <string name="safety_first_use_level">Den här DAC:en är ny för Polylute: volymen sänks till %1$d dB innan uppspelning. Höj den med volymknapparna.</string>
+    <!-- B39-S1 -->
+    <string name="fixed_output_notice_title">Polylute kan inte styra den här enhetens volym</string>
+    <string name="fixed_output_notice_not_now">Inte nu</string>
+    <string name="fixed_output_row_title">Den här enhetens volym</string>
+    <string name="fixed_output_notification_title">Uppspelningen hålls: en fråga om enhetens volym</string>
+    <string name="fixed_output_notification_text">Öppna Polylute och svara på frågan om %1$s innan den spelar.</string>
+    <!-- B27-A5 (N-07), i release sedan B39-S2: Mer-bladet i Spelas nu och Underhåll. -->
+    <string name="more_group_diagnostics">Diagnostik</string>
+    <string name="noise_mark">Markera brus nu</string>
+    <string name="noise_mark_supporting">Sparar de senaste 30 s av USB-utgångens feedback och paket, och strömmens tillstånd, i en fil du kan skicka</string>
+    <string name="noise_mark_failed">Kunde inte spara brusmarkeringen</string>
+    <string name="noise_mark_done_title">Brus markerat</string>
+    <string name="noise_mark_done_text">De senaste 30 sekunderna av USB-utgången och strömmens tillstånd sparades som %1$s. Den innehåller låten, DAC:en, telefonmodellen och strömmens siffror, inget annat, och stannar på den här enheten om du inte skickar den.</string>
+    <string name="noise_mark_share">Dela</string>
+    <string name="noise_mark_close">Stäng</string>
+    <string name="noise_mark_share_chooser">Dela brusmarkeringen</string>
+    <!-- B40-P3: a device whose volume Polylute cannot set is asked about once (replaces B39's notice). -->
+    <string name="fixed_output_question_body">Har %1$s en egen volymratt eller egna volymknappar?</string>
+    <string name="fixed_output_question_yes">Ja</string>
+    <string name="fixed_output_question_no">Nej</string>
+    <string name="fixed_output_mode_title">Hur ska %1$s spela?</string>
+    <string name="fixed_output_mode_body">Resonance (rekommenderas) startar Polylutes egen volym på en säker nivå; du höjer den från volymfältet. Purity spelar på enhetens full volym, så vrid ner enheten först.</string>
+    <string name="fixed_output_mode_resonance">Resonance</string>
+    <string name="fixed_output_mode_purity">Purity</string>
+    <string name="fixed_output_rise_title">Purity blir starkare</string>
+    <string name="fixed_output_rise_body">Att byta %1$s till Purity gör ljudet ungefär %2$d dB starkare än nu. Vrid ner enheten först.</string>
+    <string name="fixed_output_rise_confirm">Använd Purity</string>
+    <string name="fixed_output_toast_no_control">Resonance, med Polylutes volym lågt till att börja med. Purity erbjuds inte för den här enheten.</string>
+    <string name="fixed_output_toast_resonance">Resonance: Polylutes volym startar lågt. Höj den från volymfältet.</string>
+    <string name="fixed_output_toast_purity">Purity: den här enheten spelar på full nivå. Vrid ner den först.</string>
+    <string name="fixed_output_toast_purity_failed">Purity kunde inte slås på. Resonance behålls.</string>
+    <string name="fixed_output_row_sub_unanswered">Polylute kan inte ställa in dess volym. Tryck för att berätta om enheten.</string>
+    <string name="fixed_output_row_sub_resonance">Har egen kontroll · Resonance, Polylutes volym startar lågt</string>
+    <string name="fixed_output_row_sub_purity">Har egen kontroll · Purity, spelar på enhetens full nivå</string>
+    <string name="fixed_output_row_sub_no_control">Ingen volymkontroll · bara Resonance, Polylutes volym startar lågt</string>
+    <string name="pristine_held_off_no_control">Används inte med %1$s: den saknar volymkontroll, så Polylutes egen volym används (Resonance).</string>
+    <string name="pristine_held_off_resonance">Av för %1$s: du valde Resonance för den. Ändra det i enhetens volymrad.</string>
+    <!-- B40-fix1 item 1: a held play was not started because the answer's protection could not be confirmed -->
+    <string name="fixed_output_toast_not_confirmed">Uppspelningen startades inte: Polylute kunde inte bekräfta låset och den säkra startvolymen i tid. Tryck på Play igen.</string>
 </resources>

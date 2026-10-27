@@ -4,7 +4,7 @@
     <string name="settings_category_audio_title">Ljud</string>
     <string name="settings_category_audio_subtitle">Enheter, ljud och övergångar</string>
     <string name="settings_category_lyrics_title">Låttexter</string>
-    <string name="settings_category_lyrics_subtitle">Källor och visning</string>
+    <string name="settings_category_lyrics_subtitle">Var låttexterna kommer ifrån</string>
     <string name="settings_category_device_title">Enhet</string>
     <string name="settings_category_device_subtitle">Skärm, lagring och radio</string>
     <string name="settings_category_home_mode_title">Hem och DAP-läge</string>
@@ -14,7 +14,7 @@
     <string name="settings_category_library_title">Bibliotek</string>
     <string name="settings_category_library_subtitle">Din musiksamling</string>
     <string name="settings_category_appearance_title">Utseende</string>
-    <string name="settings_category_appearance_subtitle">Tema och layout</string>
+    <string name="settings_category_appearance_subtitle">Tema, spelare, låttexter och låsskärm</string>
     <string name="settings_category_playback_title">Uppspelning</string>
     <string name="settings_category_playback_subtitle">Ljudbeteende, övertoning och bakgrundsuppspelning</string>
     <string name="settings_category_behavior_title">Beteende</string>
@@ -34,8 +34,6 @@
     <string name="cd_clear_selection">Rensa markering</string>
     <string name="cd_close_notice">Stäng meddelandet</string>
     <string name="setcat_library_structure">Biblioteksstruktur</string>
-    <string name="setcat_excluded_directories_title">Undantagna kataloger</string>
-    <string name="setcat_excluded_directories_subtitle">Mappar här hoppas över när biblioteket söks igenom.</string>
     <string name="setcat_artists_title">Artister</string>
     <string name="setcat_artists_subtitle">Alternativ för tolkning och organisering av flera artister.</string>
     <string name="setcat_filtering">Filtrering</string>
@@ -51,11 +49,8 @@
     <string name="toast_full_rescan_started">Fullständig ny genomsökning har startat…</string>
     <string name="setcat_auto_scan_lrc_title">Sök automatiskt efter .lrc-filer</string>
     <string name="setcat_auto_scan_lrc_subtitle">Sök automatiskt efter och tilldela .lrc-filer i samma mapp under biblioteksynkroniseringen.</string>
-    <string name="setcat_online_services">Valfria onlinetjänster</string>
     <string name="setcat_external_lyrics_title">Låttexter online från LRCLIB</string>
     <string name="setcat_external_lyrics_subtitle">Tillåt sökningar och manuella hämtningar från lrclib.net när låttexter saknas lokalt.</string>
-    <string name="setcat_external_artist_images_title">Artistbilder från Deezer</string>
-    <string name="setcat_external_artist_images_subtitle">Tillåt att saknade artistbilder hämtas från Deezer och sparas lokalt.</string>
     <string name="setcat_lyrics_management">Hantering av låttexter</string>
     <string name="setcat_lyrics_source_priority_label">Prioritet för låttextkällor</string>
     <string name="setcat_lyrics_source_priority_desc">Välj vilken källa som ska provas först när låttexter hämtas.</string>
@@ -90,7 +85,7 @@
     <string name="setcat_theme_follow_system">Följ systemet</string>
     <string name="setcat_smooth_corners_title">Använd mjuka hörn</string>
     <string name="setcat_smooth_corners_subtitle">Använder komplexa hörnformer som förbättrar utseendet men kan påverka prestandan på enklare enheter</string>
-    <string name="setcat_now_playing">Spelas nu</string>
+    <string name="setcat_now_playing">Spelare</string>
     <string name="setcat_player_theme_label">Spelarens färg</string>
     <string name="setcat_player_theme_desc">Om spelaren hämtar sin färg från albumomslaget eller förblir neutral.</string>
     <string name="setcat_player_theme_album_art">Från albumomslag</string>
@@ -119,7 +114,7 @@
     <string name="setcat_navbar_corner_subtitle">Justera hörnradien för navigeringsfältet.</string>
     <string name="setcat_lyrics_screen">Låttextskärm</string>
     <string name="setcat_immersive_lyrics_title">Uppslukande låttexter</string>
-    <string name="setcat_immersive_lyrics_subtitle">Dölj kontroller automatiskt och förstora texten.</string>
+    <string name="setcat_immersive_lyrics_subtitle">Medan en låt spelas döljs kontrollerna och texten förstoras efter en stund utan beröring. En beröring tar tillbaka dem.</string>
     <string name="setcat_auto_hide_delay_label">Fördröjning för automatisk döljning</string>
     <string name="setcat_auto_hide_delay_desc">Tid innan kontrollerna döljs.</string>
     <string name="setcat_lyrics_delay_3s">3 s</string>
@@ -262,8 +257,6 @@
     <string name="setcat_device_storage">Lagring</string>
     <string name="setcat_queue_behaviour">Kö</string>
     <string name="setcat_lyrics_sources">Källor</string>
-    <string name="setcat_lyrics_reading">Läsning</string>
-    <string name="setcat_lyrics_effects">Effekter</string>
     <string name="setcat_lyrics_alignment_label">Justering</string>
     <string name="setcat_lyrics_alignment_desc">Var textraderna placeras på skärmen</string>
     <string name="setcat_lyrics_alignment_left">Vänster</string>
@@ -382,4 +375,31 @@
     <string name="back_navigation_mode_buttons_hint">Visa bakåtkontrollen. Appens svepning från kanten är av.</string>
     <string name="back_navigation_mode_gestures_hint">Svep in från vänsterkanten. Bakåtkontrollen döljs där den bara gick tillbaka.</string>
     <string name="back_navigation_mode_both_hint">Båda fungerar och gör samma sak.</string>
+    <!-- B40-F1: two more themes, and the app's colours from the song's cover. -->
+    <string name="setcat_theme_option_gray">Grå</string>
+    <string name="setcat_theme_option_navy">Marinblå</string>
+    <string name="setcat_app_colors_label">Appens färger</string>
+    <string name="setcat_app_colors_desc">Temat och accenten, eller låtens omslag: två av dess färger bakom appen, eller själva omslaget som ett mjukt glas. Omslaget avgör ljust eller mörkt.</string>
+    <string name="setcat_app_colors_theme">Tema och accent</string>
+    <string name="setcat_app_colors_album_art">Från albumomslag</string>
+    <string name="setcat_app_colors_cover_glass">Omslagsglas</string>
+    <string name="setcat_moving_background_title">Rörlig bakgrund</string>
+    <string name="setcat_moving_background_subtitle">Glaset bakom hela spelaren och låsskärmen driver långsamt medan en låt spelas. Överallt annars ligger det stilla.</string>
+    <string name="setcat_lyrics_under_cover_title">Låttext under omslaget</string>
+    <string name="setcat_lyrics_under_cover_subtitle">Visar den aktuella raden och nästa under omslaget när låten har synkad text. Tryck på dem för att öppna låttexten.</string>
+    <string name="setcat_lock_screen_section">Låsskärm</string>
+    <string name="setcat_accent_desc_album_art">Används när en låt saknar omslag. Omslaget avgör resten, justerat tills det syns tydligt.</string>
+    <string name="setcat_accent_without_cover_label">Accent utan omslag</string>
+    <!-- B40-F4: music info from the internet (Deezer is gone). -->
+    <string name="setcat_music_info">Musikinformation från internet</string>
+    <string name="setcat_music_info_note">Allt här är av tills du slår på det. Varje reglage skickar bara namnet på en artist eller ett album (och det föregående svaret gav tillbaka), högst en gång per sekund, och sparar svaret på den här telefonen. Inget om dig eller ditt bibliotek skickas.</string>
+    <string name="setcat_music_info_covers_title">Albumomslag som saknas</string>
+    <string name="setcat_music_info_covers_subtitle">Från Cover Art Archive, hittade via MusicBrainz. Bara för album utan eget omslag.</string>
+    <string name="setcat_music_info_photos_title">Artistfoton</string>
+    <string name="setcat_music_info_photos_subtitle">MusicBrainz först, sedan Wikimedia Commons. Tillgängliga upphovsuppgifter och licenser finns i Information.</string>
+    <string name="setcat_music_info_descriptions_title">Beskrivningar av artister och album</string>
+    <string name="setcat_music_info_descriptions_subtitle">MusicBrainz först, sedan Wikipedia på appens språk eller engelska. Tryck för att visa mer; upphovsuppgifter öppnas i appen.</string>
+    <string name="setcat_music_info_delete_title">Ta bort nedladdade data</string>
+    <string name="setcat_music_info_delete_subtitle">Bilder och beskrivningar som sparats på den här telefonen: %1$s</string>
+    <string name="setcat_music_info_deleted">%1$s togs bort</string>
 </resources>

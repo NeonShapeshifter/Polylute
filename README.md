@@ -22,23 +22,35 @@ It can send audio straight to a USB DAC, bit-perfect (Purity), or through its ow
 
 App mode, Home and Pinned need nothing but the APK. Only Dedicated needs a computer, once, because Android lets an app become the device owner only through adb (or a factory reset with an enterprise setup).
 
+### Is Dedicated for you?
+
+Dedicated is for turning a phone, ideally a spare one, into a DAP: a phone that does one thing. On a phone you use every day, use App mode, or Pinned if you want it locked on screen. They need no computer and nothing to remove.
+
 ### Setting up Dedicated
 
 1. Install Polylute and turn on USB debugging.
-2. Remove every account from the phone, and any extra user. Android refuses to set a device owner while one exists. You can add them back afterwards; no factory reset is needed.
-3. From a computer, run:
+2. Remove every account from the phone, and every extra user.
+
+   Why: Android only names a device owner on a phone that looks unused, with no accounts and no other users. It is a security rule. It matters only at the moment of the command in step 3; add the accounts back right after, and no factory reset is needed.
+
+   Samsung's Secure Folder and work profiles count as extra users, and deleting them deletes the data inside. If you need that data, back it up first, or stay with App mode or Pinned.
+3. From a computer, run the command for your build:
 
    ```sh
+   # release build (app.polylute)
    adb shell dpm set-device-owner app.polylute/com.lostf1sh.pixelplayeross.dap.admin.DapDeviceAdminReceiver
+
+   # debug build (app.polylute.debug, a separate app)
+   adb shell dpm set-device-owner app.polylute.debug/com.lostf1sh.pixelplayeross.dap.admin.DapDeviceAdminReceiver
    ```
 
-   The debug build is a separate app, so there the id is `app.polylute.debug`. The Dedicated page in the app shows the command for your build and can copy it. Android may refuse; nothing is active until Android confirms it.
+   The Dedicated page in the app shows the command for the build you are running and can copy it. Android may refuse; nothing is active until Android confirms it.
 4. Add the accounts back.
 5. Make Polylute the home app: Settings, Home and DAP mode, Choose home app. On a Device Owner phone the level is Dedicated; there is nothing else to choose.
 
 ### Leaving Dedicated
 
-Settings, Home and DAP mode, **Stop being the device owner** (in the Spanish app: "Dejar de ser propietario del dispositivo"). Polylute clears what it set and gives up Device Owner. No reset is needed. Polylute stays the home app until you pick another one with Choose home app.
+Settings, Home and DAP mode, **Stop being the device owner** (in the Spanish app: "Dejar de ser propietario del dispositivo"). Polylute clears what it set and gives up Device Owner. No reset is needed. Polylute stays the home app until you pick another one with Choose home app. If you cannot open the app at all, a factory reset also ends it.
 
 ## Build
 

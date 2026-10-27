@@ -43,6 +43,7 @@ class EqualizerOutputObservationTest {
                 every { audioRouteState } returns route
                 every { usbAudioDiagnostics } returns MutableStateFlow(UsbDirectAudioDiagnostics())
                 every { activeAudioSessionId } returns MutableStateFlow(0)
+                every { resonanceLimiterRunning } returns MutableStateFlow(false)
             }
             val prefs = mockk<UserPreferencesRepository> { every { pristineLockFlow } returns locked }
             val presets = mockk<EqualizerPreferencesRepository> {

@@ -65,6 +65,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -133,6 +134,9 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapType
 import com.lostf1sh.pixelplayeross.ui.ds.DapOverflowButton
 import com.lostf1sh.pixelplayeross.ui.ds.DapRadius
 import com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent
+import com.lostf1sh.pixelplayeross.ui.glass.GlassWindowBackdrop
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
+import com.lostf1sh.pixelplayeross.ui.glass.glassSheetContainer
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.components.SmartImage
@@ -680,16 +684,21 @@ fun QueueBottomSheet(
             }
         }
 
+    // B42: over the cover glass the sheet carries its own still copy of it (see QueueGlass); the surface is then the glass.
+    val coverGlass = LocalCoverGlass.current
     Surface(
         modifier = modifier,
         shape = shape,
         tonalElevation = 0.dp,
         // B22 (`Queue.dc.html`): the sheet is the design's surface; nothing tints it with elevation.
-        color = Dap.surface,
+        color = glassSheetContainer(Dap.surface, coverGlass),
+        // what the surface made of its text it still does, over the glass (the same value M3 derives from the colour)
+        contentColor = contentColorFor(Dap.surface),
     ) {
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
+            QueueGlass(coverGlass, open = isVisible, foldProgress = foldProgress)
             val toolbarOccupiedHeight = QueueBottomBarHeight + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             Column(Modifier.fillMaxSize().padding(bottom = toolbarOccupiedHeight)) {
                 val headerTopPadding = WindowInsets.statusBars
@@ -764,7 +773,7 @@ fun QueueBottomSheet(
                             // device (20 dp in the JVM render the L7 change was made from): its design margin is 20.
                             contentPadding = PaddingValues(
                                 start = QueueListStartPadding,
-                                end = if (listState.canScrollForward || listState.canScrollBackward) 26.dp else 8.dp,
+                                end = ScrollbarGutter.endMargin(QueueListStartPadding),
                                 bottom = 16.dp
                             )
                         ) {
@@ -866,6 +875,9 @@ fun QueueBottomSheet(
                         }
 
                         ExpressiveScrollBar(
+                            // the rows pad themselves by 8 dp; the bar sits 14 dp in from the edge, so while idle it would be over their ends
+                            contentEndMargin = 8.dp,
+                            endInset = 14.dp,
                             listState = listState,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
@@ -1286,7 +1298,8 @@ internal fun QueueBottomBar(
     Column(
         modifier
             .fillMaxWidth()
-            .background(Dap.surface)
+            // B42: the surface, or (over the cover glass) its see-through version, so the bar is a panel on the sheet's glass
+            .background(Dap.panel)
             .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
     ) {
         DapDivider()
@@ -1404,9 +1417,13 @@ fun SaveQueueAsPlaylistSheet(
         // This window is its own surface, so the activity's volume-key path does not
         // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
         ModalInputBridge()
+        // B42: a window of its own that is a whole screen carries its own copy of the cover glass; the surfaces over it are then nothing
+        val coverGlass = LocalCoverGlass.current
+        GlassWindowBackdrop(coverGlass)
         Scaffold(
                 modifier = Modifier.fillMaxSize(),
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = glassSheetContainer(MaterialTheme.colorScheme.surface, coverGlass),
+                contentColor = contentColorFor(MaterialTheme.colorScheme.surface),
                 contentWindowInsets = WindowInsets.safeDrawing,
                 topBar = {
                     Column {
@@ -1458,7 +1475,7 @@ fun SaveQueueAsPlaylistSheet(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface)
+                                .background(glassSheetContainer(MaterialTheme.colorScheme.surface, coverGlass))
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {

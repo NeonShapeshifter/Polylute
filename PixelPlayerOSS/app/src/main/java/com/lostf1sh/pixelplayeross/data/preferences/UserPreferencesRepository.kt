@@ -12,8 +12,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.media3.common.Player
-import com.lostf1sh.pixelplayeross.data.diagnostics.AdvancedPerformanceDiagnostics
 import com.lostf1sh.pixelplayeross.data.model.PlaybackQueueSnapshot
+import com.lostf1sh.pixelplayeross.data.volume.DeviceVolumePolicy
 import com.lostf1sh.pixelplayeross.data.model.Playlist
 import com.lostf1sh.pixelplayeross.data.model.SortOption
 import com.lostf1sh.pixelplayeross.data.model.FolderSource
@@ -27,6 +27,7 @@ import kotlin.text.get
 import kotlin.text.set
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -40,11 +41,50 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     corruptionHandler = SettingsDataStore.corruptionHandler,
 )
 
+/** B40-F4: the sizes the listener can give the downloaded music info. */
+val MUSIC_INFO_CACHE_CHOICES_MB: List<Int> = listOf(25, 50, 100, 250, 500)
+const val DEFAULT_MUSIC_INFO_CACHE_MB = 100
+
 object ThemePreference {
     const val DEFAULT = "default"
     const val DYNAMIC = "dynamic"
     const val ALBUM_ART = "album_art"
     const val GLOBAL = "global"
+}
+
+/** B40-F1: where the app's colours come from. */
+object AppColorSource {
+    /** The chosen theme and accent (what every install has always had). */
+    const val THEME = "theme"
+
+    /**
+     * The cover of the song that is playing: its accent, and (B42-fix3) a soft gradient of its two strongest colours behind the whole app,
+     * never the picture itself and without motion. (B40 tinted the surfaces 10, 13 and 16 %; the value and its key are unchanged.)
+     */
+    const val ALBUM_ART = "album_art"
+
+    /**
+     * B41: [ALBUM_ART]'s accent **plus** a soft field of the cover's own colours behind the whole app: the blurred cover itself, visibly its
+     * colours and their layout (it moves in the full player and on the lock screen, and holds still everywhere else). The value is new; the
+     * key it is stored under is not.
+     */
+    const val COVER_GLASS = "cover_glass"
+
+    /** An unrecognised value (a newer build's, a corrupted store) is [THEME], as it has always been. */
+    fun normalize(value: String?): String = when (value) {
+        ALBUM_ART -> ALBUM_ART
+        COVER_GLASS -> COVER_GLASS
+        else -> THEME
+    }
+
+    /** The cover decides the accent and the whole backdrop (and the lightness, B42-fix3): both cover options. */
+    fun takesColoursFromCover(value: String?): Boolean = value == ALBUM_ART || value == COVER_GLASS
+
+    /** B42-fix3: a cover backdrop is drawn behind the app: the gradient of "From album art", or the glass of "Cover glass". */
+    fun hasBackdrop(value: String?): Boolean = value == ALBUM_ART || value == COVER_GLASS
+
+    /** The glass behind the app, the one that moves in the full player: only "Cover glass". */
+    fun hasGlass(value: String?): Boolean = value == COVER_GLASS
 }
 
 object AppThemeMode {
@@ -71,6 +111,12 @@ const val DEFAULT_SHOW_QUEUE_HISTORY = false
  * behaviour without being asked.
  */
 const val DEFAULT_DAP_LOCK_SCREEN_ENABLED = false
+
+/** B41: two lines of synced lyrics under the cover in the full player. */
+const val DEFAULT_LYRICS_UNDER_COVER = true
+
+/** B39-A7: "Share the DAC with other apps" (Resonance only). Off: Polylute keeps the DAC, as it always did. */
+const val DEFAULT_DAC_SHARE_ENABLED = false
 
 /**
  * Animated-lyrics blur strength: the shipped default and the legal range, in one place so the
@@ -133,15 +179,6 @@ enum class AlbumArtQuality(val maxSize: Int, val label: String) {
     MEDIUM(512, "Medium (512px) - Balanced"),
     HIGH(800, "High (800px) - Best quality"),
     ORIGINAL(0, "Original - Maximum quality")
-}
-
-data class AdvancedPerformanceDiagnosticsSettings(
-    val enabled: Boolean,
-    val sessionStartedEpochMs: Long?,
-    val expiresAtEpochMs: Long?
-) {
-    fun isActive(nowEpochMs: Long = System.currentTimeMillis()): Boolean =
-        enabled && expiresAtEpochMs?.let { nowEpochMs < it } == true
 }
 
 @Singleton
@@ -253,6 +290,10 @@ constructor(
          */
         val DAP_LOCK_SCREEN_ENABLED = booleanPreferencesKey("dap_lock_screen_enabled")
 
+        /** B39-A7: whether Resonance lets other apps use the DAC while Polylute is paused or another app has the floor. */
+        val DAC_SHARE_ENABLED = booleanPreferencesKey("dac_share_enabled")
+        val RESONANCE_LIMITER_ENABLED = booleanPreferencesKey("resonance_limiter_enabled")
+
         val PLAYBACK_QUEUE_SNAPSHOT = stringPreferencesKey("playback_queue_snapshot_v1")
         val FULL_PLAYER_SHOW_FILE_INFO = booleanPreferencesKey("full_player_show_file_info")
         val FULL_PLAYER_DELAY_ALL = booleanPreferencesKey("full_player_delay_all")
@@ -278,6 +319,11 @@ constructor(
         val BACKUP_INFO_DISMISSED = booleanPreferencesKey("backup_info_dismissed")
 
         val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
+        /**
+         * B39-A9: the library includes instead of excluding (see [com.lostf1sh.pixelplayeross.data.library.LibraryFolders]). Set when the old rule has
+         * been replaced by the new one, once, with the rules written in the same edit; absent means the rules are read as they always were.
+         */
+        val DIRECTORY_RULES_INCLUDE_ONLY = booleanPreferencesKey("directory_rules_include_only")
         val DIRECTORY_RULES_VERSION = intPreferencesKey("directory_rules_version")
         val LAST_APPLIED_DIRECTORY_RULES_VERSION =
             intPreferencesKey("last_applied_directory_rules_version")
@@ -287,18 +333,19 @@ constructor(
         val LYRICS_SOURCE_PREFERENCE = stringPreferencesKey("lyrics_source_preference")
         val AUTO_SCAN_LRC_FILES = booleanPreferencesKey("auto_scan_lrc_files")
         val EXTERNAL_LYRICS_ENABLED = booleanPreferencesKey("external_lyrics_enabled")
-        val EXTERNAL_ARTIST_IMAGES_ENABLED = booleanPreferencesKey("external_artist_images_enabled")
+        // B40-F4: the Deezer switch ("external_artist_images_enabled") is retired; an old value is left in the store and read by nothing.
+        // The three music-info switches are new keys, off by default: a listener who had Deezer on has not agreed to Wikimedia.
+        val MUSIC_INFO_COVERS_ENABLED = booleanPreferencesKey("music_info_covers_enabled")
+        val MUSIC_INFO_ARTIST_PHOTOS_ENABLED = booleanPreferencesKey("music_info_artist_photos_enabled")
+        val MUSIC_INFO_DESCRIPTIONS_ENABLED = booleanPreferencesKey("music_info_descriptions_enabled")
+        val MUSIC_INFO_CACHE_LIMIT_MB = intPreferencesKey("music_info_cache_limit_mb")
 
         val ALBUM_ART_QUALITY = stringPreferencesKey("album_art_quality")
         val ALBUM_ART_CACHE_LIMIT_MB = intPreferencesKey("album_art_cache_limit_mb")
         val TAP_BACKGROUND_CLOSES_PLAYER = booleanPreferencesKey("tap_background_closes_player")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
-        val ADVANCED_PERFORMANCE_DIAGNOSTICS_ENABLED =
-            booleanPreferencesKey("advanced_performance_diagnostics_enabled")
-        val ADVANCED_PERFORMANCE_DIAGNOSTICS_STARTED_AT =
-            longPreferencesKey("advanced_performance_diagnostics_started_at_epoch_ms")
-        val ADVANCED_PERFORMANCE_DIAGNOSTICS_EXPIRES_AT =
-            longPreferencesKey("advanced_performance_diagnostics_expires_at_epoch_ms")
+        /** B41: two lines of synced lyrics under the cover in the full player. Absent = on. */
+        val LYRICS_UNDER_COVER = booleanPreferencesKey("lyrics_under_cover_v1")
         val IMMERSIVE_LYRICS_ENABLED = booleanPreferencesKey("immersive_lyrics_enabled")
         val IMMERSIVE_LYRICS_TIMEOUT = longPreferencesKey("immersive_lyrics_timeout")
         val USE_ANIMATED_LYRICS = booleanPreferencesKey("use_animated_lyrics")
@@ -345,8 +392,19 @@ constructor(
         }
     }
 
-    /** F-02: the single persisted Pure Direct state every requirement reader follows. */
+    /**
+     * B40-P3: Purity is held off for the device attached now (its owner answered Resonance, or said it has no control at all): the lock
+     * does not apply to it. A runtime fact set by the volume question's coordinator, never persisted (the answer is, per device).
+     */
+    val purityHeldOffForDevice = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    /** The Pure Direct state every requirement reader follows (F-02): the persisted lock, except where a device holds it off. */
     val pristineLockFlow: Flow<Boolean> =
+        combine(persistedPristineLockFlow(), purityHeldOffForDevice, DeviceVolumePolicy::effectiveLock)
+            .distinctUntilChanged()
+
+    /** F-02: the lock as the listener set it, whatever the attached device says. */
+    fun persistedPristineLockFlow(): Flow<Boolean> =
             dataStore.data.map { preferences -> preferences[PreferencesKeys.PRISTINE_LOCK] ?: false }
 
     suspend fun pristineLockState(): Pair<Boolean, Int> {
@@ -761,15 +819,36 @@ constructor(
         }
     }
 
-    val externalArtistImagesEnabledFlow: Flow<Boolean> =
-            dataStore.data.map { preferences ->
-                preferences[PreferencesKeys.EXTERNAL_ARTIST_IMAGES_ENABLED] ?: false
-            }.distinctUntilChanged()
+    // ── B40-F4: music info from MusicBrainz, Wikidata, Wikimedia Commons, Wikipedia and the Cover Art Archive. Every switch is off by default. ──
 
-    suspend fun setExternalArtistImagesEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.EXTERNAL_ARTIST_IMAGES_ENABLED] = enabled
-        }
+    val musicInfoCoversEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { it[PreferencesKeys.MUSIC_INFO_COVERS_ENABLED] ?: false }.distinctUntilChanged()
+
+    val musicInfoArtistPhotosEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { it[PreferencesKeys.MUSIC_INFO_ARTIST_PHOTOS_ENABLED] ?: false }.distinctUntilChanged()
+
+    val musicInfoDescriptionsEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { it[PreferencesKeys.MUSIC_INFO_DESCRIPTIONS_ENABLED] ?: false }.distinctUntilChanged()
+
+    /** How much downloaded music info the phone keeps, in MB. The oldest-used goes first when it is full. */
+    val musicInfoCacheLimitMbFlow: Flow<Int> =
+        dataStore.data.map { (it[PreferencesKeys.MUSIC_INFO_CACHE_LIMIT_MB] ?: DEFAULT_MUSIC_INFO_CACHE_MB).coerceIn(MUSIC_INFO_CACHE_CHOICES_MB.first(), MUSIC_INFO_CACHE_CHOICES_MB.last()) }
+            .distinctUntilChanged()
+
+    suspend fun setMusicInfoCoversEnabled(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.MUSIC_INFO_COVERS_ENABLED] = enabled }
+    }
+
+    suspend fun setMusicInfoArtistPhotosEnabled(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.MUSIC_INFO_ARTIST_PHOTOS_ENABLED] = enabled }
+    }
+
+    suspend fun setMusicInfoDescriptionsEnabled(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.MUSIC_INFO_DESCRIPTIONS_ENABLED] = enabled }
+    }
+
+    suspend fun setMusicInfoCacheLimitMb(megabytes: Int) {
+        dataStore.edit { it[PreferencesKeys.MUSIC_INFO_CACHE_LIMIT_MB] = megabytes }
     }
 
     val autoScanLrcFilesFlow: Flow<Boolean> =
@@ -788,6 +867,18 @@ constructor(
             dataStore.data.map { preferences ->
                 ImmersiveLyrics.effective(preferences[PreferencesKeys.IMMERSIVE_LYRICS_ENABLED] ?: false)
             }
+
+    /** B41: "Lyrics under the cover" (Appearance, Player): on unless the listener turned it off. */
+    val lyricsUnderCoverFlow: Flow<Boolean> =
+            dataStore.data.map { preferences ->
+                preferences[PreferencesKeys.LYRICS_UNDER_COVER] ?: DEFAULT_LYRICS_UNDER_COVER
+            }
+
+    suspend fun setLyricsUnderCover(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LYRICS_UNDER_COVER] = enabled
+        }
+    }
 
     val immersiveLyricsTimeoutFlow: Flow<Long> =
             dataStore.data.map { preferences ->
@@ -994,6 +1085,24 @@ constructor(
                 preferences[PreferencesKeys.BLOCKED_DIRECTORIES] ?: emptySet()
             }.distinctUntilChanged()
 
+    /** B39-A9: whether the library is "nothing unless its folder is included" (the migration has run, or this install began that way). */
+    val directoryRulesIncludeOnlyFlow: Flow<Boolean> =
+            dataStore.data.map { preferences ->
+                preferences[PreferencesKeys.DIRECTORY_RULES_INCLUDE_ONLY] ?: false
+            }.distinctUntilChanged()
+
+    /** [directoryRulesIncludeOnlyFlow]'s present value. */
+    suspend fun directoryRulesIncludeOnlyFlowValue(): Boolean = directoryRulesIncludeOnlyFlow.first()
+
+    /** The folder rules as stored now, read together so they cannot be a mix of two moments. */
+    suspend fun currentDirectoryRules(): com.lostf1sh.pixelplayeross.data.library.LibraryFolders.Rules =
+        dataStore.data.first().let { preferences ->
+            com.lostf1sh.pixelplayeross.data.library.LibraryFolders.Rules(
+                allowed = preferences[PreferencesKeys.ALLOWED_DIRECTORIES] ?: emptySet(),
+                blocked = preferences[PreferencesKeys.BLOCKED_DIRECTORIES] ?: emptySet(),
+            )
+        }
+
     val initialSetupDoneFlow: Flow<Boolean> =
             dataStore.data.map { preferences ->
                 preferences[PreferencesKeys.INITIAL_SETUP_DONE] ?: false
@@ -1027,6 +1136,29 @@ constructor(
             preferences[PreferencesKeys.DAP_LOCK_SCREEN_ENABLED] ?: DEFAULT_DAP_LOCK_SCREEN_ENABLED
         }
 
+
+    val dacShareEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.DAC_SHARE_ENABLED] ?: DEFAULT_DAC_SHARE_ENABLED
+        }
+
+    suspend fun setDacShareEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.DAC_SHARE_ENABLED] = enabled
+        }
+    }
+
+    /** B40-F8: Resonance's peak limiter on the Android route. Off by default. */
+    val resonanceLimiterEnabledFlow: Flow<Boolean> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.RESONANCE_LIMITER_ENABLED] ?: false
+        }
+
+    suspend fun setResonanceLimiterEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.RESONANCE_LIMITER_ENABLED] = enabled
+        }
+    }
 
     suspend fun setDapLockScreenEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
@@ -1139,6 +1271,53 @@ constructor(
     suspend fun updateAllowedDirectories(allowedPaths: Set<String>) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.ALLOWED_DIRECTORIES] = allowedPaths
+            preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] = 0L
+            val currentVersion = preferences[PreferencesKeys.DIRECTORY_RULES_VERSION] ?: 0
+            preferences[PreferencesKeys.DIRECTORY_RULES_VERSION] =
+                if (currentVersion == Int.MAX_VALUE) 0 else currentVersion + 1
+        }
+    }
+
+    /**
+     * B39-A9: replaces the old rule with the include-only one, **once and only if nothing moved**: the rules written are [migrated] when the
+     * stored rules are still [expected] (the ones it was computed from), in one edit with the marker. Anything else (the listener changed a
+     * folder in the meantime, a failed write) leaves everything as it was and says so; the next start tries again. The library is the same
+     * before and after (see `LibraryFolders.migrate`), so neither the rules version nor the last sync is touched: nothing is re-scanned.
+     */
+    suspend fun migrateDirectoryRulesToIncludeOnly(
+        expected: com.lostf1sh.pixelplayeross.data.library.LibraryFolders.Rules,
+        migrated: com.lostf1sh.pixelplayeross.data.library.LibraryFolders.Rules,
+    ): Boolean {
+        var written = false
+        dataStore.edit { preferences ->
+            val stored = com.lostf1sh.pixelplayeross.data.library.LibraryFolders.Rules(
+                allowed = preferences[PreferencesKeys.ALLOWED_DIRECTORIES] ?: emptySet(),
+                blocked = preferences[PreferencesKeys.BLOCKED_DIRECTORIES] ?: emptySet(),
+            )
+            if (preferences[PreferencesKeys.DIRECTORY_RULES_INCLUDE_ONLY] == true || stored != expected) return@edit
+            preferences[PreferencesKeys.ALLOWED_DIRECTORIES] = migrated.allowed
+            preferences[PreferencesKeys.BLOCKED_DIRECTORIES] = migrated.blocked
+            preferences[PreferencesKeys.DIRECTORY_RULES_INCLUDE_ONLY] = true
+            written = true
+        }
+        return written
+    }
+
+    /**
+     * B39-A9: puts [folders] in the library. On an install that is not include-only yet (a first run, or an empty library) it becomes so:
+     * nothing but these folders (and what was already included). This one is a change of the rules like any other, so the library is scanned again.
+     */
+    suspend fun includeDirectories(folders: Collection<String>) {
+        dataStore.edit { preferences ->
+            val stored = com.lostf1sh.pixelplayeross.data.library.LibraryFolders.Rules(
+                allowed = preferences[PreferencesKeys.ALLOWED_DIRECTORIES] ?: emptySet(),
+                blocked = preferences[PreferencesKeys.BLOCKED_DIRECTORIES] ?: emptySet(),
+            )
+            val base = if (stored.includeOnly) stored else stored.copy(blocked = stored.blocked + com.lostf1sh.pixelplayeross.data.library.LibraryFolders.NOTHING_BY_DEFAULT)
+            val next = com.lostf1sh.pixelplayeross.data.library.LibraryFolders.including(base, folders)
+            preferences[PreferencesKeys.ALLOWED_DIRECTORIES] = next.allowed
+            preferences[PreferencesKeys.BLOCKED_DIRECTORIES] = next.blocked
+            preferences[PreferencesKeys.DIRECTORY_RULES_INCLUDE_ONLY] = true
             preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] = 0L
             val currentVersion = preferences[PreferencesKeys.DIRECTORY_RULES_VERSION] ?: 0
             preferences[PreferencesKeys.DIRECTORY_RULES_VERSION] =
@@ -1758,45 +1937,6 @@ constructor(
     suspend fun setHapticsEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.HAPTICS_ENABLED] = enabled
-        }
-    }
-
-    val advancedPerformanceDiagnosticsSettingsFlow: Flow<AdvancedPerformanceDiagnosticsSettings> =
-        dataStore.data.map { preferences ->
-            AdvancedPerformanceDiagnosticsSettings(
-                enabled = preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_ENABLED] ?: false,
-                sessionStartedEpochMs =
-                    preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_STARTED_AT],
-                expiresAtEpochMs =
-                    preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_EXPIRES_AT]
-            )
-        }.distinctUntilChanged()
-
-    suspend fun setAdvancedPerformanceDiagnosticsEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            if (enabled) {
-                val now = System.currentTimeMillis()
-                preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_ENABLED] = true
-                preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_STARTED_AT] = now
-                preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_EXPIRES_AT] =
-                    now + AdvancedPerformanceDiagnostics.DEFAULT_SESSION_DURATION_MS
-            } else {
-                preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_ENABLED] = false
-                preferences.remove(PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_STARTED_AT)
-                preferences.remove(PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_EXPIRES_AT)
-            }
-        }
-    }
-
-    suspend fun disableExpiredAdvancedPerformanceDiagnostics(nowEpochMs: Long = System.currentTimeMillis()) {
-        dataStore.edit { preferences ->
-            val enabled = preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_ENABLED] ?: false
-            val expiresAt = preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_EXPIRES_AT]
-            if (enabled && (expiresAt == null || nowEpochMs >= expiresAt)) {
-                preferences[PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_ENABLED] = false
-                preferences.remove(PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_STARTED_AT)
-                preferences.remove(PreferencesKeys.ADVANCED_PERFORMANCE_DIAGNOSTICS_EXPIRES_AT)
-            }
         }
     }
 

@@ -48,7 +48,7 @@ fun <T> DapSegmentedPicker(
     /** Segments share the width equally. Used when the picker has a line of its own. */
     fillWidth: Boolean = false,
     /** The track the segments sit on: the page's surface, or the page itself when the picker is on a surface. */
-    containerColor: Color = Dap.surface,
+    containerColor: Color = Dap.panel,
 ) {
     Row(
         modifier = modifier
@@ -107,7 +107,7 @@ fun <T> DapSegmentedRow(
     dim: Boolean = false,
     enabled: Boolean = true,
     divider: Boolean = true,
-    containerColor: Color = Dap.surface,
+    containerColor: Color = Dap.panel,
 ) {
     Column(modifier.fillMaxWidth().then(if (dim) Modifier.alpha(0.4f) else Modifier)) {
         SideBySideOrStacked(

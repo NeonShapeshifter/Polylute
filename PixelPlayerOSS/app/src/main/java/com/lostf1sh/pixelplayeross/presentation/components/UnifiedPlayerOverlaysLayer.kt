@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
 import kotlinx.collections.immutable.persistentListOf
+import com.lostf1sh.pixelplayeross.ui.glass.GlassWindowBackdrop
+import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
 
 /**
  * Which song an overlay describes, given the entry point it was opened from.
@@ -186,7 +188,13 @@ internal fun UnifiedPlayerSongInfoLayer(
     onDismissSongInfo: () -> Unit,
     onNavigateToAlbum: (Song) -> Unit,
     onNavigateToArtist: (Song) -> Unit,
-    onNavigateToGenre: (Song) -> Unit
+    onNavigateToGenre: (Song) -> Unit,
+    /**
+     * B42-fix1: the options as the player's **Menu page** instead of a bottom sheet: the same body, the same actions and this same wiring,
+     * with [onShowTrackDetails] taking the "Track details" row to the player's own Details page rather than to a window above it.
+     */
+    presentation: SongOptionsPresentation = SongOptionsPresentation.SHEET,
+    onShowTrackDetails: (() -> Unit)? = null,
 ) {
     selectedSongForInfo?.let { staticSong ->
         val context = LocalContext.current
@@ -293,7 +301,7 @@ internal fun UnifiedPlayerSongInfoLayer(
                 onNavigateToAlbum = { onNavigateToAlbum(liveSong) },
                 onNavigateToArtist = { onNavigateToArtist(liveSong) },
                 onNavigateToGenre = { onNavigateToGenre(liveSong) },
-                onViewTrackDetails = { secondaryView = SecondaryView.TRACK_DETAILS },
+                onViewTrackDetails = onShowTrackDetails ?: { secondaryView = SecondaryView.TRACK_DETAILS },
                 onViewCredits = { secondaryView = SecondaryView.CREDITS },
                 onEditSong = { title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
                     playerViewModel.editSongMetadata(
@@ -316,7 +324,8 @@ internal fun UnifiedPlayerSongInfoLayer(
                 removeFromListTrigger = {
                     playerViewModel.removeSongFromQueue(liveSong.id)
                     onDismissSongInfo()
-                }
+                },
+                presentation = presentation,
             )
 
             if (showPlaylistBottomSheet) {
@@ -420,6 +429,8 @@ private fun SecondaryViewWindow(
         // This window is its own surface, so the activity's volume-key path does not
         // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
         ModalInputBridge()
+        // B42: a window of its own that is a whole screen carries its own copy of the cover glass; the page in it is see-through over it
+        GlassWindowBackdrop(LocalCoverGlass.current)
         content()
     }
 }

@@ -36,12 +36,36 @@ class DacEqLabelsTest {
     private fun status(mode: DirectSignalMode, eq: DacEqLabel, lock: Boolean = false) =
         AudioStatus(purityPreference = lock, route = direct(mode), sinkDirectActive = true, dacEq = eq)
 
+    // ── B41: closed and flat are different answers ───────────────────────────────────────────────────────
+
+    @Test
+    fun `B41 - the DAC's closed EQ and a flat one are two labels, and both still allow Purity`() {
+        assertThat(DacEqLabel.of(com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqVerdict.OFF)).isEqualTo(DacEqLabel.OFF)
+        assertThat(DacEqLabel.of(com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqVerdict.FLAT)).isEqualTo(DacEqLabel.FLAT)
+        assertThat(DacEqLabel.of(com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqVerdict.ON)).isEqualTo(DacEqLabel.ON)
+        assertThat(DacEqLabel.of(com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqVerdict.UNKNOWN)).isEqualTo(DacEqLabel.UNKNOWN)
+        assertThat(DacEqLabel.OFF.allowsPurity).isTrue()
+        assertThat(DacEqLabel.FLAT.allowsPurity).isTrue()
+        assertThat(DacEqLabel.UNKNOWN.allowsPurity).isFalse()
+        assertThat(DacEqLabel.ON.allowsPurity).isFalse()
+    }
+
+    @Test
+    fun `B41 - the status line says off in the DAC by name, flat, on and could not be read in four ways`() {
+        fun text(label: DacEqLabel) = status(DirectSignalMode.PRISTINE, label).dacEqStatus("Melody")
+        assertThat(text(DacEqLabel.OFF)).isEqualTo(FeatureStatus(FeatureStatusKind.OFF, R.string.audio_dac_eq_closed, arg = "Melody"))
+        assertThat(text(DacEqLabel.FLAT)).isEqualTo(FeatureStatus(FeatureStatusKind.OFF, R.string.audio_dac_eq_flat))
+        assertThat(text(DacEqLabel.ON)?.textRes).isEqualTo(R.string.audio_dac_eq_on)
+        assertThat(text(DacEqLabel.UNKNOWN)?.textRes).isEqualTo(R.string.audio_dac_eq_unknown)
+        assertThat(text(DacEqLabel.NOT_APPLICABLE)).isNull()
+    }
+
     // ── Purity ───────────────────────────────────────────────────────────────────────────────────────────
 
     @Test
     fun `Purity shows only with no app DSP and the DAC's EQ known off or flat`() {
-        assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.OFF_OR_FLAT).purityHolds).isTrue()
-        assertThat(resolveDirectOutputMode(direct(DirectSignalMode.PRISTINE), DacEqLabel.OFF_OR_FLAT)).isEqualTo(DirectOutputMode.PURITY)
+        assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.OFF).purityHolds).isTrue()
+        assertThat(resolveDirectOutputMode(direct(DirectSignalMode.PRISTINE), DacEqLabel.OFF)).isEqualTo(DirectOutputMode.PURITY)
 
         // The DAC's EQ on: no Purity, even though the USB stream is untouched.
         val shaped = status(DirectSignalMode.PRISTINE, DacEqLabel.ON)
@@ -50,7 +74,7 @@ class DacEqLabelsTest {
         assertThat(resolveDirectOutputMode(direct(DirectSignalMode.PRISTINE), DacEqLabel.ON)).isEqualTo(DirectOutputMode.RESONANCE)
 
         // The app's DSP on: no Purity whatever the DAC says.
-        assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.OFF_OR_FLAT).purityHolds).isFalse()
+        assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.OFF).purityHolds).isFalse()
     }
 
     @Test
@@ -75,18 +99,18 @@ class DacEqLabelsTest {
 
     @Test
     fun `Resonance says where the shaping comes from`() {
-        assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.OFF_OR_FLAT).resonanceSource).isEqualTo(ResonanceSource.APP_DSP)
+        assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.OFF).resonanceSource).isEqualTo(ResonanceSource.APP_DSP)
         assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.NOT_APPLICABLE).resonanceSource).isEqualTo(ResonanceSource.APP_DSP)
         assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.ON).resonanceSource).isEqualTo(ResonanceSource.DAC_EQ)
         assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.ON).resonanceSource).isEqualTo(ResonanceSource.BOTH)
-        assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.OFF_OR_FLAT).resonanceSource).isNull()
+        assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.OFF).resonanceSource).isNull()
     }
 
     @Test
     fun `the ledger's resonance still means the app's DSP only`() {
         // Stats reads `resonance`; B30 did not change it (a DAC EQ on a pristine stream is not the app's DSP).
         assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.ON).resonance).isFalse()
-        assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.OFF_OR_FLAT).resonance).isTrue()
+        assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.OFF).resonance).isTrue()
     }
 
     @Test
@@ -102,7 +126,7 @@ class DacEqLabelsTest {
 
     @Test
     fun `the lock never says untouched with the DAC's EQ on or unreadable`() {
-        assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.OFF_OR_FLAT, lock = true).purity)
+        assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.OFF, lock = true).purity)
             .isEqualTo(PristineModePolicy.Status.ACTIVE)
         assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.NOT_APPLICABLE, lock = true).purity)
             .isEqualTo(PristineModePolicy.Status.ACTIVE)
@@ -120,7 +144,7 @@ class DacEqLabelsTest {
     fun `with the lock off the reason names the source`() {
         assertThat(status(DirectSignalMode.PRISTINE, DacEqLabel.ON).purityLine)
             .isEqualTo(PurityLine(R.string.pristine_status_off, R.string.pristine_reason_resonance_dac))
-        assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.OFF_OR_FLAT).purityLine)
+        assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.OFF).purityLine)
             .isEqualTo(PurityLine(R.string.pristine_status_off, R.string.pristine_reason_resonance))
         assertThat(status(DirectSignalMode.PROCESSED, DacEqLabel.ON).purityLine)
             .isEqualTo(PurityLine(R.string.pristine_status_off, R.string.pristine_reason_resonance_both))
@@ -137,7 +161,7 @@ class DacEqLabelsTest {
         assertThat(st(true, true, DirectSignalMode.PROCESSED, DacEqLabel.ON)).isEqualTo(PristineModePolicy.Status.DIRECT_NOT_PRISTINE)
         assertThat(st(true, true, DirectSignalMode.PRISTINE, DacEqLabel.ON)).isEqualTo(PristineModePolicy.Status.DAC_EQ_ON)
         assertThat(st(true, true, DirectSignalMode.PRISTINE, DacEqLabel.UNKNOWN)).isEqualTo(PristineModePolicy.Status.DAC_EQ_UNKNOWN)
-        assertThat(st(true, true, DirectSignalMode.PRISTINE, DacEqLabel.OFF_OR_FLAT)).isEqualTo(PristineModePolicy.Status.ACTIVE)
+        assertThat(st(true, true, DirectSignalMode.PRISTINE, DacEqLabel.OFF)).isEqualTo(PristineModePolicy.Status.ACTIVE)
         assertThat(st(true, true, DirectSignalMode.PRISTINE, DacEqLabel.NOT_APPLICABLE)).isEqualTo(PristineModePolicy.Status.ACTIVE)
     }
 
@@ -145,7 +169,7 @@ class DacEqLabelsTest {
     fun `labels follow the DAC's EQ live`() {
         val route = direct(DirectSignalMode.PRISTINE)
         val before = AudioStatus(route = route, sinkDirectActive = true, dacEq = DacEqLabel.UNKNOWN)
-        val after = before.copy(dacEq = DacEqLabel.OFF_OR_FLAT)
+        val after = before.copy(dacEq = DacEqLabel.OFF)
         val shaped = after.copy(dacEq = DacEqLabel.ON)
         assertThat(listOf(before, after, shaped).map { resolveDirectOutputMode(it.route, it.dacEq) })
             .containsExactly(null, DirectOutputMode.PURITY, DirectOutputMode.RESONANCE).inOrder()

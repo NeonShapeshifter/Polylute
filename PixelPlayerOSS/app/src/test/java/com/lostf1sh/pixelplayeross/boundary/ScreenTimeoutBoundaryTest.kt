@@ -60,7 +60,9 @@ class ScreenTimeoutBoundaryTest {
         val activity = source("MainActivity.kt")
         val block = activity.substringAfter("private fun observeDapDisplayPolicy()").substringBefore("private fun restoreDeviceOwnerPolicy")
         assertThat(block).contains("playerViewModel.sheetState.map { it == PlayerSheetState.EXPANDED }")
-        assertThat(block).contains("DapDeviceControlPolicy.shouldKeepScreenOn(timeoutMode, isPlaying, playerVisible)")
+        // B42-fix1: and the lock screen is not the player: the wake cycle's cover or the surface on screen releases the flag
+        assertThat(block).contains("DapDeviceControlPolicy.keepScreenOnFlow(")
+        assertThat(block).contains("lockSurfaceShowing = combine(lockCover.coveredFlow, lockSurfaceShowing)")
         assertThat(block).contains("repeatOnLifecycle(Lifecycle.State.STARTED)")
         assertThat(block).doesNotContain("SCREEN_OFF_TIMEOUT")
     }
@@ -68,8 +70,11 @@ class ScreenTimeoutBoundaryTest {
     @Test
     fun `the lyrics toggle releases the screen when playback pauses`() {
         val sheet = source("presentation/components/LyricsSheet.kt")
-        assertThat(sheet).contains("DisposableEffect(keepScreenOn, isPlaying, lifecycleOwner)")
-        assertThat(sheet).contains("DapDeviceControlPolicy.shouldKeepScreenOnForLyrics(keepScreenOn, isPlaying)")
+        assertThat(sheet).contains("DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, lifecycleOwner)")
+        assertThat(sheet).contains("DapDeviceControlPolicy.shouldKeepScreenOnForLyrics(keepScreenOn, isPlaying, lockSurfaceShowing)")
+        // B42-fix1: the lock screen's presence reaches it as a composition local that MainActivity provides from the same two signals
+        assertThat(sheet).contains("LocalLockSurfaceShowing.current")
+        assertThat(source("MainActivity.kt")).contains("LocalLockSurfaceShowing provides")
     }
 
     @Test

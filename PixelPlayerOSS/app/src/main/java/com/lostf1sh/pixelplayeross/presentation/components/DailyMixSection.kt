@@ -232,7 +232,7 @@ private fun DailyMixCard(
             cornerRadiusTL = cornerRadius,
             smoothnessAsPercentBR = 60
         ),
-        colors = CardDefaults.cardColors(containerColor = Dap.background),
+        colors = CardDefaults.cardColors(containerColor = Dap.panel),
         elevation = CardDefaults.elevatedCardElevation(0.dp),
         modifier = Modifier.fillMaxWidth()
     ) {

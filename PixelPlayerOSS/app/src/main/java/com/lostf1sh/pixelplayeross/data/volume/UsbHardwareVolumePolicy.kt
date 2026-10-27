@@ -41,17 +41,44 @@ object UsbHardwareVolumePolicy {
     fun decibels(units: Int): Float = units / UsbVolumeRange.UNITS_PER_DB.toFloat()
 
     /**
+     * B39-S1: the level a DAC this app has never been told about is brought to before any audio reaches it. Many dongles boot at their
+     * loudest, and for a DAC with nothing remembered "leave it as it is" is full volume in the listener's ears. This is the level
+     * the automatic handoff already treats as safe ([HandoffResumeSafety.CONSERVATIVE_RESUME_DB], -30 dB): quiet enough for any
+     * headphones and still audible on all but the least sensitive ones, where one key press raises it.
+     */
+    const val FIRST_USE_DB = HandoffResumeSafety.CONSERVATIVE_RESUME_DB
+
+    /**
+     * [FIRST_USE_DB] as a level this DAC can hold, on the app's own step grid ([stepFor] / [unitsFor]): the loudest step at or below it,
+     * so it never overshoots the target, or the DAC's quietest level when its whole range is louder than that.
+     */
+    fun firstUseUnits(range: UsbVolumeRange): Int {
+        val target = (FIRST_USE_DB * UsbVolumeRange.UNITS_PER_DB).toInt()
+        val step = if (target <= range.minUnits) 0 else ((target - range.minUnits) / stepUnits(range)).coerceIn(0, maxStep(range))
+        return unitsFor(step, range)
+    }
+
+    /**
      * The level a DAC may keep when it is opened: the quietest of what it is at, what the listener
-     * last chose on it, and the Safety Max ceiling. Automatic paths may lower, never raise — a
-     * remembered level belongs to whatever was plugged in last time, and the app cannot know it is
+     * last chose on it, the Safety Max ceiling and, for a DAC the app has no record of, [firstUseUnits]. Automatic paths may lower,
+     * never raise — a remembered level belongs to whatever was plugged in last time, and the app cannot know it is
      * the same pair of headphones now.
      *
+     * @param firstUseUnits non-null only for a DAC with no saved level and no calibrated Safety Max (see [isFirstUse])
      * @return the target in native units, or null when nothing asks for a change.
      */
-    fun openTarget(currentUnits: Int, savedUnits: Int?, ceilingUnits: Int?): Int? {
-        val target = listOfNotNull(savedUnits, ceilingUnits).minOrNull() ?: return null
+    fun openTarget(currentUnits: Int, savedUnits: Int?, ceilingUnits: Int?, firstUseUnits: Int? = null): Int? {
+        val target = listOfNotNull(savedUnits, ceilingUnits, firstUseUnits).minOrNull() ?: return null
         return target.takeIf { it < currentUnits }
     }
+
+    /**
+     * B39-S1: whether nothing is known about this DAC's level: the listener never chose one on it ([savedUnits]), no headphone profile
+     * calibrated a Safety Max for it ([calibrated], enabled or not: a deliberately switched-off ceiling is still a record of the
+     * listener having been here) and no temporary override stands for it ([overrideStands]).
+     */
+    fun isFirstUse(savedUnits: Int?, calibrated: Boolean, overrideStands: Boolean): Boolean =
+        savedUnits == null && !calibrated && !overrideStands
 }
 
 /** The last level the listener chose on each DAC, in native units. Read only to lower, never to raise. */

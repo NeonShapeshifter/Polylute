@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.diagnostics
 
 import android.content.Context
+import androidx.core.content.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,6 +50,7 @@ class MaintenanceOverrideStore @Inject constructor(
     fun isActive(override: MaintenanceOverride): Boolean = override.id in _state.value.activeIds
 
     fun setActive(override: MaintenanceOverride, active: Boolean) {
+        if (!MaintenanceOverridePolicy.allowed(override)) return
         val current = _state.value
         val updated = current.applied(override, active)
         if (updated == current) return
@@ -67,9 +69,14 @@ class MaintenanceOverrideStore @Inject constructor(
         _state.value = state
     }
 
-    /** Reads persisted state, dropping ids this build no longer defines. */
-    private fun read(): MaintenanceOverrides =
-        MaintenanceOverrides.fromStoredIds(preferences.getStringSet(KEY_ACTIVE_IDS, emptySet()))
+    /** A release must not inherit a hidden development override from an older installation or backup. */
+    private fun read(): MaintenanceOverrides {
+        val stored = preferences.getStringSet(KEY_ACTIVE_IDS, emptySet()).orEmpty()
+        val allowed = MaintenanceOverrides.fromStoredIds(stored).active
+            .filter { MaintenanceOverridePolicy.allowed(it) }.map { it.id }.toSet()
+        if (stored != allowed) preferences.edit { putStringSet(KEY_ACTIVE_IDS, allowed) }
+        return MaintenanceOverrides(allowed)
+    }
 
     private companion object {
         const val PREFERENCES_NAME = "maintenance_overrides"

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B39-A6 -->
+    <string name="eq_polylute_title">EQ de Polylute</string>
+    <string name="eq_polylute_where">Se aplica en el teléfono · funciona con cualquier DAC</string>
+    <string name="eq_dac_eq_note_on">%1$s también tiene su propio EQ, y está activado. Es otro ecualizador, que se aplica dentro del DAC.</string>
+    <string name="eq_dac_eq_note_off">%1$s también tiene su propio EQ, y está desactivado. Es otro ecualizador, dentro del DAC.</string>
+    <string name="eq_dac_eq_note_flat">%1$s también tiene su propio EQ, activado pero plano: todas las bandas a 0 dB. Es otro ecualizador, dentro del DAC.</string>
+    <string name="eq_dac_eq_note_unknown">%1$s también tiene su propio EQ, que no se pudo leer. Es otro ecualizador, dentro del DAC.</string>
+    <string name="dac_eq_title">EQ del DAC</string>
+    <string name="dac_eq_where">%1$s · se aplica dentro del DAC</string>
+    <string name="dac_eq_not_polylute">Este es el ecualizador propio del DAC, que se aplica dentro del DAC. El EQ de Polylute es otro, que se aplica en el teléfono.</string>
+    <string name="audio_dac_eq_title">EQ del DAC</string>
+    <string name="audio_dac_eq_sub">%1$s · se aplica dentro del DAC · Polylute solo lo lee por ahora</string>
+    <string name="audio_dac_eq_on">Activado · da forma al sonido</string>
+    <string name="audio_dac_eq_closed">Desactivado en %1$s (sin EQ)</string>
+    <string name="audio_dac_eq_flat">Activado, plano: todas las bandas a 0 dB</string>
+    <string name="audio_dac_eq_use">Usar el EQ del DAC</string>
+    <string name="audio_dac_eq_sub_writable">%1$s · se aplica dentro del DAC</string>
+    <string name="audio_dac_eq_unknown">No se pudo leer</string>
+    <string name="eq_the_dac">El DAC</string>
+</resources>

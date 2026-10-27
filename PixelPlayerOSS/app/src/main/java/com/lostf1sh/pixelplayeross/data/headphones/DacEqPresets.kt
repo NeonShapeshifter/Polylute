@@ -294,6 +294,12 @@ interface DacEqPresetStore {
     suspend fun selectDacEq(headphoneId: String, dacProfileId: String, presetId: String?, eqOn: Boolean)
     suspend fun renameDacEqPreset(headphoneId: String, dacProfileId: String, presetId: String, name: String)
     suspend fun deleteDacEqPreset(headphoneId: String, dacProfileId: String, presetId: String)
+
+    /**
+     * B40-F2: the headphones' own (software) EQ is switched off, kept as it is, so a correction the DAC now applies is not applied a
+     * second time on the phone. A store without a software EQ has nothing to do.
+     */
+    suspend fun turnSoftwareEqOff(headphoneId: String) {}
 }
 
 /** The DAC half of a pair as a preset records it. */

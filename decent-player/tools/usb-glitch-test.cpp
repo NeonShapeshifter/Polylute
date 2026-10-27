@@ -3,6 +3,7 @@
 #include "usb-pcm-packetizer.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -662,13 +663,49 @@ static void expectPolicySwitchDoesNotJump() {
 
 /** Every kind has a name and a log window; the two new ones log at the usual once a second. */
 static void expectNewKindsAreRegistered() {
-    assert(USB_GLITCH_KIND_COUNT == 9);
+    assert(USB_GLITCH_KIND_COUNT == 10);
     assert(USB_GLITCH_FEEDBACK_STUCK == 6 && USB_GLITCH_FEEDBACK_UNSTUCK == 7);
     assert(usbGlitchLogIntervalMs(USB_GLITCH_FEEDBACK_STUCK) == 1000);
     assert(usbGlitchLogIntervalMs(USB_GLITCH_FEEDBACK_UNSTUCK) == 1000);
     // B23-P2: OUTPUT_GAP is rate limited like the per-second kinds, not held to REAP_SLOW's 30 s summary.
     assert(USB_GLITCH_OUTPUT_GAP == 8);
     assert(usbGlitchLogIntervalMs(USB_GLITCH_OUTPUT_GAP) == 1000);
+    // B41-fix1: a feedback transfer that was not a reading has its own kind, once a second like the rest.
+    assert(USB_GLITCH_FEEDBACK_INVALID == 9);
+    assert(usbGlitchLogIntervalMs(USB_GLITCH_FEEDBACK_INVALID) == 1000);
+}
+
+// ── B41-fix1 (A1a): is a completed feedback transfer a reading at all? ──────────────────────────────────────
+//
+// 2026-10-25, an outside investigation of the driver: both reads of the feedback endpoint (the one at a stream start and the
+// continuous one) decoded the four bytes whenever `actual_length >= 4`, and neither looked at `urb->status` or at the packet's
+// status. A transfer that delivers four bytes together with an error (-EILSEQ on the packet, -ECONNRESET on the URB) moved the
+// rate as if it were a real reading. The verdict is the pure half of the fix; usb-audio-output.cpp applies it at both reads, and
+// feedback-lifetime-test.cpp drives both through the real output.
+
+static void expectAFeedbackTransferIsAReadingOnlyIfItIsClean() {
+    assert(USB_FEEDBACK_BYTES == 4);   // UAC2 at high speed: one Q16.16 value; the URB asks for exactly this
+    // a clean four-byte transfer is a reading
+    assert(usbFeedbackPacketVerdict(0, 0, 4) == USB_FEEDBACK_PACKET_OK);
+    // the URB's own status, whatever the packet and the length say (the cancel, the reset, the stall)
+    assert(usbFeedbackPacketVerdict(-ECONNRESET, 0, 4) == USB_FEEDBACK_PACKET_URB_STATUS);
+    assert(usbFeedbackPacketVerdict(-ENOENT, 0, 4) == USB_FEEDBACK_PACKET_URB_STATUS);
+    assert(usbFeedbackPacketVerdict(-EPROTO, -EILSEQ, 4) == USB_FEEDBACK_PACKET_URB_STATUS);   // the URB is judged first
+    // the packet's status with a clean URB: the kernel delivered bytes with an error
+    assert(usbFeedbackPacketVerdict(0, -EILSEQ, 4) == USB_FEEDBACK_PACKET_PACKET_STATUS);
+    assert(usbFeedbackPacketVerdict(0, -EOVERFLOW, 4) == USB_FEEDBACK_PACKET_PACKET_STATUS);
+    assert(usbFeedbackPacketVerdict(0, -EXDEV, 0) == USB_FEEDBACK_PACKET_PACKET_STATUS);       // before the length
+    // both clean, but not the four bytes asked for: nothing, short, long
+    assert(usbFeedbackPacketVerdict(0, 0, 0) == USB_FEEDBACK_PACKET_LENGTH);
+    assert(usbFeedbackPacketVerdict(0, 0, 3) == USB_FEEDBACK_PACKET_LENGTH);   // UAC1's 10.14 value is three bytes: not this driver's
+    assert(usbFeedbackPacketVerdict(0, 0, 5) == USB_FEEDBACK_PACKET_LENGTH);
+    // names (the log line and the dump use them)
+    assert(strcmp(usbFeedbackPacketName(USB_FEEDBACK_PACKET_OK), "ok") == 0);
+    assert(strcmp(usbFeedbackPacketName(USB_FEEDBACK_PACKET_URB_STATUS), "urb-status") == 0);
+    assert(strcmp(usbFeedbackPacketName(USB_FEEDBACK_PACKET_PACKET_STATUS), "packet-status") == 0);
+    assert(strcmp(usbFeedbackPacketName(USB_FEEDBACK_PACKET_LENGTH), "length") == 0);
+    assert(strcmp(usbFeedbackPacketName(99), "?") == 0);
+    assert(USB_FEEDBACK_PACKET_KIND_COUNT == 4);
 }
 
 // ── B23-P2: the output-gap model ────────────────────────────────────────────────────────────────────────────
@@ -939,6 +976,7 @@ int main() {
     expectDeviation();
     expectFeedbackKeepsUpAfterStart();
     expectNewKindsAreRegistered();
+    expectAFeedbackTransferIsAReadingOnlyIfItIsClean();
     expectTheOwnersWakeIsOneGapWithItsNumbers();
     expectShortHolesWithReplenishmentAreQuiet();
     expectTheLeadIsTheLimit();

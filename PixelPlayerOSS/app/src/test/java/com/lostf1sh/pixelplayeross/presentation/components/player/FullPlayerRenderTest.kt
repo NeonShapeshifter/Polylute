@@ -73,7 +73,6 @@ class FullPlayerRenderTest {
         override fun onRepeatToggle() { calls += "repeat" }
         override fun onFavoriteToggle() { calls += "favorite" }
         override fun onCollapse() { calls += "collapse" }
-        override fun onShowDetails() { calls += "details" }
         override fun onQueueDragStart() { calls += "dragStart" }
         override fun onQueueDrag(dragAmount: Float) { calls += "drag" }
         override fun onQueueRelease(totalDrag: Float, velocity: Float) { calls += "release" }
@@ -170,13 +169,13 @@ class FullPlayerRenderTest {
     fun `every control calls its action`() {
         val actions = Recorder()
         setPlayer({ uiState(song("1", "La Costa Del Silencio")) }, actions)
-        compose.onNodeWithContentDescription(s(R.string.player_header_details)).performClick()
+        // B42-fix1: the header's details icon jumps to the Details page, a page of the pager and no action of the sheet (`B42Fix1PlayerPagesTest`)
         compose.onNodeWithContentDescription(s(R.string.player_header_collapse)).performClick()
         compose.onNodeWithContentDescription(s(R.string.player_shuffle)).performClick()
         compose.onNodeWithContentDescription(s(R.string.lock_transport_repeat)).performClick()
         compose.onNodeWithContentDescription(s(R.string.cd_add_to_favorites)).performClick()
         compose.onNodeWithContentDescription(s(R.string.cd_pause)).performClick()
-        assertEquals(listOf("details", "collapse", "shuffle", "repeat", "favorite", "playPause"), actions.calls)
+        assertEquals(listOf("collapse", "shuffle", "repeat", "favorite", "playPause"), actions.calls)
     }
 
     @Test

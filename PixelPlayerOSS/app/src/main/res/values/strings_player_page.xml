@@ -5,6 +5,7 @@
     <string name="player_header_collapse">Close player</string>
     <string name="player_header_lyrics">Lyrics</string>
     <string name="player_header_details">Track details</string>
+    <string name="player_action_options">Options</string>
     <string name="player_add_bookmark">Add bookmark</string>
     <!-- The lyrics bar and its options sheet. -->
     <string name="lyrics_options">Lyrics options</string>
@@ -29,4 +30,6 @@
     <string name="queue_title_next">Up next</string>
     <!-- B32-Q4: the peek of the queue at the foot of the full player -->
     <string name="player_queue_peek_open">Open the queue</string>
+    <!-- B41: the two lines of lyrics under the cover: what a tap on them does -->
+    <string name="player_lyrics_under_cover_cd">Open the lyrics</string>
 </resources>

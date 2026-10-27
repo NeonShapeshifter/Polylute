@@ -35,7 +35,7 @@ class AudioStatusSource @Inject constructor(
     @AppScope scope: CoroutineScope,
     dacEqLabels: DacEqLabelSource = NoDacEqLabels,
 ) {
-    val status: StateFlow<AudioStatus> = combine(
+    private val base: kotlinx.coroutines.flow.Flow<AudioStatus> = combine(
         dualPlayerEngine.audioRouteState,
         dualPlayerEngine.usbAudioDiagnostics
             .map { it.state == UsbDirectSinkState.USB_DIRECT_ACTIVE }
@@ -51,5 +51,14 @@ class AudioStatusSource @Inject constructor(
             maintenanceDspBypass = dspBypass,
             dacEq = dacEq,
         )
+    }
+
+    /** B40-F8: the limiter's own fact joins last (six flows are one more than the typed `combine` takes); B41: so does "the DAC's EQ is writable". */
+    val status: StateFlow<AudioStatus> = combine(
+        base,
+        dualPlayerEngine.resonanceLimiterRunning,
+        dacEqLabels.writable,
+    ) { status, limiterRunning, dacEqWritable ->
+        status.copy(limiterRunning = limiterRunning, dacEqWritable = dacEqWritable)
     }.distinctUntilChanged().stateIn(scope, SharingStarted.WhileSubscribed(5_000), AudioStatus())
 }

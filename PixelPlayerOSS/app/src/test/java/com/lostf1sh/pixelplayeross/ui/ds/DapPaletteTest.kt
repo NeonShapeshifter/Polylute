@@ -164,11 +164,10 @@ class DapPaletteTest {
     @Test
     fun `the accent authority is unchanged by this migration`() {
         val theme = source("ui/ds/DapTheme.kt")
-        // The authority is unchanged; what it provides is now the *presented* accent, so a light
-        // palette can darken it for legibility without altering the stored preference. See
-        // DapBaseThemeTest for that contract.
+        // The authority is unchanged; what it provides is the accent as this theme draws it (B40-F1: each theme has its own colour for
+        // each name, and album-art mode may give the cover's), without altering the stored preference. See DapAccentTablesTest.
         assertThat(theme).contains("LocalDapAccent provides accentColor")
-        assertThat(theme).contains("val accentColor = palette.presentedAccent(accent.color)")
+        assertThat(theme).contains("val accentColor = accentColorOverride ?: palette.accentColor(accent)")
         // B29-L11: dynamic since the accent follows the cover on the full player and the lock screen (see AccentRecompositionTest); it was
         // static. Still one local, still the app's default: the authority itself is the same.
         assertThat(theme).contains("val LocalDapAccent = compositionLocalOf { DapAccent.DEFAULT.color }")
@@ -183,6 +182,9 @@ class DapPaletteTest {
         val palette = source("ui/ds/DapPalette.kt")
         assertThat(palette).contains("val warning: Color")
         assertThat(palette).contains("val error: Color")
-        assertThat(palette).doesNotContain("val accent")
+        // B40-F1: the palette holds how each *named* accent looks on it (`accents`), never which one is in use: no single accent field.
+        assertThat(palette).doesNotContain("val accent:")
+        assertThat(palette).doesNotContain("val accent =")
+        assertThat(palette).contains("val accents: Map<DapAccent, Color>")
     }
 }

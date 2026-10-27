@@ -245,6 +245,11 @@ data class WriteContext(
     val sense: PreGainSense = PreGainSense.BOOST,
     /** B31 P1.3: music is playing. The steps that select a preset nobody has vetted refuse it. */
     val playing: Boolean = false,
+    /**
+     * B40-F2: the listener allowed writes to this model ([DacEqWriteConsent]). It stands in for "the profile is verified" for a write the
+     * **listener** asked for, and for nothing else: a reviewer's command needs the override, and nothing automatic is ever let through.
+     */
+    val userConsent: Boolean = false,
 )
 
 /**
@@ -253,7 +258,8 @@ data class WriteContext(
  *
  * 1. a user action or a reviewer command: never on connect, never automatically ([GateRefusal.NOT_USER_INITIATED]);
  * 2. only a profile that can be written at all ([GateRefusal.PROFILE_CANNOT_BE_WRITTEN]) and is marked **verified**, or that the
- *    debug override has switched on for this phone ([GateRefusal.PROFILE_NOT_VERIFIED]);
+ *    debug override has switched on for this phone, or (B40-F2, for a write the listener asks for) that the listener has allowed
+ *    ([DacEqWriteConsent]) ([GateRefusal.PROFILE_NOT_VERIFIED]);
  * 3. only after this session read the DAC's whole EQ state ([GateRefusal.READ_NOT_WORKING], [GateRefusal.STALE_READ]);
  * 4. only after that state is saved as a backup for this DAC, which holds every slot about to be touched
  *    ([GateRefusal.NO_BACKUP], [GateRefusal.BACKUP_FOR_OTHER_DAC], [GateRefusal.BACKUP_INCOMPLETE]);
@@ -298,8 +304,9 @@ class DacEqWriteGate(
         if (!profile.canBeWritten) {
             return refuse(GateRefusal.PROFILE_CANNOT_BE_WRITTEN, "${profile.displayName} has no slot of ours to write")
         }
-        if (!profile.verified && !context.overrideAllowsWrites) {
-            return refuse(GateRefusal.PROFILE_NOT_VERIFIED, "${profile.displayName} is not verified on this app's hardware")
+        val consented = context.userConsent && request.initiator == WriteInitiator.USER_ACTION
+        if (!profile.verified && !context.overrideAllowsWrites && !consented) {
+            return refuse(GateRefusal.PROFILE_NOT_VERIFIED, "${profile.displayName} is not verified on this app's hardware and the listener has not allowed writes to it")
         }
         if (!context.read.isComplete) {
             return refuse(GateRefusal.READ_NOT_WORKING, "the EQ read is incomplete: ${firstProblem(context.read)}")

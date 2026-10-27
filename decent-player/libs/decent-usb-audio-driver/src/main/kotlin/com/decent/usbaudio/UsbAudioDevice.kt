@@ -64,6 +64,14 @@ class UsbAudioDevice private constructor(private val context: Context) {
     var openLevelCheck: OpenLevelCheck = OpenLevelCheck.NO_HARDWARE_VOLUME
         private set
 
+    /**
+     * B40-fix1: a bus reset restarted the DAC and its level could not be confirmed, so the device was kept claimed instead of being given
+     * back. Set while that is so: the next open of the same connection and any later hand-back first try the restore again, and the
+     * hand-back does not happen until it is confirmed. Cleared by a confirmed restore and by [closeDevice].
+     */
+    @Volatile
+    private var levelOwedAfterReset = false
+
     private fun rememberDirectLevel(units: Int) {
         val key = openDeviceKey ?: return
         directLevels.edit().putInt(key, units).apply()
@@ -225,6 +233,27 @@ class UsbAudioDevice private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Whether the DAC has a volume the host can set (a programmable UAC2 Feature Unit), read from its descriptors **before** anything is
+     * claimed (B39-S1): the answer a fixed-output DAC needs to be told about before the first note, not after it. Reuses the open
+     * connection for this device; otherwise opens one only long enough to read the descriptors, which detaches no kernel driver.
+     *
+     * @return null when the descriptors cannot be read (no permission yet, device gone): not an answer either way.
+     */
+    fun hasHardwareVolumeControl(device: UsbDevice): Boolean? {
+        val open = connection
+        if (open != null && currentDevice?.deviceName == device.deviceName) {
+            return volumeTopology != null
+        }
+        if (!usbManager.hasPermission(device)) return null
+        val conn = runCatching { usbManager.openDevice(device) }.getOrNull() ?: return null
+        return try {
+            conn.rawDescriptors?.let { UacFeatureUnitParser.findOutputVolume(it) != null }
+        } finally {
+            conn.close()
+        }
+    }
+
     /** Cached device info from the last successful openDevice() call. */
     private var cachedDeviceInfo: UsbAudioDeviceInfo? = null
 
@@ -232,6 +261,8 @@ class UsbAudioDevice private constructor(private val context: Context) {
         // Return cached info if already open with valid connection
         val cached = cachedDeviceInfo
         if (cached != null && connection != null) {
+            // B40-fix1: held since a bus reset whose level could not be confirmed: this is the first chance to look at it again.
+            if (levelOwedAfterReset) settleOwedLevel(connection ?: return cached)
             Log.i(TAG, "Device already open, reusing fd=${cached.fd}")
             return cached
         }
@@ -872,10 +903,34 @@ class UsbAudioDevice private constructor(private val context: Context) {
     @Volatile
     var releasedDriversListener: ((controlDriver: String?, streamingDriver: String?) -> Unit)? = null
 
+    /**
+     * B40-P4: told after a hand-back that needed the bus reset, with what became of the DAC's level ([ResetLevelRestorer.Outcome]). Not
+     * told when no reset was needed. Runs outside the monitor, like the others.
+     */
+    @Volatile
+    var resetLevelListener: ((ResetLevelRestorer.Outcome) -> Unit)? = null
+
     fun releaseToAndroid() {
         val conn = connection ?: return
         releaseListener?.invoke()
+        var owedOutcome: ResetLevelRestorer.Outcome? = null
+        // the bus was reset already when the level became owed: a hand-back that follows a failed retry does not reset it again
+        var skipReset = false
+        if (levelOwedAfterReset && !settleOwedLevel(conn)) {
+            // B40-fix1: the DAC is held because its level was not confirmed after a bus reset. It goes back to Android only when it is
+            // (B40-fix2: and it is only "held" if both interfaces really are; a claim that failed again leaves the fields empty).
+            if (claimedInterface != null && claimedControlInterface != null) {
+                Log.w(TAG, "releaseToAndroid: the DAC's level is still not confirmed after the bus reset; Polylute holds both interfaces, nothing is given back")
+                releasedDriversListener?.invoke(null, null)
+                resetLevelListener?.invoke(ResetLevelRestorer.Outcome.UNCONFIRMED)
+                return
+            }
+            owedOutcome = if (claimedControlInterface == null) ResetLevelRestorer.Outcome.CONTROL_NOT_HELD else ResetLevelRestorer.Outcome.STREAMING_NOT_HELD
+            skipReset = true
+            Log.w(TAG, "releaseToAndroid: the DAC's level is still not confirmed and Polylute could not hold both interfaces again ($owedOutcome): it goes to Android as it is")
+        }
         val streaming = claimedInterface
+        val controlOnRelease = claimedControlInterface
         val control = claimedControlInterface?.takeIf { it.id != streaming?.id }
         val streamingId = streaming?.id ?: selectedStreamingInterfaceNumber
         val controlId = claimedControlInterface?.id ?: cachedDeviceInfo?.audioControlInterfaceId ?: -1
@@ -895,14 +950,123 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val driverOf = { ifno: Int ->
             if (ifno < 0) null else runCatching { UsbAudioStream.nativeKernelDriverName(fd, ifno) }.getOrNull()
         }
-        val controlDriver = driverOf(controlId)
-        val streamingDriver = driverOf(streamingId)
+        var controlDriver = driverOf(controlId)
+        var streamingDriver = driverOf(streamingId)
+        var resetOutcome: ResetLevelRestorer.Outcome? = null
         Log.i(TAG, "releaseToAndroid: drivers control[$controlId]=$controlDriver streaming[$streamingId]=$streamingDriver")
+        // B39-A7 (the hand-back is also how "Share the DAC with other apps" lets Android use the DAC): the CONNECT above is the way back, and
+        // on the HONOR the kernel had rebound by itself. Where an interface is *still* without a driver after it (a kernel that neither
+        // rebinds on release nor accepts the CONNECT, which a Samsung on Android 16 might be), a bus reset of the device makes the kernel
+        // probe it afresh, and it binds snd-usb-audio to every interface it can, exactly as at a plug-in. Done once, only for a missing driver.
+        val unbound = listOf(controlId to controlDriver, streamingId to streamingDriver).filter { (id, driver) -> id >= 0 && driver == null }
+        if (unbound.isNotEmpty() && !skipReset) {
+            // B40-fix1: the reset and what follows it are one sequence ([ResetLevelRestorer]). The reset rebinds snd-usb-audio to every
+            // interface before its ioctl returns (usbfs claims do not survive it: the kernel unbinds a driver without pre_reset/post_reset),
+            // so the first thing after it is to claim the interfaces again, and nothing is given back until the level is confirmed.
+            // B40-fix2: what Polylute holds is recorded as what was claimed, no more; streaming is claimed first.
+            var resetRet = -1
+            var heldStreaming = false
+            var heldControl = false
+            val outcome = ResetLevelRestorer(
+                reset = {
+                    resetRet = busReset(fd)
+                    resetRet >= 0
+                },
+                holdInterfaces = {
+                    val claimed = ResetClaimer(
+                        claimStreaming = { streaming != null && runCatching { conn.claimInterface(streaming, true) }.getOrDefault(false) },
+                        claimControl = { control != null && runCatching { conn.claimInterface(control, true) }.getOrDefault(false) },
+                    ).claim(hasStreaming = streaming != null, hasControl = control != null)
+                    heldStreaming = claimed.streaming
+                    heldControl = claimed.control
+                    Log.i(TAG, "releaseToAndroid: interfaces claimed again after the reset: streaming=${claimed.streaming} control=${claimed.control}")
+                    claimed
+                },
+                restoreLevel = { restoreLevelAfterReconfigure("bus-reset") },
+                releaseStreaming = {
+                    if (heldStreaming) streaming?.let { conn.releaseInterface(it) }
+                    heldStreaming = false
+                },
+                releaseControl = {
+                    if (heldControl) control?.let { conn.releaseInterface(it) }
+                    heldControl = false
+                },
+                reattachKernelDriver = {
+                    listOfNotNull(control, streaming).forEach { iface ->
+                        runCatching { UsbAudioStream.nativeReattachKernelDriverIfUnbound(fd, iface.id) }
+                    }
+                },
+                keepHeld = { claimed ->
+                    // Nothing was released. The fields say what is claimed: exactly that, so the next open or hand-back (and closeDevice)
+                    // deal with it, and a claim that failed is claimed for real next time.
+                    claimedInterface = if (claimed.streaming) streaming else null
+                    claimedControlInterface = if (claimed.control) controlOnRelease else null
+                    levelOwedAfterReset = true
+                    openLevelSettled = false
+                    openLevelCheck = OpenLevelCheck.UNVERIFIED
+                },
+            ).run(hasHardwareVolume = volumeTopology != null)
+            Log.w(
+                TAG,
+                "releaseToAndroid: interfaces ${unbound.map { it.first }} had no kernel driver; bus reset ret=$resetRet; $outcome: Polylute holds " +
+                    "streaming=${outcome.polyluteHoldsStreaming} control=${outcome.polyluteHoldsControl}, level confirmed=${outcome.levelConfirmed}, " +
+                    "DAC with Android=${outcome.dacWithAndroid}",
+            )
+            if (outcome.reportsToHost) resetOutcome = outcome
+            if (outcome.deviceKept) {
+                // The DAC is not given back, so no kernel driver is bound and there is no Android route to wait for.
+                releasedDriversListener?.invoke(null, null)
+                resetLevelListener?.invoke(outcome)
+                return
+            }
+            if (outcome != ResetLevelRestorer.Outcome.RESET_FAILED) {
+                controlDriver = driverOf(controlId)
+                streamingDriver = driverOf(streamingId)
+                Log.i(TAG, "releaseToAndroid: after the reset drivers control[$controlId]=$controlDriver streaming[$streamingId]=$streamingDriver")
+            }
+        }
         closeDevice()
         releasedDriversListener?.invoke(controlDriver, streamingDriver)
+        (resetOutcome ?: owedOutcome)?.let { outcome -> resetLevelListener?.invoke(outcome) }
     }
 
+    /**
+     * B40-fix1: a DAC held since a bus reset looks at its level again: whatever is not claimed any more is claimed (streaming first, then
+     * control), then the same restore as at every open. True, and the debt cleared, once the level is confirmed.
+     */
+    private fun settleOwedLevel(conn: UsbDeviceConnection): Boolean {
+        val device = currentDevice
+        if (device != null) {
+            val interfaces = (0 until device.interfaceCount).map { device.getInterface(it) }
+            // streaming first (what Android plays through), then control; a field is set only by a claim that took
+            if (claimedInterface == null) {
+                interfaces.firstOrNull {
+                    it.interfaceClass == UsbConstants.USB_CLASS_AUDIO && it.interfaceSubclass == 2 &&
+                        it.id == selectedStreamingInterfaceNumber
+                }?.let { iface ->
+                    if (runCatching { conn.claimInterface(iface, true) }.getOrDefault(false)) claimedInterface = iface
+                }
+            }
+            if (claimedControlInterface == null) {
+                interfaces.firstOrNull { it.interfaceClass == UsbConstants.USB_CLASS_AUDIO && it.interfaceSubclass == 1 }?.let { iface ->
+                    if (runCatching { conn.claimInterface(iface, true) }.getOrDefault(false)) claimedControlInterface = iface
+                }
+            }
+        }
+        restoreDirectLevelOnOpen()
+        val confirmed = openLevelCheck != OpenLevelCheck.UNVERIFIED
+        if (confirmed) levelOwedAfterReset = false
+        return confirmed
+    }
+
+    /**
+     * The bus reset of the hand-back (`USBDEVFS_RESET` through [UsbAudioStream.nativeUsbResetForRebind]; the JNI call, a negative value when it
+     * fails). A property only so that the sequence after it can be tested without a device (B40-fix2).
+     */
+    internal var busReset: (fd: Int) -> Int = { fd -> runCatching { UsbAudioStream.nativeUsbResetForRebind(fd) }.getOrDefault(-1) }
+
     fun closeDevice() {
+        levelOwedAfterReset = false
         volumeTopology = null
         cachedDeviceInfo = null
         claimedInterface?.let { iface ->

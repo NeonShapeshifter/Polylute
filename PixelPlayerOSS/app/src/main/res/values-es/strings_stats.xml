@@ -97,6 +97,7 @@
     <string name="stats_top_to">Hasta</string>
     <string name="stats_top_prev_month">Mes anterior</string>
     <string name="stats_top_next_month">Mes siguiente</string>
+    <string name="stats_top_history_starts">Tu historial empieza en %1$s</string>
     <string name="stats_top_save">Guardar como lista</string>
     <string name="stats_top_saved">Guardada como «%1$s»</string>
     <string name="stats_top_empty_title">No hay canciones reproducidas en este periodo</string>

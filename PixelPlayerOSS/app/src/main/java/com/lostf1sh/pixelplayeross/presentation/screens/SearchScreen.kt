@@ -213,7 +213,7 @@ fun SearchScreen(
     val clearQueryCd = stringResource(R.string.cd_clear_search_query)
     // Hoisted out of the remember: a CompositionLocal cannot be read inside it, and keying on the
     // captured colour is what stops the brush keeping a stale palette after a theme change.
-    val pageBackground = Dap.background
+    val pageBackground = Dap.fadeEdge
     val bottomGradientBrush = remember(pageBackground) {
         Brush.verticalGradient(
             colorStops = arrayOf(
@@ -234,7 +234,7 @@ fun SearchScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Dap.background)
+            .background(Dap.page)
     ) {
 
         Column(
@@ -262,7 +262,7 @@ fun SearchScreen(
                         .dapTextField()
                         .height(DapHeights.Control)
                         .clip(RoundedCornerShape(DapRadius.Surface))
-                        .background(Dap.surface)
+                        .background(Dap.panel)
                         .border(
                             1.dp,
                             Dap.border,

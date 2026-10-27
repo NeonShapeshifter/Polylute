@@ -27,8 +27,9 @@ import org.robolectric.annotation.Config
  * from the real `BuildConfig.DEBUG`, so the debug run proves the checks are not vacuous (the thing they look for is there) and the release
  * run (`./gradlew :app:testReleaseUnitTest --tests '*ReleaseSurfaceTest'`) proves it is gone:
  *
- * - the debug source set's classes (the `SET_*` receiver, the noise mark and its provider, the button-sheet activity) are not in the release;
- * - the test crash row is not offered, "Marcar ruido ahora" is wired from a hook that only the debug provider installs, and the persisted
+ * - the debug source set's classes (the `SET_*` receiver, the capture and the DAC EQ commands, the button-sheet activity) are not in the release;
+ * - B39-S2: the one exception is the noise mark ("Marcar ruido ahora"), which is in the main source set and in every build;
+ * - the test crash row is not offered, and the persisted
  *   debug switches (the DAC EQ write override, the forced native engine, the rate-switch preroll, the pre-gain sense) ignore what is stored
  *   in their files and refuse to be set.
  *
@@ -72,13 +73,24 @@ class ReleaseSurfaceTest {
     fun `the debug source set exists in a debug build and in no other`() {
         val debugOnly = listOf(
             "com.lostf1sh.pixelplayeross.dap.admin.DapDebugPolicyReceiver",   // every SET_* override and the read-only probes
-            "com.lostf1sh.pixelplayeross.dap.admin.NoiseMark",                // "Marcar ruido ahora"
-            "com.lostf1sh.pixelplayeross.dap.admin.DebugHooksProvider",       // the only thing that installs the hook the row needs
+            "com.lostf1sh.pixelplayeross.dap.admin.DirectPathCapture",
+            "com.lostf1sh.pixelplayeross.dap.admin.DacEqDebugCommands",
             "com.lostf1sh.pixelplayeross.ui.ds.DapButtonSheetActivity",
         )
         for (name in debugOnly) {
             val present = runCatching { Class.forName(name) }.isSuccess
             assertThat(present).isEqualTo(debugBuild)
+        }
+    }
+
+    @Test
+    fun `the noise mark is in every build, and so is nothing else that was a debug hook`() {
+        // B39-S2: "Marcar ruido ahora" is the one action of the old debug bridge that a release has. It is a button, not a bridge.
+        val noiseMark = runCatching { Class.forName("com.lostf1sh.pixelplayeross.data.diagnostics.NoiseMark") }
+        assertThat(noiseMark.isSuccess).isTrue()
+        // the hook object and the provider that installed it in a debug build are gone for good, in both variants
+        for (gone in listOf("com.lostf1sh.pixelplayeross.data.diagnostics.DebugHooks", "com.lostf1sh.pixelplayeross.dap.admin.DebugHooksProvider")) {
+            assertThat(runCatching { Class.forName(gone) }.isSuccess).isFalse()
         }
     }
 
@@ -194,7 +206,9 @@ class ReleaseSurfaceTest {
                 Regex("""^(?:internal |private )?(?:class|object|interface)\s+(\w+)""", RegexOption.MULTILINE)
                     .findAll(file.readText()).map { it.groupValues[1] }
             }.toSet()
-        assertThat(debugClasses).containsAtLeast("DapDebugPolicyReceiver", "NoiseMark", "DebugHooksProvider", "DapButtonSheetActivity")
+        assertThat(debugClasses).containsAtLeast("DapDebugPolicyReceiver", "DapButtonSheetActivity")
+        // B39-S2: the noise mark is not a debug class any more
+        assertThat(debugClasses).doesNotContain("NoiseMark")
         val main = File(app, "main/java").walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
         for (file in main) {
             val code = file.readLines().filterNot { it.trim().let { line -> line.startsWith("*") || line.startsWith("//") || line.startsWith("/*") } }

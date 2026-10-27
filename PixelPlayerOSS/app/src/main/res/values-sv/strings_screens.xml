@@ -46,8 +46,6 @@
     <string name="setup_external_services_title">Valfria onlinetjänster</string>
     <string name="setup_external_lyrics_title">Låttexter online från LRCLIB</string>
     <string name="setup_external_lyrics_description">Sök på lrclib.net när lokala eller inbäddade låttexter saknas.</string>
-    <string name="setup_external_artist_images_title">Artistbilder från Deezer</string>
-    <string name="setup_external_artist_images_description">Hämta saknade artistfoton från Deezer och spara dem lokalt.</string>
     <string name="setup_external_services_footer">Du kan ändra detta senare under Inställningar &gt; Musikhantering &gt; Valfria onlinetjänster.</string>
     <string name="setup_library_layout_title">Bibliotekslayout</string>
     <string name="setup_library_layout_subtitle">Välj hur du helst navigerar i ditt bibliotek.</string>

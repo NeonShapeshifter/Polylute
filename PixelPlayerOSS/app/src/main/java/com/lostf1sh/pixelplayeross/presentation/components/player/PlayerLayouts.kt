@@ -25,6 +25,8 @@ internal fun FullPlayerPortraitContent(
     songMetadataSection: @Composable () -> Unit,
     playerProgressSection: @Composable () -> Unit,
     controlsSection: @Composable () -> Unit,
+    /** B41: two lines of synced lyrics under the cover; draws nothing (and holds no room) when there is nothing to show. */
+    lyricsLinesSection: @Composable () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -46,6 +48,7 @@ internal fun FullPlayerPortraitContent(
             albumCoverSection(Modifier)
         }
         Spacer(Modifier.height(16.dp))
+        lyricsLinesSection()
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -69,7 +72,9 @@ internal fun FullPlayerLandscapeContent(
     albumCoverSection: @Composable (Modifier) -> Unit,
     songMetadataSection: @Composable () -> Unit,
     playerProgressSection: @Composable () -> Unit,
-    controlsSection: @Composable () -> Unit
+    controlsSection: @Composable () -> Unit,
+    /** B41: as in portrait, under the track info. */
+    lyricsLinesSection: @Composable () -> Unit = {},
 ) {
     Row(
         modifier = Modifier
@@ -99,6 +104,7 @@ internal fun FullPlayerLandscapeContent(
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
             songMetadataSection()
+            lyricsLinesSection()
             playerProgressSection()
             controlsSection()
         }

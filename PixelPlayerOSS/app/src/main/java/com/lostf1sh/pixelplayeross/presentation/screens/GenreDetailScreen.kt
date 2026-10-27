@@ -338,7 +338,7 @@ internal fun GenrePage(
                 .fillMaxWidth()
                 .height(barHeight)
                 .graphicsLayer { alpha = heroBarAlpha(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0, barPx) }
-                .background(Dap.background)
+                .background(Dap.bar)
         )
     }
 }

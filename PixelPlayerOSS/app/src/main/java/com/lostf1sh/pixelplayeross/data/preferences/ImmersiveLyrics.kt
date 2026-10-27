@@ -1,18 +1,15 @@
 package com.lostf1sh.pixelplayeross.data.preferences
 
 /**
- * Immersive lyrics are **not offered in 1.0** (B32-Q7): hiding the controls and enlarging the text does not work yet, and is fixed for
- * 1.1. Everything that makes it work stays in the code (the setting's key and its timeout, the lyrics sheet's timer and its enlarged
- * layout, the view model's temporary switch); what is gone is every way to ask for it, and the answer the app gives to a stored "on".
+ * Immersive lyrics: after a quiet moment on the lyrics page the controls fold away and the text grows; any touch brings them back.
  *
- * A listener who had it on keeps the value in the preference file, and it must not leave them in a mode they cannot turn off any more
- * because the switch that did is hidden. [effective] is the one place that says so: while [AVAILABLE] is false it answers "off" whatever
- * is stored, and every reader of the preference (the repository's flow, and the lyrics sheet, which asks again) goes through it. Turning
- * [AVAILABLE] on in 1.1 gives the stored choice back unchanged.
+ * They were hidden in 1.0 (B32-Q7) because the mode did not work, and are back in 1.1 (B40-F5). The gate stays, as the one place that says
+ * whether the feature is offered: while [AVAILABLE] is false the answer to every stored "on" is "off", so a listener is never left in a mode
+ * whose switch is gone, and every reader of the preference (the repository's flow, and the lyrics sheet, which asks again) goes through it.
  */
 object ImmersiveLyrics {
-    /** False in 1.0. */
-    const val AVAILABLE: Boolean = false
+    /** True from 1.1. */
+    const val AVAILABLE: Boolean = true
 
     /** Whether immersive lyrics are in force, given what is stored. */
     fun effective(stored: Boolean, available: Boolean = AVAILABLE): Boolean = available && stored

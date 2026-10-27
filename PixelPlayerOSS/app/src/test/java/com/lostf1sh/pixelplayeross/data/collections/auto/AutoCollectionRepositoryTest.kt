@@ -277,6 +277,44 @@ class AutoCollectionRepositoryTest {
         }
     }
 
+    // B42-fix1 (item 4): the day check Home's holder makes follows the zone as well as the clock.
+
+    @Test
+    fun `a time zone change that moves the local date gets today's mix at the next day check`() = runTest {
+        val dir = Files.createTempDirectory("auto-mix-zone-test")
+        try {
+            // built at 20:00 UTC on the 15th ...
+            var now = day1
+            val rig = rig(FakeLedgers(ledger()), dir.resolve("settings.preferences_pb").toFile()) { now }
+            rig.repository.refresh("test")
+            val first = daily(rig)
+            assertThat(first).isNotEmpty()
+            val holder = com.lostf1sh.pixelplayeross.presentation.viewmodel.DailyMixStateHolder(
+                rig.repository, mockk(relaxed = true), backgroundScope,
+            )
+
+            // ... and a minute later the phone is on Kiritimati time (UTC+14), where it is already 10:00 on the 16th. The last build and now are
+            // on the same date there, which is what the check used to compare; the mix on hand is still the 15th's.
+            rig.repository.zone = { java.time.ZoneId.of("Pacific/Kiritimati") }
+            now = day1 + 60_000L
+            holder.checkAndUpdateIfNeeded()
+            runCurrent()
+
+            assertThat(rig.repository.builtAtMs).isEqualTo(now)
+            val second = daily(rig)
+            assertThat(second).isNotEmpty()
+            assertThat(second).isNotEqualTo(first)
+
+            // and the same hour again, same zone: today's is today's, nothing is built
+            now += 60_000L
+            holder.checkAndUpdateIfNeeded()
+            runCurrent()
+            assertThat(rig.repository.builtAtMs).isEqualTo(day1 + 60_000L)
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
     // --- hiding -----------------------------------------------------------------------------------------------
 
     @Test

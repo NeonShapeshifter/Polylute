@@ -82,18 +82,46 @@ class B32MaintenancePageTest {
         tools = MaintenanceToolsState(),
     )
 
-    private fun show(offersTestCrash: Boolean) = compose.setContent {
+    private fun show(offersTestCrash: Boolean, pageState: MaintenanceState = state, developmentTools: Boolean = true,
+        loggingActions: com.lostf1sh.pixelplayeross.presentation.screens.DetailedLoggingActions? = null) = compose.setContent {
         DapTheme(baseTheme = DapBaseTheme.Graphite, accent = DapAccent.Sage) {
             MaintenanceContent(
-                state = state, toolsActions = tools, onSetOverride = { _: MaintenanceOverride, _: Boolean -> },
+                state = pageState, toolsActions = tools, onSetOverride = { _: MaintenanceOverride, _: Boolean -> },
                 onClearAllOverrides = {}, onExit = { calls += "exit" }, onOpenDiagnostics = { calls += "diagnostics" },
                 offersTestCrash = offersTestCrash,
+                developmentTools = developmentTools,
+                detailedLoggingActions = loggingActions,
             )
         }
     }
 
     private fun scrollTo(text: String) {
         compose.onNode(hasScrollAction()).performScrollToNode(hasText(text))
+    }
+
+    @Test
+    fun `release hides engineering panels and overrides but keeps the noise capture and maintenance tools`() {
+        val logging = object : com.lostf1sh.pixelplayeross.presentation.screens.DetailedLoggingActions {
+            override fun setOn(on: Boolean) {}
+            override fun setIncludeEverything(value: Boolean) {}
+            override fun delete() {}
+            override fun share() = false
+        }
+        show(offersTestCrash = false, developmentTools = false,
+            pageState = state.copy(detailedLogging = com.lostf1sh.pixelplayeross.data.diagnostics.DetailedLogState()), loggingActions = logging)
+        scrollTo(s(R.string.maintenance_overrides_section))
+        compose.onNodeWithText(s(R.string.maintenance_overrides_feature_kills)).assertExists()
+        compose.onAllNodesWithText(s(R.string.maintenance_overrides_diagnostic)).assertCountEquals(0)
+        scrollTo(s(R.string.maintenance_device_diagnostics))
+        compose.onAllNodesWithText(s(R.string.maintenance_section_track_identity)).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.maintenance_section_metadata)).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.maintenance_section_smart_collections)).assertCountEquals(0)
+        scrollTo(s(R.string.noise_mark))
+        compose.onNodeWithText(s(R.string.noise_mark)).assertExists()
+        scrollTo(s(R.string.detailed_logging_title))
+        compose.onNodeWithText(s(R.string.detailed_logging_title)).assertExists()
+        scrollTo(s(R.string.setcat_force_palette_title))
+        compose.onNodeWithText(s(R.string.setcat_force_palette_title)).assertExists()
     }
 
     @Test
@@ -114,6 +142,19 @@ class B32MaintenancePageTest {
         scrollTo(s(R.string.maintenance_device_diagnostics))
         compose.onNodeWithText(s(R.string.maintenance_device_diagnostics)).performClick()
         assertEquals(listOf("diagnostics"), calls)
+    }
+
+    @Test
+    fun `in App mode the home and Device Owner readouts are not drawn, and the rest of the page is`() {
+        // B39-A5: they are the DAP's provisioning; a phone that is only running the app has nothing to say about them.
+        show(offersTestCrash = false, pageState = state.copy(showDapStatus = false))
+        compose.onAllNodesWithText(s(R.string.maintenance_current_home)).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.maintenance_device_owner)).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.maintenance_lock_task_state)).assertCountEquals(0)
+        compose.onNodeWithText(s(R.string.maintenance_status_section)).assertExists()
+        compose.onNodeWithText(s(R.string.maintenance_package_version)).assertExists()
+        scrollTo(s(R.string.maintenance_overrides_section))
+        compose.onNodeWithText(s(R.string.maintenance_overrides_section)).assertExists()
     }
 
     @Test

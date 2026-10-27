@@ -50,8 +50,11 @@ class UsbGlitchInstrumentationBoundaryTest {
     fun `every applied feedback reading feeds the stuck detector and the audio path logs nothing per reading`() {
         val handler = body(output, "static void handleFeedbackCompletion(")
         assertThat(handler).contains("watchFeedbackReading(ctx, raw, nominal)")
-        // only an applied reading counts: the call sits inside the branch that applied it
-        assertThat(handler.indexOf("watchFeedbackReading(")).isGreaterThan(handler.indexOf("ctx->calibratedFpmf = newFpmf;"))
+        // only an applied reading counts: the call sits inside the branch that applied it ...
+        assertThat(handler.indexOf("watchFeedbackReading(")).isGreaterThan(handler.indexOf("if (applied == newFpmf) {"))
+        // ... and since B41-fix1 (A1b) the reading is judged BEFORE the follower takes it, so that `auto` can keep a refused one out of it
+        assertThat(handler.indexOf("ctx->calibratedFpmf = newFpmf;")).isGreaterThan(handler.indexOf("watchFeedbackReading("))
+        assertThat(handler).contains("if (!(ctx->refusing && usbFeedbackPolicy() == USB_FEEDBACK_AUTO)) ctx->calibratedFpmf = newFpmf;")
         // ... and a refused reading (beyond +-5 %) goes to the watch's own entry point instead (B12a-2)
         assertThat(handler.indexOf("watchFeedbackReading(")).isLessThan(handler.indexOf("usbFeedbackWatchOutOfWindow("))
         assertThat(handler).contains("announceImplausible(ev, nominal, ctx->sampleRate, ctx->calibratedFpmf)")

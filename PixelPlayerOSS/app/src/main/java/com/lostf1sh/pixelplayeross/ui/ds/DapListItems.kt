@@ -55,12 +55,12 @@ fun DapMediaRow(
     onLongClick: (() -> Unit)? = null,
     minHeight: Dp = DapHeights.MediaRow,
 ) {
-    val accent = LocalDapAccent.current
+    // B42-fix3 (item 1): the accent is read only by a row that wears it (the current one, a selected one), so a song change does not run the others
     Column(
         modifier
             .fillMaxWidth()
             .then(
-                if (selectionIndex != null) Modifier.background(Dap.surface) else Modifier
+                if (selectionIndex != null) Modifier.background(Dap.panel) else Modifier
             )
     ) {
         Row(
@@ -88,7 +88,7 @@ fun DapMediaRow(
                     Modifier
                         .size(DapSizes.ThumbRow)
                         .clip(RoundedCornerShape(DapRadius.Surface))
-                        .background(accent),
+                        .background(LocalDapAccent.current),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -102,9 +102,9 @@ fun DapMediaRow(
 
             Column(Modifier.weight(1f)) {
                 if (state == DapRowState.Loading) {
-                    DapSkeletonBar(width = 120.dp, height = 12.dp, color = Dap.surfaceRaised)
+                    DapSkeletonBar(width = 120.dp, height = 12.dp, color = Dap.panelRaised)
                     Spacer(Modifier.height(6.dp))
-                    DapSkeletonBar(width = 80.dp, height = 10.dp, color = Dap.surface)
+                    DapSkeletonBar(width = 80.dp, height = 10.dp, color = Dap.panel)
                 } else {
                     Text(
                         text = title,
@@ -113,7 +113,7 @@ fun DapMediaRow(
                         } else {
                             DapType.MediaRow
                         },
-                        color = if (state == DapRowState.Current) accent else Dap.primaryText,
+                        color = if (state == DapRowState.Current) LocalDapAccent.current else Dap.primaryText,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -154,7 +154,7 @@ fun DapSkeletonBar(
     width: Dp,
     height: Dp,
     modifier: Modifier = Modifier,
-    color: Color = Dap.surfaceRaised,
+    color: Color = Dap.panelRaised,
 ) {
     Box(
         modifier
@@ -185,14 +185,14 @@ fun DapSkeletonRow(
                     Modifier
                         .size(DapSizes.ThumbRow)
                         .clip(RoundedCornerShape(DapRadius.Surface))
-                        .background(Dap.surfaceRaised)
+                        .background(Dap.panelRaised)
                 )
                 Spacer(Modifier.width(DapSpacing.Md))
             }
             Column(Modifier.weight(1f)) {
-                DapSkeletonBar(120.dp, 12.dp, color = Dap.surfaceRaised)
+                DapSkeletonBar(120.dp, 12.dp, color = Dap.panelRaised)
                 Spacer(Modifier.height(6.dp))
-                DapSkeletonBar(80.dp, 10.dp, color = Dap.surface)
+                DapSkeletonBar(80.dp, 10.dp, color = Dap.panel)
             }
         }
         DapDivider()
@@ -335,7 +335,7 @@ fun DapArtistRow(
             Modifier
                 .size(DapSizes.ThumbRow)
                 .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Dap.surfaceRaised),
+                .background(Dap.panelRaised),
             contentAlignment = Alignment.Center,
         ) {
             if (artwork != null) artwork() else DapArtworkPlaceholder(

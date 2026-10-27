@@ -77,6 +77,8 @@ class DacEqScreenController(
     audio: Flow<AudioStatus>,
     private val debounceMs: Long = DEBOUNCE_MS,
     private val waitMs: Long = ResonanceModePolicy.WAIT_MS,
+    /** B40-F2: switches the headphones' software EQ off through the coordinator that also tells the DSP (the screen has no other way to). */
+    private val turnSoftwareEqOff: suspend (headphoneId: String) -> Unit = { id -> store.turnSoftwareEqOff(id) },
 ) {
     /** What an edit was accepted under (B30-fix1 H2): the attachment of the DAC it was made for. */
     private data class EditOrigin(val att: AttachedFiio, val token: AttachmentToken)
@@ -100,6 +102,26 @@ class DacEqScreenController(
 
     private val edit = MutableStateFlow(Edit())
     private val _mode = MutableStateFlow(ResonanceMode.DECIDING)
+
+    /** Moves when the listener's permission to write the DAC is given or taken back: [DacEqService.availability] is read from it. */
+    private val consentVersion = MutableStateFlow(0)
+
+    @Volatile
+    private var waitedMs = 0L
+
+    /**
+     * B40-F2: the offer the software Resonance screen makes when the attached DAC has an EQ the app can write and the listener has not
+     * allowed it yet: null otherwise. Nothing is written by showing it.
+     */
+    val offer: StateFlow<DacEqOffer?> = combine(service.controller.readout, consentVersion) { readout, _ ->
+        val att = readout.attachedOrNull
+        val known = readout as? DacEqReadout.Known
+        if (att != null && known != null && known.state.isComplete && service.availability(att).needsConsent) {
+            DacEqOffer(dacName = att.displayName, slotName = att.profile.slots.firstOrNull { it.id == att.profile.appSlotId }?.name.orEmpty())
+        } else {
+            null
+        }
+    }.stateIn(scope, SharingStarted.Eagerly, null)
 
     /** Which screen this is. Decided once and kept for as long as the screen lives (see [ResonanceMode]). */
     val mode: StateFlow<ResonanceMode> = _mode.asStateFlow()
@@ -129,7 +151,7 @@ class DacEqScreenController(
                 launch { service.read(att) }
             }
             var waited = 0L
-            val timer = launch { delay(waitMs); waited = waitMs; decide(readout.value, waited) }
+            val timer = launch { delay(waitMs); waited = waitMs; waitedMs = waited; decide(readout.value, waited) }
             // The backup on disk follows the DAC that is attached (B31 P1.4: the list of the DAC's presets is read from it).
             launch {
                 readout.map { it.attachedOrNull }.distinctUntilChanged { a, b -> a?.attachKey == b?.attachKey }
@@ -138,6 +160,36 @@ class DacEqScreenController(
             readout.collect { decide(it, waited) }
             timer.cancel()
         }
+    }
+
+    /**
+     * B40-F2: the listener allows writes to the attached DAC (after the dialog told them what will happen). Nothing is written by this: the
+     * screen becomes the DAC's own EQ screen, and every change after it goes through the gate and is read back.
+     */
+    fun grantConsent() {
+        val att = service.attached() ?: return
+        if (!service.giveConsent(att)) return
+        consentVersion.update { it + 1 }
+        redecide()
+    }
+
+    /** B40-F2: takes the permission back; the screen goes back to Polylute's own EQ. Writes nothing. */
+    fun withdrawConsent() {
+        val att = service.attached() ?: return
+        service.withdrawConsent(att)
+        consentVersion.update { it + 1 }
+        redecide()
+    }
+
+    private fun redecide() {
+        _mode.value = ResonanceMode.DECIDING
+        decide(service.controller.readout.value, maxOf(waitedMs, waitMs))
+    }
+
+    /** B40-F2: the headphones' software EQ is switched off (kept as it is) because the DAC applies a correction now. */
+    fun turnOffSoftwareEq() {
+        val id = headphoneId ?: return
+        scope.launch { turnSoftwareEqOff(id) }
     }
 
     private fun decide(readout: DacEqReadout, waited: Long) {
@@ -151,7 +203,8 @@ class DacEqScreenController(
         service.controller.readout,
         store.state,
         audio,
-        edit,
+        // the edit state carries the version of the listener's permission along: availability is read when the state is built
+        combine(edit, consentVersion) { editState, _ -> editState },
         service.backupState,
     ) { readout, profiles, status, editState, backupState -> build(readout, profiles, status, editState, backupState) }
         .stateIn(scope, SharingStarted.Eagerly, DacEqUiState())
@@ -239,6 +292,8 @@ class DacEqScreenController(
             presetsRead = fiio != null && fiio.slots.isNotEmpty() && fiio.slots.all { it.id in (backup?.slots?.keys ?: emptySet()) },
             confirmSelect = editState.confirmSelect?.let { id -> presetRows.firstOrNull { it.id == id } },
             preGainSense = sense,
+            // B40-F2: the DAC applies a correction and the headphones' own EQ is on too: the same correction twice, said and one tap to fix
+            softwareEqAlsoOn = eqOn && profile?.equalizer?.enabled == true,
         )
     }
 

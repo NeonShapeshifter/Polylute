@@ -61,6 +61,7 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.model.SortOption
 import com.lostf1sh.pixelplayeross.data.model.StorageFilter
 import com.lostf1sh.pixelplayeross.presentation.components.ExpressiveScrollBar
+import com.lostf1sh.pixelplayeross.presentation.components.symmetricSidePadding
 import com.lostf1sh.pixelplayeross.presentation.components.LocalArtworkLoadDeferred
 import com.lostf1sh.pixelplayeross.ui.ds.LocalDapPlayerShelfHeight
 import com.lostf1sh.pixelplayeross.presentation.components.PlaylistContainer
@@ -343,7 +344,7 @@ fun LibraryAlbumsTab(
                             CompositionLocalProvider(LocalArtworkLoadDeferred provides listFlinging) {
                             LazyColumn(
                                 modifier = Modifier
-                                    .padding(start = 14.dp, end = if (listState.canScrollForward || listState.canScrollBackward) 24.dp else 14.dp, bottom = 6.dp)
+                                    .symmetricSidePadding(horizontal = 14.dp, bottom = 6.dp)
                                     .clip(
                                         RoundedCornerShape(
                                             topStart = 16.dp,
@@ -409,6 +410,7 @@ fun LibraryAlbumsTab(
                                 bottomBarHeight + 16.dp
 
                             ExpressiveScrollBar(
+                                contentEndMargin = 14.dp,
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
                                     .padding(end = 4.dp, top = 16.dp, bottom = bottomPadding),
@@ -419,7 +421,7 @@ fun LibraryAlbumsTab(
                             CompositionLocalProvider(LocalArtworkLoadDeferred provides gridFlinging) {
                             LazyVerticalGrid(
                                 modifier = Modifier
-                                    .padding(start = 14.dp, end = if (gridState.canScrollForward || gridState.canScrollBackward) 24.dp else 14.dp, bottom = 6.dp)
+                                    .symmetricSidePadding(horizontal = 14.dp, bottom = 6.dp)
                                     .clip(
                                         RoundedCornerShape(
                                             topStart = 16.dp,
@@ -488,6 +490,7 @@ fun LibraryAlbumsTab(
                                 bottomBarHeight + 16.dp
 
                             ExpressiveScrollBar(
+                                contentEndMargin = 14.dp,
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
                                     .padding(end = 4.dp, top = 16.dp, bottom = bottomPadding),
@@ -649,7 +652,7 @@ fun LibraryArtistsTab(
                         CompositionLocalProvider(LocalArtworkLoadDeferred provides flinging) {
                         LazyColumn(
                             modifier = Modifier
-                                .padding(start = 12.dp, end = if (listState.canScrollForward || listState.canScrollBackward) 22.dp else 12.dp, bottom = 6.dp)
+                                .symmetricSidePadding(horizontal = 12.dp, bottom = 6.dp)
                                 .clip(
                                     RoundedCornerShape(
                                         topStart = 26.dp,
@@ -695,6 +698,7 @@ fun LibraryArtistsTab(
                             bottomBarHeight + 16.dp
 
                         ExpressiveScrollBar(
+                            contentEndMargin = 12.dp,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .padding(end = 4.dp, top = 16.dp, bottom = bottomPadding),

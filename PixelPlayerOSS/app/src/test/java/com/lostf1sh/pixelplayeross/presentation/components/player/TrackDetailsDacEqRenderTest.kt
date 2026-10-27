@@ -90,7 +90,7 @@ open class TrackDetailsDacEqRenderTest {
 
     @Test
     fun `Purity with the DAC's EQ closed or flat says Purity and the row says off or flat`() {
-        ui.value = direct(DirectOutputMode.PURITY, null, DacEqLabel.OFF_OR_FLAT)
+        ui.value = direct(DirectOutputMode.PURITY, null, DacEqLabel.OFF)
         show()
         seen(s(R.string.track_details_route_usb_direct_purity))
         seen(s(R.string.track_details_dac_eq_off))
@@ -110,7 +110,7 @@ open class TrackDetailsDacEqRenderTest {
 
     @Test
     fun `the app's DSP, and both at once, are named too`() {
-        ui.value = direct(DirectOutputMode.RESONANCE, ResonanceSource.APP_DSP, DacEqLabel.OFF_OR_FLAT)
+        ui.value = direct(DirectOutputMode.RESONANCE, ResonanceSource.APP_DSP, DacEqLabel.OFF)
         show()
         seen(s(R.string.track_details_route_usb_direct_resonance_app))
         B30Renders.save(compose, "P1-details-usb-direct-resonance-app-dsp-$language")
@@ -143,7 +143,7 @@ open class TrackDetailsDacEqRenderTest {
         ui.value = direct(null, null, DacEqLabel.UNKNOWN)
         show()
         seen(s(R.string.track_details_route_usb_direct))
-        ui.value = direct(DirectOutputMode.PURITY, null, DacEqLabel.OFF_OR_FLAT)
+        ui.value = direct(DirectOutputMode.PURITY, null, DacEqLabel.OFF)
         compose.waitForIdle()
         seen(s(R.string.track_details_route_usb_direct_purity))
         ui.value = direct(DirectOutputMode.RESONANCE, ResonanceSource.DAC_EQ, DacEqLabel.ON)

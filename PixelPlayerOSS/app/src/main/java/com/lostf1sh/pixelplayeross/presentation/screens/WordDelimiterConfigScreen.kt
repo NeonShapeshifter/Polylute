@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.screens
 
+import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import androidx.compose.foundation.layout.imePadding
 import com.lostf1sh.pixelplayeross.ui.ds.dapTextField
 import android.widget.Toast
@@ -156,7 +157,7 @@ fun WordDelimiterConfigScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(Dap.page)
             .nestedScroll(nestedScrollConnection)
     ) {
         val currentTopBarHeightDp = with(density) { topBarHeight.value.toDp() }

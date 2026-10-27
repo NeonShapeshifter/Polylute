@@ -83,8 +83,6 @@
     <string name="equalizer_save_custom_preset_body">Escribe un nombre para tu preset del ecualizador.</string>
     <string name="equalizer_save_custom_preset_title">Guardar preset personalizado</string>
     <string name="error_name_empty">El nombre no puede estar vacío</string>
-    <string name="folder_state_excluded">Excluida</string>
-    <string name="folder_state_included">Incluida</string>
     <string name="lyrics_more_dialog_reset_message">¿Estás seguro de que quieres restablecer las letras de esta canción?</string>
     <string name="lyrics_more_dialog_reset_title">¿Restablecer letras?</string>
     <string name="multi_selection_playlists_count_upper">%1$d LISTAS</string>

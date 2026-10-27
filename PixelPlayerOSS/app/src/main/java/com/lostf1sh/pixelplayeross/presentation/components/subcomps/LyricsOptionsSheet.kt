@@ -30,7 +30,7 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
+import com.lostf1sh.pixelplayeross.presentation.components.GlassModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -70,7 +70,7 @@ import java.util.Locale
  *  - **File**: search lyrics, import a `.lrc`, save to a file.
  *
  * Every control calls what it always called. What the design leaves out is not here: the synced/static switch, the
- * temporary immersive-off, shuffle and repeat (the immersive mode itself is set under Settings, Lyrics). One thing the
+ * temporary immersive-off, shuffle and repeat (the immersive mode itself is set under Settings, Appearance, Lyrics: B41). One thing the
  * design does not draw is kept: taking this song's imported lyrics away.
  *
  * [mountInputBridge] is true in the app (a sheet is a window of its own and the volume keys must still reach the Safety
@@ -110,7 +110,7 @@ fun LyricsOptionsSheet(
     mountInputBridge: Boolean = true,
 ) {
     var showResetDialog by remember { mutableStateOf(false) }
-    ModalBottomSheet(
+    GlassModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         containerColor = Dap.surface,

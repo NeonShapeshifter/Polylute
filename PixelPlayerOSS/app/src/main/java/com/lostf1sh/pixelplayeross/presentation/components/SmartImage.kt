@@ -79,7 +79,7 @@ fun SmartImage(
     colorFilter: ColorFilter? = null,
     alpha: Float = 1f,
     placeholderModel: Any? = null,
-    placeHolderBackgroundColor: Color = Dap.surfaceRaised,
+    placeHolderBackgroundColor: Color = Dap.panelRaised,
     onState: ((AsyncImagePainter.State) -> Unit)? = null
 ) {
     val context = LocalContext.current

@@ -50,12 +50,27 @@ internal class AppearanceSettingsActionsImpl(
     // longer the one in force (LanguageRecreateGate).
     override fun onAppLanguageChange(value: String) = vm.setAppLanguage(value)
     override fun onAccentChange(value: DapAccent) = vm.setAccent(value)
+    override fun onAppColorSourceChange(value: String) = vm.setAppColorSource(value)
+    // B41-fix1 (B1): light, dark or system while the cover decides the colours; the explicit theme is not written.
+    override fun onCoverThemeChoiceChange(value: String) = vm.setCoverThemeChoice(value)
     override fun onPlayerThemePreferenceChange(value: String) = vm.setPlayerThemePreference(value)
     override fun onShowPlayerFileInfoChange(value: Boolean) = vm.setShowPlayerFileInfo(value)
     override fun onAlbumArtQualityChange(value: AlbumArtQuality) = vm.setAlbumArtQuality(value)
     override fun onLaunchTabChange(value: String) = vm.setLaunchTab(value)
     override fun onLibraryNavigationModeChange(value: String) = vm.setLibraryNavigationMode(value)
     override fun onOpenPaletteStyle() = navigate(Screen.PaletteStyle.route)
+    // B41: the Player section's two switches, and what moved here from Lyrics and Behaviour (the same methods, so the same preferences).
+    override fun onCoverGlassMovingChange(value: Boolean) = vm.setCoverGlassMoving(value)
+    override fun onLyricsUnderCoverChange(value: Boolean) = vm.setLyricsUnderCover(value)
+    override fun onImmersiveLyricsEnabledChange(value: Boolean) = vm.setImmersiveLyricsEnabled(value)
+    override fun onImmersiveLyricsTimeoutChange(value: Long) = vm.setImmersiveLyricsTimeout(value)
+    override fun onLyricsAlignmentChange(value: String) = vm.setLyricsAlignment(value)
+    override fun onShowLyricsTranslationChange(value: Boolean) = vm.setShowLyricsTranslation(value)
+    override fun onShowLyricsRomanizationChange(value: Boolean) = vm.setShowLyricsRomanization(value)
+    override fun onUseAnimatedLyricsChange(value: Boolean) = vm.setUseAnimatedLyrics(value)
+    override fun onAnimatedLyricsBlurEnabledChange(value: Boolean) = vm.setAnimatedLyricsBlurEnabled(value)
+    override fun onAnimatedLyricsBlurStrengthChange(value: Float) = vm.setAnimatedLyricsBlurStrength(value)
+    override fun onDapLockScreenEnabledChange(value: Boolean) = vm.setDapLockScreenEnabled(value)
 
     /**
      * Two writes, ordered so the moment between them already draws the destination: into Automatic the mode
@@ -77,7 +92,6 @@ internal class BehaviorSettingsActionsImpl(private val vm: SettingsViewModel) : 
     override fun onBackNavigationModeChange(value: BackNavigationMode) = vm.setBackNavigationMode(value)
     override fun onKeepPlayingInBackgroundChange(value: Boolean) = vm.setKeepPlayingInBackground(value)
     override fun onResumeOnHeadsetReconnectChange(value: Boolean) = vm.setResumeOnHeadsetReconnect(value)
-    override fun onDapLockScreenEnabledChange(value: Boolean) = vm.setDapLockScreenEnabled(value)
     override fun onShowQueueHistoryChange(value: Boolean) = vm.setShowQueueHistory(value)
     override fun onFolderBackGestureNavigationChange(value: Boolean) = vm.setFolderBackGestureNavigation(value)
     override fun onTapBackgroundClosesPlayerChange(value: Boolean) = vm.setTapBackgroundClosesPlayer(value)
@@ -88,14 +102,6 @@ internal class LyricsSettingsActionsImpl(private val vm: SettingsViewModel) : Ly
     override fun onExternalLyricsEnabledChange(value: Boolean) = vm.setExternalLyricsEnabled(value)
     override fun onLyricsSourcePreferenceChange(value: LyricsSourcePreference) = vm.setLyricsSourcePreference(value)
     override fun onAutoScanLrcFilesChange(value: Boolean) = vm.setAutoScanLrcFiles(value)
-    override fun onImmersiveLyricsEnabledChange(value: Boolean) = vm.setImmersiveLyricsEnabled(value)
-    override fun onImmersiveLyricsTimeoutChange(value: Long) = vm.setImmersiveLyricsTimeout(value)
-    override fun onLyricsAlignmentChange(value: String) = vm.setLyricsAlignment(value)
-    override fun onShowLyricsTranslationChange(value: Boolean) = vm.setShowLyricsTranslation(value)
-    override fun onShowLyricsRomanizationChange(value: Boolean) = vm.setShowLyricsRomanization(value)
-    override fun onUseAnimatedLyricsChange(value: Boolean) = vm.setUseAnimatedLyrics(value)
-    override fun onAnimatedLyricsBlurEnabledChange(value: Boolean) = vm.setAnimatedLyricsBlurEnabled(value)
-    override fun onAnimatedLyricsBlurStrengthChange(value: Float) = vm.setAnimatedLyricsBlurStrength(value)
 }
 
 internal class LibrarySettingsActionsImpl(
@@ -107,11 +113,16 @@ internal class LibrarySettingsActionsImpl(
     override fun onMinSongDurationChange(value: Int) = vm.setMinSongDuration(value)
     override fun onMinTracksPerAlbumChange(value: Int) = vm.setMinTracksPerAlbum(value)
     override fun onAlbumArtCacheLimitMbChange(value: Int) = vm.setAlbumArtCacheLimitMb(value)
-    override fun onExternalArtistImagesEnabledChange(value: Boolean) = vm.setExternalArtistImagesEnabled(value)
-    override fun onOpenExcludedDirectories() {
+    override fun onMusicInfoCoversChange(value: Boolean) = vm.setMusicInfoCoversEnabled(value)
+    override fun onMusicInfoArtistPhotosChange(value: Boolean) = vm.setMusicInfoArtistPhotosEnabled(value)
+    override fun onMusicInfoDescriptionsChange(value: Boolean) = vm.setMusicInfoDescriptionsEnabled(value)
+    override fun onMusicInfoCacheLimitChange(megabytes: Int) = vm.setMusicInfoCacheLimitMb(megabytes)
+    override fun onDeleteMusicInfo(onDone: (Long) -> Unit) = vm.deleteMusicInfo(onDone)
+    override fun onOpenLibraryFolders() {
         showExplorer()
         vm.openExplorer()
     }
+    override fun onFindFolders() = vm.findFolders()
     override fun onOpenArtistSettings() = navigate(Screen.ArtistSettings.route)
     override fun onOpenDuplicates() = navigate(Screen.Duplicates.route)
     override fun onRefreshLibrary() = vm.refreshLibrary()
@@ -122,6 +133,7 @@ internal class AudioSettingsActionsImpl(
     private val vm: SettingsViewModel,
     private val device: DeviceControlViewModel,
     private val navigate: (String) -> Unit,
+    private val showFixedOutputNotice: () -> Unit = {},
 ) : AudioSettingsActions {
     // B22: the Pure Direct switch lives on this page now. It is the same preference and the same action the Settings
     // root had: `DeviceControlViewModel.setPristineMode`, with its confirmation of a rise.
@@ -142,8 +154,13 @@ internal class AudioSettingsActionsImpl(
     override fun onOpenHeadphoneProfile(profileId: String) = navigate(Screen.HeadphoneProfile.createRoute(profileId))
     override fun onOpenKnownHeadphones() = navigate(Screen.KnownHeadphones.route)
     override fun onOpenEqualizer(profileId: String) = navigate(Screen.Equalizer.createRoute(profileId))
+    override fun onUseDacEq(profileId: String) = navigate(Screen.Equalizer.createRoute(profileId, askDacEq = true))
     override fun onOpenSafetyMax(profileId: String) = navigate(Screen.SafetyMaxVolume.createRoute(profileId))
     override fun onOpenGlobalTransitionEditor() = navigate(Screen.EditTransition.createRoute(null))
+    override fun onShowFixedOutputNotice() = showFixedOutputNotice()
+    override fun onDacShareChange(value: Boolean) = vm.setDacShareEnabled(value)
+    override fun onResonanceLimiterChange(value: Boolean) = vm.setResonanceLimiterEnabled(value)
+    override fun onAskUsbPermission() = vm.askForUsbPermissionAgain()
 }
 
 internal class AboutSettingsActionsImpl(private val navigate: (String) -> Unit) : AboutSettingsActions {

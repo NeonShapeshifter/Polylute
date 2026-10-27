@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B39-A9: the library includes folders instead of excluding them. -->
+    <string name="library_folders_title">Folders in the library</string>
+    <string name="library_folders_subtitle">Only the music in these folders is in your library.</string>
+    <string name="library_folders_hint">Only the folders marked here are in your library, with everything inside them. Tap a box to include a folder or leave it out.</string>
+    <string name="folder_state_in_library">In library</string>
+    <string name="folder_state_not_in_library">Not in library</string>
+    <string name="library_find_folders_title">Find folders with music</string>
+    <string name="library_find_folders_subtitle">Looks for folders that hold music and are not in your library yet.</string>
+    <string name="library_find_folders_searching">Looking for folders with music…</string>
+    <string name="library_find_folders_none">No new folders with music found.</string>
+    <string name="library_find_folders_not_ready">The library\'s folders could not be changed just now. Try again in a moment.</string>
+    <string name="folder_proposal_title">Folders with music</string>
+    <string name="folder_proposal_body">These folders hold music and are not in your library yet. Uncheck the ones you do not want.</string>
+    <string name="folder_proposal_not_now">Not now</string>
+    <string name="folder_proposal_nothing_chosen">Add</string>
+    <plurals name="folder_proposal_add">
+        <item quantity="one">Add %d song</item>
+        <item quantity="other">Add %d songs</item>
+    </plurals>
+    <plurals name="folder_proposal_songs">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <!-- The folders sheet's song count: a count is not known yet, one, up to 99, or more. -->
+    <string name="file_explorer_scanning">Scanning…</string>
+    <string name="file_explorer_songs_99_plus">99+ songs</string>
+    <plurals name="file_explorer_songs">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <string name="file_explorer_preparing">Preparing folders…</string>
+    <string name="file_explorer_loading">Loading folders…</string>
+    <string name="file_explorer_preparing_hint">This can take a moment while Polylute scans the available subfolders.</string>
+    <!-- The empty library: the way back. -->
+    <string name="library_empty_find_folders">Nothing is in the library yet. Find the folders that hold your music and add them.</string>
+</resources>

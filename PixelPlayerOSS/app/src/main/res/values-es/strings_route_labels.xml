@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B39-A4 -->
+    <string name="route_transition_android_active">Audio de Android activo</string>
+    <string name="route_transition_direct_eligible">USB Direct posible</string>
+    <string name="route_transition_direct_negotiating">USB Direct iniciándose</string>
+    <string name="route_transition_direct_active">USB Direct activo</string>
+    <string name="route_transition_direct_failed">USB Direct falló, usando Android</string>
+    <string name="route_reason_starting">Iniciando</string>
+    <string name="route_reason_no_usb_dac">Sin DAC USB</string>
+    <string name="route_reason_usb_permission">Falta el permiso USB</string>
+    <string name="route_reason_source">Esta pista no puede usar USB Direct</string>
+    <string name="route_reason_deferred">Esperando un buen momento para cambiar</string>
+    <string name="route_reason_dac_shared">El DAC está compartido: otras apps pueden usarlo mientras Polylute está en pausa</string>
+    <string name="route_reason_crossfade">El fundido cruzado usa la ruta de Android</string>
+    <string name="route_reason_effect">Un efecto de Android usa la ruta de Android</string>
+    <string name="route_reason_speed">La velocidad de reproducción usa la ruta de Android</string>
+    <string name="route_reason_purity">Purity: USB Direct, señal sin tocar</string>
+    <string name="route_reason_resonance">Resonance: USB Direct, señal procesada</string>
+    <string name="route_reason_direct_active">USB Direct activo</string>
+    <string name="route_reason_direct_failed">USB Direct falló, usando Android</string>
+    <string name="route_reason_maintenance_force">Mantenimiento: ruta de Android forzada</string>
+    <string name="route_reason_maintenance_disabled">Mantenimiento: USB Direct desactivado</string>
+</resources>

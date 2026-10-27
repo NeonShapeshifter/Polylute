@@ -82,6 +82,10 @@ class LibraryRefreshIntegrationTest {
     }
 
     @Test fun old_missing_and_new_tracks_reach_an_already_subscribed_list_and_repeat_is_cheap() = runBlocking {
+        // B39-A9: a folder is in the library only when it is included, so the folder the "new" track lands in is one the listener included
+        // (the library of this test is /music and /other; before A9 a folder nobody had named was in by itself).
+        prefs.includeDirectories(listOf("/music", "/other"))
+        prefs.setLastSyncTimestamp(MARKER)
         seedKnown()
         val paging = dao.getSongsPaginated(emptyList(), false, "title_asc", 0)
         val load = androidx.paging.PagingSource.LoadParams.Refresh<Int>(null, 50, false)

@@ -113,7 +113,6 @@ data class DeviceControlUiState(
     val batteryPlug: DapBatteryPlug = DapBatteryPlug.NONE,
     val wifiRadioEnabled: Boolean = false,
     val wifiConnected: Boolean = false,
-    val wifiName: String? = null,
     val bluetoothEnabled: Boolean = false,
     val bluetoothAudioDevice: String? = null,
     val storage: DapStorageState = DapStorageState(),
@@ -263,11 +262,6 @@ class DeviceControlViewModel @Inject constructor(
         viewModelScope.launch {
             connectivityStateHolder.isWifiEnabled.collect { connected ->
                 _uiState.update { it.copy(wifiConnected = connected) }
-            }
-        }
-        viewModelScope.launch {
-            connectivityStateHolder.wifiName.collect { name ->
-                _uiState.update { it.copy(wifiName = name) }
             }
         }
         viewModelScope.launch {

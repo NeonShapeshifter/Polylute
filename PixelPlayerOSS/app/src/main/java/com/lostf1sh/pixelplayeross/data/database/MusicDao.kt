@@ -1839,6 +1839,14 @@ interface MusicDao {
     @Query("UPDATE artists SET image_url = :imageUrl WHERE id = :artistId")
     suspend fun updateArtistImageUrl(artistId: Long, imageUrl: String)
 
+    /** B40-F4: forgets artist pictures that point into [prefix] (the music-info folder), and any remote picture address left from Deezer. */
+    @Query("UPDATE artists SET image_url = NULL WHERE image_url LIKE :prefix || '%'")
+    suspend fun clearArtistImagesUnder(prefix: String): Int
+
+    /** B40-F4: Deezer is gone: no stored picture address that points at the internet is shown or kept. Returns how many were cleared. */
+    @Query("UPDATE artists SET image_url = NULL WHERE image_url LIKE 'http://%' OR image_url LIKE 'https://%'")
+    suspend fun clearRemoteArtistImages(): Int
+
     @Query("SELECT id FROM artists WHERE name = :name LIMIT 1")
     suspend fun getArtistIdByName(name: String): Long?
 

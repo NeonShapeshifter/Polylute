@@ -46,8 +46,8 @@ import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepositor
 import com.lostf1sh.pixelplayeross.data.preferences.dataStore
 import com.lostf1sh.pixelplayeross.data.media.SongMetadataEditor
 import com.lostf1sh.pixelplayeross.data.network.HttpUserAgent
-import com.lostf1sh.pixelplayeross.data.network.deezer.DeezerApiService
 import com.lostf1sh.pixelplayeross.data.network.lyrics.LrcLibApiService
+import com.lostf1sh.pixelplayeross.data.network.lyrics.PacedLrcLibApiService
 import com.lostf1sh.pixelplayeross.data.repository.ArtistImageRepository
 import com.lostf1sh.pixelplayeross.data.repository.AudioBookmarkRepository
 import com.lostf1sh.pixelplayeross.data.repository.AudioBookmarkRepositoryImpl
@@ -482,30 +482,7 @@ object AppModule {
     @Provides
     @Singleton
     fun provideLrcLibApiService(retrofit: Retrofit): LrcLibApiService {
-        return retrofit.create(LrcLibApiService::class.java)
-    }
-
-    /**
-     * Provides a Retrofit instance for the Deezer API.
-     */
-    @Provides
-    @Singleton
-    @DeezerRetrofit
-    fun provideDeezerRetrofit(okHttpClient: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl("https://api.deezer.com/")
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
-    /**
-     * Provides the Deezer API service.
-     */
-    @Provides
-    @Singleton
-    fun provideDeezerApiService(@DeezerRetrofit retrofit: Retrofit): DeezerApiService {
-        return retrofit.create(DeezerApiService::class.java)
+        return PacedLrcLibApiService(retrofit.create(LrcLibApiService::class.java))
     }
 
     /**
@@ -514,10 +491,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideArtistImageRepository(
-        deezerApiService: DeezerApiService,
+        musicInfo: com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository,
         musicDao: MusicDao,
         userPreferencesRepository: UserPreferencesRepository
     ): ArtistImageRepository {
-        return ArtistImageRepository(deezerApiService, musicDao, userPreferencesRepository)
+        return ArtistImageRepository(musicInfo, musicDao, userPreferencesRepository)
     }
 }

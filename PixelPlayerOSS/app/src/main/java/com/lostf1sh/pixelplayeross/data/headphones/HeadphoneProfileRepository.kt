@@ -342,6 +342,10 @@ class HeadphoneProfileRepository @Inject constructor(
         update { DacEqPresetCatalog.select(it, headphoneId, dacProfileId, presetId, eqOn, System.currentTimeMillis()) }
     }
 
+    override suspend fun turnSoftwareEqOff(headphoneId: String) {
+        updateEqualizer(headphoneId) { it.copy(enabled = false) }
+    }
+
     override suspend fun renameDacEqPreset(headphoneId: String, dacProfileId: String, presetId: String, name: String) {
         update { DacEqPresetCatalog.rename(it, headphoneId, dacProfileId, presetId, name, System.currentTimeMillis()) }
     }

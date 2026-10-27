@@ -18,11 +18,27 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private data class ArtworkRequest(val uri: String?)
+
+/** Pending metadata holds the old artwork; an explicitly empty timeline clears it. */
+internal fun Flow<StablePlayerState>.artworkRequests(): Flow<String?> =
+    mapNotNull { state ->
+        when {
+            state.queueConfirmedEmpty -> ArtworkRequest(null)
+            state.currentSong != null -> ArtworkRequest(state.currentSong.albumArtUriString?.takeIf(String::isNotBlank))
+            else -> null
+        }
+    }.map { it.uri }.distinctUntilChanged()
 
 @Singleton
 class ThemeStateHolder @Inject constructor(

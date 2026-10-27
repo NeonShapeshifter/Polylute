@@ -5,8 +5,11 @@ import com.lostf1sh.pixelplayeross.data.intelligence.TrackIntelligenceDiagnostic
 import com.lostf1sh.pixelplayeross.data.metadata.MetadataDiagnostic
 import com.lostf1sh.pixelplayeross.data.collections.CollectionDiagnostic
 import com.lostf1sh.pixelplayeross.data.collections.SmartCollectionRepository
+import com.lostf1sh.pixelplayeross.data.preferences.AppColorSource
+import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_MUSIC_INFO_CACHE_MB
 import com.lostf1sh.pixelplayeross.ui.ds.DapAccent
 import com.lostf1sh.pixelplayeross.ui.ds.DapBaseTheme
+import com.lostf1sh.pixelplayeross.ui.theme.CoverThemeChoice
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,9 +17,13 @@ import com.lostf1sh.pixelplayeross.data.preferences.AppLanguage
 import com.lostf1sh.pixelplayeross.presentation.settings.AppearanceSettingsState
 import com.lostf1sh.pixelplayeross.presentation.settings.BehaviorSettingsState
 import com.lostf1sh.pixelplayeross.presentation.settings.LibrarySettingsState
+import com.lostf1sh.pixelplayeross.presentation.settings.libraryStateFlow
 import com.lostf1sh.pixelplayeross.presentation.settings.LyricsSettingsState
 import com.lostf1sh.pixelplayeross.data.preferences.AppThemeMode
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
+import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_COVER_GLASS_MOVING
+import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_DAC_SHARE_ENABLED
+import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_LYRICS_UNDER_COVER
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_DAP_LOCK_SCREEN_ENABLED
 import com.lostf1sh.pixelplayeross.data.preferences.CarouselStyle
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_SHOW_QUEUE_HISTORY
@@ -90,7 +97,12 @@ data class SettingsUiState(
     val lyricsSourcePreference: LyricsSourcePreference = LyricsSourcePreference.EMBEDDED_FIRST,
     val autoScanLrcFiles: Boolean = false,
     val externalLyricsEnabled: Boolean = false,
-    val externalArtistImagesEnabled: Boolean = false,
+    /** B40-F4: the three music-info switches (off by default), the limit of what is kept, and how much is kept now. */
+    val musicInfoCoversEnabled: Boolean = false,
+    val musicInfoArtistPhotosEnabled: Boolean = false,
+    val musicInfoDescriptionsEnabled: Boolean = false,
+    val musicInfoCacheLimitMb: Int = DEFAULT_MUSIC_INFO_CACHE_MB,
+    val musicInfoUsedBytes: Long = 0L,
     val blockedDirectories: Set<String> = emptySet(),
     val appRebrandDialogShown: Boolean = false,
     val fullPlayerLoadingTweaks: FullPlayerLoadingTweaks = FullPlayerLoadingTweaks(),
@@ -99,8 +111,20 @@ data class SettingsUiState(
     val accent: DapAccent = DapAccent.DEFAULT,
     /** Curated base appearance. Defaults to the one every existing install already has. */
     val baseTheme: DapBaseTheme = DapBaseTheme.DEFAULT,
+    /** B40-F1: where the app's colours come from ([AppColorSource]). */
+    val appColorSource: String = AppColorSource.THEME,
+    /** B41-fix1 (B1): light, dark or system while the cover decides the colours ([CoverThemeChoice]). */
+    val coverThemeChoice: String = CoverThemeChoice.DARK,
+    /** B41: the cover glass drifts in the full player and on the lock screen. */
+    val coverGlassMoving: Boolean = DEFAULT_COVER_GLASS_MOVING,
+    /** B41: two lines of synced lyrics under the cover. */
+    val lyricsUnderCover: Boolean = DEFAULT_LYRICS_UNDER_COVER,
     /** Whether waking the dedicated player raises the DAP lock surface. Off unless asked for. */
     val dapLockScreenEnabled: Boolean = DEFAULT_DAP_LOCK_SCREEN_ENABLED,
+    /** B39-A7: Resonance shares the DAC with other apps (the Audio page's switch). */
+    val dacShareEnabled: Boolean = DEFAULT_DAC_SHARE_ENABLED,
+    /** B40-F8: Resonance's peak limiter on the Android route. */
+    val resonanceLimiterEnabled: Boolean = false,
     val albumArtQuality: AlbumArtQuality = AlbumArtQuality.MEDIUM,
     val albumArtCacheLimitMb: Int = 200,
     val tapBackgroundClosesPlayer: Boolean = false,
@@ -159,6 +183,10 @@ private sealed interface SettingsUiUpdate {
         val accent: DapAccent,
         val baseTheme: DapBaseTheme,
         val dapLockScreenEnabled: Boolean,
+        val appColorSource: String,
+        val coverGlassMoving: Boolean,
+        val lyricsUnderCover: Boolean,
+        val coverThemeChoice: String,
     ) : SettingsUiUpdate
     
     data class Group2(
@@ -197,6 +225,8 @@ class SettingsViewModel @Inject constructor(
     private val maintenanceOverrideStore: MaintenanceOverrideStore,
     audioStatusSource: AudioStatusSource,
     private val dormantItemCleanup: com.lostf1sh.pixelplayeross.data.identity.DormantItemCleanup,
+    private val libraryFolders: com.lostf1sh.pixelplayeross.data.library.LibraryFolderService,
+    private val musicInfo: com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -207,6 +237,9 @@ class SettingsViewModel @Inject constructor(
     val audioRouteState = dualPlayerEngine.audioRouteState
 
     fun refreshUsbAudioDiagnostics() = dualPlayerEngine.refreshUsbAudioDiagnostics()
+
+    /** B39-A8: the Audio page's "Allow USB access": asks again for a DAC whose permission was denied or never given. */
+    fun askForUsbPermissionAgain() = dualPlayerEngine.askForUsbPermissionAgain()
 
     /**
      * The read-only hardware picture for the Maintenance device diagnostic. Started here rather
@@ -294,17 +327,21 @@ class SettingsViewModel @Inject constructor(
     private var hasPendingDirectoryRuleChanges = false
     private var latestDirectoryRuleUpdateJob: Job? = null
 
+    // B39-A1: held only while listened to: with nobody listening for a while they go back to "idle" instead of keeping the last thing they
+    // were told, which `refreshLibrary` and `fullSyncLibrary` below read as "a sync is running" and would silently do nothing.
+    private val whileListened = SharingStarted.WhileSubscribed(SyncManager.SYNC_STOP_TIMEOUT_MS, replayExpirationMillis = 0)
+
     val isSyncing: StateFlow<Boolean> = syncManager.isSyncing
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = whileListened,
             initialValue = false
         )
 
     val syncProgress: StateFlow<SyncProgress> = syncManager.syncProgress
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = whileListened,
             initialValue = SyncProgress()
         )
 
@@ -321,18 +358,24 @@ class SettingsViewModel @Inject constructor(
     val appearanceState: StateFlow<AppearanceSettingsState> = derived(AppearanceSettingsState::from)
     val behaviorState: StateFlow<BehaviorSettingsState> = derived(BehaviorSettingsState::from)
     val lyricsState: StateFlow<LyricsSettingsState> = derived(LyricsSettingsState::from)
-    val libraryState: StateFlow<LibrarySettingsState> = combine(_uiState, isSyncing, syncProgress) { ui, syncing, progress ->
-        LibrarySettingsState.from(ui, syncing, progress)
-    }.distinctUntilChanged().stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        LibrarySettingsState.from(_uiState.value, false, SyncProgress()),
-    )
+    val libraryState: StateFlow<LibrarySettingsState> = libraryStateFlow(_uiState, syncManager.syncState, viewModelScope, _uiState.value)
 
     /** What is applied right now (B21). The Audio page's [AudioSettingsState.audio]. */
     val audioStatus: StateFlow<AudioStatus> = audioStatusSource.status
 
     init {
+        viewModelScope.launch {
+            userPreferencesRepository.dacShareEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(dacShareEnabled = enabled) }
+            }
+        }
+
+        viewModelScope.launch {
+            userPreferencesRepository.resonanceLimiterEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(resonanceLimiterEnabled = enabled) }
+            }
+        }
+
         viewModelScope.launch {
             userPreferencesRepository.collagePatternFlow.collect { pattern ->
                 _uiState.update { it.copy(collagePattern = pattern) }
@@ -372,6 +415,11 @@ class SettingsViewModel @Inject constructor(
                 themePreferencesRepository.accentFlow,
                 themePreferencesRepository.baseThemeFlow,
                 userPreferencesRepository.dapLockScreenEnabledFlow,
+                themePreferencesRepository.appColorSourceFlow,
+                // Appended: the indices are literals.
+                themePreferencesRepository.coverGlassMovingFlow,
+                userPreferencesRepository.lyricsUnderCoverFlow,
+                themePreferencesRepository.coverThemeChoiceFlow,
             ) { values ->
                 SettingsUiUpdate.Group1(
                     appRebrandDialogShown = values[0] as Boolean,
@@ -390,6 +438,10 @@ class SettingsViewModel @Inject constructor(
                     accent = values[13] as DapAccent,
                     baseTheme = values[14] as DapBaseTheme,
                     dapLockScreenEnabled = values[15] as Boolean,
+                    appColorSource = values[16] as String,
+                    coverGlassMoving = values[17] as Boolean,
+                    lyricsUnderCover = values[18] as Boolean,
+                    coverThemeChoice = values[19] as String,
                 )
             }.collect { update ->
                 _uiState.update { state ->
@@ -410,6 +462,10 @@ class SettingsViewModel @Inject constructor(
                         accent = update.accent,
                         baseTheme = update.baseTheme,
                         dapLockScreenEnabled = update.dapLockScreenEnabled,
+                        appColorSource = update.appColorSource,
+                        coverGlassMoving = update.coverGlassMoving,
+                        lyricsUnderCover = update.lyricsUnderCover,
+                        coverThemeChoice = update.coverThemeChoice,
                     )
                 }
             }
@@ -525,8 +581,30 @@ class SettingsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            userPreferencesRepository.externalArtistImagesEnabledFlow.collect { enabled ->
-                _uiState.update { it.copy(externalArtistImagesEnabled = enabled) }
+            userPreferencesRepository.musicInfoCoversEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(musicInfoCoversEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.musicInfoArtistPhotosEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(musicInfoArtistPhotosEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.musicInfoDescriptionsEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(musicInfoDescriptionsEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.musicInfoCacheLimitMbFlow.collect { mb ->
+                _uiState.update { it.copy(musicInfoCacheLimitMb = mb) }
+            }
+        }
+        // how much is kept: read when the page is opened and whenever a cover arrives or the data is deleted
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            musicInfo.coverVersion.collect {
+                val used = musicInfo.usedBytes()
+                _uiState.update { it.copy(musicInfoUsedBytes = used) }
             }
         }
 
@@ -589,6 +667,49 @@ class SettingsViewModel @Inject constructor(
         hasPendingDirectoryRuleChanges = true
         latestDirectoryRuleUpdateJob = viewModelScope.launch {
             fileExplorerStateHolder.toggleDirectoryAllowed(file)
+        }
+    }
+
+    private val _folderProposal = MutableStateFlow<FolderProposalState?>(null)
+
+    /** B39-A9: the folders "Find folders with music" found, checked, waiting for the listener's answer. Null when nothing is being offered. */
+    val folderProposal: StateFlow<FolderProposalState?> = _folderProposal.asStateFlow()
+
+    private val _folderSearchNotices = MutableSharedFlow<FolderSearchNotice>(extraBufferCapacity = 4)
+    val folderSearchNotices: SharedFlow<FolderSearchNotice> = _folderSearchNotices.asSharedFlow()
+
+    private var folderSearchJob: Job? = null
+
+    /** B39-A9: the same scan as the first run, at any time: the folders that hold music and are not in the library, offered checked. */
+    fun findFolders() {
+        if (folderSearchJob?.isActive == true) return
+        folderSearchJob = viewModelScope.launch {
+            _folderSearchNotices.tryEmit(FolderSearchNotice.SEARCHING)
+            val found = libraryFolders.finder.scan()
+            if (found.isEmpty()) _folderSearchNotices.tryEmit(FolderSearchNotice.NONE_FOUND)
+            else _folderProposal.value = FolderProposalState(found)
+        }
+    }
+
+    fun toggleProposedFolder(path: String) {
+        _folderProposal.value = _folderProposal.value?.toggle(path)
+    }
+
+    fun dismissProposedFolders() {
+        _folderProposal.value = null
+    }
+
+    /** "Add": the chosen folders go in the library and the library is scanned again (the same refresh as any change of the folders). */
+    fun addProposedFolders() {
+        val proposal = _folderProposal.value ?: return
+        _folderProposal.value = null
+        viewModelScope.launch {
+            when (libraryFolders.finder.add(proposal.chosen)) {
+                com.lostf1sh.pixelplayeross.data.library.LibraryFolderFinder.AddResult.ADDED -> syncManager.forceRefresh()
+                com.lostf1sh.pixelplayeross.data.library.LibraryFolderFinder.AddResult.NOT_READY ->
+                    _folderSearchNotices.tryEmit(FolderSearchNotice.NOT_READY)
+                com.lostf1sh.pixelplayeross.data.library.LibraryFolderFinder.AddResult.NOTHING -> Unit
+            }
         }
     }
 
@@ -686,6 +807,18 @@ class SettingsViewModel @Inject constructor(
     }
 
 
+    fun setDacShareEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setDacShareEnabled(enabled)
+        }
+    }
+
+    fun setResonanceLimiterEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setResonanceLimiterEnabled(enabled)
+        }
+    }
+
     fun setDapLockScreenEnabled(enabled: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.setDapLockScreenEnabled(enabled)
@@ -695,6 +828,33 @@ class SettingsViewModel @Inject constructor(
     fun setBaseTheme(baseTheme: DapBaseTheme) {
         viewModelScope.launch {
             themePreferencesRepository.setBaseTheme(baseTheme)
+        }
+    }
+
+    fun setAppColorSource(source: String) {
+        viewModelScope.launch {
+            themePreferencesRepository.setAppColorSource(source)
+        }
+    }
+
+    /** B41-fix1 (B1): "Theme" while the cover decides the colours: dark, light or system. The explicit theme is not touched. */
+    fun setCoverThemeChoice(choice: String) {
+        viewModelScope.launch {
+            themePreferencesRepository.setCoverThemeChoice(choice)
+        }
+    }
+
+    /** B41: "Moving background". */
+    fun setCoverGlassMoving(moving: Boolean) {
+        viewModelScope.launch {
+            themePreferencesRepository.setCoverGlassMoving(moving)
+        }
+    }
+
+    /** B41: "Lyrics under the cover". */
+    fun setLyricsUnderCover(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setLyricsUnderCover(enabled)
         }
     }
 
@@ -832,9 +992,28 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setExternalArtistImagesEnabled(enabled: Boolean) {
+    fun setMusicInfoCoversEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setMusicInfoCoversEnabled(enabled) }
+    }
+
+    fun setMusicInfoArtistPhotosEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setMusicInfoArtistPhotosEnabled(enabled) }
+    }
+
+    fun setMusicInfoDescriptionsEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setMusicInfoDescriptionsEnabled(enabled) }
+    }
+
+    fun setMusicInfoCacheLimitMb(megabytes: Int) {
+        viewModelScope.launch { userPreferencesRepository.setMusicInfoCacheLimitMb(megabytes) }
+    }
+
+    /** "Delete downloaded data" (Settings, Library): every picture and description that was downloaded. */
+    fun deleteMusicInfo(onDone: (freedBytes: Long) -> Unit = {}) {
         viewModelScope.launch {
-            userPreferencesRepository.setExternalArtistImagesEnabled(enabled)
+            val freed = musicInfo.deleteDownloadedData()
+            _uiState.update { it.copy(musicInfoUsedBytes = musicInfo.usedBytes()) }
+            onDone(freed)
         }
     }
 

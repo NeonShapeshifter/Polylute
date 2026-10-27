@@ -14,6 +14,16 @@ import kotlin.math.ceil
  * Media3/AudioTrack can end up in unstable device-specific paths for sample rates above 192 kHz.
  * Reducing 352.8/384 kHz streams before they reach the sink avoids the "loading audio" hang while
  * preserving normal playback for standard and regular hi-res files.
+ *
+ * **How it reduces the rate (B40-F8).** Not by averaging groups of samples, which is a two-tap filter and let a 180 kHz tone in a
+ * 384 kHz stream fold to 12 kHz only 20 dB down, but by a linear-phase windowed-sinc FIR decimator ([DecimationFilter], [FirDecimator]):
+ * at least 100 dB of rejection from the new Nyquist frequency up, flat to better than 0.001 dB up to 80 % of it, the filter's delay
+ * taken out and its tail flushed at the end of the stream, the same output whatever the block sizes. 16-bit streams are converted to
+ * float for the arithmetic and rounded back once; float streams stay float and are clamped to full scale.
+ *
+ * **Where it runs.** In the Android route's processor chain only: `UsbAudioSink` diverts the PCM of a USB Direct stream before
+ * `DefaultAudioSink` runs its processors, so this class never touches Purity (nor the DSP stage of Resonance on Direct). A stream at
+ * or under [maxOutputSampleRateHz] makes the processor inactive and untouched.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 class HiResSampleRateCapAudioProcessor(
@@ -22,18 +32,23 @@ class HiResSampleRateCapAudioProcessor(
 
     private companion object {
         private val NATIVE_ORDER = ByteOrder.nativeOrder()
-        private val NATIVE_ORDER_IS_BIG_ENDIAN = NATIVE_ORDER == ByteOrder.BIG_ENDIAN
+        const val SHORT_SCALE = 32768f
     }
 
     private var inputFormat: AudioFormat = AudioFormat.NOT_SET
     private var outputFormat: AudioFormat = AudioFormat.NOT_SET
-    private var downsampleFactor: Int = 1
+    private var decimator: FirDecimator? = null
     private var outputBuffer: ByteBuffer = AudioProcessor.EMPTY_BUFFER
-    private var pendingBytes = ByteArray(0)
-    private var pendingSize = 0
-    private var shortAccumulators = IntArray(0)
-    private var floatAccumulators = FloatArray(0)
+
+    /** The long-lived allocation [outputBuffer] is made of: the pipeline has taken the last one before it queues more. */
+    private var outputStorage: ByteBuffer = AudioProcessor.EMPTY_BUFFER
     private var inputEnded = false
+
+    /** The bytes of a frame that was cut by a buffer boundary, until the rest arrives. */
+    private var stage = ByteArray(0)
+    private var leftoverBytes = 0
+    private var floatIn = FloatArray(0)
+    private var floatOut = FloatArray(0)
 
     override fun configure(inputAudioFormat: AudioFormat): AudioFormat {
         val shouldDownsample = (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT || inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) &&
@@ -43,201 +58,82 @@ class HiResSampleRateCapAudioProcessor(
         if (!shouldDownsample) {
             inputFormat = AudioFormat.NOT_SET
             outputFormat = AudioFormat.NOT_SET
-            downsampleFactor = 1
-            pendingSize = 0
+            decimator = null
+            leftoverBytes = 0
             return inputAudioFormat
         }
 
-        downsampleFactor = ceil(
+        val factor = ceil(
             inputAudioFormat.sampleRate.toDouble() / maxOutputSampleRateHz.toDouble()
         ).toInt().coerceAtLeast(2)
 
         inputFormat = inputAudioFormat
         outputFormat = AudioFormat(
-            inputAudioFormat.sampleRate / downsampleFactor,
+            inputAudioFormat.sampleRate / factor,
             inputAudioFormat.channelCount,
             inputAudioFormat.encoding
         )
-        pendingSize = 0
-        ensurePendingCapacity(maxPendingBytes())
-        ensureAccumulatorCapacity(inputAudioFormat.channelCount)
+        decimator = FirDecimator(inputAudioFormat.channelCount, factor, DecimationFilter.taps(inputAudioFormat.sampleRate, factor))
+        leftoverBytes = 0
         return outputFormat
     }
 
     override fun isActive(): Boolean = outputFormat != AudioFormat.NOT_SET
 
     override fun queueInput(inputBuffer: ByteBuffer) {
-        if (!isActive()) return
+        val filter = decimator ?: return
+        val channels = inputFormat.channelCount
+        val isFloat = inputFormat.encoding == C.ENCODING_PCM_FLOAT
+        val bytesPerFrame = channels * if (isFloat) Float.SIZE_BYTES else Short.SIZE_BYTES
 
-        if (inputFormat.encoding == C.ENCODING_PCM_FLOAT) {
-            processFloat(inputBuffer)
-        } else {
-            process16Bit(inputBuffer)
-        }
-        inputBuffer.position(inputBuffer.limit())
-    }
-
-    private fun process16Bit(inputBuffer: ByteBuffer) {
-        val bytesPerFrame = inputFormat.channelCount * Short.SIZE_BYTES
-        val processableFrameCount = processableFrameCount(bytesPerFrame, inputBuffer.remaining())
-        if (processableFrameCount == 0) {
+        val incoming = inputBuffer.remaining()
+        val total = leftoverBytes + incoming
+        val frames = total / bytesPerFrame
+        if (stage.size < total) stage = stage.copyOf(maxOf(total, stage.size * 2))
+        inputBuffer.get(stage, leftoverBytes, incoming)
+        if (frames == 0) {
+            leftoverBytes = total
             outputBuffer = AudioProcessor.EMPTY_BUFFER
-            stashPendingBytes(inputBuffer)
             return
         }
 
-        outputBuffer = ensureOutputBuffer(processableFrameCount * bytesPerFrame)
-        val shortInput = inputBuffer.duplicate().order(NATIVE_ORDER)
-        var pendingReadOffset = 0
-
-        repeat(processableFrameCount) {
-            java.util.Arrays.fill(shortAccumulators, 0)
-            repeat(downsampleFactor) {
-                if (pendingReadOffset < pendingSize) {
-                    for (ch in 0 until inputFormat.channelCount) {
-                        shortAccumulators[ch] += readShortFromPending(pendingReadOffset).toInt()
-                        pendingReadOffset += Short.SIZE_BYTES
-                    }
-                } else {
-                    for (ch in 0 until inputFormat.channelCount) {
-                        shortAccumulators[ch] += shortInput.short.toInt()
-                    }
-                }
-            }
-            for (ch in 0 until inputFormat.channelCount) {
-                outputBuffer.putShort(
-                    (shortAccumulators[ch] / downsampleFactor)
-                        .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                        .toShort()
-                )
-            }
-        }
-        storePendingRemainder(pendingReadOffset, shortInput)
-        outputBuffer.flip()
-    }
-
-    private fun processFloat(inputBuffer: ByteBuffer) {
-        val bytesPerSample = Float.SIZE_BYTES
-        val bytesPerFrame = inputFormat.channelCount * bytesPerSample
-        val processableFrameCount = processableFrameCount(bytesPerFrame, inputBuffer.remaining())
-        if (processableFrameCount == 0) {
-            outputBuffer = AudioProcessor.EMPTY_BUFFER
-            stashPendingBytes(inputBuffer)
-            return
-        }
-
-        outputBuffer = ensureOutputBuffer(processableFrameCount * bytesPerFrame)
-        val floatInput = inputBuffer.duplicate().order(NATIVE_ORDER)
-        var pendingReadOffset = 0
-
-        repeat(processableFrameCount) {
-            java.util.Arrays.fill(floatAccumulators, 0f)
-            repeat(downsampleFactor) {
-                if (pendingReadOffset < pendingSize) {
-                    for (ch in 0 until inputFormat.channelCount) {
-                        floatAccumulators[ch] += readFloatFromPending(pendingReadOffset)
-                        pendingReadOffset += Float.SIZE_BYTES
-                    }
-                } else {
-                    for (ch in 0 until inputFormat.channelCount) {
-                        floatAccumulators[ch] += floatInput.float
-                    }
-                }
-            }
-            for (ch in 0 until inputFormat.channelCount) {
-                outputBuffer.putFloat((floatAccumulators[ch] / downsampleFactor).coerceIn(-1f, 1f))
-            }
-        }
-        storePendingRemainder(pendingReadOffset, floatInput)
-        outputBuffer.flip()
-    }
-
-    private fun processableFrameCount(bytesPerFrame: Int, incomingBytes: Int): Int {
-        val totalFrames = (pendingSize + incomingBytes) / bytesPerFrame
-        return totalFrames / downsampleFactor
-    }
-
-    private fun maxPendingBytes(): Int {
-        val sampleBytes = if (inputFormat.encoding == C.ENCODING_PCM_FLOAT) Float.SIZE_BYTES else Short.SIZE_BYTES
-        return inputFormat.channelCount * sampleBytes * downsampleFactor
-    }
-
-    private fun ensurePendingCapacity(requiredCapacity: Int) {
-        if (pendingBytes.size >= requiredCapacity) return
-        pendingBytes = pendingBytes.copyOf(requiredCapacity.coerceAtLeast(pendingBytes.size * 2).coerceAtLeast(1))
-    }
-
-    private fun ensureAccumulatorCapacity(channelCount: Int) {
-        if (shortAccumulators.size < channelCount) {
-            shortAccumulators = IntArray(channelCount)
-        }
-        if (floatAccumulators.size < channelCount) {
-            floatAccumulators = FloatArray(channelCount)
-        }
-    }
-
-    private fun ensureOutputBuffer(requiredCapacity: Int): ByteBuffer {
-        return if (outputBuffer.capacity() < requiredCapacity) {
-            ByteBuffer.allocateDirect(requiredCapacity).order(NATIVE_ORDER).also {
-                outputBuffer = it
-            }
+        // bytes -> float, once
+        val samples = frames * channels
+        if (floatIn.size < samples) floatIn = FloatArray(maxOf(samples, floatIn.size * 2))
+        val bytes = ByteBuffer.wrap(stage, 0, frames * bytesPerFrame).order(NATIVE_ORDER)
+        if (isFloat) {
+            for (i in 0 until samples) floatIn[i] = bytes.float
         } else {
-            outputBuffer.clear()
-            outputBuffer
+            for (i in 0 until samples) floatIn[i] = bytes.short / SHORT_SCALE
         }
+        val kept = total - frames * bytesPerFrame
+        System.arraycopy(stage, frames * bytesPerFrame, stage, 0, kept)
+        leftoverBytes = kept
+
+        val maxOut = filter.maxOutputFrames(frames)
+        if (floatOut.size < maxOut * channels) floatOut = FloatArray(maxOf(maxOut * channels, floatOut.size * 2))
+        val produced = filter.process(floatIn, 0, frames, floatOut, 0)
+        outputBuffer = fill(produced, channels, isFloat)
     }
 
-    private fun stashPendingBytes(inputBuffer: ByteBuffer) {
-        ensurePendingCapacity(pendingSize + inputBuffer.remaining())
-        val source = inputBuffer.duplicate()
-        source.get(pendingBytes, pendingSize, source.remaining())
-        pendingSize += inputBuffer.remaining()
-    }
-
-    private fun storePendingRemainder(pendingReadOffset: Int, inputBuffer: ByteBuffer) {
-        val unreadPendingBytes = pendingSize - pendingReadOffset
-        val remainingInputBytes = inputBuffer.remaining()
-        ensurePendingCapacity(unreadPendingBytes + remainingInputBytes)
-        if (unreadPendingBytes > 0 && pendingReadOffset > 0) {
-            pendingBytes.copyInto(
-                destination = pendingBytes,
-                destinationOffset = 0,
-                startIndex = pendingReadOffset,
-                endIndex = pendingSize
-            )
-        }
-        if (remainingInputBytes > 0) {
-            inputBuffer.get(pendingBytes, unreadPendingBytes, remainingInputBytes)
-        }
-        pendingSize = unreadPendingBytes + remainingInputBytes
-    }
-
-    private fun readShortFromPending(offset: Int): Short {
-        val byte0 = pendingBytes[offset].toInt() and 0xFF
-        val byte1 = pendingBytes[offset + 1].toInt() and 0xFF
-        val bits = if (NATIVE_ORDER_IS_BIG_ENDIAN) {
-            (byte0 shl 8) or byte1
+    /** [frames] float frames from [floatOut] as the stream's own encoding, in a buffer the pipeline can take. */
+    private fun fill(frames: Int, channels: Int, isFloat: Boolean): ByteBuffer {
+        if (frames == 0) return AudioProcessor.EMPTY_BUFFER
+        val bytes = frames * channels * if (isFloat) Float.SIZE_BYTES else Short.SIZE_BYTES
+        if (outputStorage.capacity() < bytes) outputStorage = ByteBuffer.allocateDirect(maxOf(bytes, outputStorage.capacity() * 2)).order(NATIVE_ORDER)
+        val buffer = outputStorage
+        buffer.clear()
+        val samples = frames * channels
+        if (isFloat) {
+            for (i in 0 until samples) buffer.putFloat(floatOut[i].coerceIn(-1f, 1f))
         } else {
-            (byte1 shl 8) or byte0
+            for (i in 0 until samples) {
+                val scaled = Math.round(floatOut[i] * SHORT_SCALE)
+                buffer.putShort(scaled.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+            }
         }
-        return bits.toShort()
-    }
-
-    private fun readFloatFromPending(offset: Int): Float {
-        val intBits = readIntFromPending(offset)
-        return Float.fromBits(intBits)
-    }
-
-    private fun readIntFromPending(offset: Int): Int {
-        val byte0 = pendingBytes[offset].toInt() and 0xFF
-        val byte1 = pendingBytes[offset + 1].toInt() and 0xFF
-        val byte2 = pendingBytes[offset + 2].toInt() and 0xFF
-        val byte3 = pendingBytes[offset + 3].toInt() and 0xFF
-        return if (NATIVE_ORDER_IS_BIG_ENDIAN) {
-            (byte0 shl 24) or (byte1 shl 16) or (byte2 shl 8) or byte3
-        } else {
-            (byte3 shl 24) or (byte2 shl 16) or (byte1 shl 8) or byte0
-        }
+        buffer.flip()
+        return buffer
     }
 
     override fun getOutput(): ByteBuffer {
@@ -246,26 +142,36 @@ class HiResSampleRateCapAudioProcessor(
         return pendingOutput
     }
 
-    override fun isEnded(): Boolean = inputEnded && pendingSize == 0 && outputBuffer === AudioProcessor.EMPTY_BUFFER
+    override fun isEnded(): Boolean = inputEnded && !outputBuffer.hasRemaining()
 
     override fun queueEndOfStream() {
-        pendingSize = 0
+        val filter = decimator
+        if (filter != null) {
+            val channels = inputFormat.channelCount
+            val maxOut = filter.maxOutputFrames(0) + filter.groupDelayFrames / filter.factor + 1
+            if (floatOut.size < maxOut * channels) floatOut = FloatArray(maxOut * channels)
+            val produced = filter.finish(floatOut, 0)
+            // a frame cut by the end of the stream is dropped, as the rest of a group of frames always was
+            leftoverBytes = 0
+            outputBuffer = fill(produced, channels, inputFormat.encoding == C.ENCODING_PCM_FLOAT)
+        }
         inputEnded = true
     }
 
     @Deprecated("Media3 AudioProcessor now prefers flush(StreamMetadata); kept for interface compatibility")
     override fun flush() {
         outputBuffer = AudioProcessor.EMPTY_BUFFER
-        pendingSize = 0
+        leftoverBytes = 0
         inputEnded = false
+        decimator?.reset()
     }
 
     override fun reset() {
         outputBuffer = AudioProcessor.EMPTY_BUFFER
-        pendingSize = 0
+        leftoverBytes = 0
         inputEnded = false
         inputFormat = AudioFormat.NOT_SET
         outputFormat = AudioFormat.NOT_SET
-        downsampleFactor = 1
+        decimator = null
     }
 }

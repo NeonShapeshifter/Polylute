@@ -6,7 +6,15 @@ import kotlinx.coroutines.flow.StateFlow
 /** What the labels read: the DAC's EQ as a label, live. Implemented by [DacEqController]; the tests use a fixed one. */
 interface DacEqLabelSource {
     val label: StateFlow<DacEqLabel>
+
+    /**
+     * B41: the DAC attached now has an EQ this build can write once the listener allows it (its profile `canBeWritten`): where the
+     * Audio page's DAC EQ row offers "Use the DAC's EQ". False for a read-only model, no DAC, and any source that does not say.
+     */
+    val writable: StateFlow<Boolean> get() = NeverWritable
 }
+
+private val NeverWritable: StateFlow<Boolean> = MutableStateFlow(false)
 
 /** No DAC EQ at all: every label says what it said before B30. */
 object NoDacEqLabels : DacEqLabelSource {

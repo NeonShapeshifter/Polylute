@@ -58,8 +58,6 @@ class ConnectivityStateHolder @Inject constructor(
     private val _isWifiRadioOn = MutableStateFlow(false)
     val isWifiRadioOn: StateFlow<Boolean> = _isWifiRadioOn.asStateFlow()
 
-    private val _wifiName = MutableStateFlow<String?>(null)
-    val wifiName: StateFlow<String?> = _wifiName.asStateFlow()
 
     private val _isOnline = MutableStateFlow(false)
     val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
@@ -77,9 +75,6 @@ class ConnectivityStateHolder @Inject constructor(
     val bluetoothAudioDevices: StateFlow<List<String>> = _bluetoothAudioDevices.asStateFlow()
 
 
-    /**
-     * Manually refresh local connection info (e.g. WiFi SSID).
-     */
     private val connectivityManager: ConnectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val wifiManager: WifiManager? =
@@ -109,10 +104,7 @@ class ConnectivityStateHolder @Inject constructor(
         val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
         updateWifiRadioState()
         _isWifiEnabled.value = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-        if (_isWifiEnabled.value) {
-            updateWifiInfo()
-        }
-        
+
         _isOnline.value = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
                 capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 
@@ -138,7 +130,6 @@ class ConnectivityStateHolder @Inject constructor(
                 
                 if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
                     _isWifiEnabled.value = true
-                    updateWifiInfo()
                 }
             }
 
@@ -149,7 +140,6 @@ class ConnectivityStateHolder @Inject constructor(
                 val currentNetwork = connectivityManager.activeNetwork
                 val caps = connectivityManager.getNetworkCapabilities(currentNetwork)
                 _isWifiEnabled.value = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-                if (!_isWifiEnabled.value) _wifiName.value = null
             }
             
             private fun checkConnectivity() {
@@ -168,7 +158,6 @@ class ConnectivityStateHolder @Inject constructor(
                     updateWifiRadioState()
                     if (!_isWifiRadioOn.value) {
                         _isWifiEnabled.value = false
-                        _wifiName.value = null
                     }
                 }
             }
@@ -242,7 +231,6 @@ class ConnectivityStateHolder @Inject constructor(
         _isWifiEnabled.value = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
         _isOnline.value = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        if (_isWifiEnabled.value) updateWifiInfo() else _wifiName.value = null
 
         updateBluetoothEnabledState()
         updateAudioDevices(reconcileAdapterState = false)
@@ -250,14 +238,6 @@ class ConnectivityStateHolder @Inject constructor(
 
     private fun updateWifiRadioState() {
         _isWifiRadioOn.value = wifiManager?.isWifiEnabled == true
-    }
-
-    private fun updateWifiInfo() {
-        _wifiName.value = if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R && hasFineLocationPermission()) {
-            readConnectedWifiSsid()
-        } else {
-            null
-        }
     }
 
     private fun updateBluetoothName(connectedAudioDevices: List<String>) {
@@ -413,10 +393,6 @@ class ConnectivityStateHolder @Inject constructor(
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun hasFineLocationPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    }
-
     private fun BluetoothAudioDeviceState.uniqueKey(): String {
         return bluetoothDeviceKey(address, name)
     }
@@ -474,20 +450,6 @@ class ConnectivityStateHolder @Inject constructor(
         val deviceClass = safeBluetoothCall<BluetoothClass?>(null) { bluetoothClass } ?: return false
         return deviceClass.majorDeviceClass == BluetoothClass.Device.Major.AUDIO_VIDEO ||
             deviceClass.hasService(BluetoothClass.Service.RENDER)
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun readConnectedWifiSsid(): String? {
-        if (!hasFineLocationPermission()) return null
-
-        val info = wifiManager?.connectionInfo ?: return null
-        if (info.supplicantState != android.net.wifi.SupplicantState.COMPLETED) return null
-
-        var ssid = info.ssid
-        if (ssid.startsWith("\"") && ssid.endsWith("\"")) {
-            ssid = ssid.substring(1, ssid.length - 1)
-        }
-        return ssid
     }
 
     @SuppressLint("MissingPermission")

@@ -48,6 +48,9 @@ object ResonanceModePolicy {
     }
 }
 
+/** B40-F2: what the software Resonance screen offers when the attached DAC has an EQ the app can write and the listener has not allowed it. */
+data class DacEqOffer(val dacName: String, val slotName: String)
+
 /** A listening choice that keeps the stream on the Android route (B30-P4). */
 enum class DacEqConflict(@StringRes val textRes: Int) {
     CROSSFADE(R.string.dac_eq_conflict_crossfade),
@@ -174,7 +177,15 @@ data class DacEqUiState(
     val confirmSelect: DacPresetRow? = null,
     /** B31 P1.2: what a positive global gain does on this DAC while the screen is open (unconfirmed until the reviewer's check). */
     val preGainSense: PreGainSense = PreGainSense.UNCONFIRMED,
+    /** B40-F2: the DAC's EQ shapes the sound and the headphones' own (software) EQ is on too: the same correction would be applied twice. */
+    val softwareEqAlsoOn: Boolean = false,
 ) {
+    /** B40-F2: the listener allowed writes to this DAC (and the profile is not verified): they can take that back here. */
+    val consentGiven: Boolean get() = availability == DacEqWriteAvailability.USER_CONFIRMED
+
+    /** B40-F2: the DAC's EQ was not read (or not settled): nothing is shown as if it had been, and nothing is edited. */
+    val unread: Boolean get() = verdict == DacEqVerdict.UNKNOWN && readout !is DacEqReadout.NotApplicable
+
     val eqOn: Boolean get() = verdict == DacEqVerdict.ON || verdict == DacEqVerdict.FLAT
     val canEdit: Boolean get() = availability.canWrite && !frozenByPurity && !busy && operation == null
 

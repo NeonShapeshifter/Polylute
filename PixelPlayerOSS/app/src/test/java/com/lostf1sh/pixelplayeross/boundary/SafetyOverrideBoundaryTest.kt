@@ -47,7 +47,9 @@ class SafetyOverrideBoundaryTest {
         val guard = controller.substringAfter("private fun hardwareOpenTarget(").substringBefore("// USB control transfers are blocking")
         assertThat(guard).contains("SafetyOverridePolicy.coversOpen(")
         assertThat(guard).contains("overrideSession")
-        assertThat(guard).contains("UsbHardwareVolumePolicy.openTarget(currentUnits, saved, ceilingUnits.takeUnless { overrideStands })")
+        assertThat(guard).contains("currentUnits, saved, ceilingUnits.takeUnless { overrideStands }, firstUseUnits,")
+        // B39-S1: and the only thing added to it is the first-use level, for a DAC nothing is known about.
+        assertThat(guard).contains("UsbHardwareVolumePolicy.isFirstUse(saved, calibratedAnywhere, overrideStands)")
         // It is still the same guard: only ever lowers, to what was chosen last.
         assertThat(guard).doesNotContain("writeHardwareVolume")
         assertThat(guard).contains("val saved = hardwareStore.saved(contextId)")

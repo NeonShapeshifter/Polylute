@@ -58,7 +58,7 @@ internal fun GenreHeader(
     modifier: Modifier = Modifier,
 ) {
     val hasCover = counts != null && !coverUri.isNullOrBlank()
-    val background = Dap.background
+    val background = Dap.fadeEdge
     val density = LocalDensity.current
     val widthPx = LocalWindowInfo.current.containerSize.width
     val requestSize = remember(widthPx, density.density) {

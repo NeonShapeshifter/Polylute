@@ -67,7 +67,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.lostf1sh.pixelplayeross.presentation.components.GlassModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -118,6 +118,7 @@ import com.lostf1sh.pixelplayeross.presentation.components.PlaylistBottomSheet
 import com.lostf1sh.pixelplayeross.presentation.components.QueuePlaylistSongItem
 import com.lostf1sh.pixelplayeross.presentation.components.SongPickerBottomSheet
 import com.lostf1sh.pixelplayeross.presentation.components.ExpressiveScrollBar
+import com.lostf1sh.pixelplayeross.presentation.components.ScrollbarGutter
 import com.lostf1sh.pixelplayeross.presentation.components.SmartImage
 import com.lostf1sh.pixelplayeross.presentation.components.SongInfoBottomSheet
 import com.lostf1sh.pixelplayeross.presentation.components.subcomps.TightWrapText
@@ -543,13 +544,12 @@ fun PlaylistDetailScreen(
                                 contentPadding = PaddingValues(
                                     top = 12.dp,
                                     bottom = MiniPlayerHeight + 16.dp,
-                                    end = if (listState.canScrollForward || listState.canScrollBackward) 24.dp else 0.dp
                                 ).let {
                                     PaddingValues(
                                         top = it.calculateTopPadding(),
                                         bottom = it.calculateBottomPadding(),
                                         start = it.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                                        end = if (listState.canScrollForward || listState.canScrollBackward) 24.dp else 0.dp
+                                        end = ScrollbarGutter.endMargin(it.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr))
                                     )
                                 }
                             ) {
@@ -638,6 +638,9 @@ fun PlaylistDetailScreen(
                             }
 
                             ExpressiveScrollBar(
+                                // the rows run to the list's edge (their own end padding is the reorder handle's), and the bar sits 14 dp in
+                                contentEndMargin = 0.dp,
+                                endInset = 14.dp,
                                 listState = listState,
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
@@ -670,78 +673,34 @@ fun PlaylistDetailScreen(
         )
     }
     if (showPlaylistOptionsSheet && !isFolderPlaylist) {
-        val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
-
-        ModalBottomSheet(
-            onDismissRequest = { showPlaylistOptionsSheet = false },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            tonalElevation = 4.dp,
-        ) {
-            // This window is its own surface, so the activity's volume-key path does not
-            // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
-            ModalInputBridge()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        text = playlistOptionsTitle,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    currentPlaylist?.name?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                PlaylistActionItem(
-                    icon = painterResource(R.drawable.rounded_edit_24),
-                    label = editPlaylistLabel,
-                    onClick = {
-                        showPlaylistOptionsSheet = false
-                        showEditPlaylistDialog = true
-                    }
+        PlaylistOptionsSheet(
+            title = playlistOptionsTitle,
+            playlistName = currentPlaylist?.name,
+            editLabel = editPlaylistLabel,
+            deleteLabel = deletePlaylistLabel,
+            transitionLabel = setDefaultTransitionLabel,
+            exportLabel = exportPlaylistLabel,
+            onDismiss = { showPlaylistOptionsSheet = false },
+            onEdit = {
+                showPlaylistOptionsSheet = false
+                showEditPlaylistDialog = true
+            },
+            onDelete = {
+                showPlaylistOptionsSheet = false
+                showDeleteConfirmation = true
+            },
+            onTransition = {
+                showPlaylistOptionsSheet = false
+                navController.navigateSafely(Screen.EditTransition.createRoute(playlistId))
+            },
+            onExport = {
+                showPlaylistOptionsSheet = false
+                val sanitizedName = PlaylistViewModel.sanitizeFileName(
+                    currentPlaylist?.name ?: fallbackPlaylistName
                 )
-                PlaylistActionItem(
-                    icon = painterResource(R.drawable.rounded_delete_24),
-                    label = deletePlaylistLabel,
-                    onClick = {
-                        showPlaylistOptionsSheet = false
-                        showDeleteConfirmation = true
-                    }
-                )
-                PlaylistActionItem(
-                    icon = painterResource(R.drawable.outline_graph_1_24),
-                    label = setDefaultTransitionLabel,
-                    onClick = {
-                        showPlaylistOptionsSheet = false
-                        navController.navigateSafely(Screen.EditTransition.createRoute(playlistId))
-                    }
-                )
-                PlaylistActionItem(
-                    icon = painterResource(R.drawable.rounded_attach_file_24),
-                    label = exportPlaylistLabel,
-                    onClick = {
-                        showPlaylistOptionsSheet = false
-                        val sanitizedName = PlaylistViewModel.sanitizeFileName(
-                            currentPlaylist?.name ?: fallbackPlaylistName
-                        )
-                        m3uExportLauncher.launch("$sanitizedName.m3u")
-                    }
-                )
-            }
-        }
+                m3uExportLauncher.launch("$sanitizedName.m3u")
+            },
+        )
     }
 
     if (showEditPlaylistDialog && currentPlaylist != null) {
@@ -981,6 +940,68 @@ fun PlaylistDetailScreen(
     }
 }
 
+
+/**
+ * The playlist's options (edit, delete, default transition, export), a bottom sheet. It is the screen's own sheet taken out of the screen
+ * (B42) so it can be shown on its own; what each row does is still decided by the screen, which hands in the actions.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PlaylistOptionsSheet(
+    title: String,
+    playlistName: String?,
+    editLabel: String,
+    deleteLabel: String,
+    transitionLabel: String,
+    exportLabel: String,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onTransition: () -> Unit,
+    onExport: () -> Unit,
+) {
+    val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
+
+    GlassModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 4.dp,
+    ) {
+        // This window is its own surface, so the activity's volume-key path does not
+        // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
+        ModalInputBridge()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                playlistName?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            PlaylistActionItem(icon = painterResource(R.drawable.rounded_edit_24), label = editLabel, onClick = onEdit)
+            PlaylistActionItem(icon = painterResource(R.drawable.rounded_delete_24), label = deleteLabel, onClick = onDelete)
+            PlaylistActionItem(icon = painterResource(R.drawable.outline_graph_1_24), label = transitionLabel, onClick = onTransition)
+            PlaylistActionItem(icon = painterResource(R.drawable.rounded_attach_file_24), label = exportLabel, onClick = onExport)
+        }
+    }
+}
 
 @Composable
 private fun PlaylistActionItem(

@@ -75,6 +75,7 @@ import coil.size.Size
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Album
 import com.lostf1sh.pixelplayeross.presentation.components.ExpressiveScrollBar
+import com.lostf1sh.pixelplayeross.presentation.components.ScrollbarGutter
 import com.lostf1sh.pixelplayeross.presentation.components.MiniPlayerHeight
 import com.lostf1sh.pixelplayeross.presentation.components.PlaylistBottomSheet
 import com.lostf1sh.pixelplayeross.presentation.components.SmartImage
@@ -117,6 +118,7 @@ fun AlbumDetailScreen(
     playlistViewModel: PlaylistViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val about by viewModel.about.collectAsStateWithLifecycle()
     val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
     val playbackStates = rememberLibraryPlaybackStates(playerViewModel)
     val isMiniPlayerVisible by remember {
@@ -305,7 +307,7 @@ fun AlbumDetailScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Dap.background)
+                        .background(Dap.page)
                         .nestedScroll(nestedScrollConnection)
                 ) {
                     val currentTopBarHeightDp = with(density) { topBarHeight.value.toDp() }
@@ -325,11 +327,17 @@ fun AlbumDetailScreen(
                         contentPadding = PaddingValues(
                             top = minTopBarHeight + 8.dp,
                             start = 16.dp,
-                            end = if (showScrollBar) 24.dp else 16.dp,
+                            end = ScrollbarGutter.endMargin(16.dp),
                             bottom = fabBottomPadding + 80.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // B40-F4: the album's description; nothing when there is none
+                        if (!about.isEmpty) {
+                            item(key = "album_about") {
+                                com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAbout(about)
+                            }
+                        }
                         songsByDisc.forEach { (discNumber, discSongs) ->
                             if (songsByDisc.size > 1) {
                                 item(key = "disc_header_$discNumber") {
@@ -363,6 +371,8 @@ fun AlbumDetailScreen(
 
                     if (showScrollBar) {
                         ExpressiveScrollBar(
+                            contentEndMargin = 16.dp,
+                            endInset = 0.dp,
                             listState = lazyListState,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
@@ -584,13 +594,14 @@ private fun SharedAlbumTopBarProbe(
     val solidAlpha = (collapseFraction * 2f).coerceIn(0f, 1f)
     val expandedContentAlpha = 1f - solidAlpha
     val showExpandedContent = expandedContentAlpha > 0.01f
-    val headerOverlayBrush = remember(backgroundColor, expandedContentAlpha) {
+    val fadeEdge = Dap.fadeEdge
+    val headerOverlayBrush = remember(backgroundColor, fadeEdge, expandedContentAlpha) {
         Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
                 backgroundColor.copy(alpha = 0.22f * expandedContentAlpha),
                 backgroundColor.copy(alpha = 0.82f * expandedContentAlpha),
-                backgroundColor
+                fadeEdge
             )
         )
     }
@@ -718,13 +729,14 @@ private fun CollapsingAlbumTopBar(
     val backgroundAlpha = collapseFraction
     val headerContentAlpha = 1f - (collapseFraction * 2).coerceAtMost(1f)
     val showExpandedContent = headerContentAlpha > 0.01f
-    val headerOverlayBrush = remember(backgroundColor, headerContentAlpha) {
+    val fadeEdge = Dap.fadeEdge
+    val headerOverlayBrush = remember(backgroundColor, fadeEdge, headerContentAlpha) {
         Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
                 backgroundColor.copy(alpha = 0.30f * headerContentAlpha),
                 backgroundColor.copy(alpha = 0.90f * headerContentAlpha),
-                backgroundColor.copy(alpha = headerContentAlpha)
+                fadeEdge.copy(alpha = headerContentAlpha)
             )
         )
     }
@@ -752,7 +764,8 @@ private fun CollapsingAlbumTopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(headerHeight)
-                .background(backgroundColor.copy(alpha = backgroundAlpha))
+                // B42-fix3 (item 8): once collapsed the bar is frosted over the cover glass (`Dap.bar`), the theme's own ground otherwise
+                .background(Dap.bar.let { it.copy(alpha = it.alpha * backgroundAlpha) })
         ) {
             if (showExpandedContent) {
                 SmartImage(

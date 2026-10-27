@@ -14,6 +14,8 @@ import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,7 +31,7 @@ import javax.inject.Inject
 /**
  * Holds the full UI state for ArtistDetailScreen.
  *
- * [effectiveImageUrl] is the resolved image to display (custom takes priority over Deezer).
+ * [effectiveImageUrl] is the resolved image to display (custom takes priority over a downloaded one).
  * It is updated after artist data loads and again whenever the user changes the custom image.
  */
 data class ArtistDetailUiState(
@@ -55,6 +57,7 @@ class ArtistDetailViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val musicRepository: MusicRepository,
     private val artistImageRepository: ArtistImageRepository,
+    private val musicInfo: com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository,
     val themeStateHolder: ThemeStateHolder,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -62,15 +65,35 @@ class ArtistDetailViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ArtistDetailUiState())
     val uiState: StateFlow<ArtistDetailUiState> = _uiState.asStateFlow()
 
+    /** Artist information loads independently of local content and the remote image palette. */
+    private val _about = MutableStateFlow(com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState())
+
     /**
-     * Pre-warmed color scheme for the current artist image.
-     * This is populated synchronously (from the processor's LRU/DB cache) before [uiState]
-     * marks [ArtistDetailUiState.isLoading] = false, so the screen has the correct palette
-     * on its very first composition — no flash from system colors.
-     *
-     * Consumers should read this directly instead of calling [ThemeStateHolder.getAlbumColorSchemeFlow]
-     * in order to avoid the initial-null-emission that causes the flash.
+     * B40-F4: the artist's Wikipedia description and the credit of a downloaded photo. What was downloaded before is shown at once, offline
+     * included; with the switch on, what is missing is asked for in the background and fills in when it arrives.
      */
+    val about: StateFlow<com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState> = _about.asStateFlow()
+
+    private var aboutJob: Job? = null
+
+    private fun loadAbout(artistName: String, shownImage: String?) {
+        aboutJob?.cancel()
+        aboutJob = viewModelScope.launch {
+            val service = musicInfo.service
+            // the service reads the cache and asks the network on its own IO dispatcher: this scope is the main thread's (B40-fix1)
+            suspend fun current() = com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState(
+                description = service.cachedAbout(com.lostf1sh.pixelplayeross.data.musicinfo.AboutKind.ARTIST, artistName, null),
+                // the credit goes with the photo only while that photo is the one on screen
+                photo = service.cachedArtistPhoto(artistName)?.takeIf { it.path == shownImage },
+            )
+            _about.value = current()
+            // The service decides whether anything better than what is shown may be asked for (a language it prefers, not marked missing,
+            // with the switch on): always asking is how a cached English fallback still gets upgraded to the app's language (B40-fix2).
+            service.fetchAbout(com.lostf1sh.pixelplayeross.data.musicinfo.AboutKind.ARTIST, artistName, null)
+            current().let { if (it != _about.value) _about.value = it }
+        }
+    }
+
     private val _artistColorScheme = MutableStateFlow<ColorSchemePair?>(null)
     val artistColorScheme: StateFlow<ColorSchemePair?> = _artistColorScheme.asStateFlow()
 
@@ -91,12 +114,14 @@ class ArtistDetailViewModel @Inject constructor(
             .launchIn(viewModelScope)
     }
 
+    private var imageJob: Job? = null
     private var currentLoadJob: Job? = null
     private var loadedArtistId: Long? = null
 
     private fun loadArtistData(id: Long) {
         loadedArtistId = id
         currentLoadJob?.cancel()
+        imageJob?.cancel()
         currentLoadJob = viewModelScope.launch {
             Timber.tag("ArtistDebug").d("loadArtistData: id=$id")
             _uiState.update { it.copy(isLoading = true, error = null) }
@@ -127,37 +152,47 @@ class ArtistDetailViewModel @Inject constructor(
                         val albumSections = buildAlbumSections(songs)
                         val orderedSongs = albumSections.flatMap { it.songs }
 
-                        val effectiveUrl = try {
-                            artistImageRepository.getEffectiveArtistImageUrl(
-                                artistId = artist.id,
-                                artistName = artist.name
-                            )
-                        } catch (e: Exception) {
-                            Timber.tag("ArtistDebug").w("Failed to resolve effective artist image: ${e.message}")
-                            artist.effectiveImageUrl
-                        }
-
-                        val newScheme = if (!effectiveUrl.isNullOrBlank()) {
-                            try {
-                                themeStateHolder.getOrGenerateColorScheme(effectiveUrl)
-                            } catch (e: Exception) {
-                                Timber.tag("ArtistDebug").w("Color scheme pre-warm failed: ${e.message}")
-                                null
-                            }
-                        } else null
-
-                        _artistColorScheme.value = newScheme
+                        // Publish the library immediately. Online images and their palette never hold the page's loading state.
+                        val localImage = artist.effectiveImageUrl?.takeUnless { it.startsWith("http://") || it.startsWith("https://") }
                         _uiState.value = ArtistDetailUiState(
-                            artist = artist.copy(
-                                imageUrl = if (artist.customImageUri.isNullOrBlank()) effectiveUrl else artist.imageUrl
-                            ),
+                            artist = artist,
                             songs = orderedSongs,
                             albumSections = albumSections,
-                            effectiveImageUrl = effectiveUrl,
-                            isLoading = false
+                            effectiveImageUrl = localImage,
+                            isLoading = false,
                         )
+                        loadAbout(artist.name, localImage)
+                        imageJob?.cancel()
+                        imageJob = viewModelScope.launch {
+                            val effectiveUrl = try {
+                                artistImageRepository.getEffectiveArtistImageUrl(artist.id, artist.name)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (e: Exception) {
+                                Timber.tag("ArtistDebug").w("Failed to resolve artist image: %s", e.message)
+                                localImage
+                            }
+                            val scheme = if (!effectiveUrl.isNullOrBlank()) {
+                                try { themeStateHolder.getOrGenerateColorScheme(effectiveUrl) }
+                                catch (cancelled: CancellationException) { throw cancelled }
+                                catch (e: Exception) { null }
+                            } else null
+                            ensureActive()
+                            if (loadedArtistId != artist.id) return@launch
+                            _artistColorScheme.value = scheme
+                            _uiState.update { current ->
+                                if (current.artist?.id != artist.id || current.artist.customImageUri != artist.customImageUri) current
+                                else current.copy(
+                                    effectiveImageUrl = effectiveUrl,
+                                    artist = current.artist.copy(imageUrl = if (artist.customImageUri.isNullOrBlank()) effectiveUrl else current.artist.imageUrl),
+                                )
+                            }
+                            loadAbout(artist.name, effectiveUrl)
+                        }
                     }
 
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -213,7 +248,7 @@ class ArtistDetailViewModel @Inject constructor(
     }
 
     /**
-     * Called when the user wants to revert to the Deezer-sourced image.
+     * Called when the user wants to revert to the downloaded image.
      */
     fun clearCustomImage() {
         val artist = _uiState.value.artist ?: return

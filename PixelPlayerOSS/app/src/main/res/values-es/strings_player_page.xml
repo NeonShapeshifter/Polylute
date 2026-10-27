@@ -4,6 +4,7 @@
     <string name="player_header_collapse">Cerrar reproductor</string>
     <string name="player_header_lyrics">Letras</string>
     <string name="player_header_details">Detalles de la pista</string>
+    <string name="player_action_options">Opciones</string>
     <string name="player_add_bookmark">Añadir marcador</string>
     <string name="lyrics_options">Opciones de letras</string>
     <string name="lyrics_menu_title">Letras</string>
@@ -26,4 +27,5 @@
     <string name="queue_title_next">A continuación</string>
     <!-- B32-Q4: the peek of the queue at the foot of the full player -->
     <string name="player_queue_peek_open">Abrir la cola</string>
+    <string name="player_lyrics_under_cover_cd">Abrir la letra</string>
 </resources>

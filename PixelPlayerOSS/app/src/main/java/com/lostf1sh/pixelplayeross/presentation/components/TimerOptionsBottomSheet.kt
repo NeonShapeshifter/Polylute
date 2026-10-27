@@ -63,7 +63,7 @@ fun TimerOptionsBottomSheet(
         playCount > 0 -> pluralStringResource(R.plurals.timer_repeat_value, playCount.toInt(), playCount.toInt())
         else -> stringResource(R.string.timer_off)
     }
-    ModalBottomSheet(
+    GlassModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalSheetState(skipPartiallyExpanded = true),
         shape = RoundedCornerShape(topStart = DapRadius.SheetTop, topEnd = DapRadius.SheetTop)) {

@@ -3,7 +3,6 @@ package com.lostf1sh.pixelplayeross.presentation.viewmodel
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.net.Uri
-import android.os.Trace
 import android.media.MediaMetadataRetriever
 import kotlinx.coroutines.withContext
 import androidx.compose.animation.core.Animatable
@@ -568,6 +567,10 @@ class PlayerViewModel @Inject constructor(
             initialValue = false
         )
 
+    /** B41: two lines of synced lyrics under the cover (Appearance, Player). Off: the player reads no lyrics for it. */
+    val lyricsUnderCover: StateFlow<Boolean> = userPreferencesRepository.lyricsUnderCoverFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_LYRICS_UNDER_COVER)
+
     val immersiveLyricsEnabled: StateFlow<Boolean> = userPreferencesRepository.immersiveLyricsEnabledFlow
         .stateIn(
             scope = viewModelScope,
@@ -1033,7 +1036,6 @@ class PlayerViewModel @Inject constructor(
 
     val isWifiEnabled: StateFlow<Boolean> = connectivityStateHolder.isWifiEnabled
     val isWifiRadioOn: StateFlow<Boolean> = connectivityStateHolder.isWifiRadioOn
-    val wifiName: StateFlow<String?> = connectivityStateHolder.wifiName
     val isBluetoothEnabled: StateFlow<Boolean> = connectivityStateHolder.isBluetoothEnabled
     val bluetoothName: StateFlow<String?> = connectivityStateHolder.bluetoothName
     val bluetoothAudioDeviceStates: StateFlow<List<BluetoothAudioDeviceState>> = connectivityStateHolder.bluetoothAudioDeviceStates
@@ -1090,8 +1092,7 @@ class PlayerViewModel @Inject constructor(
         }
 
         stablePlayerState
-            .map { it.currentSong?.albumArtUriString?.takeIf { uri -> uri.isNotBlank() } }
-            .distinctUntilChanged()
+            .artworkRequests()
             .onEach { artworkUri ->
                 themeStateHolder.extractAndGenerateColorScheme(
                     albumArtUriAsUri = artworkUri?.toUri(),
@@ -1241,8 +1242,7 @@ class PlayerViewModel @Inject constructor(
 
     val availableSortOptions: StateFlow<List<SortOption>> =
         currentLibraryTabId.map { tabId ->
-            Trace.beginSection("PlayerViewModel.availableSortOptionsMapping")
-            try {
+            traceSection("PlayerViewModel.availableSortOptionsMapping") {
                 when (tabId) {
                     LibraryTabId.SONGS -> SortOption.SONGS
                     LibraryTabId.ALBUMS -> SortOption.ALBUMS
@@ -1256,8 +1256,6 @@ class PlayerViewModel @Inject constructor(
                     LibraryTabId.GENRES,
                     LibraryTabId.COLLECTIONS -> emptyList()
                 }
-            } finally {
-                Trace.endSection()
             }
         }.stateIn(
             scope = viewModelScope,
@@ -1397,7 +1395,9 @@ class PlayerViewModel @Inject constructor(
         val immersiveLyricsTimeout: Long = 4000L,
         val isImmersiveTemporarilyDisabled: Boolean = false,
         val isBluetoothEnabled: Boolean = false,
-        val bluetoothName: String? = null
+        val bluetoothName: String? = null,
+        /** B41: two lines of synced lyrics under the cover. */
+        val lyricsUnderCover: Boolean = true
     )
 
     private val fullPlayerSlicePart1 = combine(
@@ -1421,9 +1421,10 @@ class PlayerViewModel @Inject constructor(
         immersiveLyricsEnabled,
         immersiveLyricsTimeout,
         isImmersiveTemporarilyDisabled,
-        bluetoothSlice
-    ) { immersive: Boolean, immersiveTimeout: Long, immersiveDisabled: Boolean, bt: BluetoothSlice ->
-        FullPlayerSlicePart2(immersive, immersiveTimeout, immersiveDisabled, bt.enabled, bt.name)
+        bluetoothSlice,
+        lyricsUnderCover
+    ) { immersive: Boolean, immersiveTimeout: Long, immersiveDisabled: Boolean, bt: BluetoothSlice, underCover: Boolean ->
+        FullPlayerSlicePart2(immersive, immersiveTimeout, immersiveDisabled, bt.enabled, bt.name, underCover)
     }
 
     private data class FullPlayerSlicePart1(
@@ -1439,7 +1440,8 @@ class PlayerViewModel @Inject constructor(
         val immersiveLyricsTimeout: Long,
         val isImmersiveTemporarilyDisabled: Boolean,
         val isBluetoothEnabled: Boolean,
-        val bluetoothName: String?
+        val bluetoothName: String?,
+        val lyricsUnderCover: Boolean
     )
 
     val fullPlayerSlice: StateFlow<FullPlayerSlice> = combine(
@@ -1456,7 +1458,8 @@ class PlayerViewModel @Inject constructor(
             immersiveLyricsTimeout = p2.immersiveLyricsTimeout,
             isImmersiveTemporarilyDisabled = p2.isImmersiveTemporarilyDisabled,
             isBluetoothEnabled = p2.isBluetoothEnabled,
-            bluetoothName = p2.bluetoothName
+            bluetoothName = p2.bluetoothName,
+            lyricsUnderCover = p2.lyricsUnderCover
         )
     }
         .distinctUntilChanged()
@@ -2040,14 +2043,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onMainActivityStart() {
-        Trace.beginSection("PlayerViewModel.onMainActivityStart")
-        try {
+        traceSection("PlayerViewModel.onMainActivityStart") {
             preloadThemesAndInitialData()
             activityDayCheck.onActivityStart()
             // Idempotent; here rather than in init, which runs before favoriteSongIds exists.
             dailyMixStateHolder.startDayBoundaryWatch()
-        } finally {
-            Trace.endSection()
         }
     }
 
@@ -2067,8 +2067,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun preloadThemesAndInitialData() {
-        Trace.beginSection("PlayerViewModel.preloadThemesAndInitialData")
-        try {
+        traceSection("PlayerViewModel.preloadThemesAndInitialData") {
             viewModelScope.launch {
                 _isInitialThemePreloadComplete.value = false
                 if (isSyncingStateFlow.value && !_isInitialDataLoaded.value) {
@@ -2077,8 +2076,6 @@ class PlayerViewModel @Inject constructor(
                 }
                 _isInitialThemePreloadComplete.value = true
             }
-        } finally {
-            Trace.endSection()
         }
     }
 
@@ -2090,13 +2087,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun resetAndLoadInitialData(caller: String = "Unknown") {
-        Trace.beginSection("PlayerViewModel.resetAndLoadInitialData")
-        try {
+        traceSection("PlayerViewModel.resetAndLoadInitialData") {
             Timber.tag("PlayerViewModel").d("resetAndLoadInitialData called by $caller")
             loadInitialLibraryDataParallel()
             updateDailyMix()
-        } finally {
-            Trace.endSection()
         }
     }
 
@@ -2870,6 +2864,7 @@ class PlayerViewModel @Inject constructor(
         playbackStateHolder.updateStablePlayerState("controller.mediaItemSync") {
             it.copy(
                 currentSong = song,
+                queueConfirmedEmpty = false,
                 currentMediaItemIndex = expectedIndex,
                 totalDuration = resolvedDuration,
                 lyrics = null,
@@ -2920,6 +2915,7 @@ class PlayerViewModel @Inject constructor(
                 playbackStateHolder.updateStablePlayerState {
                     it.copy(
                         currentSong = song,
+                        queueConfirmedEmpty = false,
                         totalDuration = resolvedDuration
                     )
                 }
@@ -2938,6 +2934,7 @@ class PlayerViewModel @Inject constructor(
                 playbackStateHolder.updateStablePlayerState {
                     it.copy(
                         currentSong = null,
+                        queueConfirmedEmpty = playerCtrl.mediaItemCount == 0,
                         isPlaying = false,
                         playWhenReady = false
                     )
@@ -3040,6 +3037,7 @@ class PlayerViewModel @Inject constructor(
                         playbackStateHolder.updateStablePlayerState {
                             it.copy(
                                 currentSong = song,
+                                queueConfirmedEmpty = false,
                                 currentMediaItemIndex = playbackStateHolder.queuePositionOf(playerCtrl),
                                 totalDuration = resolvedDuration,
                                 lyrics = null,
@@ -3066,6 +3064,7 @@ class PlayerViewModel @Inject constructor(
                         playbackStateHolder.updateStablePlayerState {
                             it.copy(
                                 currentSong = null,
+                                queueConfirmedEmpty = playerCtrl.mediaItemCount == 0,
                                 isPlaying = false,
                                 playWhenReady = false,
                                 lyrics = null,
@@ -3117,6 +3116,7 @@ class PlayerViewModel @Inject constructor(
                     playbackStateHolder.updateStablePlayerState {
                         it.copy(
                             currentSong = null,
+                            queueConfirmedEmpty = true,
                             isPlaying = false,
                             playWhenReady = false,
                             lyrics = null,
@@ -3335,6 +3335,7 @@ class PlayerViewModel @Inject constructor(
             playbackStateHolder.updateStablePlayerState { state ->
                 state.copy(
                     currentSong = externalResult.song,
+                    queueConfirmedEmpty = false,
                     isPlaying = true,
                     playWhenReady = true,
                     totalDuration = externalResult.song.duration,
@@ -3711,6 +3712,7 @@ class PlayerViewModel @Inject constructor(
         playbackStateHolder.updateStablePlayerState {
             it.copy(
                 currentSong = effectiveStartSong,
+                queueConfirmedEmpty = false,
                 // The row inside the block the player starts with; the whole queue's row is set once the rest is attached.
                 currentMediaItemIndex = geometry.startLocalIndex,
                 isPlaying = true,
@@ -3856,6 +3858,7 @@ class PlayerViewModel @Inject constructor(
         playbackStateHolder.updateStablePlayerState {
             it.copy(
                 currentSong = song,
+                queueConfirmedEmpty = false,
                 isPlaying = true,
                 playWhenReady = true
             )
@@ -4578,6 +4581,7 @@ class PlayerViewModel @Inject constructor(
         playbackStateHolder.updateStablePlayerState {
             it.copy(
                 currentSong = null,
+                queueConfirmedEmpty = true,
                 isPlaying = false,
                 playWhenReady = false,
                 totalDuration = 0L,
@@ -5102,6 +5106,7 @@ class PlayerViewModel @Inject constructor(
                     playbackStateHolder.updateStablePlayerState {
                         it.copy(
                             currentSong = updatedSong,
+                            queueConfirmedEmpty = false,
                             lyrics = result.parsedLyrics
                         )
                     }
@@ -5382,6 +5387,7 @@ class PlayerViewModel @Inject constructor(
                 playbackStateHolder.updateStablePlayerState {
                     it.copy(
                         currentSong = updatedSong,
+                        queueConfirmedEmpty = false,
                         lyrics = result.parsedLyrics
                     )
                 }
@@ -5465,6 +5471,7 @@ class PlayerViewModel @Inject constructor(
             val finalLyrics = newLyrics ?: state.lyrics
             state.copy(
                 currentSong = updatedSong,
+                queueConfirmedEmpty = false,
                 lyrics = if (state.currentSong?.id == updatedSong.id) finalLyrics else state.lyrics,
                 isLoadingLyrics = isLoadingLyrics ?: state.isLoadingLyrics
             )

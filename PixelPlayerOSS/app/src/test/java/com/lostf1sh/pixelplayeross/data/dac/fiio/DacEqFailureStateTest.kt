@@ -71,7 +71,7 @@ class DacEqFailureStateTest {
             store.update(backup.withSlot(dac.slot(slot).let { DacEqSlotSnapshot(slot, it.preGainTenths, it.bands.toList()) }))
             controller.resolveNow()
             controller.publish(att, state)
-            check(controller.label.value == DacEqLabel.OFF_OR_FLAT)
+            check(controller.label.value == DacEqLabel.OFF)
         }
 
         fun apply(bands: List<DacEqBand>) = runBlocking { writer.applyCurve(att, bands, WriteInitiator.USER_ACTION) }
@@ -95,7 +95,7 @@ class DacEqFailureStateTest {
         val readout = r.controller.readout.value
         val truth = r.truth()
         assertWithMessage("$what: the label source says $label, a healthy read says $truth").that(label == truth || label == DacEqLabel.UNKNOWN).isTrue()
-        if (truth == DacEqLabel.ON) assertWithMessage("$what: stale Purity over a DAC that plays a curve").that(label).isNotEqualTo(DacEqLabel.OFF_OR_FLAT)
+        if (truth == DacEqLabel.ON) assertWithMessage("$what: stale Purity over a DAC that plays a curve").that(label).isNotEqualTo(DacEqLabel.OFF)
         // The readout the screen reads is the one the label comes from.
         assertThat(readout.label).isEqualTo(label)
     }
@@ -124,7 +124,7 @@ class DacEqFailureStateTest {
                 assertWithMessage("$what: a restore or an undo is in the log").that(r.log.any { it.contains("RESTORE after a failure") }).isTrue()
                 // What was read after the recovery was published: the DAC is closed again, and the label may say so because a read says so.
                 assertWithMessage(what).that(r.published).isNotEmpty()
-                assertThat(r.controller.label.value).isEqualTo(DacEqLabel.OFF_OR_FLAT)
+                assertThat(r.controller.label.value).isEqualTo(DacEqLabel.OFF)
                 assertLabelHonest(r, what)
             }
         }
@@ -186,7 +186,7 @@ class DacEqFailureStateTest {
         val b = Rig()
         b.dac.afterSet = { d, report -> if ((report[5].toInt() and 0xFF) == FiioHidWrites.CMD_GAIN) d.dropReplies = true }
         b.apply(target)
-        assertThat(b.controller.label.value).isNotEqualTo(DacEqLabel.OFF_OR_FLAT)
+        assertThat(b.controller.label.value).isNotEqualTo(DacEqLabel.OFF)
         b.truth() // (heals the transport)
         assertThat(b.controller.label.value).isEqualTo(DacEqLabel.UNKNOWN)
     }
@@ -200,7 +200,7 @@ class DacEqFailureStateTest {
         assertThat((result as DacEqWriteResult.Mismatch).restored).isTrue()
         // Not the snapshot taken before the rollback (the mismatching read-back, a curve that was never kept): the one after it.
         assertThat(r.published.map { it.verdict }).containsExactly(DacEqVerdict.OFF)
-        assertThat(r.controller.label.value).isEqualTo(DacEqLabel.OFF_OR_FLAT)
+        assertThat(r.controller.label.value).isEqualTo(DacEqLabel.OFF)
         assertLabelHonest(r, "mismatch with a rollback")
     }
 
@@ -211,7 +211,7 @@ class DacEqFailureStateTest {
         assertThat(ok.apply(target)).isInstanceOf(DacEqWriteResult.Done::class.java)
         assertThat(ok.controller.label.value).isEqualTo(DacEqLabel.ON)
         assertThat(ok.restore()).isInstanceOf(DacEqWriteResult.Done::class.java)
-        assertThat(ok.controller.label.value).isEqualTo(DacEqLabel.OFF_OR_FLAT)
+        assertThat(ok.controller.label.value).isEqualTo(DacEqLabel.OFF)
 
         // failed: the restore begins and the DAC stops answering reads half way
         val bad = Rig()
@@ -245,7 +245,7 @@ class DacEqFailureStateTest {
         // And a read that works again gives the label back, from the DAC and not from memory.
         unavailable.opener.unavailable = null
         runBlocking { unavailable.service.read(unavailable.att) }
-        assertThat(unavailable.controller.label.value).isEqualTo(DacEqLabel.OFF_OR_FLAT)
+        assertThat(unavailable.controller.label.value).isEqualTo(DacEqLabel.OFF)
     }
 
     @Test
@@ -253,7 +253,7 @@ class DacEqFailureStateTest {
         val r = Rig()
         val other = r.att.copy(attachKey = "path-b")
         r.controller.invalidate(other, "not this one")
-        assertThat(r.controller.label.value).isEqualTo(DacEqLabel.OFF_OR_FLAT)
+        assertThat(r.controller.label.value).isEqualTo(DacEqLabel.OFF)
         r.controller.invalidate(r.att, "this one")
         assertThat(r.controller.label.value).isEqualTo(DacEqLabel.UNKNOWN)
     }

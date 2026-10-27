@@ -97,6 +97,7 @@
     <string name="stats_top_to">Till</string>
     <string name="stats_top_prev_month">Föregående månad</string>
     <string name="stats_top_next_month">Nästa månad</string>
+    <string name="stats_top_history_starts">Din historik börjar i %1$s</string>
     <string name="stats_top_save">Spara som spellista</string>
     <string name="stats_top_saved">Sparad som ”%1$s”</string>
     <string name="stats_top_empty_title">Inga spelade låtar i den här perioden</string>

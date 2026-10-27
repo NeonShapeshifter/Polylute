@@ -36,6 +36,19 @@ The SIL Open Font License 1.1 text, with the copyright notices it requires, is s
 | Manrope (`manrope_variable.ttf`) | `https://github.com/google/fonts/tree/main/ofl/manrope` | SIL Open Font License 1.1 |
 | JetBrains Mono (`jetbrains_mono_variable.ttf`) | `https://github.com/google/fonts/tree/main/ofl/jetbrainsmono` | SIL Open Font License 1.1 |
 
+# Online data sources
+
+These are the services the app asks, and only when you turn the matching switch on (Settings, Library, "Music info from the internet", and the lyrics switch). What they supply is shown with its credit and kept on the phone until you delete it. The app's PRIVACY page lists exactly what each request sends.
+
+| Source | What it supplies | License or terms of what is shown | Address |
+| --- | --- | --- | --- |
+| MusicBrainz | The identifiers of artists, releases and albums that find the rest. | The core data is in the public domain (CC0). | https://musicbrainz.org |
+| Cover Art Archive | Front covers of releases that have no cover of their own on the phone. | A project of the Internet Archive and MetaBrainz; the images are contributed by users under the licenses stated for each. They are shown in the app only. | https://coverartarchive.org |
+| Wikidata | Which picture and which Wikipedia pages an artist or album has. | CC0. | https://www.wikidata.org |
+| Wikimedia Commons | Artist photos. The author and license of each photo are kept with it and shown beside it, with a link to its page. | The license of each file (for example CC BY, CC BY-SA or public domain), as its page states. | https://commons.wikimedia.org |
+| Wikipedia | The summary of an artist's or an album's article, shown as "From Wikipedia" with a link. | CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/ | https://www.wikipedia.org |
+| LRCLIB | Online lyrics for a song that has none. | Provided by LRCLIB for use by players. | https://lrclib.net |
+
 # Bundled data
 
 | Data | Comes with | License | Source |

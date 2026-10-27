@@ -131,11 +131,11 @@ internal data class DapButtonColors(val container: Color, val content: Color)
 internal fun dapButtonColors(variant: DapButtonVariant, enabled: Boolean): DapButtonColors = when {
     !enabled -> when (variant) {
         DapButtonVariant.Text -> DapButtonColors(Color.Transparent, Dap.disabledText)
-        else -> DapButtonColors(Dap.surface, Dap.disabledText)
+        else -> DapButtonColors(Dap.panel, Dap.disabledText)
     }
     variant == DapButtonVariant.Primary -> DapButtonColors(Dap.primaryText, Dap.onFill)
-    variant == DapButtonVariant.Secondary -> DapButtonColors(Dap.surfaceRaised, Dap.primaryText)
-    variant == DapButtonVariant.Destructive -> DapButtonColors(Dap.surfaceRaised, Dap.warning)
+    variant == DapButtonVariant.Secondary -> DapButtonColors(Dap.panelRaised, Dap.primaryText)
+    variant == DapButtonVariant.Destructive -> DapButtonColors(Dap.panelRaised, Dap.warning)
     else -> DapButtonColors(Color.Transparent, Dap.secondaryText)
 }
 

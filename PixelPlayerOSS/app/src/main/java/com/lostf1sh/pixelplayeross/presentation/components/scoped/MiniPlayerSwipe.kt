@@ -157,13 +157,17 @@ internal fun rememberMiniPlayerSwipeHandler(
 /**
  * The mini player's swipe as a pointer handler. Events are consumed only once the movement is a clear horizontal one
  * ([MiniSwipePolicy.intentAfterSlop]), so a tap, a vertical drag that expands the player and the buttons' own taps all reach their owners.
+ *
+ * B40-F6: a touch that goes down in the top [seekZoneHeightPx] belongs to the mini player's progress line ([MiniSeekPolicy.ownerOf]) and
+ * is not looked at here at all; 0 (the default) means there is no line, and every touch is this swipe's, as it was.
  */
-internal fun Modifier.miniPlayerSwipeGesture(enabled: Boolean, handler: MiniPlayerSwipeHandler): Modifier {
+internal fun Modifier.miniPlayerSwipeGesture(enabled: Boolean, handler: MiniPlayerSwipeHandler, seekZoneHeightPx: Float = 0f): Modifier {
     if (!enabled) return this
-    return this.pointerInput(handler) {
+    return this.pointerInput(handler, seekZoneHeightPx) {
         val slopPx = viewConfiguration.touchSlop
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            if (MiniSeekPolicy.ownerOf(down.position.y, seekZoneHeightPx) == MiniSeekPolicy.Owner.SEEK) return@awaitEachGesture
             var intent: MiniSwipePolicy.Intent? = null
             var totalDx = 0f
             var totalDy = 0f

@@ -21,8 +21,8 @@ class LicenseDocumentTest {
             .joinToString("\n").replace("# ", "").replace("|", " ")
         fun words(s: String) = s.trim().split(Regex("\\s+"))
         assertEquals(words(expected), words(presented))
-        assertEquals(6, blocks.filterIsInstance<LicenseBlock.Table>().size)
-        assertEquals(41, blocks.filterIsInstance<LicenseBlock.Table>().sumOf { it.rows.size })
+        assertEquals(7, blocks.filterIsInstance<LicenseBlock.Table>().size)
+        assertEquals(47, blocks.filterIsInstance<LicenseBlock.Table>().sumOf { it.rows.size })
     }
 
     @Test

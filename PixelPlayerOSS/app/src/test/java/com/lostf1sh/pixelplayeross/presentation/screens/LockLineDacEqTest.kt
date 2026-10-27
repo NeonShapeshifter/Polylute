@@ -60,7 +60,7 @@ class LockLineDacEqTest {
 
     @Test
     fun `Purity keeps the line it always had, with or without a DAC EQ the app can read`() {
-        assertEquals("$base · $tail", line(device(DirectSignalMode.PRISTINE, DacEqLabel.OFF_OR_FLAT)))
+        assertEquals("$base · $tail", line(device(DirectSignalMode.PRISTINE, DacEqLabel.OFF)))
     }
 
     @Test
@@ -75,7 +75,7 @@ class LockLineDacEqTest {
 
     @Test
     fun `the app's DSP says Resonance and App DSP`() {
-        assertEquals("$base · ${s(R.string.dap_output_resonance_app)} · $tail", line(device(DirectSignalMode.PROCESSED, DacEqLabel.OFF_OR_FLAT)))
+        assertEquals("$base · ${s(R.string.dap_output_resonance_app)} · $tail", line(device(DirectSignalMode.PROCESSED, DacEqLabel.OFF)))
     }
 
     @Test
@@ -92,7 +92,7 @@ class LockLineDacEqTest {
 
     @Test
     fun `the lock screen's dot is Purity's, so it is off while the DAC's EQ is on or unknown`() {
-        assertEquals(true, device(DirectSignalMode.PRISTINE, DacEqLabel.OFF_OR_FLAT).audio.purityHolds)
+        assertEquals(true, device(DirectSignalMode.PRISTINE, DacEqLabel.OFF).audio.purityHolds)
         assertEquals(true, device(DirectSignalMode.PRISTINE, DacEqLabel.NOT_APPLICABLE).audio.purityHolds)
         assertEquals(false, device(DirectSignalMode.PRISTINE, DacEqLabel.ON).audio.purityHolds)
         assertEquals(false, device(DirectSignalMode.PRISTINE, DacEqLabel.UNKNOWN).audio.purityHolds)

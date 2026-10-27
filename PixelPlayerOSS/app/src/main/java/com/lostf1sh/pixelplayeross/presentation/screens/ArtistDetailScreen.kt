@@ -65,6 +65,7 @@ import androidx.navigation.NavController
 import com.lostf1sh.pixelplayeross.data.model.Artist
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.components.ExpressiveScrollBar
+import com.lostf1sh.pixelplayeross.presentation.components.ScrollbarGutter
 import com.lostf1sh.pixelplayeross.presentation.components.MiniPlayerHeight
 import com.lostf1sh.pixelplayeross.presentation.components.PlaylistBottomSheet
 import com.lostf1sh.pixelplayeross.presentation.components.SmartImageCompactListTargetSize
@@ -126,6 +127,7 @@ fun ArtistDetailScreen(
     playlistViewModel: PlaylistViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val about by viewModel.about.collectAsStateWithLifecycle()
     val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
 
     var isTransitionFinished by remember { mutableStateOf(false) }
@@ -252,7 +254,7 @@ fun ArtistDetailScreen(
     ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Dap.background
+        color = Dap.page
     ) {
         DapBackScaffold(Modifier.nestedScroll(nestedScrollConnection), onBack = { navController.popBackStack() }, overHeaderArt = true) {
             when {
@@ -308,13 +310,6 @@ fun ArtistDetailScreen(
                             .forEach { staleKey -> expandedSections.remove(staleKey) }
                     }
 
-                    val showScrollBar by remember {
-                        derivedStateOf {
-                            collapseFraction > 0.95f &&
-                                (lazyListState.canScrollForward || lazyListState.canScrollBackward)
-                        }
-                    }
-
                     LazyColumn(
                         state = lazyListState,
                         modifier = Modifier
@@ -327,10 +322,16 @@ fun ArtistDetailScreen(
                         contentPadding = PaddingValues(
                             top = minTopBarHeight + 8.dp,
                             start = 16.dp,
-                            end = if (showScrollBar) 24.dp else 16.dp,
+                            end = ScrollbarGutter.endMargin(16.dp),
                             bottom = MiniPlayerHeight + 8.dp
                         )
                     ) {
+                        // B40-F4: the artist's description and the credit of a downloaded photo; nothing when there is neither
+                        if (!about.isEmpty) {
+                            item(key = "artist_about", contentType = "artist_about") {
+                                com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAbout(about)
+                            }
+                        }
                         albumSections.forEachIndexed { index, section ->
                             if (section.songs.isEmpty()) return@forEachIndexed
 
@@ -424,6 +425,8 @@ fun ArtistDetailScreen(
 
                     if (collapseFraction > 0.95f) {
                         ExpressiveScrollBar(
+                            contentEndMargin = 16.dp,
+                            endInset = 0.dp,
                             listState = lazyListState,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
@@ -803,13 +806,14 @@ private fun SharedArtistTopBarProbe(
     val expandedContentAlpha = 1f - solidAlpha
     val showExpandedContent = expandedContentAlpha > 0.01f
     val displayUrl = effectiveImageUrl?.takeIf { it.isNotBlank() }
-    val headerOverlayBrush = remember(backgroundColor, expandedContentAlpha) {
+    val fadeEdge = Dap.fadeEdge
+    val headerOverlayBrush = remember(backgroundColor, fadeEdge, expandedContentAlpha) {
         Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
                 backgroundColor.copy(alpha = 0.24f * expandedContentAlpha),
                 backgroundColor.copy(alpha = 0.84f * expandedContentAlpha),
-                backgroundColor
+                fadeEdge
             )
         )
     }
@@ -985,13 +989,14 @@ private fun CustomCollapsingTopBar(
     val headerContentAlpha = 1f - (collapseFraction * 2).coerceAtMost(1f)
     val showExpandedContent = headerContentAlpha > 0.01f
     val showImageAction = collapseFraction < 0.5f
-    val headerOverlayBrush = remember(backgroundColor, headerContentAlpha) {
+    val fadeEdge = Dap.fadeEdge
+    val headerOverlayBrush = remember(backgroundColor, fadeEdge, headerContentAlpha) {
         Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
                 backgroundColor.copy(alpha = 0.30f * headerContentAlpha),
                 backgroundColor.copy(alpha = 0.90f * headerContentAlpha),
-                backgroundColor.copy(alpha = headerContentAlpha)
+                fadeEdge.copy(alpha = headerContentAlpha)
             )
         )
     }
@@ -1019,7 +1024,8 @@ private fun CustomCollapsingTopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(headerHeight)
-                .background(backgroundColor.copy(alpha = backgroundAlpha))
+                // B42-fix3 (item 8): once collapsed the bar is frosted over the cover glass (`Dap.bar`), the theme's own ground otherwise
+                .background(Dap.bar.let { it.copy(alpha = it.alpha * backgroundAlpha) })
         ) {
             if (showExpandedContent) {
                 val displayUrl = effectiveImageUrl?.takeIf { it.isNotBlank() }

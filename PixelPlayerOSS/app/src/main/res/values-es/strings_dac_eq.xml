@@ -10,7 +10,8 @@
     <string name="track_details_route_usb_direct_resonance_both">USB Direct \u00b7 Resonancia \u00b7 EQ del DAC + DSP de la app</string>
     <string name="track_details_dac_eq">EQ del DAC</string>
     <string name="track_details_dac_eq_unknown">Desconocido</string>
-    <string name="track_details_dac_eq_off">Desactivado o plano</string>
+    <string name="track_details_dac_eq_off">Desactivado en el DAC</string>
+    <string name="track_details_dac_eq_flat">Activado, plano</string>
     <string name="track_details_dac_eq_on">Activo</string>
     <string name="dap_output_resonance_dac">Resonancia \u00b7 EQ del DAC</string>
     <string name="dap_output_resonance_app">Resonancia \u00b7 DSP de la app</string>
@@ -124,4 +125,17 @@
     <string name="dac_eq_select_confirm_body">Suena música. Seleccionar %1$s cambia el sonido ahora mismo.</string>
     <string name="dac_eq_select_confirm_action">Seleccionar</string>
     <string name="dac_eq_pregain_sense_note">La app aún no sabe si la pre-ganancia de este DAC amplifica o atenúa, así que solo puede escribir curvas que nunca suben de 0 dB.</string>
+    <!-- B40-F2: the DAC's EQ can be changed from Polylute once the listener has allowed it; an unread DAC says so; the same correction is not applied twice. -->
+    <string name="dac_eq_offer_title">Usar el EQ propio del DAC</string>
+    <string name="dac_eq_offer_sub">%1$s tiene un EQ propio. Polylute puede editarlo: USB Direct se mantiene y nada se ecualiza en el teléfono.</string>
+    <string name="dac_eq_consent_title">¿Dejar que Polylute cambie el EQ del DAC?</string>
+    <string name="dac_eq_consent_body">Polylute guardará su propia curva en el espacio %2$s de %1$s. Antes de escribir nada guarda una copia de lo que tiene el DAC; nunca hace el sonido más fuerte que el original; lee el DAC después de cada cambio y repone la copia si el DAC no guardó lo enviado. Puedes restaurar el DAC desde esta pantalla en cualquier momento y retirar este permiso. Decir que sí no escribe nada: el primer cambio se hace cuando editas la curva.</string>
+    <string name="dac_eq_consent_allow">Permitir</string>
+    <string name="dac_eq_consent_not_now">Ahora no</string>
+    <string name="dac_eq_back_to_software">Usar el EQ de Polylute</string>
+    <string name="dac_eq_back_to_software_sub">Retira el permiso para cambiar el DAC. El DAC conserva lo que tiene.</string>
+    <string name="dac_eq_unread_title">No se pudo leer el EQ del DAC</string>
+    <string name="dac_eq_unread_body">Polylute no muestra nada de él y no cambia nada. Vuelve a leer, o desconecta el DAC y conéctalo otra vez.</string>
+    <string name="dac_eq_twice_note">El EQ de Polylute para estos auriculares también está activado, así que la misma corrección se aplicaría dos veces.</string>
+    <string name="dac_eq_twice_action">Desactivar el EQ de Polylute para estos auriculares</string>
 </resources>

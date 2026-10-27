@@ -543,17 +543,6 @@
     <issue
         id="VectorRaster"
         message="Limit vector icons sizes to 200×200 to keep icon drawing fast; see https://developer.android.com/studio/write/vector-asset-studio#when for more"
-        errorLine1="    android:width=&quot;483dp&quot;"
-        errorLine2="                   ~~~~~">
-        <location
-            file="src/main/res/drawable/monochrome_player.xml"
-            line="4"
-            column="20"/>
-    </issue>
-
-    <issue
-        id="VectorRaster"
-        message="Limit vector icons sizes to 200×200 to keep icon drawing fast; see https://developer.android.com/studio/write/vector-asset-studio#when for more"
         errorLine1="    android:width=&quot;800dp&quot;"
         errorLine2="                   ~~~~~">
         <location
@@ -2298,28 +2287,6 @@
             file="src/main/AndroidManifest.xml"
             line="101"
             column="13"/>
-    </issue>
-
-    <issue
-        id="UnclosedTrace"
-        message="The `beginSection()` call is not always closed with a matching `endSection()` because the code in between may throw an exception"
-        errorLine1="        Trace.beginSection(sectionName.take(MAX_TRACE_SECTION_CHARS))"
-        errorLine2="              ~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/lostf1sh/pixelplayeross/data/diagnostics/AdvancedPerformanceDiagnostics.kt"
-            line="175"
-            column="15"/>
-    </issue>
-
-    <issue
-        id="UnclosedTrace"
-        message="The `beginSection()` call is not always closed with a matching `endSection()` because the code in between may throw an exception"
-        errorLine1="        Trace.beginSection(sectionName.take(MAX_TRACE_SECTION_CHARS))"
-        errorLine2="              ~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/lostf1sh/pixelplayeross/data/diagnostics/AdvancedPerformanceDiagnostics.kt"
-            line="185"
-            column="15"/>
     </issue>
 
     <issue

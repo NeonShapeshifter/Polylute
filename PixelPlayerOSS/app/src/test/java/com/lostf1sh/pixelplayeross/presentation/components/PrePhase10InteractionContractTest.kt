@@ -57,23 +57,19 @@ class PrePhase10InteractionContractTest {
     }
 
     @Test
-    fun `lyrics claims the back edge for horizontal drags, ahead of its own swipe detector`() {
-        assertThat(lyricsSheet).contains("respectSystemBackEdgesForHorizontalDrag()")
-
-        // Order is the mechanism: the claim runs in the Initial pass, so it has to be applied
-        // outside the detector it is protecting.
-        val claim = lyricsSheet.indexOf("respectSystemBackEdgesForHorizontalDrag()")
-        val detector = lyricsSheet.indexOf("detectDragGestures(", claim)
-        assertThat(claim).isGreaterThan(-1)
-        assertThat(detector).isGreaterThan(claim)
+    fun `the player's pager claims the back edge for horizontal drags, ahead of the pager's own drag`() {
+        // B42-fix1: the lyrics are a page of the player's pager, which owns every horizontal gesture on them: it is the pager that claims the
+        // back edge now, on its own modifier, and the page has neither the claim nor a swipe detector of its own.
+        val screen = source("presentation/components/player/FullPlayerScreen.kt")
+        val pager = screen.substringAfter("HorizontalPager(").substringBefore("beyondViewportPageCount")
+        assertThat(pager).contains(".respectSystemBackEdgesForHorizontalDrag()")
+        assertThat(lyricsSheet).doesNotContain("respectSystemBackEdgesForHorizontalDrag()")
+        assertThat(lyricsSheet).doesNotContain("detectDragGestures(")
     }
 
     @Test
-    fun `lyrics keeps its ordinary centre swipe and its vertical scrolling`() {
-        // The swipe detector is still there, still committing prev/next...
-        assertThat(lyricsSheet).contains("if (dragOffset > 0) onPrev() else onNext()")
-        // ...and the claim is conditional on horizontal intent, which is what lets a vertical
-        // drag from the same strip through to the scroller.
+    fun `the back-edge claim still lets a vertical drag through to the scroller`() {
+        // the claim is conditional on horizontal intent, which is what lets a vertical drag from the same strip through to the lyrics' scroller
         assertThat(edgeGesture).contains("dy >= touchSlop && dy > dx -> break")
     }
 
