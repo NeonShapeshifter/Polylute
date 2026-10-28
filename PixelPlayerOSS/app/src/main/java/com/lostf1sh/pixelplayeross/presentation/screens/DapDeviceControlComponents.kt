@@ -535,7 +535,7 @@ private fun DapSettingsSection(title: String, content: @Composable ColumnScope.(
         )
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
+            color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainer),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(content = content)

@@ -10,6 +10,9 @@ interface LyricsRepository {
      */
     suspend fun getStoredLyrics(song: Song): Pair<Lyrics, String>?
 
+    /** Explicit selection restores downloads for these songs only; playback never clears a deletion. */
+    suspend fun allowDownloads(songs: List<Song>) {}
+
     /** Explicit offline download: keeps existing/local lyrics, then downloads a missing result with the user's one-shot consent. */
     suspend fun prepareForOffline(song: Song): Lyrics? = getLyrics(song)
 
@@ -50,6 +53,10 @@ interface LyricsRepository {
     /**
      * Reset lyrics for a song (remove from database and cache).
      */
+    /** Removes only downloaded remote lyrics. Embedded tags, sidecars and their cached DB rows survive. */
+    suspend fun deleteDownloadedLyrics(song: Song) {}
+    suspend fun deleteJobDownloads(owner: String) {}
+
     suspend fun resetLyrics(songId: Long)
     
     /**

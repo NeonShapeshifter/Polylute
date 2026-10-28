@@ -1553,7 +1553,7 @@ fun ShapeParameterCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            containerColor = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow)
         ),
         shape = RoundedCornerShape(DapRadius.Surface)
     ) {

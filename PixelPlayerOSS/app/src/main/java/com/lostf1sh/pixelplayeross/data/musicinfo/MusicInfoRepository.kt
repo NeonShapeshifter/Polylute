@@ -42,6 +42,9 @@ class MusicInfoRepository @Inject constructor(
     // Downloaded music info is durable offline content, not an automatically evicted disk cache.
     val cache = MusicInfoCache(dir, limitBytes = { 0L })
 
+    val deletedDownloads = cache.deletedDownloads
+
+    private val assets = com.lostf1sh.pixelplayeross.data.network.DownloadAssetRegistry(File(context.filesDir, "download-claims.jsonl"))
     private val http = MusicInfoHttp(baseClient)
     val service = MusicInfoService(
         cache = cache,
@@ -54,6 +57,7 @@ class MusicInfoRepository @Inject constructor(
         coversEnabled = { preferences.musicInfoCoversEnabledFlow.first() },
         descriptionsEnabled = { preferences.musicInfoDescriptionsEnabledFlow.first() },
         languages = ::languages,
+        assets = assets,
     )
 
     /** The app's language, then English: what a description is asked for in. */
@@ -61,6 +65,23 @@ class MusicInfoRepository @Inject constructor(
         val tag = AppLocaleManager.currentLanguageTag(context)
         val language = tag.ifBlank { context.resources.configuration.locales[0].language }.lowercase().take(3)
         return listOf(language.takeIf { it.length in 2..3 } ?: "en", "en").distinct()
+    }
+
+    private val imageRepairGate = kotlinx.coroutines.sync.Mutex()
+
+    /** Once per installation upgrade, on IO; clear references before deleting so interrupted repairs can resume. */
+    suspend fun repairBrokenImagesOnce() = withContext(Dispatchers.IO) {
+        imageRepairGate.lock()
+        try {
+            val marker = File(context.filesDir, "music-info-images-1.1.1.done")
+            if (!marker.exists()) {
+                cache.brokenImages().forEach { file ->
+                    musicDao.clearArtistImagesUnder(file.absolutePath)
+                    cache.removeBrokenImage(file)
+                }
+                marker.writeText("done")
+            }
+        } finally { imageRepairGate.unlock() }
     }
 
     // ── the cover queue ──────────────────────────────────────────────────────────────────────────
@@ -78,6 +99,7 @@ class MusicInfoRepository @Inject constructor(
 
     /** The cover for the album of [songId] if one was downloaded already; never touches the network. */
     suspend fun cachedCoverForSong(songId: Long): File? = withContext(Dispatchers.IO) {
+        repairBrokenImagesOnce()
         val song = musicDao.getSongByIdOnce(songId) ?: return@withContext null
         service.cachedCover(song.albumName, song.albumArtist ?: song.artistName)
     }
@@ -125,13 +147,116 @@ class MusicInfoRepository @Inject constructor(
         _coverVersion.update { it + 1 }
     }
 
+    private val interactiveSongs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+
+    fun requestSongInfo(song: com.lostf1sh.pixelplayeross.data.model.Song) {
+        val key = song.id
+        val job = scope.launch(Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            kotlinx.coroutines.supervisorScope {
+                val artists = song.artists.map { it.name }.ifEmpty { listOf(song.artist) }
+                artists.forEach { artist ->
+                    launch {
+                        service.fetchArtistPhoto(artist)?.let { photo ->
+                            musicDao.getArtistIdByNormalizedName(artist)?.let { musicDao.updateArtistImageUrl(it, photo.path) }
+                        }
+                    }
+                    launch { service.fetchAbout(AboutKind.ARTIST, artist) }
+                }
+                launch { service.fetchAbout(AboutKind.ALBUM, song.album, song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist) }
+                launch {
+                    if (preferences.musicInfoCoversEnabledFlow.first() && !com.lostf1sh.pixelplayeross.data.offline.OfflineArtwork.hasLocalCover(context, song)) {
+                        if (service.fetchCover(song.album, song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist) != null) {
+                            song.id.toLongOrNull()?.let { downloadedCoverArrived(it) }
+                        }
+                    }
+                }
+            }
+        }
+        if (interactiveSongs.putIfAbsent(key, job) == null) {
+            job.invokeOnCompletion { interactiveSongs.remove(key, job) }; job.start()
+        } else job.cancel()
+    }
+
     // ── what the listener controls ───────────────────────────────────────────────────────────────
+
+    suspend fun deleteJobDownloads(owner: String) = withContext(Dispatchers.IO) {
+        assets.release(owner, "info|").forEach { deleteAsset(it.id, it.file) }
+        _coverVersion.update { it + 1 }
+    }
+
+    private suspend fun deleteAsset(id: String, path: String?) {
+        val parts = id.split('|', limit = 3)
+        if (parts.size != 3) return
+        if (path != null) musicDao.clearArtistImagesUnder(path)
+        cache.remove(MusicInfoCache.Kind.valueOf(parts[1]), parts[2])
+        assets.forget(id)
+    }
+    suspend fun deleteArtistInfo(name: String) = withContext(Dispatchers.IO) {
+        service.suppressArtist(name)
+        val key = MusicInfoService.photoKey(name)
+        val path = cache.get(MusicInfoCache.Kind.ARTIST_PHOTO, key)?.file?.absolutePath
+        deleteAsset("info|ARTIST_PHOTO|$key", path)
+        deleteAbout(AboutKind.ARTIST, name, null)
+        _coverVersion.update { it + 1 }
+    }
+    suspend fun deleteAlbumInfo(album: String, artist: String, songIds: List<String>) = withContext(Dispatchers.IO) {
+        val artists = linkedSetOf(artist, MusicBrainzClient.firstCreditedArtist(artist))
+        songIds.mapNotNull(String::toLongOrNull).forEach { songId ->
+            musicDao.getSongByIdOnce(songId)?.takeIf { it.albumName == album }?.let { song ->
+                artists += song.albumArtist?.takeIf(String::isNotBlank) ?: song.artistName
+            }
+        }
+        deletedDownloads.mark(artists.flatMap { DownloadKeys.album(album, it) })
+        artists.filter(String::isNotBlank).forEach { albumArtist ->
+            deleteAsset("info|COVER|${MusicInfoService.coverKey(album, albumArtist)}", null)
+            deleteAbout(AboutKind.ALBUM, album, albumArtist)
+        }
+        songIds.mapNotNull(String::toLongOrNull).forEach { downloadedCoverArrived(it) }
+    }
+
+    private suspend fun deleteAbout(kind: AboutKind, name: String, artist: String?) {
+        val languages = cache.descriptionLanguages() + languages() + listOf("en", "es", "sv", "und")
+        languages.distinct().forEach { language ->
+            deleteAsset("info|ABOUT|${MusicInfoService.aboutKey(kind, name, artist, language)}", null)
+        }
+        deleteAsset("info|ABOUT|${MusicInfoService.aboutKey(kind, name, artist)}", null)
+    }
+
+    suspend fun allowDownloads(targets: List<com.lostf1sh.pixelplayeross.data.offline.OfflineTarget>) = withContext(Dispatchers.IO) {
+        val keys = targets.mapNotNull { target ->
+            when (target.kind) {
+                com.lostf1sh.pixelplayeross.data.offline.OfflineKind.ARTIST_PHOTOS -> DownloadKeys.photo(target.title)
+                com.lostf1sh.pixelplayeross.data.offline.OfflineKind.COVERS -> DownloadKeys.cover(target.title, target.albumArtist.orEmpty())
+                com.lostf1sh.pixelplayeross.data.offline.OfflineKind.DESCRIPTIONS -> DownloadKeys.about(
+                    if (target.album) AboutKind.ALBUM else AboutKind.ARTIST,
+                    target.title,
+                    target.albumArtist,
+                )
+                com.lostf1sh.pixelplayeross.data.offline.OfflineKind.LYRICS -> null
+            }
+        }
+        deletedDownloads.allow(keys)
+        Unit
+    }
+
+    suspend fun refreshArtistInfo(name: String) = withContext(Dispatchers.IO) {
+        service.refreshArtist(name)
+        service.cachedArtistPhoto(name)?.let { photo ->
+            musicDao.getArtistIdByNormalizedName(name)?.let { musicDao.updateArtistImageUrl(it, photo.path) }
+        }
+    }
+
+    suspend fun noteArtistPhotoUse(name: String, path: String) = withContext(Dispatchers.IO) {
+        if (cache.owns(path)) assets.note(com.lostf1sh.pixelplayeross.data.network.DownloadAsset(
+            "info|ARTIST_PHOTO|${MusicInfoService.photoKey(name)}", path), newlyWritten = false)
+    }
 
     fun usedBytes(): Long = cache.usedBytes()
 
     /** "Delete downloaded data": every picture and description that was downloaded, and the stored artist pictures that pointed at them. */
     suspend fun deleteDownloadedData(): Long = withContext(Dispatchers.IO) {
         val freed = cache.clear()
+        assets.forgetPrefix("info|")
         musicDao.clearArtistImagesUnder(dir.absolutePath)
         _coverVersion.update { it + 1 }
         freed

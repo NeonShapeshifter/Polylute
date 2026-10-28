@@ -12,6 +12,7 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.repository.ArtistImageRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -187,7 +188,10 @@ class MusicRepositoryImpl @Inject constructor(
                     musicDao.getAllSongs(
                         allowedParentDirs = allowedParentDirs,
                         applyDirectoryFilter = applyDirectoryFilter
-                    )
+                    ).catch { error ->
+                        if (error is kotlinx.coroutines.CancellationException || !isCursorReadFailure(error)) throw error
+                        emit(readAllSongRows(allowedParentDirs, applyDirectoryFilter))
+                    }
                 )
             }.flatMapLatest { it }
         }.map { entities ->
@@ -698,10 +702,28 @@ class MusicRepositoryImpl @Inject constructor(
         val blockedDirs = userPreferencesRepository.blockedDirectoriesFlow.first()
         val (allowedParentDirs, applyDirectoryFilter) =
             computeAllowedDirs(allowedDirs, blockedDirs)
-        musicDao.getAllSongs(
-            allowedParentDirs = allowedParentDirs,
-            applyDirectoryFilter = applyDirectoryFilter
-        ).first().map { it.toSong() }
+        readAllSongRows(allowedParentDirs, applyDirectoryFilter).mapNotNull { row ->
+            try { row.toSong() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { logUnreadableSong(row.id, error); null }
+        }
+    }
+
+    private val unreadableSongIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+    private fun logUnreadableSong(id: Long, error: Exception) {
+        if (unreadableSongIds.add(id)) Timber.tag("MusicRepo").w(error, "Skipped unreadable song %d", id)
+    }
+    private fun isCursorReadFailure(error: Throwable): Boolean = generateSequence(error) { it.cause }.take(8).any {
+        it.message?.contains("CursorWindow", ignoreCase = true) == true || it.javaClass.simpleName == "SQLiteBlobTooBigException"
+    }
+    private suspend fun readAllSongRows(allowedParentDirs: List<String>, applyDirectoryFilter: Boolean): List<com.lostf1sh.pixelplayeross.data.database.SongEntity> {
+        try { return musicDao.getAllSongs(allowedParentDirs, applyDirectoryFilter).first() }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { if (!isCursorReadFailure(error)) throw error }
+        return musicDao.getAllSongIds().mapNotNull { id ->
+            try { musicDao.getSongListRow(id, allowedParentDirs, applyDirectoryFilter) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { if (!isCursorReadFailure(error)) throw error; logUnreadableSong(id, error); null }
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -879,6 +901,7 @@ class MusicRepositoryImpl @Inject constructor(
         sourcePreference: LyricsSourcePreference,
         forceRefresh: Boolean
     ): Lyrics? {
+        artistImageRepository.notePlayingSong(song)
         return lyricsRepository.getLyrics(song, sourcePreference, forceRefresh)
     }
 
@@ -899,6 +922,10 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun searchRemoteLyrics(song: Song): Result<Pair<String, List<LyricsSearchResult>>> {
         return lyricsRepository.searchRemote(song)
+    }
+
+    override suspend fun allowLyricsDownload(song: Song) {
+        lyricsRepository.allowDownloads(listOf(song))
     }
 
     override suspend fun searchRemoteLyricsByQuery(title: String, artist: String?): Result<Pair<String, List<LyricsSearchResult>>> {

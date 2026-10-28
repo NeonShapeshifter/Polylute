@@ -68,7 +68,6 @@ class DapSurfacePolicyTest {
     fun `every Settings page carries neither bar`() {
         listOf(
             Screen.SettingsCategory.createRoute("library"),
-            Screen.PaletteStyle.route,
             Screen.Duplicates.route,
             Screen.ArtistSettings.route,
             Screen.Equalizer.createRoute("hp1"),

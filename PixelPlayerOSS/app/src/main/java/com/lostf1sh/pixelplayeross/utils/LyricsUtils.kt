@@ -639,6 +639,7 @@ object LyricsUtils {
      * @return A [Lyrics] object with either the 'plain' or 'synced' list populated.
      */
     fun parseLyrics(lyricsText: String?): Lyrics {
+        if (lyricsText != null && !com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.accepts(lyricsText)) return Lyrics()
         if (lyricsText.isNullOrEmpty()) {
             return Lyrics(plain = emptyList(), synced = emptyList())
         }

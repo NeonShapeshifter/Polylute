@@ -167,6 +167,22 @@ internal object B42Fix3Pages {
         }
     }
 
+    @Composable
+    fun Device(cover: B41Renders.Cover) {
+        Column(Modifier.fillMaxSize()) {
+            StatusStrip()
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                com.lostf1sh.pixelplayeross.presentation.screens.DapWirelessControlContent(
+                    state = com.lostf1sh.pixelplayeross.presentation.viewmodel.DeviceControlUiState(),
+                    onManageWifi = {}, onEnableBluetooth = {}, onManageBluetooth = {})
+                com.lostf1sh.pixelplayeross.presentation.screens.DapQuickDeviceControls(
+                    state = com.lostf1sh.pixelplayeross.presentation.viewmodel.DeviceControlUiState(),
+                    onBrightnessChanged = {}, onVolumeChanged = {})
+            }
+            Shelf(cover, selected = 0)
+        }
+    }
+
     // ── Library ─────────────────────────────────────────────────────────────────────────────────────
 
     @Composable

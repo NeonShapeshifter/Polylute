@@ -1,5 +1,12 @@
 package com.lostf1sh.pixelplayeross.presentation.components.player
 
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lyrics
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.ui.semantics.semantics
+import com.lostf1sh.pixelplayeross.ui.ds.DapStateIconButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,6 +77,11 @@ internal fun QueueFoldedStrip(
     interactive: Boolean,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    onLyrics: () -> Unit = {},
+    onDetails: () -> Unit = {},
+    onDragStart: () -> Unit = {},
+    onDrag: (Float) -> Unit = {},
+    onRelease: (Float, Float) -> Unit = { _, _ -> },
 ) {
     val openLabel = stringResource(R.string.player_queue_peek_open)
     val label = stringResource(R.string.queue_title_next)
@@ -78,7 +90,9 @@ internal fun QueueFoldedStrip(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clearAndSetSemantics {
+            .queueStripDrag(interactive, onDragStart, onDrag, onRelease)
+            .clickable(enabled = interactive, role = Role.Button, onClickLabel = openLabel, onClick = onOpen)
+            .semantics {
                 // folded: one button, with what is next said and a way in; open: the strip is not there for a screen reader (the sheet is)
                 if (interactive) {
                     role = Role.Button
@@ -122,7 +136,12 @@ internal fun QueueFoldedStrip(
                 }
             }
             Spacer(Modifier.width(DapSpacing.Md))
-            DapIcon(DapIconKind.ChevronUp, tint = Dap.secondaryText, size = 16.dp)
+            DapStateIconButton(contentDescription = stringResource(R.string.player_header_lyrics), active = false, onClick = onLyrics) {
+                Icon(Icons.Outlined.Lyrics, contentDescription = null, tint = it, modifier = Modifier.size(24.dp))
+            }
+            DapStateIconButton(contentDescription = stringResource(R.string.player_header_details), active = false, onClick = onDetails) {
+                Icon(Icons.Outlined.Info, contentDescription = null, tint = it, modifier = Modifier.size(24.dp))
+            }
         }
     }
 }

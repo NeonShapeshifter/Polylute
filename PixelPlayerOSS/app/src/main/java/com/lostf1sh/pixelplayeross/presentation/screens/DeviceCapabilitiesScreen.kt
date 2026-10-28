@@ -293,7 +293,7 @@ private fun PlaybackReadinessCard(
     } ?: false
     // The palette has no tonal containers, so a status surface is the raised surface and the tone
     // lives in the content colour.
-    val containerColor = Dap.surfaceRaised
+    val containerColor = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(Dap.surfaceRaised)
     val contentColor = if (needsReview) Dap.error else Dap.primaryText
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -729,7 +729,7 @@ private fun CapabilityCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = AbsoluteSmoothCornerShape(28.dp, 60),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainer),
         tonalElevation = 0.dp
     ) {
         Column(
@@ -843,7 +843,7 @@ private fun InfoTile(
             .fillMaxHeight()
             .defaultMinSize(minHeight = 86.dp),
         shape = AbsoluteSmoothCornerShape(18.dp, 60),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -907,7 +907,7 @@ private fun FormatSupportTile(
             .fillMaxHeight()
             .defaultMinSize(minHeight = 112.dp),
         shape = AbsoluteSmoothCornerShape(18.dp, 60),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1030,7 +1030,7 @@ private fun OutputRouteRow(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = AbsoluteSmoothCornerShape(16.dp, 60),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1076,7 +1076,7 @@ private fun FindingRow(
     tone: FindingTone,
     modifier: Modifier = Modifier
 ) {
-    val containerColor = Dap.surfaceRaised
+    val containerColor = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(Dap.surfaceRaised)
     val contentColor = when (tone) {
         FindingTone.Success -> LocalDapAccent.current
         FindingTone.Warning -> Dap.warning

@@ -35,12 +35,13 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapType
 @Composable
 fun OfflineDownloadsDialog(songIds: List<String>?, onDismiss: () -> Unit, viewModel: OfflineDownloadsViewModel = hiltViewModel()) {
     val batch by viewModel.state.collectAsStateWithLifecycle()
+    val jobs by viewModel.jobs.collectAsStateWithLifecycle()
     val starting by viewModel.starting.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
     var selecting by rememberSaveable { mutableStateOf(true) }
     var selected by rememberSaveable { mutableStateOf(listOf(OfflineKind.LYRICS.name)) }
-    val progress = starting || batch?.active == true || !selecting
+    val progress = starting || !selecting
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.offline_download_title)) },
@@ -83,6 +84,10 @@ fun OfflineDownloadsDialog(songIds: List<String>?, onDismiss: () -> Unit, viewMo
                         else -> R.string.offline_download_progress_items
                     }, current.next, current.total))
                     Text(stringResource(R.string.offline_download_summary, current.available, current.unavailable, current.failed), style = DapType.Caption)
+                    current.estimatedRemainingMs?.let { remaining ->
+                        Text(stringResource(R.string.offline_download_estimate, (remaining / 60_000L).coerceAtLeast(1L)), style = DapType.Caption)
+                    }
+                    if (current.failed > 0) Text(stringResource(R.string.offline_download_retry, current.failed), style = DapType.Caption)
                     if (current.active) Text(current.lastTitle, maxLines = 2)
                     else {
                         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
@@ -96,8 +101,18 @@ fun OfflineDownloadsDialog(songIds: List<String>?, onDismiss: () -> Unit, viewMo
                         if (current.status == OfflineStatus.PAUSED && current.next < current.total) {
                             TextButton(onClick = viewModel::resume) { Text(stringResource(R.string.offline_download_resume)) }
                         }
+                        TextButton(onClick = { viewModel.deleteJob(current.planId) }) { Text(stringResource(R.string.offline_download_delete_job)) }
                         TextButton(onClick = { selecting = true }) { Text(stringResource(R.string.offline_download_new)) }
                     }
+                }
+                jobs.filter { it.planId != batch?.planId }.forEach { job ->
+                    Text(stringResource(R.string.offline_download_job, job.songIds.size, job.next, job.total), style = DapType.Caption)
+                    Text(stringResource(when (job.status) {
+                        OfflineStatus.QUEUED, OfflineStatus.RUNNING -> R.string.offline_download_queued_job
+                        OfflineStatus.PAUSED -> R.string.offline_download_paused
+                        OfflineStatus.COMPLETE -> R.string.offline_download_complete
+                    }), style = DapType.Caption)
+                    if (!job.active) TextButton(onClick = { viewModel.deleteJob(job.planId) }) { Text(stringResource(R.string.offline_download_delete_job)) }
                 }
                 if (error) {
                     Text(stringResource(R.string.offline_download_failed))

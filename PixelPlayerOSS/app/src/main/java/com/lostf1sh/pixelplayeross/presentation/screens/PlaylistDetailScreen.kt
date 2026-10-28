@@ -539,7 +539,7 @@ fun PlaylistDetailScreen(
                                             smoothnessAsPercentTL = 60,
                                         )
                                     )
-                                    .background(color = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                    .background(color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerHigh)),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                 contentPadding = PaddingValues(
                                     top = 12.dp,
@@ -1014,7 +1014,7 @@ private fun PlaylistActionItem(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerHigh))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically

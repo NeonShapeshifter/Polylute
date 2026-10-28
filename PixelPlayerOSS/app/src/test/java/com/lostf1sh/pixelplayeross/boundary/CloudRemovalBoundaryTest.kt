@@ -77,7 +77,7 @@ class CloudRemovalBoundaryTest {
         assertThat(SettingsVisibility.entries.map { it.name })
             .containsExactly("PUBLIC", "MAINTENANCE")
         assertThat(SettingsSurfacePolicy.visibleCategories())
-            .containsAtLeastElementsIn(SettingsCategory.entries.filter { it.visibility == SettingsVisibility.PUBLIC })
+            .containsAtLeastElementsIn(SettingsCategory.entries.filter { it.visibility == SettingsVisibility.PUBLIC && it != SettingsCategory.DEVICE })
     }
 
     @Test

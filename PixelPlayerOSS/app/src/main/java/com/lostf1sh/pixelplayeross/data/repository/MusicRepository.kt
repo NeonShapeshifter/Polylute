@@ -300,6 +300,8 @@ interface MusicRepository {
      * @param query The query for searching, typically song title and artist name
      * @return The search query and the results
      */
+    suspend fun allowLyricsDownload(song: Song) {}
+
     suspend fun searchRemoteLyricsByQuery(title: String, artist: String? = null): Result<Pair<String, List<LyricsSearchResult>>>
 
     suspend fun updateLyrics(songId: Long, lyrics: String)

@@ -37,7 +37,7 @@ class ArtistImageRepositoryTest {
 
     private val photoFile: java.io.File = java.io.File.createTempFile("photo", ".jpg").also { it.writeBytes(ByteArray(10)); it.deleteOnExit() }
 
-    private fun musicInfo(service: MusicInfoService): MusicInfoRepository = mockk { every { this@mockk.service } returns service }
+    private fun musicInfo(service: MusicInfoService): MusicInfoRepository = mockk(relaxed = true) { every { this@mockk.service } returns service }
 
     @Test
     fun `cancelled prefetch does not mark artist as failed for the session`() = runTest {

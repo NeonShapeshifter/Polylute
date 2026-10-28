@@ -96,7 +96,7 @@ class SongMetadataEditor(
         const val MAX_ALBUM_ARTIST_LENGTH = 500
         const val MAX_COMPOSER_LENGTH = 500
         const val MAX_GENRE_LENGTH = 100
-        const val MAX_LYRICS_LENGTH = 50_000
+        const val MAX_LYRICS_LENGTH = com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.MAX_CHARACTERS
     }
 
     /**

@@ -27,7 +27,6 @@
     <string name="presentation_batch_f_next">Next</string>
     <string name="presentation_batch_f_create">Create</string>
     <string name="presentation_batch_f_edit_playlist">Edit Playlist</string>
-    <string name="presentation_batch_f_cd_close">Close</string>
     <string name="presentation_batch_f_auto_generated_collage">Auto-generated collage</string>
     <string name="presentation_batch_f_cd_add_photo">Add Photo</string>
     <string name="presentation_batch_f_pick_image">Pick Image</string>
@@ -64,26 +63,6 @@
     <string name="presentation_batch_f_smart_rule_new_gems_title">New Gems</string>
     <string name="presentation_batch_f_smart_rule_new_gems_subtitle">Recently added tracks with low play counts.</string>
 
-    <string name="presentation_batch_f_palette_style_heading">Palette style</string>
-    <string name="presentation_batch_f_palette_style_subtitle">Choose the album colors for the player UI.</string>
-    <string name="presentation_batch_f_colors_title">Colors</string>
-    <string name="presentation_batch_f_apply">Apply</string>
-    <string name="presentation_batch_f_palette_style_tonal_spot_desc">Balanced and calm.</string>
-    <string name="presentation_batch_f_palette_style_vibrant_desc">High saturation accents.</string>
-    <string name="presentation_batch_f_palette_style_expressive_desc">Bold hue shifts and contrast.</string>
-    <string name="presentation_batch_f_palette_style_fruit_salad_desc">Playful rotated accents.</string>
-    <string name="presentation_batch_f_palette_label_tonal_spot">Tonal Spot</string>
-    <string name="presentation_batch_f_palette_label_vibrant">Vibrant</string>
-    <string name="presentation_batch_f_palette_label_expressive">Expressive</string>
-    <string name="presentation_batch_f_palette_label_fruit_salad">Fruit Salad</string>
-    <string name="presentation_batch_f_color_accuracy_title">Color accuracy</string>
-    <string name="presentation_batch_f_color_accuracy_subtitle">0 keeps the current tuning. Higher values stay closer to the album art\'s dominant hue.</string>
-    <string name="presentation_batch_f_accuracy_current">Current</string>
-    <string name="presentation_batch_f_accuracy_more_accurate">More accurate</string>
-    <string name="presentation_batch_f_accuracy_summary_current">0 • Current</string>
-    <string name="presentation_batch_f_accuracy_summary_subtle">%1$d • Subtle</string>
-    <string name="presentation_batch_f_accuracy_summary_balanced">%1$d • Balanced</string>
-    <string name="presentation_batch_f_accuracy_summary_precise">%1$d • Precise</string>
 
     <string name="presentation_batch_f_exp_animated_lyrics_title">Animated Lyrics (High-end devices)</string>
     <string name="presentation_batch_f_exp_animated_lyrics_subtitle">Uses spring animations and visual effects for lyrics. May cause frame drops on low-end devices.</string>

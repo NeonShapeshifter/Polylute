@@ -66,7 +66,7 @@ class B42Fix3SurfacesTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private enum class Page { HOME, LIBRARY, STATS, ALBUM }
+    private enum class Page { HOME, LIBRARY, STATS, ALBUM, DEVICE }
 
     private data class Shot(val cover: B41Renders.Cover, val mode: Fix3Mode, val page: Page, val withContent: Boolean)
 
@@ -88,6 +88,7 @@ class B42Fix3SurfacesTest {
                             Page.LIBRARY -> B42Fix3Pages.Library(s.cover)
                             Page.STATS -> B42Fix3Pages.Stats(s.cover)
                             Page.ALBUM -> B42Fix3Pages.Album(s.cover)
+                            Page.DEVICE -> B42Fix3Pages.Device(s.cover)
                         }
                     }
                 }
@@ -181,6 +182,13 @@ class B42Fix3SurfacesTest {
                 add("the Listening stats card", B42Fix3Pages.TAG_STATS, margin = 36f, fromTop = 6f)
                 add("the bottom bar", B42Fix3Pages.TAG_NAV, margin = 40f, fromTop = 4f)
             }
+            Page.DEVICE -> {
+                val title = compose.onNode(hasText("Wi-Fi")).getBoundsInRoot()
+                val d = density()
+                val rect = Rect(16f * d, (title.bottom.value + 6f) * d, 344f * d, (title.bottom.value + 160f) * d)
+                out += Surface("Device Wi-Fi card", rect, topStrip(rect, 32f, 4f))
+                add("the bottom bar", B42Fix3Pages.TAG_NAV, margin = 40f, fromTop = 4f)
+            }
             Page.ALBUM -> {
                 add("the collapsed top bar", B42Fix3Pages.TAG_BAR, margin = 0f, fromTop = 6f)
                 add("the bottom bar", B42Fix3Pages.TAG_NAV, margin = 40f, fromTop = 4f)
@@ -206,6 +214,10 @@ class B42Fix3SurfacesTest {
         for (mode in listOf(Fix3Mode.COVER_GLASS, Fix3Mode.FROM_ALBUM_ART)) for (cover in covers) for (page in Page.entries) {
             val glassOnly = capture(cover, mode, page, withContent = false)
             val screen = capture(cover, mode, page, withContent = true)
+            if (page == Page.DEVICE && cover == covers[3]) {
+                val root = java.io.File(System.getenv("B43_EVIDENCE") ?: "/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B43-evidence", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
+                java.io.File(root, "device-${mode.label}.png").outputStream().use { screen.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            }
             // no slab: nowhere on the screen is the theme's flat grey (the glass behind it can be any colour, including a near-black one: the
             // near-black cover under Graphite's background is not (14, 15, 17), and a veil of it over black is darker still)
             val flat = fractionOfFlatGrey(screen)
@@ -235,6 +247,24 @@ class B42Fix3SurfacesTest {
         }
         // the numbers for the result, once
         java.io.File(System.getenv("B42FIX3_SURFACES_REPORT") ?: "build/b42fix3-surfaces-report.txt").apply { parentFile?.mkdirs() }.writeText(report.joinToString("\n"))
+    }
+
+    @Test
+    fun device_cards_keep_the_shared_veil_and_half_the_field_chroma() {
+        show()
+        for (mode in listOf(Fix3Mode.COVER_GLASS, Fix3Mode.FROM_ALBUM_ART)) {
+            val glass = capture(covers[3], mode, Page.DEVICE, false)
+            val screen = capture(covers[3], mode, Page.DEVICE, true)
+            val root = java.io.File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B43-evidence", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
+            java.io.File(root, "device-${mode.label}.png").outputStream().use { screen.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            for (surface in surfacesOn(Page.DEVICE)) {
+                val field = median(glass, surface.strip)
+                val seen = median(screen, surface.strip)
+                assertThat(maxDiff(seen, GlassLuma.mixArgb(field, baseArgb(), GlassSurfaces.PANEL_ALPHA))).isAtMost(3)
+                if (chroma(field) >= 16) assertThat(chroma(seen).toFloat()).isAtLeast(MIN_CHROMA_SHARE * chroma(field))
+                for (ink in inks()) assertThat(GlassLuma.contrast(ink.luminance(), lumOf(seen))).isAtLeast(4.5f)
+            }
+        }
     }
 
     private fun hex(p: Int) = "#%02X%02X%02X".format(channel(p, 16), channel(p, 8), channel(p, 0))

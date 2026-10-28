@@ -50,7 +50,8 @@ fun OptimizedAlbumArt(
     modifier: Modifier = Modifier,
     // Null is "as large as this screen can show", not 2048² (AUD-113).
     targetSize: Size? = null,
-    placeholderModel: Any? = null
+    placeholderModel: Any? = null,
+    contentScale: ContentScale = ContentScale.Crop,
 ) {
     val context = LocalContext.current
     val screenPx = with(LocalDensity.current) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
@@ -73,7 +74,8 @@ fun OptimizedAlbumArt(
     if (renderDirectAlbumArt(
             model = uri,
             title = title,
-            modifier = modifier
+            modifier = modifier,
+            contentScale = contentScale,
         )
     ) {
         return
@@ -135,7 +137,7 @@ fun OptimizedAlbumArt(
         model = requestModel,
         contentDescription = stringResource(R.string.cd_album_art_of, title),
         modifier = modifier,
-        contentScale = ContentScale.Crop,
+        contentScale = contentScale,
         onSuccess = { state ->
             lastSuccessPainter = state.painter
         },
@@ -148,7 +150,7 @@ fun OptimizedAlbumArt(
                     model = placeholderModel,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
+                    contentScale = contentScale,
                     loading = { PlaceholderContent(title = title) },
                     error = { PlaceholderContent(title = title) }
                 )
@@ -194,15 +196,16 @@ private fun PlaceholderContent(title: String) {
 private fun renderDirectAlbumArt(
     model: Any?,
     title: String,
-    modifier: Modifier
+    modifier: Modifier,
+    contentScale: ContentScale,
 ): Boolean {
     return when (model) {
-        is ImageRequest -> renderDirectAlbumArt(model.data, title, modifier)
+        is ImageRequest -> renderDirectAlbumArt(model.data, title, modifier, contentScale)
         is ImageVector -> {
             Image(
                 imageVector = model,
                 contentDescription = stringResource(R.string.cd_album_art_of, title),
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
                 modifier = modifier.fillMaxSize()
             )
             true
@@ -211,7 +214,7 @@ private fun renderDirectAlbumArt(
             Image(
                 painter = model,
                 contentDescription = stringResource(R.string.cd_album_art_of, title),
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
                 modifier = modifier.fillMaxSize()
             )
             true
@@ -220,7 +223,7 @@ private fun renderDirectAlbumArt(
             Image(
                 bitmap = model,
                 contentDescription = stringResource(R.string.cd_album_art_of, title),
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
                 modifier = modifier.fillMaxSize()
             )
             true
@@ -229,7 +232,7 @@ private fun renderDirectAlbumArt(
             Image(
                 bitmap = model.asImageBitmap(),
                 contentDescription = stringResource(R.string.cd_album_art_of, title),
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
                 modifier = modifier.fillMaxSize()
             )
             true

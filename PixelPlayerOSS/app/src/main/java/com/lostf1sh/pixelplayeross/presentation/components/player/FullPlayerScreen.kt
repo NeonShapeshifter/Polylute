@@ -55,15 +55,14 @@ import com.lostf1sh.pixelplayeross.presentation.components.LocalMaterialTheme
 import com.lostf1sh.pixelplayeross.presentation.components.rememberModalSheetState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState
 import com.lostf1sh.pixelplayeross.ui.ds.DapMotion
-import com.lostf1sh.pixelplayeross.ui.ds.DapPlayerHeader
 
 /**
- * The full player: the header, the surfaces, and the layers over them. It draws a [FullPlayerUiState] and calls
+ * The full player: its pages, surfaces, and the layers over them. It draws a [FullPlayerUiState] and calls
  * a [FullPlayerActions]; it never sees a ViewModel (B21: the 2,362-line `FullPlayerContent` it came out of did).
  *
  * What is in the file, and nothing more:
- *  - **header / details entry / queue entry**: the Scaffold's top bar (collapse, the Artwork / Lyrics / Details
- *    tabs, the queue glyph) and the upward drag that pulls the queue sheet up;
+ *  - **page and queue entry**: the folded queue's lyrics/details buttons and the upward drag that opens the queue;
+ *    closing uses Back, the downward gesture or the Close player accessibility action;
  *  - **the surfaces** (cover, track info, progress with its technical line, controls), each given only its own
  *    slice of the state, in the portrait or the landscape layout;
  *  - **the layers over them** (lyrics, the bookmark dialog, the artist picker).
@@ -72,7 +71,7 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapPlayerHeader
  *
  * ## Pages (B42-fix1)
  *
- * Under the header the screen is a pager of four pages: **Menu** (the song's options), **Player** (everything above: the cover, the track,
+ * The screen is a pager of four pages: **Menu** (the song's options), **Player** (everything above: the cover, the track,
  * the bar, the transport; where it always opens), **Lyrics** and **Details**. Nothing says so on screen: no indicator, no dots, no tabs.
  *
  * **Two swipes, told apart by where the finger lands.** A horizontal swipe that begins on the cover changes the song (the cover's carousel is
@@ -80,9 +79,9 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapPlayerHeader
  * A swipe that begins anywhere else on a page changes the page. What drags keeps its drag the same way: the seek bar, the waveform and the
  * lyrics' own scroll consume their gesture before the pager sees it. The back edges belong to the system ([respectSystemBackEdgesForHorizontalDrag]).
  *
- * The header's lyrics and details icons jump to their pages (and, on the page, back to Player); the system back goes from any other page to
- * Player and from Player closes it, as before; the chevron closes it from anywhere. A screen reader is offered Options, Lyrics and Details as
- * actions on the pages. Pages are composed only while they are on or beside the screen.
+ * The folded queue's lyrics and details buttons jump to their pages; system back returns from any other page to Player and closes Player.
+ * There is no top bar on these pages. Screen readers have Close player, Options, Lyrics and Details actions.
+ * Pages are composed only while they are on or beside the screen.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -111,7 +110,7 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
     }
     // The layers around the player that belong to its Player page only (the queue's folded strip) are told which page it is on.
     val pageSignal = LocalPlayerPageSignal.current
-    if (pageSignal != null) PlayerPageSignalEffect(pages, pageSignal)
+    if (pageSignal != null) PlayerPageSignalEffect(pages, pageSignal, lyricsEntry)
     PlayerPagesBackHandler(pages)
 
     val skip = rememberPlayerSkipCoordinator(
@@ -189,32 +188,6 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
                 zone = queueZone,
                 actions = actions,
             ),
-        topBar = {
-            AnimatedVisibility(
-                visible = !isLandscape,
-                // The header arrives with the surface, not after it: Surface timing, not 350 ms.
-                enter = fadeIn(animationSpec = DapMotion.surface()) +
-                        slideInVertically(
-                            initialOffsetY = { -it / 2 },
-                            animationSpec = DapMotion.surface()
-                        ),
-                exit = fadeOut(animationSpec = DapMotion.surfaceExit()) +
-                       slideOutVertically(
-                           targetOffsetY = { -it / 2 },
-                           animationSpec = DapMotion.surfaceExit()
-                       )
-            ) {
-                PlayerPagesHeader(
-                    pages = pages,
-                    lyricsEntry = lyricsEntry,
-                    onCollapse = actions::onCollapse,
-                    modifier = Modifier.graphicsLayer {
-                        val fraction = expansionFractionProvider()
-                        alpha = (fraction / 1f).coerceIn(0f, 1f)
-                    },
-                )
-            }
-        }
     ) { paddingValues ->
         // No fade on (re)composition. The 380 ms whole-content fade that used to run here fired on
         // every first expansion, not just on rotation, and only advertised that a layout was built.
@@ -252,6 +225,7 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
             val optionsLabel = stringResource(R.string.player_action_options)
             val lyricsLabel = stringResource(R.string.player_header_lyrics)
             val detailsLabel = stringResource(R.string.player_header_details)
+            val closeLabel = stringResource(R.string.player_action_close)
             val topInset = paddingValues.calculateTopPadding()
             HorizontalPager(
                 state = pages.pager,
@@ -264,6 +238,7 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
                     // them as actions.
                     .semantics {
                         customActions = listOf(
+                            CustomAccessibilityAction(closeLabel) { actions.onCollapse(); true },
                             CustomAccessibilityAction(optionsLabel) { pages.goTo(PlayerPage.MENU); true },
                             CustomAccessibilityAction(lyricsLabel) { lyricsEntry.open(); true },
                             CustomAccessibilityAction(detailsLabel) { pages.goTo(PlayerPage.DETAILS); true },
@@ -350,37 +325,18 @@ internal object PlayerPagesTags {
 }
 
 /**
- * The header over the pages. It is its own scope so that a change of page (which flips two icons) redraws the header and not the screen: the
- * lyrics icon is on while the lyrics page is, and a second press goes back to Player; the details icon is the same for the details page.
- */
-@Composable
-private fun PlayerPagesHeader(
-    pages: PlayerPagesState,
-    lyricsEntry: PlayerLyricsEntry,
-    onCollapse: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val current = pages.current
-    DapPlayerHeader(
-        modifier = modifier,
-        lyricsActive = current == PlayerPage.LYRICS,
-        detailsActive = current == PlayerPage.DETAILS,
-        onCollapse = onCollapse,
-        // The icons are switches between their page and the player: on opens the page, off goes back to the cover (B22).
-        onLyrics = { if (pages.current == PlayerPage.LYRICS) pages.goTo(PlayerPage.Start) else lyricsEntry.open() },
-        onDetails = { if (pages.current == PlayerPage.DETAILS) pages.goTo(PlayerPage.Start) else pages.goTo(PlayerPage.DETAILS) },
-    )
-}
-
-/**
  * Tells the layers beside the player which page it is on, in the same frame the page changes (a side effect of its own scope, so a change of
  * page redraws this and not the screen), and puts "on Player" back when the player goes.
  */
 @Composable
-private fun PlayerPageSignalEffect(pages: PlayerPagesState, signal: PlayerPageSignal) {
+private fun PlayerPageSignalEffect(pages: PlayerPagesState, signal: PlayerPageSignal, lyricsEntry: PlayerLyricsEntry) {
     val page = pages.current
-    SideEffect { signal.page = page }
-    DisposableEffect(signal) { onDispose { signal.page = PlayerPage.Start } }
+    SideEffect {
+        signal.page = page
+        signal.openLyrics = { lyricsEntry.open() }
+        signal.openDetails = { pages.goTo(PlayerPage.DETAILS) }
+    }
+    DisposableEffect(signal) { onDispose { signal.page = PlayerPage.Start; signal.openLyrics = {}; signal.openDetails = {} } }
 }
 
 /** Back from Menu, Lyrics or Details is Player; from Player it is not handled here, so it closes the player as it always did. */

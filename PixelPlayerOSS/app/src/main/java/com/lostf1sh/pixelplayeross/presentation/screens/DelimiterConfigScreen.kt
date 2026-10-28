@@ -178,7 +178,7 @@ fun DelimiterConfigScreen(
         ) {
             item {
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -230,7 +230,7 @@ fun DelimiterConfigScreen(
 
             item {
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {

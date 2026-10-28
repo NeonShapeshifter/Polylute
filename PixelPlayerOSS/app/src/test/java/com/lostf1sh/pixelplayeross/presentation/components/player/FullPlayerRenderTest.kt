@@ -145,7 +145,7 @@ class FullPlayerRenderTest {
         setPlayer({ uiState(song("1", "La Costa Del Silencio")) }, actions)
         // B22: the header has no tabs and no words: collapse on the left, Lyrics / Details on the right. B33-U1: no Queue button (the queue is the sheet folded at the foot).
         for (cd in listOf(R.string.player_header_collapse, R.string.player_header_lyrics, R.string.player_header_details)) {
-            compose.onAllNodesWithContentDescription(s(cd))[0].assertExists()
+            compose.onAllNodesWithContentDescription(s(cd)).assertCountEquals(0)
         }
         for (tab in listOf("Artwork", "Lyrics", "Details")) {
             compose.onAllNodesWithText(tab, ignoreCase = true).assertCountEquals(0)
@@ -170,7 +170,7 @@ class FullPlayerRenderTest {
         val actions = Recorder()
         setPlayer({ uiState(song("1", "La Costa Del Silencio")) }, actions)
         // B42-fix1: the header's details icon jumps to the Details page, a page of the pager and no action of the sheet (`B42Fix1PlayerPagesTest`)
-        compose.onNodeWithContentDescription(s(R.string.player_header_collapse)).performClick()
+        compose.playerPageAction(s(R.string.player_action_close))
         compose.onNodeWithContentDescription(s(R.string.player_shuffle)).performClick()
         compose.onNodeWithContentDescription(s(R.string.lock_transport_repeat)).performClick()
         compose.onNodeWithContentDescription(s(R.string.cd_add_to_favorites)).performClick()

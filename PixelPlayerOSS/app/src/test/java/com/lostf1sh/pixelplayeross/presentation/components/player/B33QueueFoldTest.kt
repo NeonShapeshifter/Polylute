@@ -347,9 +347,9 @@ open class B33QueueFoldTest {
     // ── no queue button in the header; an accessible way in ──────────────────────────────────────────
 
     @Test
-    fun `the header has no queue button, only collapse, lyrics and details`() {
+    fun `the player has no top chevron and the folded strip has lyrics and details`() {
         show()
-        for (cd in listOf(R.string.player_header_collapse, R.string.player_header_lyrics, R.string.player_header_details)) {
+        for (cd in listOf(R.string.player_header_lyrics, R.string.player_header_details)) {
             compose.onAllNodesWithContentDescription(s(cd))[0].assertExists()
         }
         // no node anywhere names a queue button of the header: the strip's own description and the sheet's are the only mentions of the queue

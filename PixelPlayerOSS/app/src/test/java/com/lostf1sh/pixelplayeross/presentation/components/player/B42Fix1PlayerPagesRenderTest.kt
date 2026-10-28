@@ -181,13 +181,13 @@ open class B42Fix1PlayerPagesRenderTest {
         RenderChecks.assertInsideWindow(compose, "$name-menu")
         B42Fix1Renders.save(compose, "$name-menu")
 
-        compose.onNodeWithContentDescription(s(R.string.player_header_lyrics)).performClick()
+        compose.playerPageAction(s(R.string.player_header_lyrics), toggle = true)
         settle()
         compose.onNodeWithTag(PlayerPagesTags.Lyrics).assertExists()
         RenderChecks.assertInsideWindow(compose, "$name-lyrics")
         B42Fix1Renders.save(compose, "$name-lyrics")
 
-        compose.onNodeWithContentDescription(s(R.string.player_header_details)).performClick()
+        compose.playerPageAction(s(R.string.player_header_details), toggle = true)
         settle()
         compose.onNodeWithTag(PlayerPagesTags.Details).assertExists()
         RenderChecks.assertInsideWindow(compose, "$name-details")

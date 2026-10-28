@@ -247,6 +247,11 @@ internal fun QueueSurface(
                             next = nextSong,
                             interactive = !visible,
                             onOpen = onOpenQueue,
+                            onLyrics = { pageSignal?.openLyrics?.invoke() },
+                            onDetails = { pageSignal?.openDetails?.invoke() },
+                            onDragStart = onQueueDragStart,
+                            onDrag = onQueueDrag,
+                            onRelease = onQueueRelease,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .graphicsLayer { alpha = QueueFold.stripAlpha(foldProgress()) },

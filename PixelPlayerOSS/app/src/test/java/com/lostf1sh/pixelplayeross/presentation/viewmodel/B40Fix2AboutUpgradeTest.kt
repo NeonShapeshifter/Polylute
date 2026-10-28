@@ -89,7 +89,7 @@ class B40Fix2AboutUpgradeTest {
         )
     }
 
-    private fun info(service: MusicInfoService): MusicInfoRepository = mockk { every { this@mockk.service } returns service }
+    private fun info(service: MusicInfoService): MusicInfoRepository = mockk(relaxed = true) { every { this@mockk.service } returns service }
 
     private fun album(service: MusicInfoService): AlbumDetailViewModel {
         val music = mockk<MusicRepository>(relaxed = true)
@@ -144,7 +144,7 @@ class B40Fix2AboutUpgradeTest {
         val http = MusicInfoHttp(client, minIntervalMs = 0, nowMs = { 0L })
         val service = MusicInfoService(cache, MusicBrainzClient(http), CoverArtArchiveClient(http), WikidataClient(http), CommonsClient(http),
             WikipediaClient(http), { false }, { false }, { true }, { listOf("sv", "en") })
-        val info = mockk<MusicInfoRepository> { every { this@mockk.service } returns service }
+        val info = mockk<MusicInfoRepository>(relaxed = true) { every { this@mockk.service } returns service }
         val music = mockk<MusicRepository>(relaxed = true)
         every { music.getAlbumById(1L) } returns flowOf(Album(1L, "Fixture Album", "Fixture", 2000, 0L, null, 1))
         every { music.getSongsForAlbum(1L) } returns flowOf(emptyList())

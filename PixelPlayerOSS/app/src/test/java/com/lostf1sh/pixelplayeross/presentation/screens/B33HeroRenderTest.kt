@@ -161,7 +161,7 @@ open class B33HeroRenderTest {
         show {
             AlbumDetailScreen(
                 albumId = "1", navController = rememberNavController(), playerViewModel = player,
-                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true),
+                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = mockk(relaxed = true),
             )
         }
     }
@@ -187,7 +187,7 @@ open class B33HeroRenderTest {
         show {
             ArtistDetailScreen(
                 artistId = "1", navController = rememberNavController(), playerViewModel = player,
-                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true),
+                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = mockk(relaxed = true),
             )
         }
     }
@@ -200,7 +200,7 @@ open class B33HeroRenderTest {
         show {
             AlbumDetailScreen(
                 albumId = "1", navController = rememberNavController(), playerViewModel = player,
-                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true),
+                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = mockk(relaxed = true),
             )
         }
         val chevron = compose.onNodeWithContentDescription(context.getString(com.lostf1sh.pixelplayeross.R.string.auth_cd_back)).fetchSemanticsNode().boundsInRoot

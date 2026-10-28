@@ -263,7 +263,7 @@ class B42Fix1PlayerPagesTest {
     }
 
     private fun clickHeader(id: Int) {
-        compose.onNodeWithContentDescription(s(id)).performClick()
+        compose.playerPageAction(s(id), toggle = true)
         compose.mainClock.advanceTimeBy(2_000)
         compose.waitForIdle()
     }
@@ -448,7 +448,7 @@ class B42Fix1PlayerPagesTest {
             route()
             assertThat(page()).isNotEqualTo(PlayerPage.PLAYER)
             calls.clear()
-            compose.onNodeWithContentDescription(s(R.string.player_header_collapse)).performClick()
+            compose.playerPageAction(s(R.string.player_action_close))
             assertThat(calls).containsExactly("collapse")
             pressBack()
         }
@@ -459,7 +459,7 @@ class B42Fix1PlayerPagesTest {
         show()
         val actions = compose.onNodeWithTag(PlayerPagesTags.Pager).fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty()
         assertThat(actions.map { it.label }).containsExactly(
-            s(R.string.player_action_options), s(R.string.player_header_lyrics), s(R.string.player_header_details),
+            s(R.string.player_action_close), s(R.string.player_action_options), s(R.string.player_header_lyrics), s(R.string.player_header_details),
         ).inOrder()
         // and they do what they say
         compose.runOnUiThread { actions.first { it.label == s(R.string.player_action_options) }.action() }
@@ -539,7 +539,7 @@ class B42Fix1PlayerPagesTest {
         clickHeader(R.string.player_header_lyrics)
         assertThat(page()).isEqualTo(PlayerPage.LYRICS)
         // the only collapse in sight is the player's own chevron; no tab, no "Up next"
-        compose.onAllNodesWithContentDescription(s(R.string.player_header_collapse)).assertCountEquals(1)
+        compose.onAllNodesWithContentDescription(s(R.string.player_header_collapse)).assertCountEquals(0)
         compose.onAllNodes(SemanticsMatcher("a tab") { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }).assertCountEquals(0)
         compose.onAllNodesWithText(s(R.string.queue_title_next)).assertCountEquals(0)
         // a swipe on the lyrics changes the page, never the song, and shows no big button: it is the pager's, as everywhere else

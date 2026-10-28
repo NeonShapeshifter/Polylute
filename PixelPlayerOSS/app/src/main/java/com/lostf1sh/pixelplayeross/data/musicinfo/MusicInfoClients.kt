@@ -1,5 +1,10 @@
 package com.lostf1sh.pixelplayeross.data.musicinfo
 
+import com.lostf1sh.pixelplayeross.data.network.PriorityRequestGate
+import com.lostf1sh.pixelplayeross.data.network.RequestPriority
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withContext
+import com.lostf1sh.pixelplayeross.utils.splitArtistsByDelimiters
 import android.os.SystemClock
 import com.lostf1sh.pixelplayeross.data.network.HttpUserAgent
 import java.io.IOException
@@ -20,8 +25,7 @@ import org.json.JSONObject
  *
  * MusicBrainz → (Wikidata) → Wikipedia for descriptions, MusicBrainz → Cover Art Archive for album covers, MusicBrainz → Wikidata →
  * Wikimedia Commons for artist photos. **Every request goes through [MusicInfoHttp]**: HTTPS only, the app's own User-Agent (the one that
- * names the project, because MusicBrainz and Wikimedia both ask clients to be reachable), and **one request per second in total**, as
- * MusicBrainz asks. Nothing is sent but the name of an artist or an album, an identifier the previous answer gave, or a file name.
+ * names the project, because MusicBrainz and Wikimedia both ask clients to be reachable), and per-host pacing (one request per second for MusicBrainz). Nothing is sent but the name of an artist or an album, an identifier the previous answer gave, or a file name.
  *
  * The parsers are plain functions over JSON so the tests read recorded answers; the clients take the OkHttp client and the root address
  * so the tests can put a fake server in front of them.
@@ -34,19 +38,29 @@ class MusicInfoHttp(
     private val sleep: suspend (Long) -> Unit = { delay(it) },
 ) {
     private val client = baseClient.newBuilder().followRedirects(true).followSslRedirects(true).callTimeout(30, TimeUnit.SECONDS).build()
-    private val gate = Mutex()
-    private var lastStartedAt = Long.MIN_VALUE / 2
+    private class HostGate {
+        val gate = PriorityRequestGate()
+        var lastStartedAt = Long.MIN_VALUE / 2
+    }
+    private val hosts = java.util.concurrent.ConcurrentHashMap<String, HostGate>()
 
     /** Every request taken so far, for the tests and the privacy account: the address, in the order it went out. */
     val sent: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
 
-    private suspend fun <T> limited(url: HttpUrl, block: () -> T): T = gate.withLock {
+    private suspend fun <T> limited(url: HttpUrl, block: () -> T): T {
         require(url.isHttps) { "music info goes over HTTPS only" }
-        val wait = minIntervalMs - (nowMs() - lastStartedAt)
-        if (wait > 0) sleep(wait)
-        lastStartedAt = nowMs()
-        sent += url.toString()
-        block()
+        val host = hosts.getOrPut(url.host) { HostGate() }
+        return host.gate.withPermit {
+            // https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting requires <=1/s for MB only.
+            // https://www.mediawiki.org/wiki/API:Etiquette asks for serial reads, identification and caching, not MB's quota.
+            // https://musicbrainz.org/doc/Cover_Art_Archive/API documents 503 throttling. 4/s here is our ceiling, not a claimed quota.
+            val interval = if (url.host == "musicbrainz.org") minIntervalMs else minOf(minIntervalMs, 250L)
+            val wait = interval - (nowMs() - host.lastStartedAt)
+            if (wait > 0) sleep(wait)
+            host.lastStartedAt = nowMs()
+            sent += url.toString()
+            block()
+        }
     }
 
     /** A JSON answer, or null when the server says there is nothing (404). Any other failure is an [IOException]. */
@@ -63,6 +77,7 @@ class MusicInfoHttp(
         client.newCall(request(url, "image/*")).execute().use { response ->
             if (response.code == 404) return@use null
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
+            if (response.body.contentType()?.type != "image") return@use null
             val declared = response.body.contentLength()
             if (declared > maxBytes) return@use null
             val data = response.body.bytes()
@@ -74,7 +89,7 @@ class MusicInfoHttp(
         Request.Builder().url(url).header("User-Agent", userAgent).header("Accept", accept).get().build()
 
     companion object {
-        /** MusicBrainz asks for no more than one request per second; the whole music-info path keeps to it. */
+        /** MusicBrainz asks for no more than one request per second. */
         const val MIN_INTERVAL_MS = 1_100L
     }
 }
@@ -90,21 +105,38 @@ object MusicInfoMatching {
     const val MIN_SCORE = 90
 }
 
+/** Deduplicate one entity, without holding an unrelated entity behind the host queue.
+ * A listener joining the same pending lookup promotes its local context in the host queue.
+ */
+private class MusicInfoLookupGates {
+    private val entries = java.util.concurrent.ConcurrentHashMap<String, PriorityRequestGate>()
+    suspend fun <T> request(key: String, block: suspend () -> T): T {
+        val priority = RequestPriority(currentCoroutineContext()[RequestPriority]?.background == true)
+        return withContext(priority) {
+            entries.computeIfAbsent(key) { PriorityRequestGate(promoteOwner = true) }.withPermit(block)
+        }
+    }
+}
+
 class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https://musicbrainz.org/ws/2/") {
     private val root = root.toHttpUrl()
 
-    private val artistGate = Mutex()
+    private val artistGate = MusicInfoLookupGates()
     private val artistMatches = object : LinkedHashMap<String, MbMatch?>(32, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MbMatch?>?): Boolean = size > 256
     }
 
     /** Concurrent photo and description queues share one conclusive artist lookup; network failures are retried. */
-    suspend fun findArtist(name: String): MbMatch? = artistGate.withLock {
+    suspend fun findArtist(name: String): MbMatch? {
         val key = name.trim().lowercase(Locale.ROOT)
-        if (artistMatches.containsKey(key)) return@withLock artistMatches[key]
-        val url = root.newBuilder().addPathSegment("artist")
-            .addQueryParameter("query", "artist:\"${escape(name)}\"").addQueryParameter("fmt", "json").addQueryParameter("limit", "5").build()
-        parseArtistSearch(http.json(url), name).also { artistMatches[key] = it }
+        return artistGate.request(key) {
+            if (currentCoroutineContext()[MusicInfoRefresh] == null) synchronized(artistMatches) {
+                if (artistMatches.containsKey(key)) return@request artistMatches[key]
+            }
+            val url = root.newBuilder().addPathSegment("artist")
+                .addQueryParameter("query", "artist:\"${escape(name)}\"").addQueryParameter("fmt", "json").addQueryParameter("limit", "5").build()
+            parseArtistSearch(http.json(url), name).also { synchronized(artistMatches) { artistMatches[key] = it } }
+        }
     }
 
     /** The release (an edition of the album) with this title by this artist, or null. */
@@ -117,25 +149,51 @@ class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https:/
 
     /** The release group (the album, all its editions) with this title by this artist, or null. */
     suspend fun findReleaseGroup(album: String, artist: String): MbMatch? {
-        val url = root.newBuilder().addPathSegment("release-group")
-            .addQueryParameter("query", "releasegroup:\"${escape(album)}\" AND artist:\"${escape(artist)}\"")
+        val credited = firstCreditedArtist(artist)
+        if (credited.isBlank()) return null
+        fun query(withArtist: Boolean) = root.newBuilder().addPathSegment("release-group")
+            .addQueryParameter("query", "releasegroup:\"${escape(album)}\"" + if (withArtist) " AND artist:\"${escape(credited)}\"" else "")
             .addQueryParameter("fmt", "json").addQueryParameter("limit", "5").build()
-        return parseReleaseGroupSearch(http.json(url), album)
+        fun matching(json: JSONObject?, requireCredit: Boolean): MbMatch? {
+            val groups = json?.optJSONArray("release-groups") ?: return null
+            for (i in 0 until groups.length()) {
+                val group = groups.optJSONObject(i) ?: continue
+                val credits = group.optJSONArray("artist-credit")
+                val names = (0 until (credits?.length() ?: 0)).mapNotNull { index ->
+                    credits?.optJSONObject(index)?.let { it.optJSONObject("artist")?.optString("name") ?: it.optString("name") }
+                }
+                val sameArtist = names.any { MusicInfoMatching.normalize(it) == MusicInfoMatching.normalize(credited) }
+                if ((requireCredit || credits != null) && !sameArtist) continue
+                parseReleaseGroupSearch(JSONObject().put("release-groups", JSONArray().put(group)), album)?.let { return it }
+            }
+            return null
+        }
+        return matching(http.json(query(true)), requireCredit = false) ?: matching(http.json(query(false)), requireCredit = true)
     }
 
-    private val detailsGate = Mutex()
+    private val detailsGate = MusicInfoLookupGates()
     private val details = object : LinkedHashMap<String, JSONObject>(32, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?): Boolean = size > 256
     }
 
     /** MusicBrainz's own annotation and image relationships are checked before the Wikimedia fallback. */
-    suspend fun entityDetails(kind: String, mbid: String): JSONObject? = detailsGate.withLock {
+    suspend fun entityDetails(kind: String, mbid: String): JSONObject? {
         val key = "$kind/$mbid"
-        details[key]?.let { return@withLock it }
-        val url = root.newBuilder().addPathSegment(kind).addPathSegment(mbid)
-            .addQueryParameter("inc", "annotation+url-rels").addQueryParameter("fmt", "json").build()
-        http.json(url)?.also { details[key] = it }
+        return detailsGate.request(key) {
+            if (currentCoroutineContext()[MusicInfoRefresh] == null) synchronized(details) {
+                details[key]?.let { return@request it }
+            }
+            val url = root.newBuilder().addPathSegment(kind).addPathSegment(mbid)
+                .addQueryParameter("inc", "annotation+url-rels").addQueryParameter("fmt", "json").build()
+            http.json(url)?.also { synchronized(details) { details[key] = it } }
+        }
     }
+
+    suspend fun forgetArtist(name: String) {
+        synchronized(artistMatches) { artistMatches.remove(name.trim().lowercase(Locale.ROOT)) }
+        synchronized(details) { details.clear() }
+    }
+    suspend fun forgetAlbumDetails() { synchronized(details) { details.clear() } }
 
     suspend fun wikidataIdOf(kind: String, mbid: String): String? = parseWikidataRelation(entityDetails(kind, mbid))
 
@@ -146,6 +204,10 @@ class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https:/
     }
 
     companion object {
+        internal fun firstCreditedArtist(artist: String): String = with(com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository) {
+            artist.splitArtistsByDelimiters(DEFAULT_ARTIST_DELIMITERS, DEFAULT_ARTIST_WORD_DELIMITERS).firstOrNull().orEmpty()
+        }
+
         internal fun annotation(json: JSONObject?): String? {
             val raw = json?.optJSONObject("annotation")?.optString("text")
                 ?: json?.opt("annotation")?.takeIf { it is String }?.toString()
@@ -307,6 +369,19 @@ class CommonsClient(private val http: MusicInfoHttp, root: String = "https://com
 
     companion object {
         const val MAX_IMAGE_BYTES = 4L * 1024 * 1024
+
+        /** Commons relations may name a file page or an original/thumbnail on the upload host. */
+        internal fun relationFileName(relation: String): String? {
+            val url = runCatching { relation.toHttpUrl() }.getOrNull() ?: return null
+            val segments = url.pathSegments
+            return when {
+                url.host == "commons.wikimedia.org" && segments.firstOrNull() == "wiki" ->
+                    segments.drop(1).joinToString("/").takeIf { it.startsWith("File:") }?.removePrefix("File:")
+                url.host == "upload.wikimedia.org" && segments.take(2) == listOf("wikipedia", "commons") ->
+                    segments.getOrNull(if (segments.getOrNull(2) == "thumb") 5 else 4)
+                else -> null
+            }?.takeIf { it.isNotBlank() }?.replace('_', ' ')
+        }
 
         internal fun parseImageInfo(json: JSONObject?, fileName: String): CommonsImage? {
             val pages = json?.optJSONObject("query")?.optJSONObject("pages") ?: return null

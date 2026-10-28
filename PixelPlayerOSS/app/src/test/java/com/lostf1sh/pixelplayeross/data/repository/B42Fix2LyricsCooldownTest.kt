@@ -88,7 +88,10 @@ class B42Fix2LyricsCooldownTest {
             search.now.addAndGet(30_100L)
             search.repaired.set(true)
             assertThat(search.read()).isNotNull()
-            assertThat(search.calls.get()).isEqualTo(4)
+            // The first fitting response cancels its sibling; that sibling may not have entered
+            // the API yet. A retry must occur, with no more than the two planned strategies.
+            assertThat(search.calls.get()).isAtLeast(3)
+            assertThat(search.calls.get()).isAtMost(4)
         } finally { search.close() }
     }
 
@@ -100,7 +103,10 @@ class B42Fix2LyricsCooldownTest {
             search.now.addAndGet(30_100L)
             search.repaired.set(true)
             assertThat(search.read()).isNotNull()
-            assertThat(search.calls.get()).isEqualTo(4)
+            // The first fitting response cancels its sibling; that sibling may not have entered
+            // the API yet. A retry must occur, with no more than the two planned strategies.
+            assertThat(search.calls.get()).isAtLeast(3)
+            assertThat(search.calls.get()).isAtMost(4)
         } finally { search.close() }
     }
 
@@ -115,7 +121,10 @@ class B42Fix2LyricsCooldownTest {
             assertThat(search.calls.get()).isEqualTo(2)
             search.now.addAndGet(10_100L)
             assertThat(search.read()).isNotNull()
-            assertThat(search.calls.get()).isEqualTo(4)
+            // The first fitting response cancels its sibling; that sibling may not have entered
+            // the API yet. A retry must occur, with no more than the two planned strategies.
+            assertThat(search.calls.get()).isAtLeast(3)
+            assertThat(search.calls.get()).isAtMost(4)
         } finally { search.close() }
     }
 

@@ -451,4 +451,13 @@
     <string name="playlist_select_hint">Välj en spellista</string>
     <string name="bookmark_name_label">Bokmärkets namn</string>
     <string name="library_menu_options">Biblioteksalternativ</string>
+    <string name="offline_download_retry">Väntar på nytt försök: %1$d</string>
+    <string name="offline_download_estimate">Ungefär %1$d min kvar</string>
+    <string name="player_action_close">Stäng spelaren</string>
+    <string name="music_info_prepare">Förbered för offline…</string>
+    <string name="music_info_refresh">Uppdatera information</string>
+    <string name="music_info_delete">Radera nedladdad information</string>
+    <string name="offline_download_delete_job">Radera det som den här nedladdningen lade till</string>
+    <string name="offline_download_job">Låtar: %1$d · %2$d / %3$d</string>
+    <string name="offline_download_queued_job">I kö efter den aktuella nedladdningen</string>
 </resources>

@@ -9,12 +9,23 @@ import androidx.room.Transaction
 @Dao
 interface LyricsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(lyrics: LyricsEntity)
+    suspend fun insertCheckedValue(lyrics: LyricsEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(lyrics: List<LyricsEntity>)
+    suspend fun insertAllCheckedValues(lyrics: List<LyricsEntity>)
 
-    @Query("SELECT * FROM lyrics WHERE songId = :songId")
+    suspend fun insert(lyrics: LyricsEntity) {
+        val text = com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.forStorage(lyrics.songId, lyrics.content)
+        if (text != null) insertCheckedValue(lyrics.copy(content = text))
+        else if (lyrics.libraryItemId.isNotBlank()) deleteLyricsForLibraryItem(lyrics.libraryItemId) else deleteLyrics(lyrics.songId)
+    }
+    @Transaction
+    suspend fun insertAll(lyrics: List<LyricsEntity>) { lyrics.forEach { insert(it) } }
+
+    @Query("SELECT songId, substr(content, 1, 50001) AS text, length(content) AS characters, length(CAST(content AS BLOB)) AS bytes, instr(content, char(0)) > 0 AS hasNul FROM lyrics WHERE songId > :afterId ORDER BY songId LIMIT :limit")
+    suspend fun lyricsRepairPage(afterId: Long, limit: Int): List<LyricsRepairRow>
+
+    @Query("SELECT songId, CASE WHEN length(content) <= 50000 AND length(CAST(content AS BLOB)) <= 200000 AND instr(content, char(0)) = 0 THEN content ELSE '' END AS content, isSynced, source, library_item_id FROM lyrics WHERE songId = :songId")
     suspend fun getLyrics(songId: Long): LyricsEntity?
 
     @Query("DELETE FROM lyrics WHERE songId = :songId")
@@ -23,7 +34,7 @@ interface LyricsDao {
     @Query("DELETE FROM lyrics")
     suspend fun deleteAll()
 
-    @Query("SELECT * FROM lyrics")
+    @Query("SELECT songId, CASE WHEN length(content) <= 50000 AND length(CAST(content AS BLOB)) <= 200000 AND instr(content, char(0)) = 0 THEN content ELSE '' END AS content, isSynced, source, library_item_id FROM lyrics")
     suspend fun getAll(): List<LyricsEntity>
 
     @Query("SELECT songId FROM lyrics WHERE songId IN (:songIds) AND content != ''")
@@ -43,11 +54,11 @@ interface LyricsDao {
     // This is the same relationship `library_items.current_locator` already has to identity: the
     // locator says *which* item you mean, the identity says what the row *is*.
 
-    @Query("SELECT * FROM lyrics WHERE library_item_id = :libraryItemId LIMIT 1")
+    @Query("SELECT songId, CASE WHEN length(content) <= 50000 AND length(CAST(content AS BLOB)) <= 200000 AND instr(content, char(0)) = 0 THEN content ELSE '' END AS content, isSynced, source, library_item_id FROM lyrics WHERE library_item_id = :libraryItemId LIMIT 1")
     suspend fun getLyricsForLibraryItem(libraryItemId: String): LyricsEntity?
 
     @Query(
-        "SELECT * FROM lyrics WHERE library_item_id = " +
+        "SELECT songId, CASE WHEN length(content) <= 50000 AND length(CAST(content AS BLOB)) <= 200000 AND instr(content, char(0)) = 0 THEN content ELSE '' END AS content, isSynced, source, library_item_id FROM lyrics WHERE library_item_id = " +
             "(SELECT library_item_id FROM songs WHERE id = :songId) LIMIT 1"
     )
     suspend fun getLyricsResolvedByIdentity(songId: Long): LyricsEntity?

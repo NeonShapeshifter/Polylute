@@ -241,7 +241,7 @@ private fun TransitionSummaryCard(
     ElevatedCard(
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
+            containerColor = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainer)
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -284,7 +284,7 @@ private fun TransitionSummaryCard(
             AnimatedVisibility(visible = isPlaylistScope) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
+                    color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surface),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -364,7 +364,7 @@ private fun ExpressiveMorphingToggle(
             .fillMaxWidth()
             .height(56.dp)
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow))
             .padding(4.dp)
     ) {
         val maxWidth = maxWidth
@@ -425,7 +425,7 @@ private fun TransitionDurationSection(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(24.dp))
+            .background(com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow), RoundedCornerShape(24.dp))
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
@@ -656,7 +656,7 @@ private fun CurveSelectionColumn(
     ElevatedCard(
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.elevatedCardColors(containerColor = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(

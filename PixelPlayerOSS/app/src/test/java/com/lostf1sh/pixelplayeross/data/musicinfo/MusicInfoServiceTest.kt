@@ -12,14 +12,17 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Test
+import org.junit.After
+import org.junit.Test
 
 /**
  * B40-F4: the music-info clients and service against a fake server (an OkHttp interceptor that answers by address): the query each client
  * builds, the answer it reads, the one request a second, the attribution kept with what was downloaded, the three opt-in gates, the
  * language fallback, the cache limit and its deletion, and that nothing of Deezer is left.
  */
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+@org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
+@org.robolectric.annotation.Config(sdk = [35], application = android.app.Application::class)
 class MusicInfoServiceTest {
     private val dir: File = Files.createTempDirectory("music-info").toFile()
     private val requests = mutableListOf<Request>()
@@ -27,7 +30,7 @@ class MusicInfoServiceTest {
     private var clock = 0L
     private val sleeps = mutableListOf<Long>()
 
-    @AfterEach
+    @After
     fun cleanUp() { dir.deleteRecursively() }
 
     /** What the fake server says, by address; anything it does not know is a 404. */
@@ -46,7 +49,7 @@ class MusicInfoServiceTest {
         if (body == null) {
             builder.code(404).message("Not Found").body("".toResponseBody("application/json".toMediaType())).build()
         } else {
-            builder.code(200).message("OK").body(body.toResponseBody("application/json".toMediaType())).build()
+            builder.code(200).message("OK").body(body.toResponseBody((if (body === jpeg) "image/png" else "application/json").toMediaType())).build()
         }
     }.build()
 
@@ -71,7 +74,7 @@ class MusicInfoServiceTest {
         languages = { languages },
     )
 
-    private val jpeg = ByteArray(2_000) { it.toByte() }
+    private val jpeg = java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=").copyOf(2_000)
 
     private fun theArtistExists() {
         answer({ "musicbrainz.org/ws/2/artist?" in it }) {
@@ -280,12 +283,12 @@ class MusicInfoServiceTest {
     // ── the rate limit ───────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `requests go one at a time, at least a second apart`() = runBlocking<Unit> {
+    fun `MusicBrainz requests keep their interval while independent hosts do not wait`() = runBlocking<Unit> {
         thePhotoExists()
         service().fetchArtistPhoto("Radiohead")
         assertThat(requests.size).isAtLeast(5)
-        // five requests in a row were separated by waits of at least the interval minus what the work itself took (nothing, here)
-        assertThat(sleeps.size).isAtLeast(4)
+        // Only the two MusicBrainz requests share this host gate.
+        assertThat(sleeps.size).isEqualTo(1)
         assertThat(sleeps.all { it >= MusicInfoHttp.MIN_INTERVAL_MS }).isTrue()
         assertThat(MusicInfoHttp.MIN_INTERVAL_MS).isAtLeast(1_000L)
     }

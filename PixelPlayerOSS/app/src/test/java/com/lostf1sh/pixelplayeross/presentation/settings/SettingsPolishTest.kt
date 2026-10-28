@@ -107,7 +107,7 @@ class SettingsPolishTest {
         ).readText()
 
         // Guard against a vacuous pass: the rows must still be built.
-        assertThat(source).contains("SettingsSurfacePolicy.visibleCategories()")
+        assertThat(source).contains("SettingsSurfacePolicy.visibleCategories(mode.product)")
 
         // The subtitle is prose, so it is passed as `description` — which the row sets in Manrope.
         // Passing it as `value` put explanatory copy in JetBrains Mono.

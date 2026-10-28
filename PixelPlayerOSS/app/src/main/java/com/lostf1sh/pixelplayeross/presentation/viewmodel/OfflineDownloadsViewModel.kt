@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class OfflineDownloadsViewModel @Inject constructor(private val downloads: OfflineDownloads) : ViewModel() {
     val state = downloads.state
+    val jobs = downloads.jobs
     private val _starting = MutableStateFlow(false)
     val starting = _starting.asStateFlow()
     private val _error = MutableStateFlow(false)
@@ -29,7 +30,7 @@ class OfflineDownloadsViewModel @Inject constructor(private val downloads: Offli
         } }
     }
     fun start(ids: List<String>?, kinds: Set<OfflineKind>) {
-        if (_starting.value || state.value?.active == true) return
+        if (_starting.value) return
         _starting.value = true
         _error.value = false
         viewModelScope.launch {
@@ -39,6 +40,7 @@ class OfflineDownloadsViewModel @Inject constructor(private val downloads: Offli
             finally { _starting.value = false }
         }
     }
+    fun deleteJob(plan: String) { viewModelScope.launch { downloads.deleteJob(plan) } }
     fun cancel() { viewModelScope.launch { downloads.cancel() } }
     fun resume() { viewModelScope.launch { downloads.resume() } }
 }

@@ -94,6 +94,17 @@ class ArtistDetailViewModel @Inject constructor(
         }
     }
 
+    fun downloadedInfoChanged() {
+        viewModelScope.launch {
+            val artist = _uiState.value.artist ?: return@launch
+            val photo = musicInfo.service.cachedArtistPhoto(artist.name)
+            _about.value = com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState(
+                description = musicInfo.service.cachedAbout(com.lostf1sh.pixelplayeross.data.musicinfo.AboutKind.ARTIST, artist.name, null),
+                photo = photo.takeIf { artist.customImageUri.isNullOrBlank() })
+            if (artist.customImageUri.isNullOrBlank()) _uiState.update { it.copy(effectiveImageUrl = photo?.path) }
+        }
+    }
+
     private val _artistColorScheme = MutableStateFlow<ColorSchemePair?>(null)
     val artistColorScheme: StateFlow<ColorSchemePair?> = _artistColorScheme.asStateFlow()
 
@@ -161,6 +172,10 @@ class ArtistDetailViewModel @Inject constructor(
                             effectiveImageUrl = localImage,
                             isLoading = false,
                         )
+                        orderedSongs.firstOrNull()?.let { song ->
+                            musicInfo.requestSongInfo(song)
+                            viewModelScope.launch { musicRepository.getLyrics(song) }
+                        }
                         loadAbout(artist.name, localImage)
                         imageJob?.cancel()
                         imageJob = viewModelScope.launch {

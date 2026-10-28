@@ -269,6 +269,7 @@ class LyricsStateHolder @Inject constructor(
         // no owner, which is exactly the permanent spinner this replaces.
         abandonActiveRequest()
         loadingJob = appScope.launch {
+            musicRepository.allowLyricsDownload(song)
             _searchUiState.value = LyricsSearchUiState.Loading
 
             if (!forcePickResults) {
@@ -351,11 +352,12 @@ class LyricsStateHolder @Inject constructor(
     /**
      * Manual search by query.
      */
-    fun searchLyricsManually(title: String, artist: String?) {
+    fun searchLyricsManually(title: String, artist: String?, song: Song? = null) {
         if (title.isBlank()) return
         // Same contract as fetchLyricsForSong: end the in-flight resolve, do not merely cancel it.
         abandonActiveRequest()
         loadingJob = appScope.launch {
+            song?.let { musicRepository.allowLyricsDownload(it) }
             _searchUiState.value = LyricsSearchUiState.Loading
             musicRepository.searchRemoteLyricsByQuery(title, artist)
                 .onSuccess { (q, results) ->

@@ -23,11 +23,11 @@ class SettingsSurfacePolicyTest {
 
     /** The public information architecture, in the order the Settings root must present it. */
     private val publicIa = listOf(
-        "audio", "library", "lyrics", "appearance", "behavior", "device", "home_mode", "system", "backup_restore", "about",
+        "audio", "library", "lyrics", "appearance", "behavior", "home_mode", "system", "backup_restore", "about",
     )
 
     @Test
-    fun `the shipped Settings surface is exactly the ten public categories in order`() {
+    fun `the shipped Settings surface is exactly the App mode categories in order`() {
         val visible = SettingsSurfacePolicy.visibleCategories()
 
         assertThat(visible.filter { it.visibility != SettingsVisibility.PUBLIC }).isEmpty()

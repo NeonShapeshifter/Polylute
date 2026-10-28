@@ -1571,7 +1571,7 @@ private fun BookmarkMomentCard(
         onClick = onPlay,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Row(
@@ -1617,7 +1617,7 @@ private fun BookmarkMomentCard(
                     .width(30.dp)
                     .height(44.dp),
                 shape = RoundedCornerShape(30.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentColor = MaterialTheme.colorScheme.onSurface
             ) {
                 IconButton(onClick = onMoreClick) {
@@ -1670,7 +1670,7 @@ internal fun BookmarkMomentActionsBottomSheet(
                     .fillMaxWidth()
                     .padding(bottom = 16.dp),
                 shape = RoundedCornerShape(30.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentColor = MaterialTheme.colorScheme.onSurface
             ) {
                 Row(
@@ -2013,7 +2013,7 @@ private fun BookmarksEmptyState(
     ) {
         Surface(
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
         ) {
             Icon(

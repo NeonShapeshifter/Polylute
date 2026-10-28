@@ -93,7 +93,7 @@ class ArtistImageRepository @Inject constructor(
         val normalizedName = artistName.trim().lowercase()
 
         memoryCache.get(normalizedName)?.let { cachedUrl ->
-            if (File(cachedUrl).isFile) return cachedUrl
+            if (File(cachedUrl).isFile) { musicInfo.noteArtistPhotoUse(artistName, cachedUrl); return cachedUrl }
             memoryCache.remove(normalizedName)
         }
 
@@ -106,6 +106,7 @@ class ArtistImageRepository @Inject constructor(
         // A stored address that points at the internet is Deezer's and is not shown (B40-F4); a stored path is shown if the file is there.
         if (!dbCachedUrl.isNullOrEmpty() && !isRemote(dbCachedUrl) && File(dbCachedUrl).isFile) {
             memoryCache.put(normalizedName, dbCachedUrl)
+            musicInfo.noteArtistPhotoUse(artistName, dbCachedUrl)
             return dbCachedUrl
         }
 
@@ -126,6 +127,7 @@ class ArtistImageRepository @Inject constructor(
      * (the update is a no-op afterwards), and the read path above never shows one in the meantime.
      */
     suspend fun retireDeezerOnce() {
+        musicInfo.repairBrokenImagesOnce()
         if (deezerRetired) return
         withContext(Dispatchers.IO) {
             val cleared = musicDao.clearRemoteArtistImages()
@@ -133,6 +135,14 @@ class ArtistImageRepository @Inject constructor(
         }
         deezerRetired = true
     }
+
+    fun invalidateDownloaded(name: String) {
+        val key = name.trim().lowercase()
+        memoryCache.remove(key)
+        failedFetches.remove(key)
+    }
+
+    fun notePlayingSong(song: com.lostf1sh.pixelplayeross.data.model.Song) { musicInfo.requestSongInfo(song) }
 
     private fun isRemote(url: String): Boolean = url.startsWith("http://") || url.startsWith("https://")
 

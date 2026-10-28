@@ -80,6 +80,9 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
     @Inject
     lateinit var detailedLogging: dagger.Lazy<com.lostf1sh.pixelplayeross.data.diagnostics.DetailedLogging>
 
+    @Inject
+    lateinit var brokenLyricsCleanup: dagger.Lazy<com.lostf1sh.pixelplayeross.data.startup.BrokenLyricsCleanup>
+
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -137,6 +140,7 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
         libraryMetadataRepair.get().start(startupScope)
 
         startupScope.launch {
+            runCatching { brokenLyricsCleanup.get().runOnce() }.onFailure { Timber.tag("LyricsRepair").w(it, "Lyrics cleanup will retry next start") }
             // Retire the legacy crossfade-duration preference before anything can read a
             // transition duration, so no screen and no playback path can observe the old key.
             runCatching { userPreferencesRepository.get().migrateLegacyCrossfadeDurationIfNeeded() }

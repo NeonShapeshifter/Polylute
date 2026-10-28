@@ -199,7 +199,7 @@ fun QuickFillContent(
                 .height(64.dp)
                 .imePadding(),
             shape = AbsoluteSmoothCornerShape(32.dp, 60),
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerHighest),
             tonalElevation = 6.dp,
             shadowElevation = 4.dp
         ) {

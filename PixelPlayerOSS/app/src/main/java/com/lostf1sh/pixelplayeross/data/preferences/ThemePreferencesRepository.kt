@@ -88,12 +88,13 @@ class ThemePreferencesRepository @Inject constructor(
         preferences[Keys.COVER_GLASS_MOVING] ?: DEFAULT_COVER_GLASS_MOVING
     }
 
-    val playerThemePreferenceFlow: Flow<String> = dataStore.data.map { preferences ->
-        preferences[Keys.PLAYER_THEME_PREFERENCE] ?: ThemePreference.ALBUM_ART
+    val playerThemePreferenceFlow: Flow<String> = dataStore.data.map {
+        // Retired in 1.1.1. Preserve the stored key/value for backups; behaviour is always the former default.
+        ThemePreference.ALBUM_ART
     }
 
-    val albumArtPaletteStyleFlow: Flow<AlbumArtPaletteStyle> = dataStore.data.map { preferences ->
-        AlbumArtPaletteStyle.fromStorageKey(preferences[Keys.ALBUM_ART_PALETTE_STYLE])
+    val albumArtPaletteStyleFlow: Flow<AlbumArtPaletteStyle> = dataStore.data.map {
+        AlbumArtPaletteStyle.TONAL_SPOT
     }
 
     val albumArtColorAccuracyFlow: Flow<Int> = dataStore.data.map { preferences ->

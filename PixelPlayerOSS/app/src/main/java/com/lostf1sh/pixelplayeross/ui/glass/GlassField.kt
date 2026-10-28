@@ -171,12 +171,18 @@ object GlassFieldMath {
     fun field(grid: GlassGrid, band: GlassBand, moves: Boolean = true): GlassField {
         val count = grid.size * grid.size
         val luminance = FloatArray(count) { GlassLuma.luminance(grid.r[it], grid.g[it], grid.b[it]) }
-        val cap = capFor(luminance, band)
+        val cap = if (moves) capFor(luminance, band) else band.top
         val out = IntArray(count)
         for (i in out.indices) {
             val hsl = AlbumArtColors.Hsl.of(Color(grid.r[i].coerceIn(0f, 1f), grid.g[i].coerceIn(0f, 1f), grid.b[i].coerceIn(0f, 1f)))
             val saturation = if (hsl.s < NEUTRAL_SATURATION) hsl.s else min(1f, hsl.s * SATURATION_BOOST)
             out[i] = lightnessFor(hsl.h, saturation, knee(luminance[i], cap), band)
+        }
+        if (!moves) {
+            // Smooth *after* hue/luminance mapping as well. Mapping the coarse grid could reintroduce steps near grey.
+            val channels = listOf(16, 8, 0).map { shift -> FloatArray(count) { ((out[it] shr shift) and 255) / 255f } }
+            repeat(3) { channels.forEach { boxBlur(it, grid.size, 10) } }
+            for (i in out.indices) out[i] = GlassLuma.pack(channels[0][i], channels[1][i], channels[2][i])
         }
         return GlassField(grid.size, out, band, moves)
     }

@@ -1,0 +1,7 @@
+Polylute 1.1.1.
+
+* Fixed library crashes from broken or oversized lyrics.
+* Artist photos and missing covers load correctly; broken image downloads repair themselves.
+* Offline downloads retry, prioritise your music and keep separate jobs. Prepare, refresh or delete info by album or artist.
+* Lyrics and details move to Up next. Covers stay square with lyrics.
+* Smoother cover colours, frosted cards and a frosted bottom bar that hides the list behind it. Device settings appear only in DAP mode.

@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.network.lyrics
 
+import com.lostf1sh.pixelplayeross.data.network.PriorityRequestGate
 import android.os.SystemClock
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -8,20 +9,20 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 
-/** App policy, not a claim about LRCLIB's published quota: one request a second across all lyrics callers. */
+/** App policy, not a claim about LRCLIB's published quota: at most two requests a second across all lyrics callers. */
 internal class LrcLibRequestPacer(
     private val nowMs: () -> Long = SystemClock::elapsedRealtime,
     private val wallNowMs: () -> Long = System::currentTimeMillis,
     private val sleep: suspend (Long) -> Unit = { delay(it) },
 ) {
-    private val gate = Mutex()
+    private val gate = PriorityRequestGate()
     private var nextAt = 0L
     private var consecutiveRateLimits = 0
 
-    suspend fun <T> request(block: suspend () -> T): T = gate.withLock {
+    suspend fun <T> request(block: suspend () -> T): T = gate.withPermit {
         val wait = nextAt - nowMs()
         if (wait > 0) sleep(wait)
-        nextAt = nowMs() + 1_000L
+        nextAt = nowMs() + 500L
         try {
             block().also { consecutiveRateLimits = 0 }
         } catch (error: HttpException) {

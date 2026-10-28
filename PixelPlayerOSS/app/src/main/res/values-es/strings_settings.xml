@@ -66,7 +66,6 @@
     <string name="search_songs_by_title_artist_album">Buscar por título, artista o álbum</string>
     <string name="setcat_about_pixelplayer_subtitle">Versión, créditos y más.</string>
     <string name="setcat_album_art_cache_limit">Límite de caché de carátulas de álbum</string>
-    <string name="setcat_album_art_palette_subtitle">Actual: %1$s. Abre la vista previa en vivo y elige el estilo.</string>
     <string name="setcat_album_art_palette_title">Estilo de paleta de carátula</string>
     <string name="setcat_app_language_desc">Elige el idioma usado en toda la interfaz de la aplicación.</string>
     <string name="setcat_app_language_label">Idioma de la app</string>
@@ -179,9 +178,6 @@
     <string name="random_mode_classic">Clásico</string>
     <string name="random_mode_fast">Rápido</string>
     <string name="setcat_player_gestures">Gestos del reproductor</string>
-    <string name="setcat_player_theme_album_art">De la carátula</string>
-    <string name="setcat_player_theme_desc">Si el reproductor toma el color de la carátula o se queda neutro.</string>
-    <string name="setcat_player_theme_dynamic">Neutro</string>
     <string name="setcat_player_theme_label">Color del reproductor</string>
     <string name="setcat_regenerate_all">Regenerar todo</string>
     <string name="setcat_regenerate_daily_mix_action">Regenerar Daily Mix</string>

@@ -48,7 +48,7 @@ class MusicInfoWiringBoundaryTest {
 
     @Test
     fun `every address the music-info clients build is HTTPS, and the only hosts are the five services`() {
-        val clients = source("data/musicinfo/MusicInfoClients.kt")
+        val clients = source("data/musicinfo/MusicInfoClients.kt").lineSequence().filterNot { it.trimStart().startsWith("//") }.joinToString("\n")
         val hosts = Regex("https?://([a-z.$]+)").findAll(clients).map { it.groupValues[1] }.toSet()
         assertThat(clients).doesNotContain("http://")
         assertThat(hosts).containsExactly("musicbrainz.org", "coverartarchive.org", "www.wikidata.org", "commons.wikimedia.org", "\$lang.wikipedia.org")

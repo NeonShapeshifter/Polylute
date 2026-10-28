@@ -21,7 +21,6 @@ sealed class Screen(val route: String) {
     object SettingsCategory : Screen("settings_category/{categoryId}") {
         fun createRoute(categoryId: String) = "settings_category/$categoryId"
     }
-    object PaletteStyle : Screen("palette_style_settings")
     object PlaylistDetail : Screen("playlist_detail/{playlistId}") {
         fun createRoute(playlistId: String) = "playlist_detail/$playlistId"
     }

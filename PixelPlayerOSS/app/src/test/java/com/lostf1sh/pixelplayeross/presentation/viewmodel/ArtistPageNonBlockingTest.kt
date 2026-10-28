@@ -49,7 +49,7 @@ class ArtistPageNonBlockingTest {
         coEvery { service.cachedAbout(any(), any(), any()) } returns null
         coEvery { service.cachedArtistPhoto(any()) } returns null
         coEvery { service.fetchAbout(any(), any(), any(), any()) } returns null
-        val info = mockk<MusicInfoRepository> { every { this@mockk.service } returns service }
+        val info = mockk<MusicInfoRepository>(relaxed = true) { every { this@mockk.service } returns service }
         return ArtistDetailViewModel(ApplicationProvider.getApplicationContext<Context>(), music, images, info, themes, handle).also { models += it }
     }
     @Test fun `the local artist and songs appear while the online photo is still waiting`() = runTest {

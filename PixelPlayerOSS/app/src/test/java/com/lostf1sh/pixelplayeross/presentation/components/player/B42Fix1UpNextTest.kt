@@ -213,7 +213,7 @@ class B42Fix1UpNextTest {
     private val rootHeightPx = 1610f // 805 dp at 2 px per dp
 
     private fun clickHeader(id: Int) {
-        compose.onNodeWithContentDescription(s(id)).performClick()
+        compose.playerPageAction(s(id), toggle = true)
         compose.mainClock.advanceTimeBy(2_000)
         compose.waitForIdle()
     }

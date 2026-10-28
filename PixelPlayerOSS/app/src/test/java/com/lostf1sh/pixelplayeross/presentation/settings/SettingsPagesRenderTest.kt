@@ -249,19 +249,20 @@ class SettingsPagesRenderTest {
     }
 
     @Test
-    fun `appearance shows its sections, offers the palette style only for album art, and opens it`() {
+    fun `appearance shows its sections without the retired colour and palette choices`() {
         val actions = AppearanceRecorder()
         val state = AppearanceSettingsState.from(SettingsUiState(playerThemePreference = "album_art"))
         setPage { AppearanceSettingsScreen(state, actions) }
         assertShows(
             R.string.setcat_global_theme, R.string.setcat_now_playing, R.string.setcat_artwork, R.string.setcat_app_navigation_section,
             R.string.setcat_app_language_label, R.string.setcat_theme_label, R.string.setcat_accent_label,
-            R.string.setcat_app_colors_label, R.string.setcat_player_theme_label, R.string.setcat_show_player_file_info_title, R.string.setcat_album_art_palette_title,
+            R.string.setcat_app_colors_label, R.string.setcat_show_player_file_info_title,
         )
-        compose.onNodeWithText(s(R.string.setcat_album_art_palette_title)).performScrollTo().performClick()
+        compose.onAllNodesWithText(s(R.string.setcat_album_art_palette_title)).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.setcat_player_theme_label)).assertCountEquals(0)
         // the file-info switch is the first switch of the Player section
         compose.onAllNodes(isToggleable())[0].performScrollTo().performClick()
-        assertEquals(listOf("palette", "fileInfo:false"), actions.calls)
+        assertEquals(listOf("fileInfo:false"), actions.calls)
     }
 
     @Test
@@ -362,7 +363,7 @@ class SettingsPagesRenderTest {
         val dynamic = AppearanceSettingsState.from(SettingsUiState(playerThemePreference = "dynamic"))
         setPage { AppearanceSettingsScreen(dynamic, AppearanceRecorder()) }
         compose.onAllNodesWithText(s(R.string.setcat_album_art_palette_title)).assertCountEquals(0)
-        assertShows(R.string.setcat_player_theme_label)
+        compose.onAllNodesWithText(s(R.string.setcat_player_theme_label)).assertCountEquals(0)
     }
 
     // ── Device ───────────────────────────────────────────────────────────────────────────────────────

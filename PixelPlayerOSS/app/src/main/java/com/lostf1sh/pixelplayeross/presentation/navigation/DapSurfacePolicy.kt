@@ -77,7 +77,6 @@ object DapSurfacePolicy {
     private val settingsOwnedRoutes = setOf(
         Screen.SettingsCategory.route,
         Screen.ArtistSettings.route,
-        Screen.PaletteStyle.route,
         Screen.DelimiterConfig.route,
         Screen.WordDelimiterConfig.route,
         Screen.About.route,

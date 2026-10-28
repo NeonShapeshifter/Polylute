@@ -639,7 +639,7 @@ internal fun MaintenanceSection(
         )
         Surface(
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             Column { content() }
         }

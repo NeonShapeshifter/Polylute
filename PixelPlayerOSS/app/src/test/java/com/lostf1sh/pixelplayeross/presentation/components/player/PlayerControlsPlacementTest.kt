@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
@@ -82,7 +83,7 @@ open class PlayerControlsPlacementTest {
         fun top(n: androidx.compose.ui.semantics.SemanticsNode) = n.boundsInRoot.top / density
         fun bottom(n: androidx.compose.ui.semantics.SemanticsNode) = n.boundsInRoot.bottom / density
         val screen = compose.onRoot().fetchSemanticsNode().boundsInRoot.let { it.height / density to it.width / density }
-        val header = compose.onAllNodesWithContentDescription(s(R.string.player_header_collapse))[0].fetchSemanticsNode()
+        val headerBottom = 0f
         val title = compose.onAllNodesWithText("La Costa Del Silencio")[0].fetchSemanticsNode()
         val bar = compose.onAllNodesWithText("FLAC · 44.1 kHz")[0].fetchSemanticsNode()
         val shuffle = compose.onAllNodesWithContentDescription(s(R.string.player_shuffle))[0].fetchSemanticsNode()
@@ -93,7 +94,7 @@ open class PlayerControlsPlacementTest {
         val (screenHeight, screenWidth) = screen
 
         // The order is the design's: header, cover, title, bar, controls. The controls row is below the seek bar's block.
-        assertThat(top(title)).isGreaterThan(bottom(header))
+        assertThat(top(title)).isGreaterThan(headerBottom)
         assertThat(bottom(title)).isLessThan(top(bar))
         assertThat(controlsTop).isGreaterThan(bottom(bar))
 
@@ -104,7 +105,8 @@ open class PlayerControlsPlacementTest {
         // ...and not between the header and the cover: the title starts within one cover (the width less its two 24 dp margins)
         // plus its margins of the header, i.e. nothing floats above the block.
         val coverSide = screenWidth - 48f
-        assertThat(top(title) - bottom(header)).isAtMost(coverSide + 48f)
+        val lyricsHeight = compose.onNodeWithTag(PLAYER_LYRICS_LINES_TAG).fetchSemanticsNode().boundsInRoot.height / density
+        assertThat(top(title) - headerBottom).isAtMost(coverSide + lyricsHeight + 48f)
     }
 }
 

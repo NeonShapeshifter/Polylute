@@ -91,8 +91,15 @@ fun SettingsCategoryScreen(
     playerViewModel: PlayerViewModel,
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     deviceControlViewModel: DeviceControlViewModel = hiltViewModel(),
+    productModeViewModel: com.lostf1sh.pixelplayeross.presentation.viewmodel.ProductModeViewModel = hiltViewModel(),
 ) {
     val category = SettingsCategory.fromId(categoryId) ?: return
+    com.lostf1sh.pixelplayeross.presentation.settings.ProductModeLiveEffect(productModeViewModel)
+    val mode by productModeViewModel.state.collectAsStateWithLifecycle()
+    if (category == SettingsCategory.DEVICE && !com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.showScreenTimeout(mode.product)) {
+        LaunchedEffect(category) { navController.popBackStack() }
+        return
+    }
 
     LaunchedEffect(category) {
         deviceControlViewModel.refresh()

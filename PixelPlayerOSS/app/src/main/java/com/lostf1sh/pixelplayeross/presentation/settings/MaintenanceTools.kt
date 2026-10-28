@@ -468,7 +468,7 @@ private fun PaletteRegenerateSongSheetContent(
             if (songs.isEmpty()) {
                 item {
                     Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainer),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -483,7 +483,7 @@ private fun PaletteRegenerateSongSheetContent(
             } else {
                 items(songs, key = { it.id }) { song ->
                     Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainer),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()

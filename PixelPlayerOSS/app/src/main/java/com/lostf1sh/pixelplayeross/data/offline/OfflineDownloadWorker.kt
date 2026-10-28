@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.offline
 
+import com.lostf1sh.pixelplayeross.data.network.RemoteOutcome
 import android.content.Context
 import android.os.SystemClock
 import androidx.core.net.toUri
@@ -39,29 +40,22 @@ class OfflineDownloadWorker @AssistedInject constructor(
     private val info: MusicInfoRepository,
     private val dao: MusicDao,
 ) : CoroutineWorker(context, parameters) {
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) { runBatch() }
-
-    private fun hasLocalCover(song: Song): Boolean {
-        val uri = song.albumArtUriString?.takeIf { it.isNotBlank() } ?: return false
-        return runCatching {
-            if (LocalArtworkUri.isLocalArtworkUri(uri)) {
-                // A lazy locator exists even when embedded-art extraction has never been attempted.
-                val songId = LocalArtworkUri.parseSongId(uri) ?: return false
-                AlbumArtUtils.ensureAlbumArtCachedFile(applicationContext, songId, song.path)
-                    ?.let { it.isFile && it.length() > 0L } == true
-            } else {
-                AlbumArtUtils.openArtworkInputStream(applicationContext, uri.toUri())?.use { it.read() >= 0 } == true
-            }
-        }.getOrDefault(false)
-    }
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO + com.lostf1sh.pixelplayeross.data.network.RequestPriority(background = true)) { runBatch() }
 
     private suspend fun runBatch(): Result {
         val id = inputData.getString("batch") ?: return Result.failure()
         val batch = downloads.load(id) ?: return Result.success()
+        return withContext(com.lostf1sh.pixelplayeross.data.network.DownloadOwner(batch.planId) { key -> downloads.claim(batch.planId, key) }) {
+            runOwnedBatch(id, batch)
+        }
+    }
+
+    private suspend fun runOwnedBatch(id: String, batch: OfflineBatch): Result {
         downloads.update(id) { if (it.active) it.copy(status = OfflineStatus.RUNNING) else it }
-        val deadline = SystemClock.elapsedRealtime() + 4 * 60_000L
+        val startedAt = SystemClock.elapsedRealtime()
+        val deadline = startedAt + 4 * 60_000L
         try {
-            val pending = batch.targets.indices.filter { it !in batch.completed }.take(25)
+            val pending = batch.targets.indices.filter { it !in batch.completed && (batch.retries[it]?.readyAtMs ?: 0L) <= System.currentTimeMillis() }.take(25)
             val ids = pending.mapNotNull { batch.targets[it].songId }.distinct()
             val songs = if (ids.isEmpty()) emptyMap() else music.getSongsByIds(ids).first().associateBy { it.id }
             val lanes = Semaphore(2)
@@ -72,37 +66,17 @@ class OfflineDownloadWorker @AssistedInject constructor(
                             coroutineContext.ensureActive()
                             if (isStopped || downloads.load(id) == null || SystemClock.elapsedRealtime() >= deadline) break
                             val target = batch.targets[index]
-                            var available = 0; var unavailable = 0; var failed = 0
-                            try {
-                                val found = when (target.kind) {
-                                    OfflineKind.LYRICS -> songs[target.songId]?.let { lyrics.prepareForOffline(it) } != null
-                                    OfflineKind.ARTIST_PHOTOS -> {
-                                        val photo = info.service.fetchArtistPhoto(target.title, userRequested = true)
-                                        if (photo != null) dao.getArtistIdByNormalizedName(target.title)?.let { dao.updateArtistImageUrl(it, photo.path) }
-                                        photo != null
-                                    }
-                                    OfflineKind.COVERS -> {
-                                        val song = songs[target.songId]
-                                        if (song == null) false
-                                        else if (hasLocalCover(song)) true
-                                        else {
-                                            val cover = info.service.fetchCover(target.title, target.albumArtist.orEmpty(), userRequested = true)
-                                            if (cover != null) song.id.toLongOrNull()?.let { info.downloadedCoverArrived(it) }
-                                            cover != null
-                                        }
-                                    }
-                                    OfflineKind.DESCRIPTIONS -> info.service.fetchAbout(
-                                        if (target.album) AboutKind.ALBUM else AboutKind.ARTIST, target.title,
-                                        target.albumArtist, userRequested = true) != null
-                                }
-                                if (found) available++ else unavailable++
-                            } catch (cancelled: CancellationException) { throw cancelled }
-                            catch (error: Exception) { failed++ }
+                            val result = fetchResult(batch, target, songs[target.songId])
                             coroutineContext.ensureActive()
-                            if (!downloads.record(id, index, OfflineResult(target.title, available, unavailable, failed))) break
+                            if (!downloads.record(id, index, result)) break
                         }
                     }
                 } }.awaitAll()
+            }
+            downloads.update(id) { current ->
+                val count = current.next - batch.next
+                if (count > 0) current.copy(measuredMs = current.measuredMs + SystemClock.elapsedRealtime() - startedAt,
+                    measuredCount = current.measuredCount + count) else current
             }
             val current = downloads.load(id) ?: return Result.success()
             if (current.next >= current.total) downloads.update(id) { it.copy(status = OfflineStatus.COMPLETE) }
@@ -115,4 +89,64 @@ class OfflineDownloadWorker @AssistedInject constructor(
             return Result.failure()
         }
     }
+    private suspend fun fetchResult(batch: OfflineBatch, target: OfflineTarget, song: Song?): OfflineResult {
+        if (downloads.wasDeleted(target, song)) return deletedResult(target)
+        val cacheKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val owner = com.lostf1sh.pixelplayeross.data.network.DownloadOwner(batch.planId) { key ->
+            cacheKeys += key
+            downloads.claim(batch.planId, key)
+        }
+        val outcome = try {
+            withContext(owner) {
+                RemoteOutcome.lookup { fetchTarget(target, song).takeIf { it } }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            RemoteOutcome.Failed
+        }
+        coroutineContext.ensureActive()
+        if (downloads.wasDeleted(target, song)) return deletedResult(target)
+        return when (outcome) {
+            is RemoteOutcome.Found -> OfflineResult(target.title, 1, 0, 0, cacheKeys.toSet())
+            RemoteOutcome.NotFound -> OfflineResult(target.title, 0, 1, 0, cacheKeys.toSet())
+            RemoteOutcome.Failed -> OfflineResult(target.title, 0, 0, 1, cacheKeys.toSet())
+        }
+    }
+
+    private fun deletedResult(target: OfflineTarget): OfflineResult {
+        timber.log.Timber.tag("OfflineDownloads").i("Skipped %s target deleted by you", target.kind)
+        return OfflineResult(target.title, 0, 0, 0, deletedByUser = true)
+    }
+
+    private suspend fun fetchTarget(target: OfflineTarget, song: Song?): Boolean = when (target.kind) {
+        OfflineKind.LYRICS -> song?.let { lyrics.prepareForOffline(it) } != null
+        OfflineKind.ARTIST_PHOTOS -> {
+            val photo = info.service.fetchArtistPhoto(target.title, userRequested = true)
+            if (photo != null) {
+                info.deletedDownloads.commitIfAllowed(com.lostf1sh.pixelplayeross.data.musicinfo.DownloadKeys.photo(target.title)) {
+                    dao.getArtistIdByNormalizedName(target.title)?.let { dao.updateArtistImageUrl(it, photo.path) }
+                }
+            }
+            photo != null
+        }
+        OfflineKind.COVERS -> {
+            if (song == null) {
+                false
+            } else if (OfflineArtwork.hasLocalCover(applicationContext, song)) {
+                true
+            } else {
+                val cover = info.service.fetchCover(target.title, target.albumArtist.orEmpty(), userRequested = true)
+                if (cover != null) song.id.toLongOrNull()?.let { info.downloadedCoverArrived(it) }
+                cover != null
+            }
+        }
+        OfflineKind.DESCRIPTIONS -> info.service.fetchAbout(
+            if (target.album) AboutKind.ALBUM else AboutKind.ARTIST,
+            target.title,
+            target.albumArtist,
+            userRequested = true,
+        ) != null
+    }
+
 }

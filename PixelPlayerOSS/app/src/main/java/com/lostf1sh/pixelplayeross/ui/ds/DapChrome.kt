@@ -1,5 +1,7 @@
 package com.lostf1sh.pixelplayeross.ui.ds
 
+import com.lostf1sh.pixelplayeross.ui.glass.frostedBarBackdrop
+
 import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
 import com.lostf1sh.pixelplayeross.ui.glass.glassSheetContainer
 import com.lostf1sh.pixelplayeross.R
@@ -175,9 +177,19 @@ fun DapBottomNav(
     Column(
         modifier
             .fillMaxWidth()
-            // B42-fix3 (item 8): over the cover glass the bar is frosted glass (one veil, the same as the mini player's and the queue sheet's)
+            // The blurred field is opaque to rows, then wears the shared glass veil.
+            .frostedBarBackdrop()
             .background(Dap.panel)
     ) {
+        DapBottomNavContent(items, selectedIndex, onSelect, contentPadding)
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.DapBottomNavContent(
+    items: List<DapNavItem>, selectedIndex: Int, onSelect: (Int) -> Unit,
+    contentPadding: androidx.compose.foundation.layout.PaddingValues,
+) {
         DapDivider()
         Row(
             Modifier
@@ -215,7 +227,6 @@ fun DapBottomNav(
                 }
             }
         }
-    }
 }
 
 /**

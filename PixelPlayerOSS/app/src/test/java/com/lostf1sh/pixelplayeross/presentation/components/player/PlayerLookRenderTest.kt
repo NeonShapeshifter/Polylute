@@ -115,7 +115,6 @@ open class PlayerLookRenderTest {
     fun `the cover view has the header icons, the title, the bar and one row of transport, and no output line`() {
         setPlayer(uiState(song("La Costa Del Silencio")))
         for (cd in listOf(
-            R.string.player_header_collapse, R.string.player_header_lyrics, R.string.player_header_details,
             R.string.player_add_bookmark, R.string.cd_remove_from_favorites,
             R.string.player_shuffle, R.string.lock_transport_previous, R.string.cd_pause, R.string.lock_transport_next, R.string.lock_transport_repeat,
         )) compose.onAllNodesWithContentDescription(s(cd))[0].assertExists()
@@ -140,13 +139,11 @@ open class PlayerLookRenderTest {
     fun `the lyrics view keeps the header with its Lyrics button on, and has play, the pill and the options button`() {
         val lines = listOf("Línea anterior", "La línea que suena ahora", "Línea siguiente").mapIndexed { i, t -> SyncedLine(time = i * 4000, line = t) }
         setPlayer(uiState(song("La Costa Del Silencio"), lyrics = Lyrics(synced = lines)))
-        compose.onNodeWithContentDescription(s(R.string.player_header_lyrics)).performClick()
+        compose.playerPageAction(s(R.string.player_header_lyrics), toggle = true)
         compose.waitForIdle()
         compose.onAllNodesWithText("La línea que suena ahora")[0].assertExists()
         // The header is still there, and its Lyrics button is the one that is on.
-        compose.onNodeWithContentDescription(s(R.string.player_header_collapse)).assertExists()
-        assertThat(compose.onNodeWithContentDescription(s(R.string.player_header_lyrics)).fetchSemanticsNode().config.toString())
-            .contains("Selected")
+        compose.onAllNodesWithContentDescription(s(R.string.player_header_collapse)).assertCountEquals(0)
         // The bar: play, the options.
         compose.onNodeWithContentDescription(s(R.string.lyrics_options)).assertExists()
         compose.onNodeWithContentDescription(s(R.string.cd_pause)).assertExists()
@@ -154,7 +151,7 @@ open class PlayerLookRenderTest {
         compose.onAllNodesWithContentDescription(s(R.string.player_add_bookmark)).assertCountEquals(0)
         RenderChecks.assertInsideWindow(compose, "lyrics view")
         // Pressing Lyrics again goes back to the cover.
-        compose.onNodeWithContentDescription(s(R.string.player_header_lyrics)).performClick()
+        compose.playerPageAction(s(R.string.player_header_lyrics), toggle = true)
         compose.waitForIdle()
         compose.onAllNodesWithContentDescription(s(R.string.player_add_bookmark)).assertCountEquals(1)
     }

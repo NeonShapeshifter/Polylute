@@ -107,8 +107,11 @@ class LyricsRepositoryImplTest {
             isSynced = true,
             source = "manual"
         )
+        val storage = Files.createTempDirectory("stored-lyrics").toFile().also { it.deleteOnExit() }
         val repository = LyricsRepositoryImpl(
-            context = mockk<Context>(relaxed = true),
+            context = mockk<Context>(relaxed = true) {
+                every { filesDir } returns storage
+            },
             lrcLibApiService = apiService,
             lyricsDao = lyricsDao,
             okHttpClient = mockk<OkHttpClient>(relaxed = true),

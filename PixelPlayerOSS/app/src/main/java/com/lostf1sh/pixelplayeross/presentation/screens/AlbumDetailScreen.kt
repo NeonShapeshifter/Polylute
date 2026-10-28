@@ -115,10 +115,14 @@ fun AlbumDetailScreen(
     navController: NavController,
     playerViewModel: PlayerViewModel,
     viewModel: AlbumDetailViewModel = hiltViewModel(),
-    playlistViewModel: PlaylistViewModel = hiltViewModel()
+    playlistViewModel: PlaylistViewModel = hiltViewModel(),
+    infoActions: com.lostf1sh.pixelplayeross.presentation.viewmodel.MusicInfoActionsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val about by viewModel.about.collectAsStateWithLifecycle()
+    var showOfflineDownloads by remember { mutableStateOf(false) }
+    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.OfflineDownloadsDialog(
+        uiState.songs.map { it.id }, onDismiss = { showOfflineDownloads = false })
     val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
     val playbackStates = rememberLibraryPlaybackStates(playerViewModel)
     val isMiniPlayerVisible by remember {
@@ -458,6 +462,16 @@ fun AlbumDetailScreen(
                             }
                         )
                     }
+                    Box(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end = 8.dp)) {
+                        val infoArtist = album.albumArtist?.takeIf { it.isNotBlank() }
+                            ?: com.lostf1sh.pixelplayeross.data.musicinfo.MusicBrainzClient.firstCreditedArtist(album.artist)
+                        com.lostf1sh.pixelplayeross.presentation.components.MusicInfoPageMenu(
+                            onPrepare = { showOfflineDownloads = true },
+                            onRefresh = { infoActions.refreshAlbum(album.title, infoArtist, songs, viewModel::downloadedInfoChanged) },
+                            onDelete = { infoActions.deleteAlbum(album.title, infoArtist, songs, viewModel::downloadedInfoChanged) },
+                        )
+                    }
+
                 }
             }
         }

@@ -37,7 +37,6 @@ import com.lostf1sh.pixelplayeross.presentation.screens.LicensesScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.SpecialThanksScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.GenreDetailScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.MaintenanceScreen
-import com.lostf1sh.pixelplayeross.presentation.screens.PaletteStyleSettingsScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.PlaylistDetailScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.RecentlyPlayedScreen
 
@@ -122,20 +121,6 @@ fun DetailNavigation(
                             deviceControlViewModel = deviceControlViewModel,
                         )
                     }
-                }
-            }
-            composable(
-                route = Screen.PaletteStyle.route,
-                enterTransition = { enterTransition() },
-                exitTransition = { exitTransition() },
-                popEnterTransition = { popEnterTransition() },
-                popExitTransition = { popExitTransition() },
-            ) {
-                ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
-                    PaletteStyleSettingsScreen(
-                        playerViewModel = playerViewModel,
-                        onBackClick = { navController.popBackStack() }
-                    )
                 }
             }
             composable(

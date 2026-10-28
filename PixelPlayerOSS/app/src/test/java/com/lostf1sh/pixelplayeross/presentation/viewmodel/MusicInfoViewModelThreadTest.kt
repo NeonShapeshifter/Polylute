@@ -95,7 +95,7 @@ class MusicInfoViewModelThreadTest {
         )
     }
 
-    private fun repository(service: MusicInfoService): MusicInfoRepository = mockk { every { this@mockk.service } returns service }
+    private fun repository(service: MusicInfoService): MusicInfoRepository = mockk(relaxed = true) { every { this@mockk.service } returns service }
 
     private fun waitFor(about: kotlinx.coroutines.flow.StateFlow<MusicInfoAboutState>) {
         val deadline = System.currentTimeMillis() + 8_000

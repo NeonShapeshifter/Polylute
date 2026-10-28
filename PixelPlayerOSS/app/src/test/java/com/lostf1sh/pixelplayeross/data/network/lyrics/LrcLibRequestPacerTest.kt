@@ -22,7 +22,7 @@ class LrcLibRequestPacerTest {
         retryAfter?.let { response.header("Retry-After", it) }
         return HttpException(Response.error<Any>("".toResponseBody(), response.build()))
     }
-    @Test fun `exact and search calls share one process gate and start at least one second apart`() = runTest {
+    @Test fun `exact and search calls share one process gate and start at least half a second apart`() = runTest {
         val starts = mutableListOf<Long>()
         val raw = mockk<LrcLibApiService>()
         coEvery { raw.getLyrics(any(), any(), any(), any()) } coAnswers { starts += testScheduler.currentTime; null }
@@ -30,7 +30,7 @@ class LrcLibRequestPacerTest {
         val service = PacedLrcLibApiService(raw, LrcLibRequestPacer({ testScheduler.currentTime }, { 0L }, { delay(it) }))
         listOf(async { service.getLyrics("one", "artist", "album", 10) },
             async { service.searchLyrics("two") }, async { service.searchLyrics("three") }).awaitAll()
-        assertThat(starts).containsExactly(0L, 1000L, 2000L).inOrder()
+        assertThat(starts).containsExactly(0L, 500L, 1000L).inOrder()
     }
     @Test fun `rate limit response delays the next caller by Retry After without a retry storm`() = runTest {
         val pacer = LrcLibRequestPacer({ testScheduler.currentTime }, { 0L }, { delay(it) })
@@ -58,6 +58,6 @@ class LrcLibRequestPacerTest {
         cancelled.cancel()
         testScheduler.runCurrent()
         assertThat(called).isFalse()
-        assertThat(pacer.request { testScheduler.currentTime }).isEqualTo(1000L)
+        assertThat(pacer.request { testScheduler.currentTime }).isEqualTo(500L)
     }
 }

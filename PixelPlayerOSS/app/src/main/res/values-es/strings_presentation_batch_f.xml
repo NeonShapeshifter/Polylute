@@ -1,11 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="presentation_batch_f_accuracy_current">Actual</string>
-    <string name="presentation_batch_f_accuracy_more_accurate">Más preciso</string>
-    <string name="presentation_batch_f_accuracy_summary_balanced">%1$d • Equilibrado</string>
-    <string name="presentation_batch_f_accuracy_summary_current">0 • Actual</string>
-    <string name="presentation_batch_f_accuracy_summary_precise">%1$d • Preciso</string>
-    <string name="presentation_batch_f_accuracy_summary_subtle">%1$d • Sutil</string>
     <string name="presentation_batch_f_add_songs">Añadir canciones</string>
     <string name="presentation_batch_f_adjust_cover_hint">Usa los gestos de pellizcar y arrastrar para encontrar el encuadre perfecto</string>
     <string name="presentation_batch_f_adjust_cover_title">Ajusta tu portada</string>
@@ -13,18 +7,13 @@
     <string name="presentation_batch_f_album_art_quality_low_line">Baja (256px) - Mejor rendimiento</string>
     <string name="presentation_batch_f_album_art_quality_medium_line">Media (512px) - Equilibrado</string>
     <string name="presentation_batch_f_album_art_quality_original_line">Original - Máxima calidad</string>
-    <string name="presentation_batch_f_apply">Aplicar</string>
     <string name="presentation_batch_f_auto_generated_collage">Collage generado automáticamente</string>
     <string name="presentation_batch_f_background_color">Color de fondo</string>
     <string name="presentation_batch_f_cd_add_photo">Añadir foto</string>
     <string name="presentation_batch_f_cd_back_or_cancel">Atrás o cancelar</string>
-    <string name="presentation_batch_f_cd_close">Cerrar</string>
     <string name="presentation_batch_f_cd_refresh_lyrics">Actualizar letras</string>
     <string name="presentation_batch_f_cd_selected">Seleccionado</string>
     <string name="presentation_batch_f_change">Cambiar</string>
-    <string name="presentation_batch_f_color_accuracy_subtitle">0 mantiene el ajuste actual. Valores más altos se acercan más al tono dominante de la carátula.</string>
-    <string name="presentation_batch_f_color_accuracy_title">Precisión del color</string>
-    <string name="presentation_batch_f_colors_title">Colores</string>
     <string name="presentation_batch_f_corner_radius">Radio de esquina</string>
     <string name="presentation_batch_f_create">Crear</string>
     <string name="presentation_batch_f_creation_mode_manual">Manual</string>
@@ -45,16 +34,6 @@
     <string name="presentation_batch_f_new_playlist">Nueva lista</string>
     <string name="presentation_batch_f_new_smart_playlist">Nueva lista inteligente</string>
     <string name="presentation_batch_f_next">Siguiente</string>
-    <string name="presentation_batch_f_palette_label_expressive">Expresivo</string>
-    <string name="presentation_batch_f_palette_label_fruit_salad">Ensalada de frutas</string>
-    <string name="presentation_batch_f_palette_label_tonal_spot">Tonal Spot</string>
-    <string name="presentation_batch_f_palette_label_vibrant">Vibrante</string>
-    <string name="presentation_batch_f_palette_style_expressive_desc">Cambios de tono y contraste marcados.</string>
-    <string name="presentation_batch_f_palette_style_fruit_salad_desc">Acentos juguetones y rotados.</string>
-    <string name="presentation_batch_f_palette_style_heading">Estilo de paleta</string>
-    <string name="presentation_batch_f_palette_style_subtitle">Elige los colores del álbum para la interfaz del reproductor.</string>
-    <string name="presentation_batch_f_palette_style_tonal_spot_desc">Equilibrado y calmado.</string>
-    <string name="presentation_batch_f_palette_style_vibrant_desc">Acentos de alta saturación.</string>
     <string name="presentation_batch_f_percent">%1$d%%</string>
     <string name="presentation_batch_f_pick_image">Elegir imagen</string>
     <string name="presentation_batch_f_playlist_name_label">Nombre de la lista</string>

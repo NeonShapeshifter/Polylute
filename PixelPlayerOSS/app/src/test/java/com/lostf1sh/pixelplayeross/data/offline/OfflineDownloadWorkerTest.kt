@@ -89,8 +89,15 @@ class OfflineDownloadWorkerTest {
         plan(songs.values.take(2))
         coEvery { lyrics.prepareForOffline(songs.getValue("1")) } throws IOException("offline")
         worker().doWork()
+        assertThat(store.read()!!.status).isEqualTo(OfflineStatus.RUNNING)
+        assertThat(store.read()!!.next).isEqualTo(1)
+        assertThat(store.read()!!.failed).isEqualTo(1)
+        worker().doWork()
+        coVerify(exactly = 1) { lyrics.prepareForOffline(songs.getValue("1")) }
+        coEvery { lyrics.prepareForOffline(songs.getValue("1")) } returns mockk<Lyrics>()
+        store.update("job") { b -> b.copy(retries = b.retries.mapValues { it.value.copy(readyAtMs = 0) }) }
+        worker().doWork()
         assertThat(store.read()!!.status).isEqualTo(OfflineStatus.COMPLETE)
-        assertThat(store.results().map { it.failed }).containsExactly(1, 0).inOrder()
     }
     @Test fun `cancellation starts no later request and commits no unfinished asset`() = runBlocking {
         plan()

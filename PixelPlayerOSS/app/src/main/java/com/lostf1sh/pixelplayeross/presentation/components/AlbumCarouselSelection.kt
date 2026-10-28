@@ -169,11 +169,13 @@ fun AlbumCarouselSection(
 
     // Edge-origin drags belong to the system Back gesture; centre drags stay with the pager.
     BoxWithConstraints(modifier = modifier.respectSystemBackEdges()) {
-        val availableWidth = this.maxWidth
+        val factor = if (carouselState.pagerState.pageCount == 1 || carouselStyle == CarouselStyle.NO_PEEK) 1f
+            else if (carouselStyle == CarouselStyle.TWO_PEEK) 0.6f else 0.8f
+        val availableWidth = minOf(maxWidth, maxHeight / factor)
 
         RoundedHorizontalMultiBrowseCarousel(
             state = carouselState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.width(availableWidth).fillMaxHeight().align(androidx.compose.ui.Alignment.TopCenter),
             itemSpacing = itemSpacing,
             itemCornerRadius = corner,
             suppressNoPeekSettleCorrection = requestedTargetIndex != null || programmaticScrollInProgress || resyncing,
@@ -198,7 +200,8 @@ fun AlbumCarouselSection(
                         uri = song.albumArtUriString,
                         title = song.title,
                         modifier = Modifier.fillMaxSize(),
-                        targetSize = targetSize
+                        targetSize = targetSize,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                     )
                 }
             }

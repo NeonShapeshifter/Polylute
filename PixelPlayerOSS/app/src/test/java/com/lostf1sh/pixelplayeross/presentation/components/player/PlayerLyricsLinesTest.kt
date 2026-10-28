@@ -135,7 +135,7 @@ class PlayerLyricsLinesTest {
     }
 
     @Test
-    fun `with no synced lyrics nothing is drawn and no room is held`() {
+    fun `with no synced lyrics the same room is held so the cover stays steady`() {
         var lyrics by mutableStateOf<Lyrics?>(song)
         var markerTop = -1f
         compose.setContent {
@@ -146,13 +146,14 @@ class PlayerLyricsLinesTest {
         }
         compose.waitForIdle()
         assertTrue("with synced lyrics the marker is below the two lines (was $markerTop)", markerTop > 0f)
+        val reservedHeight = markerTop
         lyrics = Lyrics(plain = listOf("only plain lines"))
         compose.waitForIdle()
         compose.onAllNodesWithText("Abre la puerta, bebé").assertCountEquals(0)
-        assertEquals("no gap where the lines were", 0f, markerTop, 0.5f)
+        assertEquals("the reserved space stays", reservedHeight, markerTop, 0.5f)
         lyrics = null
         compose.waitForIdle()
-        assertEquals(0f, markerTop, 0.5f)
+        assertEquals(reservedHeight, markerTop, 0.5f)
     }
 
     @Test

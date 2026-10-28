@@ -99,8 +99,8 @@ class B42Fix1PlayerPagesBoundaryTest {
         assertThat(queue).contains("pageSignal?.onPlayerPage == false")
         // the screen is what says which page it is on, and puts it back when it goes
         val screen = code(source("presentation/components/player/FullPlayerScreen.kt"))
-        assertThat(screen).contains("SideEffect { signal.page = page }")
-        assertThat(screen).contains("onDispose { signal.page = PlayerPage.Start }")
+        assertThat(screen).contains("signal.page = page")
+        assertThat(screen).contains("onDispose { signal.page = PlayerPage.Start;")
         // the lyrics page keeps clear of the navigation bar only, not of a strip that is not there
         val lyricsPage = screen.substringAfter("PlayerPage.LYRICS -> PlayerLyricsPage(").substringBefore("PlayerPage.DETAILS")
         assertThat(lyricsPage).doesNotContain("QueuePeekHeight")

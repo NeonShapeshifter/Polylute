@@ -218,17 +218,6 @@ fun AppearanceSettingsScreen(state: AppearanceSettingsState, actions: Appearance
     // B41: the Player section: the player's own colours and file line, and the two things that dress it (the glass that moves behind it
     // and the lyrics under its cover).
     SettingsSubsection(title = stringResource(R.string.setcat_now_playing)) {
-        ThemeSelectorItem(
-            label = stringResource(R.string.setcat_player_theme_label),
-            description = stringResource(R.string.setcat_player_theme_desc),
-            options = mapOf(
-                ThemePreference.ALBUM_ART to stringResource(R.string.setcat_player_theme_album_art),
-                ThemePreference.DYNAMIC to stringResource(R.string.setcat_player_theme_dynamic)
-            ),
-            selectedKey = state.playerThemePreference,
-            onSelectionChanged = { actions.onPlayerThemePreferenceChange(it) },
-            leadingIcon = { Icon(Icons.Outlined.PlayCircle, null, tint = MaterialTheme.colorScheme.secondary) },
-        )
         SwitchSettingItem(
             title = stringResource(R.string.setcat_show_player_file_info_title),
             subtitle = stringResource(R.string.setcat_show_player_file_info_subtitle),
@@ -236,17 +225,6 @@ fun AppearanceSettingsScreen(state: AppearanceSettingsState, actions: Appearance
             onCheckedChange = { actions.onShowPlayerFileInfoChange(it) },
             leadingIcon = { Icon(painterResource(R.drawable.rounded_attach_file_24), null, tint = MaterialTheme.colorScheme.secondary) },
         )
-        // The palette style only shapes colour taken from the artwork, so it
-        // is offered only when the player takes its colour from the artwork.
-        if (state.playerThemePreference == ThemePreference.ALBUM_ART) {
-            SettingsItem(
-                title = stringResource(R.string.setcat_album_art_palette_title),
-                subtitle = stringResource(R.string.setcat_album_art_palette_subtitle, state.albumArtPaletteStyle.label),
-                leadingIcon = { Icon(Icons.Outlined.Style, null, tint = MaterialTheme.colorScheme.secondary) },
-                trailingIcon = { DapChevron() },
-                onClick = { actions.onOpenPaletteStyle() }
-            )
-        }
         // B41: there is a glass to move only once "Cover glass" is the app's colour source. It moves in the full player and on the lock
         // screen; the rest of the app holds still whatever this says.
         if (AppColorSource.hasGlass(state.appColorSource)) {

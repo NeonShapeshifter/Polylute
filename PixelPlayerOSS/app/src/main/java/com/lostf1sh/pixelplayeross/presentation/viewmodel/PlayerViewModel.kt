@@ -5495,7 +5495,7 @@ class PlayerViewModel @Inject constructor(
      * Manual search lyrics using query provided by user (title and artist)
      */
     fun searchLyricsManually(title: String, artist: String? = null) {
-        lyricsStateHolder.searchLyricsManually(title, artist)
+        lyricsStateHolder.searchLyricsManually(title, artist, stablePlayerState.value.currentSong)
     }
 
     fun acceptLyricsSearchResultForCurrentSong(result: LyricsSearchResult) {

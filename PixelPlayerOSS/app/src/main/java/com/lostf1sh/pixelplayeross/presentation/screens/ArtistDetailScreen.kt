@@ -124,10 +124,14 @@ fun ArtistDetailScreen(
     navController: NavController,
     playerViewModel: PlayerViewModel,
     viewModel: ArtistDetailViewModel = hiltViewModel(),
-    playlistViewModel: PlaylistViewModel = hiltViewModel()
+    playlistViewModel: PlaylistViewModel = hiltViewModel(),
+    infoActions: com.lostf1sh.pixelplayeross.presentation.viewmodel.MusicInfoActionsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val about by viewModel.about.collectAsStateWithLifecycle()
+    var showOfflineDownloads by remember { mutableStateOf(false) }
+    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.OfflineDownloadsDialog(
+        uiState.songs.map { it.id }, onDismiss = { showOfflineDownloads = false })
     val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
 
     var isTransitionFinished by remember { mutableStateOf(false) }
@@ -471,7 +475,17 @@ fun ArtistDetailScreen(
                                 }
                             },
                             onChangeImage = { imagePickerLauncher.launch("image/*") },
-                            onClearCustomImage = { viewModel.clearCustomImage() }
+                            onClearCustomImage = { viewModel.clearCustomImage() },
+                            infoMenuItems = { dismiss ->
+                                com.lostf1sh.pixelplayeross.presentation.components.MusicInfoMenuItems(
+                                    onPrepare = { dismiss(); showOfflineDownloads = true },
+                                    onRefresh = {
+                                        dismiss()
+                                        infoActions.refreshArtist(artist.name, songs, viewModel::downloadedInfoChanged)
+                                    },
+                                    onDelete = { dismiss(); infoActions.deleteArtist(artist.name, songs, viewModel::downloadedInfoChanged) },
+                                )
+                            }
                         )
                     } else {
                         CustomCollapsingTopBar(
@@ -507,7 +521,17 @@ fun ArtistDetailScreen(
                                 }
                             },
                             onChangeImage = { imagePickerLauncher.launch("image/*") },
-                            onClearCustomImage = { viewModel.clearCustomImage() }
+                            onClearCustomImage = { viewModel.clearCustomImage() },
+                            infoMenuItems = { dismiss ->
+                                com.lostf1sh.pixelplayeross.presentation.components.MusicInfoMenuItems(
+                                    onPrepare = { dismiss(); showOfflineDownloads = true },
+                                    onRefresh = {
+                                        dismiss()
+                                        infoActions.refreshArtist(artist.name, songs, viewModel::downloadedInfoChanged)
+                                    },
+                                    onDelete = { dismiss(); infoActions.deleteArtist(artist.name, songs, viewModel::downloadedInfoChanged) },
+                                )
+                            }
                         )
                     }
                 }
@@ -793,7 +817,8 @@ private fun SharedArtistTopBarProbe(
     onPlayClick: () -> Unit,
     onShuffleClick: () -> Unit,
     onChangeImage: () -> Unit,
-    onClearCustomImage: () -> Unit
+    onClearCustomImage: () -> Unit,
+    infoMenuItems: @Composable (() -> Unit) -> Unit = {},
 ) {
     var showImageMenu by remember { mutableStateOf(false) }
     val editImageCd = stringResource(R.string.presentation_batch_d_edit_artist_image_cd)
@@ -893,6 +918,7 @@ private fun SharedArtistTopBarProbe(
                         expanded = showImageMenu,
                         onDismissRequest = { showImageMenu = false }
                     ) {
+                        infoMenuItems { showImageMenu = false }
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.presentation_batch_d_change_photo)) },
                             leadingIcon = {
@@ -976,7 +1002,8 @@ private fun CustomCollapsingTopBar(
     onPlayClick: () -> Unit,
     onShuffleClick: () -> Unit,
     onChangeImage: () -> Unit,
-    onClearCustomImage: () -> Unit
+    onClearCustomImage: () -> Unit,
+    infoMenuItems: @Composable (() -> Unit) -> Unit = {},
 ) {
     var showImageMenu by remember { mutableStateOf(false) }
     val editImageCd = stringResource(R.string.presentation_batch_d_edit_artist_image_cd)
@@ -1084,6 +1111,7 @@ private fun CustomCollapsingTopBar(
                                     expanded = showImageMenu,
                                     onDismissRequest = { showImageMenu = false }
                                 ) {
+                                    infoMenuItems { showImageMenu = false }
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.presentation_batch_d_change_photo)) },
                                         leadingIcon = {

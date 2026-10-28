@@ -58,7 +58,7 @@ internal class AppearanceSettingsActionsImpl(
     override fun onAlbumArtQualityChange(value: AlbumArtQuality) = vm.setAlbumArtQuality(value)
     override fun onLaunchTabChange(value: String) = vm.setLaunchTab(value)
     override fun onLibraryNavigationModeChange(value: String) = vm.setLibraryNavigationMode(value)
-    override fun onOpenPaletteStyle() = navigate(Screen.PaletteStyle.route)
+    override fun onOpenPaletteStyle() = Unit // Retired route; stored preferences are retained.
     // B41: the Player section's two switches, and what moved here from Lyrics and Behaviour (the same methods, so the same preferences).
     override fun onCoverGlassMovingChange(value: Boolean) = vm.setCoverGlassMoving(value)
     override fun onLyricsUnderCoverChange(value: Boolean) = vm.setLyricsUnderCover(value)

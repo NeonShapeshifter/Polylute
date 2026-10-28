@@ -115,12 +115,12 @@ internal fun PlayerLyricsLines(
     val shown by remember(lyrics.lyricsProvider, progress.currentPositionProvider, lyrics.lyricsSyncOffset) {
         derivedStateOf { CoverLyricsLines.at(lyrics.lyricsProvider(), progress.currentPositionProvider(), lyrics.lyricsSyncOffset) }
     }
-    val lines = shown ?: return
+    val lines = shown ?: CoverLyricsLines.Shown(null, null)
     Column(
         modifier
             .fillMaxWidth()
             .testTag(PLAYER_LYRICS_LINES_TAG)
-            .clickable(onClickLabel = stringResource(R.string.player_lyrics_under_cover_cd), role = Role.Button, onClick = onOpen)
+            .clickable(enabled = shown != null, onClickLabel = stringResource(R.string.player_lyrics_under_cover_cd), role = Role.Button, onClick = onOpen)
             .padding(bottom = 10.dp),
     ) {
         // B41-fix1 (B7): the line that is sung has room for two lines whatever it says (a short one, none at all in a gap), so the block

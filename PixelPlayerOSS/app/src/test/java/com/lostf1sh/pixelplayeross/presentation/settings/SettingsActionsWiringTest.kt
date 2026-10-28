@@ -55,7 +55,7 @@ class SettingsActionsWiringTest {
         verify(exactly = 1) { vm.setAlbumArtQuality(AlbumArtQuality.ORIGINAL) }
         verify(exactly = 1) { vm.setLaunchTab("search") }
         verify(exactly = 1) { vm.setLibraryNavigationMode("compact_pill") }
-        assertThat(routes).containsExactly(Screen.PaletteStyle.route)
+        assertThat(routes).isEmpty()
     }
 
     @Test

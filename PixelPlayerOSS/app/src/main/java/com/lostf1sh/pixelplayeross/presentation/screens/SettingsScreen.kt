@@ -57,7 +57,10 @@ fun SettingsScreen(
         navController: NavController,
         onNavigationIconClick: () -> Unit,
         deviceControlViewModel: DeviceControlViewModel = hiltViewModel(),
+        productModeViewModel: com.lostf1sh.pixelplayeross.presentation.viewmodel.ProductModeViewModel = hiltViewModel(),
 ) {
+    com.lostf1sh.pixelplayeross.presentation.settings.ProductModeLiveEffect(productModeViewModel)
+    val mode by productModeViewModel.state.collectAsStateWithLifecycle()
     val deviceControlState by deviceControlViewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
@@ -107,11 +110,12 @@ fun SettingsScreen(
                                     onVolumeChanged = deviceControlViewModel::setMediaVolume,
                                     onDigitalGainChanged = deviceControlViewModel::setDigitalGainPercent,
                                     // F-05: the "never" notice leads to the page that owns the timeout.
-                                    onReviewScreenTimeout = {
+                                    onReviewScreenTimeout = if (!com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.showScreenTimeout(mode.product)) null else ({
                                         navController.navigateSafely(
                                             Screen.SettingsCategory.createRoute(SettingsCategory.DEVICE.id)
                                         )
-                                    },
+                                        Unit
+                                    }),
                                 )
                             }
                         }
@@ -125,7 +129,7 @@ fun SettingsScreen(
                         // Audio's, so it is in Audio.
                         item {
                             DapGroup(title = stringResource(R.string.settings_top_bar_title)) {
-                                SettingsSurfacePolicy.visibleCategories()
+                                SettingsSurfacePolicy.visibleCategories(mode.product)
                                     .filter { it != SettingsCategory.ABOUT }
                                     .forEach { category ->
                                         SettingsRow(

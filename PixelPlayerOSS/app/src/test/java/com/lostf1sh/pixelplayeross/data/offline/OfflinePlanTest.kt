@@ -22,7 +22,7 @@ class OfflinePlanTest {
         assertThat(plan.count { it.kind == OfflineKind.COVERS }).isEqualTo(2)
     }
     @Test fun `an existing album cover is preferred as the representative regardless of song order`() {
-        val plan = OfflinePlan.build(listOf(song("1").copy(albumArtUriString = "content://cover"), song("2")), setOf(OfflineKind.COVERS))
+        val plan = OfflinePlan.build(listOf(song("1").copy(albumArtUriString = "content://cover"), song("2")), setOf(OfflineKind.COVERS)) { it.id == "1" }
         assertThat(plan.single().songId).isEqualTo("1")
     }
 }

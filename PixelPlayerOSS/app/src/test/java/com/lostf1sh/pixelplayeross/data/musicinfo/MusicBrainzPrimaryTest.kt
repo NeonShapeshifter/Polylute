@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class)
 class MusicBrainzPrimaryTest {
@@ -35,7 +36,7 @@ class MusicBrainzPrimaryTest {
         val body = when {
             url.host == "images.example.org" -> {
                 if (imageNetworkFailure) throw IOException("temporary image failure")
-                byteArrayOf(1, 2, 3).toResponseBody("image/jpeg".toMediaType())
+                java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=").toResponseBody("image/jpeg".toMediaType())
             }
             url.encodedPath == "/ws/2/artist" -> (if (brainzFound) """{"artists":[{"id":"a-1","name":"Fixture","score":100}]}""" else """{"artists":[]}""").toResponseBody("application/json".toMediaType())
             url.encodedPath == "/ws/2/artist/a-1" -> org.json.JSONObject().apply {
@@ -68,7 +69,7 @@ class MusicBrainzPrimaryTest {
     }
     @Test fun `MusicBrainz image is preferred and no Wikimedia image lookup is made`() = runBlocking {
         val photo = service().fetchArtistPhoto("Fixture")!!
-        assertThat(java.io.File(photo.path).readBytes().toList()).containsExactly(1.toByte(), 2.toByte(), 3.toByte()).inOrder()
+        assertThat(DownloadedImage.decodes(java.io.File(photo.path))).isTrue()
         assertThat(photo.provider).isEqualTo("MusicBrainz")
         assertThat(requests.none { "wikimedia.org" in it || "wikidata.org" in it }).isTrue()
     }

@@ -110,7 +110,7 @@ internal fun lyricsSourceOrder(
     }
 }
 
-internal fun parseBestEmbeddedLyricsField(propertyMap: Map<String, Array<String>>?): Lyrics? {
+internal fun parseBestEmbeddedLyricsField(propertyMap: Map<String, Array<String>>?, songId: Long? = null): Lyrics? {
     if (propertyMap.isNullOrEmpty()) return null
 
     var firstPlainLyrics: Lyrics? = null
@@ -125,6 +125,7 @@ internal fun parseBestEmbeddedLyricsField(propertyMap: Map<String, Array<String>
         fields.forEach { field ->
             if (field.isBlank()) return@forEach
 
+            if (songId != null && com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.forStorage(songId, field) == null) return@forEach
             val parsedLyrics = LyricsUtils.parseLyrics(field)
             if (!parsedLyrics.isValid()) return@forEach
 
@@ -199,6 +200,57 @@ class LyricsRepositoryImpl @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository
 ) : LyricsRepository {
 
+
+    private val deletedDownloads by lazy {
+        com.lostf1sh.pixelplayeross.data.musicinfo.DeletedDownloads(
+            File(File(context.filesDir, com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository.FOLDER),
+                com.lostf1sh.pixelplayeross.data.musicinfo.DeletedDownloads.FILE_NAME)
+        )
+    }
+
+    private fun downloadKey(song: Song) = com.lostf1sh.pixelplayeross.data.musicinfo.DownloadKeys.lyrics(song)
+
+    override suspend fun allowDownloads(songs: List<Song>) = withContext(Dispatchers.IO) {
+        if (deletedDownloads.allow(songs.map(::downloadKey))) {
+            songs.forEach { song ->
+                val key = remoteSearchKey(song)
+                val songKey = remoteSongKey(key, song)
+                forgetAnswers(key)
+                remoteNotFound.remove(key)
+                remoteNoFit.remove(songKey)
+                remoteFailedAtMs.remove(key)
+                remoteFailedAtMs.remove(songKey)
+            }
+        }
+    }
+
+    private val downloadedAssets by lazy { com.lostf1sh.pixelplayeross.data.network.DownloadAssetRegistry(File(context.filesDir, "download-claims.jsonl")) }
+    private fun downloadedAsset(song: Song) = com.lostf1sh.pixelplayeross.data.network.DownloadAsset(
+        downloadKey(song), File(context.filesDir, "lyrics/${song.id}.json").absolutePath, song.id, song.libraryItemId)
+    private suspend fun noteDownloadedLyrics(song: Song, written: Boolean = false, knownRemote: Boolean = false) {
+        val file = File(context.filesDir, "lyrics/${song.id}.json")
+        if (written || knownRemote || file.isFile) downloadedAssets.note(downloadedAsset(song), written)
+    }
+    override suspend fun deleteJobDownloads(owner: String) = withContext(Dispatchers.IO) {
+        downloadedAssets.release(owner, "lyrics|").forEach { deleteDownloadedAsset(it) }
+    }
+    private suspend fun deleteDownloadedAsset(asset: com.lostf1sh.pixelplayeross.data.network.DownloadAsset) {
+        val row = asset.libraryItemId?.takeIf { it.isNotBlank() }?.let { lyricsDao.getLyricsForLibraryItem(it) }
+            ?: asset.songId?.toLongOrNull()?.let { lyricsDao.getLyricsResolvedByIdentity(it) }
+        if (row?.source == "remote") {
+            if (row.libraryItemId.isNotBlank()) lyricsDao.deleteLyricsForLibraryItem(row.libraryItemId) else lyricsDao.deleteLyrics(row.songId)
+        }
+        asset.file?.let { path ->
+            val file = File(path)
+            if (file.canonicalPath.startsWith(File(context.filesDir, "lyrics").canonicalPath + File.separator) && file.extension == "json") file.delete()
+        }
+        asset.songId?.let { lyricsCache.remove(generateCacheKey(it)) }
+        downloadedAssets.forget(asset.id)
+    }
+    override suspend fun deleteDownloadedLyrics(song: Song) = withContext(Dispatchers.IO) {
+        deletedDownloads.mark(listOf(downloadKey(song)))
+        deleteDownloadedAsset(downloadedAsset(song))
+    }
 
     companion object {
         private const val TAG = "LyricsRepository"
@@ -498,8 +550,12 @@ class LyricsRepositoryImpl @Inject constructor(
 
         if (!forceRefresh) {
             lyricsCache.get(cacheKey)?.let { cached ->
-                Timber.tag(TAG).d("===== RETURNING IN-MEMORY CACHED LYRICS =====")
-                return@withContext cached
+                if (!cached.areFromRemote || !deletedDownloads.contains(downloadKey(song))) {
+                    Timber.tag(TAG).d("===== RETURNING IN-MEMORY CACHED LYRICS =====")
+                    if (cached.areFromRemote) noteDownloadedLyrics(song, knownRemote = true)
+                    return@withContext cached
+                }
+                lyricsCache.remove(cacheKey)
             }
             Timber.tag(TAG).d("===== NO IN-MEMORY CACHE HIT, proceeding to fetch =====")
         } else {
@@ -525,6 +581,7 @@ class LyricsRepositoryImpl @Inject constructor(
             try {
                 val lyrics = fetchers.getValue(sourceName)()
                 if (lyrics != null && lyrics.isValid()) {
+                    if (lyrics.areFromRemote && deletedDownloads.contains(downloadKey(song))) continue
                     Timber.tag(TAG).d("Found lyrics from $sourceName for: ${song.displayArtist} - ${song.title}")
 
                     lyricsCache.put(cacheKey, lyrics)
@@ -570,9 +627,15 @@ class LyricsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun prepareForOffline(song: Song): Lyrics? = withContext(Dispatchers.IO) {
-        // A manual batch is explicit consent for these tracks; it never changes the automatic-download preference.
-        // Use the same per-version matching and durable cache as normal playback, preserving existing/local lyrics.
-        getLyrics(song, LyricsSourcePreference.EMBEDDED_FIRST) ?: fetchLyricsFromAPI(song)?.also { saveLocalLyricsJson(song, it) }
+        // Explicit selections clear their marks in OfflineDownloads.start. Library jobs use this
+        // same resolver without clearing anything; local lyrics remain available in either case.
+        val result = getLyrics(song, LyricsSourcePreference.EMBEDDED_FIRST) ?: fetchLyricsFromAPI(song)?.also { saveLocalLyricsJson(song, it) }
+        val key = remoteSearchKey(song)
+        if (result == null && !deletedDownloads.contains(downloadKey(song)) && (remoteFailedAtMs.containsKey(key) || remoteFailedAtMs.containsKey(remoteSongKey(key, song)))) {
+            com.lostf1sh.pixelplayeross.data.network.noteLookupFailure()
+        }
+        if (result?.areFromRemote == true) noteDownloadedLyrics(song, knownRemote = true)
+        result
     }
 
     override suspend fun getStoredLyrics(song: Song): Pair<Lyrics, String>? = withContext(Dispatchers.IO) {
@@ -586,6 +649,7 @@ class LyricsRepositoryImpl @Inject constructor(
      * Fetches lyrics from LRCLIB API with rate limiting (matching Rhythm)
      */
     private suspend fun fetchLyricsFromAPI(song: Song, forceRefresh: Boolean = false): Lyrics? = withContext(Dispatchers.IO) {
+        if (deletedDownloads.contains(downloadKey(song))) return@withContext null
         val cachedJson = loadLocalLyricsJson(song)
         if (cachedJson != null) {
             Timber.tag(TAG).d("===== LOADED LYRICS FROM JSON DISK CACHE =====")
@@ -629,16 +693,21 @@ class LyricsRepositoryImpl @Inject constructor(
         lyricsFromAnswers(song, key, songKey, retried.answers, retried.atMs)
     }
 
+    private val searchPriorities = ConcurrentHashMap<String, com.lostf1sh.pixelplayeross.data.network.RequestPriority>()
+
     private suspend fun awaitRemoteAnswers(key: String, song: Song): CompletedAnswers {
+        val background = kotlinx.coroutines.currentCoroutineContext()[com.lostf1sh.pixelplayeross.data.network.RequestPriority]?.background == true
+        val priority = searchPriorities.computeIfAbsent(key) { com.lostf1sh.pixelplayeross.data.network.RequestPriority(background) }
+        if (!background) priority.background = false
         // The first caller starts the search in the repository's own scope and the others wait for the same one. (Started only once it is in
         // the map, so that its end can never remove an entry that is not there yet.) B42-fix1: a search that ended with nobody to read it left its
         // answer in `completedAnswers` before the slot was freed, so the job that takes the slot after it reads that instead of asking again.
-        val created = repositoryScope.async(start = CoroutineStart.LAZY) {
+        val created = repositoryScope.async(context = priority, start = CoroutineStart.LAZY) {
             completedAnswersFor(key) ?: rememberAnswers(key, searchLrcLib(song))
         }
         val running = remoteSearches.putIfAbsent(key, created)
         val search = running ?: created.also { job ->
-            job.invokeOnCompletion { remoteSearches.remove(key, job) }
+            job.invokeOnCompletion { remoteSearches.remove(key, job); searchPriorities.remove(key, priority) }
             job.start()
         }
         if (running != null) created.cancel()
@@ -659,14 +728,6 @@ class LyricsRepositoryImpl @Inject constructor(
      * same file.
      */
     private suspend fun searchLrcLib(song: Song): RemoteSearchAnswers = withContext(Dispatchers.IO) {
-        val currentTime = System.currentTimeMillis()
-        val delayNeeded = calculateApiDelay("lrclib", currentTime)
-        if (delayNeeded > 0) {
-            Timber.tag(TAG).d("Rate limiting: waiting ${delayNeeded}ms before API call")
-            delay(delayNeeded)
-        }
-        updateLastApiCall("lrclib", System.currentTimeMillis())
-
         try {
             val cleanArtist = song.displayArtist.trim().replace(Regex("\\(.*?\\)"), "").trim()
             val cleanTitle = song.title.trim().replace(Regex("\\(.*?\\)"), "").trim()
@@ -752,6 +813,7 @@ class LyricsRepositoryImpl @Inject constructor(
      * a search failed or was not examined, it is the cooldown's, for this file, and the kept answer is dropped so the retry asks again.
      */
     private suspend fun lyricsFromAnswers(song: Song, key: String, songKey: String, answers: RemoteSearchAnswers, completedAtMs: Long): Lyrics? {
+        if (deletedDownloads.contains(downloadKey(song))) return null
         if (answers.responses.isEmpty()) {
             if (answers.conclusive) {
                 // Every search was asked and has nothing: not asked again this session.
@@ -775,22 +837,11 @@ class LyricsRepositoryImpl @Inject constructor(
         if (bestMatch != null) {
             val rawLyrics = bestMatch.syncedLyrics ?: bestMatch.plainLyrics
             if (!rawLyrics.isNullOrBlank()) {
-                val parsedLyrics = LyricsUtils.parseLyrics(rawLyrics).copy(areFromRemote = true)
+                val parsedLyrics = parseForSong(song, rawLyrics).copy(areFromRemote = true)
                 if (parsedLyrics.isValid()) {
                     Timber.tag(TAG).d("LRCLIB lyrics found - Synced: ${!bestMatch.syncedLyrics.isNullOrBlank()}, Plain: ${!bestMatch.plainLyrics.isNullOrBlank()}")
 
-                    try {
-                        lyricsDao.insert(
-                            com.lostf1sh.pixelplayeross.data.database.LyricsEntity(
-                                songId = song.id.toLong(),
-                                content = rawLyrics,
-                                isSynced = !bestMatch.syncedLyrics.isNullOrBlank(),
-                                source = "remote"
-                            )
-                        )
-                    } catch (e: NumberFormatException) {
-                        Timber.tag(TAG).w("Skipping database save for non-numeric song ID: ${song.id}. Lyrics will be cached in JSON.")
-                    }
+                    if (!persistRemoteLyrics(song, rawLyrics, parsedLyrics)) return null
 
                     remoteNotFound.remove(key)
                     remoteNoFit.remove(songKey)
@@ -1098,7 +1149,7 @@ class LyricsRepositoryImpl @Inject constructor(
                     val lyricsFile = File(directory, "$songNameWithoutExt.$extension")
                     if (!lyricsFile.exists() || !lyricsFile.canRead()) continue
 
-                    val validated = readValidatedLocalLyrics(lyricsFile)
+                    val validated = readValidatedLocalLyrics(lyricsFile, song.id.toLongOrNull())
                     if (validated != null) {
                         Timber.tag(TAG).d("===== FOUND LOCAL LYRICS FILE: ${lyricsFile.name} =====")
                         return@withContext validated.parsedLyrics
@@ -1112,7 +1163,7 @@ class LyricsRepositoryImpl @Inject constructor(
                     val alternativeLyricsFile = File(directory, "${cleanArtist}_${cleanTitle}.$extension")
                     if (!alternativeLyricsFile.exists() || !alternativeLyricsFile.canRead()) continue
 
-                    val validated = readValidatedLocalLyrics(alternativeLyricsFile)
+                    val validated = readValidatedLocalLyrics(alternativeLyricsFile, song.id.toLongOrNull())
                     if (validated != null) {
                         Timber.tag(TAG).d("===== FOUND LOCAL LYRICS FILE (alt pattern): ${alternativeLyricsFile.name} =====")
                         return@withContext validated.parsedLyrics
@@ -1125,17 +1176,46 @@ class LyricsRepositoryImpl @Inject constructor(
         return@withContext null
     }
 
-    private fun readValidatedLocalLyrics(file: File): com.lostf1sh.pixelplayeross.utils.ValidatedLyricsImport? {
+    private fun readValidatedLocalLyrics(file: File, songId: Long? = null): com.lostf1sh.pixelplayeross.utils.ValidatedLyricsImport? {
         return when (val validation = LyricsImportSecurity.validateLocalLyricsFile(file)) {
             is LyricsImportValidationResult.Valid -> validation.value
-            is LyricsImportValidationResult.Invalid -> null
+            is LyricsImportValidationResult.Invalid -> {
+                if (songId != null) com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.logDrop(songId, "invalid sidecar")
+                null
+            }
         }
+    }
+
+    private suspend fun persistRemoteLyrics(song: Song, rawLyrics: String, lyrics: Lyrics): Boolean {
+        return deletedDownloads.commitIfAllowed(downloadKey(song)) {
+            val songId = song.id.toLongOrNull()
+            if (songId != null) {
+                lyricsDao.insert(
+                    com.lostf1sh.pixelplayeross.data.database.LyricsEntity(
+                        songId = songId,
+                        content = rawLyrics,
+                        isSynced = !lyrics.synced.isNullOrEmpty(),
+                        source = "remote",
+                    )
+                )
+            } else {
+                Timber.tag(TAG).w("Skipping DB update for non-numeric song ID")
+            }
+            lyricsCache.put(generateCacheKey(song.id), lyrics)
+            true
+        } == true
     }
 
     /**
      * Save lyrics to JSON disk cache (matching Rhythm)
      */
-    private fun saveLocalLyricsJson(song: Song, lyrics: Lyrics) {
+    private suspend fun saveLocalLyricsJson(song: Song, lyrics: Lyrics) {
+        deletedDownloads.commitIfAllowed(downloadKey(song)) {
+            writeLocalLyricsJson(song, lyrics)
+        }
+    }
+
+    private suspend fun writeLocalLyricsJson(song: Song, lyrics: Lyrics) {
         try {
             val fileName = "${song.id}.json"
             val lyricsDir = File(context.filesDir, "lyrics")
@@ -1154,6 +1234,7 @@ class LyricsRepositoryImpl @Inject constructor(
             val file = File(lyricsDir, fileName)
             val json = gson.toJson(lyricsData)
             file.writeText(json)
+            noteDownloadedLyrics(song, written = true)
             Timber.tag(TAG).d("Saved lyrics to JSON cache: ${file.absolutePath}")
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error saving lyrics to JSON cache: ${e.message}")
@@ -1164,11 +1245,12 @@ class LyricsRepositoryImpl @Inject constructor(
      * Load lyrics from JSON disk cache (matching Rhythm)
      */
     private suspend fun loadLocalLyricsJson(song: Song): Lyrics? {
+        if (deletedDownloads.contains(downloadKey(song))) return null
         try {
             val data = readLyricsJsonCache(song) ?: return null
             if (data.hasLyrics()) {
                 val rawLyrics = data.wordByWordLyrics ?: data.syncedLyrics ?: data.plainLyrics
-                val parsed = LyricsUtils.parseLyrics(rawLyrics)
+                val parsed = parseForSong(song, rawLyrics)
                 if (parsed.isValid()) {
                     val hasWordTimestamps = parsed.synced?.any { !it.words.isNullOrEmpty() } == true
                     if (!hasWordTimestamps && data.wordByWordLyrics.isNullOrBlank()) {
@@ -1180,7 +1262,7 @@ class LyricsRepositoryImpl @Inject constructor(
                             val recoveredHasWords = recovered.synced?.any { !it.words.isNullOrEmpty() } == true
                             if (recovered.isValid() && recoveredHasWords) {
                                 saveLocalLyricsJson(song, recovered)
-                                return recovered
+                                return recovered.copy(areFromRemote = true)
                             }
                         }
 
@@ -1188,7 +1270,7 @@ class LyricsRepositoryImpl @Inject constructor(
                             return null
                         }
                     }
-                    return parsed
+                    return parsed.copy(areFromRemote = true)
                 }
             }
         } catch (e: Exception) {
@@ -1262,7 +1344,7 @@ class LyricsRepositoryImpl @Inject constructor(
             return@withContext null
         }
 
-        val parsedLyrics = parseBestEmbeddedLyricsField(propertyMap) ?: readEmbeddedLyricsViaFallbackReader(song)
+        val parsedLyrics = parseBestEmbeddedLyricsField(propertyMap, song.id.toLongOrNull()) ?: readEmbeddedLyricsViaFallbackReader(song)
         if (parsedLyrics != null) {
             Timber.tag(TAG).d(
                 "Embedded lyrics for '${song.title}': synced=${parsedLyrics.synced?.size ?: 0} " +
@@ -1285,7 +1367,7 @@ class LyricsRepositoryImpl @Inject constructor(
         runCatching {
             AudioMetadataReader.read(file, readArtwork = false, supplement = true)?.lyrics
         }.getOrNull()
-            ?.let { LyricsUtils.parseLyrics(it) }
+            ?.let { parseForSong(song, it) }
             ?.takeIf { it.isValid() }
             ?.copy(areFromRemote = false)
     }
@@ -1299,28 +1381,35 @@ class LyricsRepositoryImpl @Inject constructor(
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?.let { rawLyrics ->
-                parseStoredLyrics(rawLyrics)?.let { return@withContext it to rawLyrics }
+                parseStoredLyrics(song, rawLyrics)?.let { return@withContext it to rawLyrics }
             }
 
-        song.id.toLongOrNull()
-            ?.let { lyricsDao.getLyricsResolvedByIdentity(it)?.content }
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { rawLyrics ->
-                parseStoredLyrics(rawLyrics)?.let { return@withContext it to rawLyrics }
-            }
-
-        readLyricsJsonCache(song)
-            ?.takeIf { it.hasLyrics() }
-            ?.let { data ->
-                val rawLyrics = data.wordByWordLyrics ?: data.syncedLyrics ?: data.plainLyrics
-                if (!rawLyrics.isNullOrBlank()) {
-                    parseStoredLyrics(rawLyrics)?.let { return@withContext it to rawLyrics }
+        val remoteAllowed = !deletedDownloads.contains(downloadKey(song))
+        val storedRow = song.id.toLongOrNull()?.let { lyricsDao.getLyricsResolvedByIdentity(it) }
+        if (storedRow != null && (storedRow.source != "remote" || remoteAllowed)) {
+            storedRow.content.trim().takeIf { it.isNotBlank() }?.let { rawLyrics ->
+                parseStoredLyrics(song, rawLyrics)?.let { parsed ->
+                    val remote = storedRow.source == "remote"
+                    if (remote) noteDownloadedLyrics(song, knownRemote = true)
+                    return@withContext parsed.copy(areFromRemote = remote) to rawLyrics
                 }
             }
+        }
+
+        if (remoteAllowed) {
+            readLyricsJsonCache(song)?.takeIf { it.hasLyrics() }?.let { data ->
+                val rawLyrics = data.wordByWordLyrics ?: data.syncedLyrics ?: data.plainLyrics
+                if (!rawLyrics.isNullOrBlank()) {
+                    parseStoredLyrics(song, rawLyrics)?.let { parsed ->
+                        noteDownloadedLyrics(song, knownRemote = true)
+                        return@withContext parsed.copy(areFromRemote = true) to rawLyrics
+                    }
+                }
+            }
+        }
 
         if (includeMemoryCache) {
-            lyricsCache.get(cacheKey)?.let { cached ->
+            lyricsCache.get(cacheKey)?.takeIf { !it.areFromRemote || remoteAllowed }?.let { cached ->
                 lyricsToRawContent(cached)?.let { rawLyrics ->
                     return@withContext cached to rawLyrics
                 }
@@ -1330,8 +1419,15 @@ class LyricsRepositoryImpl @Inject constructor(
         null
     }
 
-    private fun parseStoredLyrics(rawLyrics: String): Lyrics? {
-        val parsedLyrics = LyricsUtils.parseLyrics(rawLyrics)
+    private fun parseForSong(song: Song, raw: String?): Lyrics {
+        if (raw != null && !com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.accepts(raw)) {
+            song.id.toLongOrNull()?.let { com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.forStorage(it, raw) }
+            return Lyrics()
+        }
+        return LyricsUtils.parseLyrics(raw)
+    }
+    private fun parseStoredLyrics(song: Song, rawLyrics: String): Lyrics? {
+        val parsedLyrics = parseForSong(song, rawLyrics)
         return parsedLyrics
             .takeIf { it.isValid() }
             ?.copy(areFromRemote = false)
@@ -1366,6 +1462,7 @@ class LyricsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun fetchFromRemote(song: Song): Result<Pair<Lyrics, String>> = withContext(Dispatchers.IO) {
+        allowDownloads(listOf(song))
         try {
             LogUtils.d(this@LyricsRepositoryImpl, "Fetching lyrics from remote for: ${song.title}")
 
@@ -1390,20 +1487,9 @@ class LyricsRepositoryImpl @Inject constructor(
                     val best = results.first()
                     val rawLyricsToSave = best.rawLyrics
 
-                    try {
-                        lyricsDao.insert(
-                             com.lostf1sh.pixelplayeross.data.database.LyricsEntity(
-                                 songId = song.id.toLong(),
-                                 content = rawLyricsToSave,
-                                 isSynced = !best.lyrics.synced.isNullOrEmpty(),
-                                 source = "remote"
-                             )
-                        )
-                    } catch (e: NumberFormatException) {
-                        Timber.tag(TAG).w("Skipping DB update for non-numeric ID: ${song.id}")
+                    if (!persistRemoteLyrics(song, rawLyricsToSave, best.lyrics)) {
+                        return@withContext Result.failure(NoLyricsFoundException())
                     }
-
-                    lyricsCache.put(cacheKey, best.lyrics)
                     saveLocalLyricsJson(song, best.lyrics)
                     LogUtils.d(this@LyricsRepositoryImpl, "Fetched and cached remote lyrics for: ${song.title}")
 
@@ -1427,25 +1513,14 @@ class LyricsRepositoryImpl @Inject constructor(
                 val rawLyricsToSave = exactMatch.syncedLyrics ?: exactMatch.plainLyrics
                     ?: return@withContext Result.failure(NoLyricsFoundException())
 
-                val parsedLyrics = LyricsUtils.parseLyrics(rawLyricsToSave).copy(areFromRemote = true)
+                val parsedLyrics = parseForSong(song, rawLyricsToSave).copy(areFromRemote = true)
                 if (!parsedLyrics.isValid()) {
                     return@withContext Result.failure(LyricsException("Parsed lyrics are empty"))
                 }
 
-                try {
-                    lyricsDao.insert(
-                        com.lostf1sh.pixelplayeross.data.database.LyricsEntity(
-                            songId = song.id.toLong(),
-                            content = rawLyricsToSave,
-                            isSynced = !parsedLyrics.synced.isNullOrEmpty(),
-                            source = "remote"
-                        )
-                    )
-                } catch (e: NumberFormatException) {
-                    Timber.tag(TAG).w("Skipping DB update for non-numeric ID in fallback: ${song.id}")
+                if (!persistRemoteLyrics(song, rawLyricsToSave, parsedLyrics)) {
+                    return@withContext Result.failure(NoLyricsFoundException())
                 }
-
-                lyricsCache.put(cacheKey, parsedLyrics)
                 saveLocalLyricsJson(song, parsedLyrics)
                 LogUtils.d(this@LyricsRepositoryImpl, "Fetched and cached remote lyrics (exact match) for: ${song.title}")
 
@@ -1468,6 +1543,7 @@ class LyricsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun searchRemote(song: Song): Result<Pair<String, List<LyricsSearchResult>>> = withContext(Dispatchers.IO) {
+        allowDownloads(listOf(song))
         try {
             if (!isExternalLyricsEnabled()) {
                 return@withContext Result.failure(LyricsException(context.getString(R.string.lyrics_remote_disabled)))
@@ -1514,7 +1590,7 @@ class LyricsRepositoryImpl @Inject constructor(
                 val results = rankedMatches.mapNotNull { match ->
                     val response = match.response
                     val rawLyrics = response.syncedLyrics ?: response.plainLyrics ?: return@mapNotNull null
-                    val parsedLyrics = LyricsUtils.parseLyrics(rawLyrics).copy(areFromRemote = true)
+                    val parsedLyrics = parseForSong(song, rawLyrics).copy(areFromRemote = true)
                     if (!parsedLyrics.isValid()) {
                         LogUtils.w(this@LyricsRepositoryImpl, "Parsed lyrics are empty for: ${song.title}")
                         return@mapNotNull null
@@ -1603,6 +1679,13 @@ class LyricsRepositoryImpl @Inject constructor(
     override suspend fun updateLyrics(songId: Long, lyricsContent: String): Unit = withContext(Dispatchers.IO) {
         LogUtils.d(this@LyricsRepositoryImpl, "Updating lyrics for songId: $songId")
 
+        if (com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.forStorage(songId, lyricsContent) == null) {
+            val row = lyricsDao.getLyricsResolvedByIdentity(songId)
+            if (row != null && row.libraryItemId.isNotBlank()) lyricsDao.deleteLyricsForLibraryItem(row.libraryItemId)
+            else lyricsDao.deleteLyrics(songId)
+            lyricsCache.remove(generateCacheKey(songId.toString()))
+            return@withContext
+        }
         val parsedLyrics = LyricsUtils.parseLyrics(lyricsContent)
         if (!parsedLyrics.isValid()) {
             LogUtils.w(this@LyricsRepositoryImpl, "Attempted to save empty lyrics for songId: $songId")
@@ -1645,6 +1728,7 @@ class LyricsRepositoryImpl @Inject constructor(
         LogUtils.d(this, "Resetting all lyrics")
         lyricsCache.evictAll()
         lyricsDao.deleteAll()
+        downloadedAssets.forgetPrefix("lyrics|")
         
         try {
             val lyricsDir = File(context.filesDir, "lyrics")
@@ -1720,7 +1804,7 @@ class LyricsRepositoryImpl @Inject constructor(
                                 }
                                 
                                 if (foundFile != null) {
-                                    val validated = readValidatedLocalLyrics(foundFile)
+                                    val validated = readValidatedLocalLyrics(foundFile, song.id.toLongOrNull())
                                     if (validated != null) {
                                         try {
                                             lyricsDao.insert(

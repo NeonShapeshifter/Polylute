@@ -68,7 +68,8 @@ internal fun PlayerCoverSurface(
             // B42-fix1: a swipe that starts on the cover is the cover's alone (it changes the song, or bounces at the end of the queue); what
             // it cannot use does not go on to turn the player's page.
             .keepHorizontalSwipeOnThisSurface()
-            .testTag(PlayerPagesTags.Cover)
+            .testTag(PlayerPagesTags.Cover),
+        contentAlignment = Alignment.TopCenter,
     ) {
         val carouselHeight = when (carouselStyle) {
             CarouselStyle.NO_PEEK -> maxWidth
@@ -79,13 +80,20 @@ internal fun PlayerCoverSurface(
             // bounded height, and the art is what yields when the two disagree.
         }.coerceAtMost(maxHeight)
 
+        val widthFactor = when (carouselStyle) {
+            CarouselStyle.NO_PEEK -> 1f
+            CarouselStyle.TWO_PEEK -> 0.6f
+            else -> 0.8f
+        }
+        val carouselWidth = (carouselHeight / widthFactor).coerceAtMost(maxWidth)
+
         DelayedContent(
             shouldDelay = shouldDelay,
             showPlaceholders = loadingTweaks.showPlaceholders,
             applyPlaceholderDelayOnClose = loadingTweaks.applyPlaceholdersOnClose,
             switchOnDragRelease = loadingTweaks.switchOnDragRelease,
             isSheetDragGestureActive = isSheetDragGestureActive,
-            sharedBoundsModifier = Modifier.fillMaxWidth().height(carouselHeight),
+            sharedBoundsModifier = Modifier.width(carouselWidth).height(carouselHeight),
             expansionFractionProvider = expansionFractionProvider,
             isExpandedOverride = currentSheetState == PlayerSheetState.EXPANDED,
             normalStartThreshold = 0.08f,
@@ -120,7 +128,7 @@ internal fun PlayerCoverSurface(
                 },
                 onAlbumClick = onAlbumClick,
                 carouselStyle = carouselStyle,
-                modifier = Modifier.height(carouselHeight),
+                modifier = Modifier.width(carouselWidth).height(carouselHeight),
                 albumArtQuality = albumArtQuality,
                 // B23-P3: the sheet is mostly open. Below that the carousel is being parked or revealed, not used.
                 isOnScreen = { expansionFractionProvider() >= CAROUSEL_ON_SCREEN_FRACTION }

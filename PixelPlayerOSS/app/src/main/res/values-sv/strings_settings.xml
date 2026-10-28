@@ -87,13 +87,9 @@
     <string name="setcat_smooth_corners_subtitle">Använder komplexa hörnformer som förbättrar utseendet men kan påverka prestandan på enklare enheter</string>
     <string name="setcat_now_playing">Spelare</string>
     <string name="setcat_player_theme_label">Spelarens färg</string>
-    <string name="setcat_player_theme_desc">Om spelaren hämtar sin färg från albumomslaget eller förblir neutral.</string>
-    <string name="setcat_player_theme_album_art">Från albumomslag</string>
-    <string name="setcat_player_theme_dynamic">Neutral</string>
     <string name="setcat_show_player_file_info_title">Visa filinformation i spelaren</string>
     <string name="setcat_show_player_file_info_subtitle">Visa codec, bithastighet och samplingsfrekvens i spelarens förloppsdel.</string>
     <string name="setcat_album_art_palette_title">Palettstil för albumomslag</string>
-    <string name="setcat_album_art_palette_subtitle">Nuvarande: %1$s. Öppna liveförhandsvisning och välj stil.</string>
     <string name="setcat_carousel_style_label">Karusellstil</string>
     <string name="setcat_carousel_style_desc">Välj utseende för albumkarusellen.</string>
     <string name="setcat_carousel_no_peek">Utan titt</string>

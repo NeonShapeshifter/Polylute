@@ -47,20 +47,27 @@ class AlbumDetailViewModel @Inject constructor(
     private var aboutFor: String? = null
 
     private fun loadAbout(album: Album) {
-        val key = "${album.title}|${album.artist}"
+        val artist = album.albumArtist?.takeIf { it.isNotBlank() }
+            ?: _uiState.value.songs.firstOrNull()?.artists?.firstOrNull { it.isPrimary }?.name
+            ?: com.lostf1sh.pixelplayeross.data.musicinfo.MusicBrainzClient.firstCreditedArtist(album.artist)
+        val key = "${album.title}|$artist"
         if (aboutFor == key) return
         aboutFor = key
+        _uiState.value.songs.firstOrNull()?.let { song ->
+            musicInfo.requestSongInfo(song)
+            viewModelScope.launch { musicRepository.getLyrics(song) }
+        }
         viewModelScope.launch {
             val service = musicInfo.service
             val kind = com.lostf1sh.pixelplayeross.data.musicinfo.AboutKind.ALBUM
             // the service reads the cache and asks the network on its own IO dispatcher: this scope is the main thread's (B40-fix1)
             suspend fun current() = com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState(
-                description = service.cachedAbout(kind, album.title, album.artist),
+                description = service.cachedAbout(kind, album.title, artist),
             )
             _about.value = current()
             // The service decides whether anything better than what is shown may be asked for (a language it prefers, not marked missing,
             // with the switch on): always asking is how a cached English fallback still gets upgraded to the app's language (B40-fix2).
-            service.fetchAbout(kind, album.title, album.artist)
+            service.fetchAbout(kind, album.title, artist)
             current().let { if (it != _about.value) _about.value = it }
         }
     }
@@ -122,6 +129,16 @@ class AlbumDetailViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    fun downloadedInfoChanged() {
+        viewModelScope.launch {
+            val album = _uiState.value.album ?: return@launch
+            val artist = album.albumArtist?.takeIf { it.isNotBlank() }
+                ?: com.lostf1sh.pixelplayeross.data.musicinfo.MusicBrainzClient.firstCreditedArtist(album.artist)
+            _about.value = com.lostf1sh.pixelplayeross.presentation.components.MusicInfoAboutState(
+                description = musicInfo.service.cachedAbout(com.lostf1sh.pixelplayeross.data.musicinfo.AboutKind.ALBUM, album.title, artist))
         }
     }
 

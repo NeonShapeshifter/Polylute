@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /** An artist's picture on the phone, with what Commons requires to be shown beside it. */
@@ -62,16 +63,53 @@ class MusicInfoService(
     private val languages: () -> List<String>,
     /** Where the questions and the cache reads run. The tests give their own. */
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val assets: com.lostf1sh.pixelplayeross.data.network.DownloadAssetRegistry? = null,
 ) {
+    private val deletedDownloads = cache.deletedDownloads
+
+    suspend fun suppressArtist(name: String) {
+        deletedDownloads.mark(DownloadKeys.artist(name))
+    }
+
+    suspend fun suppressAlbum(name: String, artist: String) {
+        deletedDownloads.mark(DownloadKeys.album(name, artist))
+    }
+
+    private suspend fun refreshing() = kotlinx.coroutines.currentCoroutineContext()[MusicInfoRefresh] != null
+
+    private suspend fun note(kind: MusicInfoCache.Kind, key: String, file: File? = null, written: Boolean = false) {
+        assets?.note(com.lostf1sh.pixelplayeross.data.network.DownloadAsset("info|${kind.name}|$key", file?.absolutePath), written)
+    }
+
+    suspend fun refreshArtist(name: String) = withContext(io + MusicInfoRefresh()) {
+        deletedDownloads.allow(DownloadKeys.artist(name))
+        brainz.forgetArtist(name)
+        kotlinx.coroutines.coroutineScope {
+            launch { fetchArtistPhoto(name, userRequested = true) }
+            launch { fetchAbout(AboutKind.ARTIST, name, userRequested = true) }
+        }
+    }
+
+    suspend fun refreshAlbum(album: String, artist: String) = withContext(io + MusicInfoRefresh()) {
+        deletedDownloads.allow(DownloadKeys.album(album, artist))
+        brainz.forgetAlbumDetails()
+        kotlinx.coroutines.coroutineScope {
+            launch { fetchCover(album, artist, userRequested = true) }
+            launch { fetchAbout(AboutKind.ALBUM, album, artist, userRequested = true) }
+        }
+    }
+
     // ── artist photo ─────────────────────────────────────────────────────────────────────────────
 
     suspend fun cachedArtistPhoto(name: String): ArtistPhoto? = withContext(io) { readArtistPhoto(name) }
 
-    private fun readArtistPhoto(name: String): ArtistPhoto? {
+    private suspend fun readArtistPhoto(name: String): ArtistPhoto? {
+        if (deletedDownloads.contains(DownloadKeys.photo(name))) return null
         val hit = cache.get(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name)) ?: return null
         val file = hit.file?.takeIf { it.isFile } ?: return null
         val meta = hit.meta?.let { runCatching { JSONObject(it) }.getOrNull() }
         fun field(key: String) = meta?.optString(key)?.takeIf { it.isNotBlank() }
+        note(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name), file)
         return ArtistPhoto(file.absolutePath, field("author"), field("license"), field("licenseUrl"), field("pageUrl"), field("provider") ?: "Wikimedia Commons")
     }
 
@@ -80,30 +118,59 @@ class MusicInfoService(
     }
 
     private suspend fun fetchArtistPhotoOnIo(name: String, userRequested: Boolean): ArtistPhoto? {
-        readArtistPhoto(name)?.let { return it }
-        if (name.isBlank() || (!userRequested && !artistPhotosEnabled()) || cache.isMissing(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name))) return null
-        return attempt("artist photo of $name") {
+        if (deletedDownloads.contains(DownloadKeys.photo(name))) return null
+        val previous = readArtistPhoto(name)
+        val refresh = refreshing()
+        if (!refresh && previous != null) return previous
+        if (name.isBlank() || (!userRequested && !artistPhotosEnabled()) || (!refresh && cache.isMissing(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name)))) return null
+        val found = attempt("artist photo of $name") {
             var uncertain = false
-            val missing = { if (!uncertain) cache.putMissing(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name)); null }
+            val missing: suspend () -> ArtistPhoto? = {
+                if (!uncertain && !refresh) {
+                    deletedDownloads.commitIfAllowed(DownloadKeys.photo(name)) {
+                        cache.putMissing(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name))
+                    }
+                }
+                null
+            }
             val artist = brainz.findArtist(name)
             val details = artist?.let { brainz.entityDetails("artist", it.id) }
             val linked = MusicBrainzClient.imageRelation(details)
             if (linked != null) {
-                val data = try { brainz.linkedImage(linked) } catch (cancelled: CancellationException) { throw cancelled } catch (e: IOException) { uncertain = true; null }
-                if (data != null && artist != null) {
-                    val page = "https://musicbrainz.org/artist/${artist.id}"
-                    val meta = JSONObject().put("provider", "MusicBrainz").put("pageUrl", page).toString()
-                    val file = cache.putFile(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name), data, "img", meta)
-                    return@attempt ArtistPhoto(file.absolutePath, null, null, null, page, "MusicBrainz")
-                }
+                val commonsName = CommonsClient.relationFileName(linked)
+                try {
+                    if (commonsName != null) {
+                        commons.imageInfo(commonsName)?.let { image -> saveCommonsPhoto(name, image)?.let { return@attempt it } }
+                    } else {
+                        val data = brainz.linkedImage(linked)?.takeIf(DownloadedImage::decodes)
+                        if (data != null && artist != null) {
+                            val page = "https://musicbrainz.org/artist/${artist.id}"
+                            val meta = JSONObject().put("provider", "MusicBrainz").put("pageUrl", page).toString()
+                            return@attempt deletedDownloads.commitIfAllowed(DownloadKeys.photo(name)) {
+                                val file = cache.putFile(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name), data, "img", meta)
+                                note(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name), file, written = true)
+                                ArtistPhoto(file.absolutePath, null, null, null, page, "MusicBrainz")
+                            }
+                        }
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: IOException) { uncertain = true; com.lostf1sh.pixelplayeross.data.network.noteLookupFailure() }
             }
             val qid = MusicBrainzClient.parseWikidataRelation(details) ?: wikidata.findMusicItem(name) ?: return@attempt missing()
             val fileName = wikidata.imageFile(qid) ?: return@attempt missing()
             val image = commons.imageInfo(fileName) ?: return@attempt missing()
-            val data = commons.download(image) ?: return@attempt missing()
-            val meta = JSONObject().put("author", image.author ?: "").put("license", image.license ?: "")
-                .put("licenseUrl", image.licenseUrl ?: "").put("pageUrl", image.pageUrl).toString()
+            saveCommonsPhoto(name, image) ?: missing()
+        }
+        return if (deletedDownloads.contains(DownloadKeys.photo(name))) null else found ?: previous
+    }
+
+    private suspend fun saveCommonsPhoto(name: String, image: CommonsImage): ArtistPhoto? {
+        val data = commons.download(image)?.takeIf(DownloadedImage::decodes) ?: return null
+        val meta = JSONObject().put("author", image.author ?: "").put("license", image.license ?: "")
+            .put("licenseUrl", image.licenseUrl ?: "").put("pageUrl", image.pageUrl).toString()
+        return deletedDownloads.commitIfAllowed(DownloadKeys.photo(name)) {
             val file = cache.putFile(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name), data, "jpg", meta)
+            note(MusicInfoCache.Kind.ARTIST_PHOTO, photoKey(name), file, written = true)
             ArtistPhoto(file.absolutePath, image.author, image.license, image.licenseUrl, image.pageUrl)
         }
     }
@@ -112,51 +179,70 @@ class MusicInfoService(
 
     suspend fun cachedCover(album: String, artist: String): File? = withContext(io) { readCover(album, artist) }
 
-    private fun readCover(album: String, artist: String): File? =
-        cache.get(MusicInfoCache.Kind.COVER, coverKey(album, artist))?.file?.takeIf { it.isFile }
+    private suspend fun readCover(album: String, artist: String): File? {
+        if (deletedDownloads.contains(DownloadKeys.cover(album, artist))) return null
+        val file = cache.get(MusicInfoCache.Kind.COVER, coverKey(album, artist))?.file?.takeIf { it.isFile } ?: return null
+        note(MusicInfoCache.Kind.COVER, coverKey(album, artist), file)
+        return file
+    }
 
     suspend fun fetchCover(album: String, artist: String, userRequested: Boolean = false): File? = withContext(io) {
         fetchCoverOnIo(album, artist, userRequested)
     }
 
     private suspend fun fetchCoverOnIo(album: String, artist: String, userRequested: Boolean): File? {
-        readCover(album, artist)?.let { return it }
-        if (album.isBlank() || artist.isBlank() || (!userRequested && !coversEnabled()) || cache.isMissing(MusicInfoCache.Kind.COVER, coverKey(album, artist))) return null
-        return attempt("cover of $album") {
+        if (deletedDownloads.contains(DownloadKeys.cover(album, artist))) return null
+        val previous = readCover(album, artist)
+        val refresh = refreshing()
+        if (!refresh && previous != null) return previous
+        if (album.isBlank() || artist.isBlank() || (!userRequested && !coversEnabled()) || (!refresh && cache.isMissing(MusicInfoCache.Kind.COVER, coverKey(album, artist)))) return null
+        val found = attempt("cover of $album") {
             val key = coverKey(album, artist)
             var data = brainz.findRelease(album, artist)?.let { coverArt.front(it.id) }
             if (data == null) {
                 // the edition MusicBrainz found has no cover; another edition of the album may
                 data = brainz.findReleaseGroup(album, artist)?.let { coverArt.frontOfGroup(it.id) }
             }
+            data = data?.takeIf(DownloadedImage::decodes)
             if (data == null) {
-                cache.putMissing(MusicInfoCache.Kind.COVER, key)
+                if (!refresh) {
+                    deletedDownloads.commitIfAllowed(DownloadKeys.cover(album, artist)) {
+                        cache.putMissing(MusicInfoCache.Kind.COVER, key)
+                    }
+                }
                 null
             } else {
-                cache.putFile(MusicInfoCache.Kind.COVER, key, data, "jpg", "Cover Art Archive")
+                deletedDownloads.commitIfAllowed(DownloadKeys.cover(album, artist)) {
+                    cache.putFile(MusicInfoCache.Kind.COVER, key, data, "jpg", "Cover Art Archive").also {
+                        note(MusicInfoCache.Kind.COVER, key, it, written = true)
+                    }
+                }
             }
         }
+        return if (deletedDownloads.contains(DownloadKeys.cover(album, artist))) null else found ?: previous
     }
 
     // ── description ──────────────────────────────────────────────────────────────────────────────
 
     /** The description in the first of the app's languages that has one on the phone, or null. Never asks the network. */
     suspend fun cachedAbout(kind: AboutKind, name: String, artist: String?): Description? = withContext(io) {
+        if (deletedDownloads.contains(DownloadKeys.about(kind, name, artist))) return@withContext null
         val wanted = languages().distinct()
         readAbout(kind, name, artist, "und") ?: wanted.firstNotNullOfOrNull { readAbout(kind, name, artist, it) }
     }
 
     /** What was downloaded in [language]: under its own key, or (before keys had a language) under the old key with that language stored in it. */
-    private fun readAbout(kind: AboutKind, name: String, artist: String?, language: String): Description? =
+    private suspend fun readAbout(kind: AboutKind, name: String, artist: String?, language: String): Description? =
         readAboutEntry(aboutKey(kind, name, artist, language))?.takeIf { it.language == language }
             ?: readAboutEntry(aboutKey(kind, name, artist))?.takeIf { it.language == language }
 
-    private fun readAboutEntry(key: String): Description? {
+    private suspend fun readAboutEntry(key: String): Description? {
         val hit = cache.get(MusicInfoCache.Kind.ABOUT, key) ?: return null
         val json = hit.meta?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return null
         val text = json.optString("text")
         val url = json.optString("pageUrl")
         if (text.isBlank() || !url.startsWith("https://")) return null
+        note(MusicInfoCache.Kind.ABOUT, key)
         return Description(text, json.optString("title"), url, json.optString("language"))
     }
 
@@ -165,16 +251,22 @@ class MusicInfoService(
     }
 
     private suspend fun fetchAboutOnIo(kind: AboutKind, name: String, artist: String?, userRequested: Boolean): Description? {
+        if (deletedDownloads.contains(DownloadKeys.about(kind, name, artist))) return null
         val wanted = languages().distinct()
         // what is on the phone, by the app's preference; and the languages preferred over it that nobody has said are missing
-        readAbout(kind, name, artist, "und")?.let { return it }
+        val refresh = refreshing()
+        if (!refresh) readAbout(kind, name, artist, "und")?.let { return it }
         val best = wanted.firstNotNullOfOrNull { readAbout(kind, name, artist, it) }
-        val preferredOverBest = wanted.take(best?.let { wanted.indexOf(it.language) } ?: wanted.size)
-        val worthAsking = preferredOverBest.filterNot { cache.isMissing(MusicInfoCache.Kind.ABOUT, aboutKey(kind, name, artist, it)) }
+        val preferredOverBest = if (refresh) wanted else wanted.take(best?.let { wanted.indexOf(it.language) } ?: wanted.size)
+        val worthAsking = preferredOverBest.filterNot { !refresh && cache.isMissing(MusicInfoCache.Kind.ABOUT, aboutKey(kind, name, artist, it)) }
         if (worthAsking.isEmpty() || name.isBlank() || (!userRequested && !descriptionsEnabled())) return best
         val found = attempt("description of $name") {
-            val missingFor = { absentIn: List<String> ->
-                absentIn.forEach { cache.putMissing(MusicInfoCache.Kind.ABOUT, aboutKey(kind, name, artist, it)) }
+            val missingFor: suspend (List<String>) -> Unit = { absentIn ->
+                if (!refresh) {
+                    deletedDownloads.commitIfAllowed(DownloadKeys.about(kind, name, artist)) {
+                        absentIn.forEach { cache.putMissing(MusicInfoCache.Kind.ABOUT, aboutKey(kind, name, artist, it)) }
+                    }
+                }
             }
             val match = when (kind) {
                 AboutKind.ARTIST -> brainz.findArtist(name)
@@ -183,9 +275,7 @@ class MusicInfoService(
             val details = match?.let { brainz.entityDetails(kind.musicBrainz, it.id) }
             MusicBrainzClient.annotation(details)?.takeIf { match != null }?.let { text ->
                 val description = Description(text, requireNotNull(match).name, "https://musicbrainz.org/${kind.musicBrainz}/${match.id}", "und")
-                cache.putText(MusicInfoCache.Kind.ABOUT, aboutKey(kind, name, artist, "und"),
-                    JSONObject().put("text", text).put("title", match.name).put("pageUrl", description.pageUrl).put("language", "und").toString())
-                return@attempt description
+                return@attempt saveDescription(kind, name, artist, description)
             }
             val qid = MusicBrainzClient.parseWikidataRelation(details)
                 ?: wikidata.findMusicItem(name, if (kind == AboutKind.ALBUM) artist.orEmpty() else null)
@@ -198,18 +288,32 @@ class MusicInfoService(
                 val summary = title?.let { wikipedia.summary(language, it) }
                 if (summary == null) { absent += language; continue }
                 description = Description(summary.extract, summary.title.ifBlank { title.orEmpty() }, summary.pageUrl, language)
-                cache.putText(
-                    MusicInfoCache.Kind.ABOUT, aboutKey(kind, name, artist, language),
-                    JSONObject().put("text", description.text).put("title", description.title).put("pageUrl", description.pageUrl)
-                        .put("language", language).toString(),
-                )
+                description = saveDescription(kind, name, artist, description)
                 break
             }
             // a language that was looked for and not found is remembered as such, and only that language (the others were not asked)
             missingFor(absent)
             description
         }
-        return found ?: best
+        return if (deletedDownloads.contains(DownloadKeys.about(kind, name, artist))) null else found ?: best
+    }
+
+    private suspend fun saveDescription(
+        kind: AboutKind,
+        name: String,
+        artist: String?,
+        description: Description,
+    ): Description? = deletedDownloads.commitIfAllowed(DownloadKeys.about(kind, name, artist)) {
+        val key = aboutKey(kind, name, artist, description.language)
+        val metadata = JSONObject()
+            .put("text", description.text)
+            .put("title", description.title)
+            .put("pageUrl", description.pageUrl)
+            .put("language", description.language)
+            .toString()
+        cache.putText(MusicInfoCache.Kind.ABOUT, key, metadata)
+        note(MusicInfoCache.Kind.ABOUT, key, written = true)
+        description
     }
 
     /** A failure of the network is not an answer: it is logged by the caller's tag, not remembered, and tried again next time. */
@@ -218,9 +322,11 @@ class MusicInfoService(
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: IOException) {
+        com.lostf1sh.pixelplayeross.data.network.noteLookupFailure()
         timber.log.Timber.tag("MusicInfo").i("%s: no answer (%s)", what, error.message)
         null
     } catch (error: Exception) {
+        com.lostf1sh.pixelplayeross.data.network.noteLookupFailure()
         if (isMainThreadViolation(error)) {
             // not a missing network: the call was made from the main thread. Loud, because it is a bug in the caller (or in this class).
             timber.log.Timber.tag("MusicInfo").e(error, "%s: PROGRAMMING ERROR, the request ran on the main thread", what)

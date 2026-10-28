@@ -507,4 +507,13 @@
     <string name="playlist_select_hint">Select a playlist</string>
     <string name="bookmark_name_label">Bookmark name</string>
     <string name="library_menu_options">Library options</string>
+    <string name="offline_download_retry">Waiting to retry: %1$d</string>
+    <string name="offline_download_estimate">About %1$d min left</string>
+    <string name="player_action_close">Close player</string>
+    <string name="music_info_prepare">Prepare for offline…</string>
+    <string name="music_info_refresh">Refresh info</string>
+    <string name="music_info_delete">Delete downloaded info</string>
+    <string name="offline_download_delete_job">Delete what this download added</string>
+    <string name="offline_download_job">Songs: %1$d · %2$d / %3$d</string>
+    <string name="offline_download_queued_job">Queued after the current download</string>
 </resources>

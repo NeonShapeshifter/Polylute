@@ -107,6 +107,9 @@ internal class PlayerPageSignal {
     /** The page the player is on (the nearest one to the middle while a finger moves it). */
     var page: PlayerPage by mutableStateOf(PlayerPage.Start)
 
+    var openLyrics: () -> Unit = {}
+    var openDetails: () -> Unit = {}
+
     val onPlayerPage: Boolean get() = page == PlayerPage.PLAYER
 }
 

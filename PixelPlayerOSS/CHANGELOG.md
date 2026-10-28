@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+
+- **Library stability.** Large or corrupt lyrics no longer break a whole-library read. Invalid text is removed from the database without changing music files or local lyrics files.
+
+- **Music info.** Artist photos resolve Commons file links correctly, with their credits. Broken downloaded images are repaired automatically; working images stay until you choose to refresh them. Missing covers are checked against real artwork, and partial albums match their main artist.
+- **Offline preparation.** Failed requests wait and retry instead of becoming permanent misses. Downloads follow listening order, show an estimate, and give the music you open or play priority. An album or artist can be prepared separately without replacing a paused library download. Refresh or delete downloaded information from its menu, and remove what one download added while preserving shared files. Deleted info stays deleted until you refresh it or prepare it again.
+- **Player.** The top bar is gone. Lyrics and details open from the Up next strip; tapping its text or swiping up opens the queue. Covers stay square and whole, with a steady size when lyrics under the cover are enabled. Swipe down or use Back to close, with a Close player action for accessibility.
+- **Appearance.** Smoother cover-colour gradients and frosted cards throughout the app. The bottom bar is frosted enough that the list behind it no longer shows through. The old player-colour and palette-style choices are removed; the default cover palette is used. The Device page appears only in DAP mode.
+
 ## 1.1.0
 
 - **USB DACs.** A song you start right after sharing the DAC no longer waits for the automatic-resume check. In Dedicated mode the USB permission dialog now appears (the phone lifts its lock for the dialog and puts it back, within 30 seconds, whatever you answer). A DAC or dongle whose volume Polylute cannot set is asked about once: does it have its own knob or buttons; with a knob you choose Resonance at a safe starting level (recommended) or Purity; with none it is always Resonance. After a USB bus reset Polylute puts the DAC's last confirmed level back before it gives the DAC back.

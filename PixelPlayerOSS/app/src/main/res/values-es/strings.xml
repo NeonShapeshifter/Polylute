@@ -483,4 +483,13 @@
     <string name="playlist_select_hint">Selecciona una lista</string>
     <string name="bookmark_name_label">Nombre del marcador</string>
     <string name="library_menu_options">Opciones de biblioteca</string>
+    <string name="offline_download_retry">Pendientes de reintento: %1$d</string>
+    <string name="offline_download_estimate">Quedan unos %1$d min</string>
+    <string name="player_action_close">Cerrar reproductor</string>
+    <string name="music_info_prepare">Preparar sin conexión…</string>
+    <string name="music_info_refresh">Actualizar información</string>
+    <string name="music_info_delete">Eliminar información descargada</string>
+    <string name="offline_download_delete_job">Eliminar lo que añadió esta descarga</string>
+    <string name="offline_download_job">Canciones: %1$d · %2$d / %3$d</string>
+    <string name="offline_download_queued_job">En cola después de la descarga actual</string>
 </resources>

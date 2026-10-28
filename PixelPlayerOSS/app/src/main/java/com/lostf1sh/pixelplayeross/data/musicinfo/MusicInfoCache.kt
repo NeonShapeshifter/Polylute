@@ -26,6 +26,8 @@ class MusicInfoCache(
 
     private class Entry(val kind: Kind, val name: String, val file: String?, var bytes: Long, var lastAccessMs: Long, val meta: String?, val missingUntilMs: Long)
 
+    val deletedDownloads = DeletedDownloads(File(dir, DeletedDownloads.FILE_NAME))
+
     private val lock = Any()
     private val index = LinkedHashMap<String, Entry>()
     private var loaded = false
@@ -87,9 +89,14 @@ class MusicInfoCache(
         load()
         dir.mkdirs()
         val name = id(kind, key)
-        val file = File(dir, "$name.$extension")
-        file.writeBytes(data)
-        index[name] = Entry(kind, name, file.name, data.size.toLong(), now(), meta, 0L)
+        val revision = sha1(data.contentHashCode().toString()).take(12)
+        val file = File(dir, "$name-$revision.$extension")
+        val temporary = File(dir, "$name.tmp")
+        val retainedBytes = index[name]?.bytes ?: 0L
+        val addedBytes = if (file.isFile && index[name] != null) 0L else data.size.toLong()
+        temporary.writeBytes(data)
+        check(temporary.renameTo(file)) { "Could not save downloaded image" }
+        index[name] = Entry(kind, name, file.name, retainedBytes + addedBytes, now(), meta, 0L)
         enforceLimit(keep = name)
         save()
         file
@@ -111,6 +118,45 @@ class MusicInfoCache(
             index.values.filter { it.missingUntilMs > 0 }.minByOrNull { it.lastAccessMs }?.let { index.remove(it.name) } ?: break
         }
         save()
+    }
+
+    /** Repair only unreadable images; never age out a working downloaded picture. */
+    fun brokenImages(): List<File> = synchronized(lock) {
+        load()
+        val indexed = index.values.filter { it.kind != Kind.ABOUT }.mapNotNull { it.file?.let { name -> File(dir, name) } }
+        val orphaned = dir.listFiles().orEmpty().filter { file ->
+            file.isFile && file.extension != "tmp" && listOf(Kind.ARTIST_PHOTO, Kind.COVER).any { file.name.startsWith(it.prefix + "_") }
+        }
+        (indexed + orphaned).distinctBy { it.absolutePath }.filterNot(DownloadedImage::decodes)
+    }
+
+    fun removeBrokenImage(file: File) = synchronized(lock) {
+        load()
+        val entries = index.values.filter { it.file == file.name && it.kind != Kind.ABOUT }
+        if (!DownloadedImage.decodes(file)) {
+            entries.forEach { index.remove(it.name) }
+            file.delete()
+            save() // No missing mark: a later lookup must ask again.
+        }
+    }
+
+    fun remove(kind: Kind, key: String): File? = synchronized(lock) {
+        load()
+        val name = id(kind, key)
+        val entry = index.remove(name)
+        val file = entry?.file?.let { File(dir, it) }
+        // Includes superseded revisions kept until a replacement was on screen.
+        dir.listFiles()?.filter { it.name.startsWith("$name-") || it.name.startsWith("$name.") }?.forEach { it.delete() }
+        save(); file
+    }
+
+    fun descriptionLanguages(): Set<String> = synchronized(lock) {
+        load()
+        index.values.filter { it.kind == Kind.ABOUT }.mapNotNull { entry ->
+            entry.meta?.let { metadata ->
+                runCatching { JSONObject(metadata).optString("language").takeIf(String::isNotBlank) }.getOrNull()
+            }
+        }.toSet()
     }
 
     fun usedBytes(): Long = synchronized(lock) {
@@ -138,6 +184,7 @@ class MusicInfoCache(
         for (entry in index.values.filter { it.name != keep && it.missingUntilMs == 0L }.sortedBy { it.lastAccessMs }) {
             if (total <= limit) break
             entry.file?.let { File(dir, it).delete() }
+            dir.listFiles()?.filter { it.name.startsWith("${entry.name}-") || it.name.startsWith("${entry.name}.") }?.forEach { it.delete() }
             index.remove(entry.name)
             total -= entry.bytes
         }

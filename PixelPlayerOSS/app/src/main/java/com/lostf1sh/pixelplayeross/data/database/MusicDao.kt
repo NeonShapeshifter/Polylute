@@ -59,7 +59,7 @@ private const val SONG_DETAIL_PROJECTION = """
     songs.file_path AS file_path,
     songs.parent_directory_path AS parent_directory_path,
     songs.is_favorite AS is_favorite,
-    COALESCE(song_lyrics.content, songs.lyrics) AS lyrics,
+    CASE WHEN length(COALESCE(song_lyrics.content, songs.lyrics)) <= 50000 AND length(CAST(COALESCE(song_lyrics.content, songs.lyrics) AS BLOB)) <= 200000 AND instr(COALESCE(song_lyrics.content, songs.lyrics), char(0)) = 0 THEN COALESCE(song_lyrics.content, songs.lyrics) ELSE NULL END AS lyrics,
     songs.track_number AS track_number,
     songs.disc_number AS disc_number,
     songs.year AS year,
@@ -67,7 +67,7 @@ private const val SONG_DETAIL_PROJECTION = """
     songs.mime_type AS mime_type,
     songs.bitrate AS bitrate,
     songs.sample_rate AS sample_rate,
-    songs.artists_json AS artists_json,
+    CASE WHEN length(CAST(songs.artists_json AS BLOB)) <= 200000 THEN songs.artists_json ELSE NULL END AS artists_json,
     songs.source_type AS source_type,
     songs.media_store_date_added AS media_store_date_added,
     songs.media_store_date_modified AS media_store_date_modified,
@@ -83,23 +83,102 @@ private const val SONG_DETAIL_PROJECTION = """
     songs.mb_artist_id AS mb_artist_id,
     songs.album_grouping_key AS album_grouping_key,
     songs.artist_grouping_key AS artist_grouping_key,
-    songs.genres_json AS genres_json,
+    CASE WHEN length(CAST(songs.genres_json AS BLOB)) <= 200000 THEN songs.genres_json ELSE NULL END AS genres_json,
     songs.raw_track_number AS raw_track_number,
     songs.raw_disc_number AS raw_disc_number,
     songs.is_compilation AS is_compilation
 """
 
 private const val SONG_LIST_PROJECTION = """
-    id, title, artist_name, artist_id, album_artist, album_artist_id, album_name, album_id,
-    content_uri_string, album_art_uri_string, duration, genre, file_path,
-    parent_directory_path, is_favorite, NULL AS lyrics, track_number, disc_number,
-    year, date_added, mime_type, bitrate, sample_rate, artists_json, source_type,
-    media_store_date_added, media_store_date_modified, title_user_edited,
-    artist_user_edited, album_user_edited, genre_user_edited,
-    stable_key, file_size, songs.library_item_id AS library_item_id,
-    mb_recording_id, mb_release_id, mb_artist_id,
-    album_grouping_key, artist_grouping_key, genres_json, raw_track_number, raw_disc_number,
-    is_compilation
+    songs.id AS id,
+    songs.title AS title,
+    songs.artist_name AS artist_name,
+    songs.artist_id AS artist_id,
+    songs.album_artist AS album_artist,
+    songs.album_artist_id AS album_artist_id,
+    songs.album_name AS album_name,
+    songs.album_id AS album_id,
+    songs.content_uri_string AS content_uri_string,
+    songs.album_art_uri_string AS album_art_uri_string,
+    songs.duration AS duration,
+    songs.genre AS genre,
+    songs.file_path AS file_path,
+    songs.parent_directory_path AS parent_directory_path,
+    songs.is_favorite AS is_favorite,
+    NULL AS lyrics,
+    songs.track_number AS track_number,
+    songs.disc_number AS disc_number,
+    songs.year AS year,
+    songs.date_added AS date_added,
+    songs.mime_type AS mime_type,
+    songs.bitrate AS bitrate,
+    songs.sample_rate AS sample_rate,
+    CASE WHEN length(CAST(songs.artists_json AS BLOB)) <= 200000 THEN songs.artists_json ELSE NULL END AS artists_json,
+    songs.source_type AS source_type,
+    songs.media_store_date_added AS media_store_date_added,
+    songs.media_store_date_modified AS media_store_date_modified,
+    songs.title_user_edited AS title_user_edited,
+    songs.artist_user_edited AS artist_user_edited,
+    songs.album_user_edited AS album_user_edited,
+    songs.genre_user_edited AS genre_user_edited,
+    songs.stable_key AS stable_key,
+    songs.file_size AS file_size,
+    songs.library_item_id AS library_item_id,
+    songs.mb_recording_id AS mb_recording_id,
+    songs.mb_release_id AS mb_release_id,
+    songs.mb_artist_id AS mb_artist_id,
+    songs.album_grouping_key AS album_grouping_key,
+    songs.artist_grouping_key AS artist_grouping_key,
+    CASE WHEN length(CAST(songs.genres_json AS BLOB)) <= 200000 THEN songs.genres_json ELSE NULL END AS genres_json,
+    songs.raw_track_number AS raw_track_number,
+    songs.raw_disc_number AS raw_disc_number,
+    songs.is_compilation AS is_compilation
+"""
+
+private const val SONG_STORAGE_PROJECTION = """
+    songs.id AS id,
+    songs.title AS title,
+    songs.artist_name AS artist_name,
+    songs.artist_id AS artist_id,
+    songs.album_artist AS album_artist,
+    songs.album_artist_id AS album_artist_id,
+    songs.album_name AS album_name,
+    songs.album_id AS album_id,
+    songs.content_uri_string AS content_uri_string,
+    songs.album_art_uri_string AS album_art_uri_string,
+    songs.duration AS duration,
+    songs.genre AS genre,
+    songs.file_path AS file_path,
+    songs.parent_directory_path AS parent_directory_path,
+    songs.is_favorite AS is_favorite,
+    CASE WHEN length(songs.lyrics) <= 50000 AND length(CAST(songs.lyrics AS BLOB)) <= 200000 AND instr(songs.lyrics, char(0)) = 0 THEN songs.lyrics ELSE NULL END AS lyrics,
+    songs.track_number AS track_number,
+    songs.disc_number AS disc_number,
+    songs.year AS year,
+    songs.date_added AS date_added,
+    songs.mime_type AS mime_type,
+    songs.bitrate AS bitrate,
+    songs.sample_rate AS sample_rate,
+    CASE WHEN length(CAST(songs.artists_json AS BLOB)) <= 200000 THEN songs.artists_json ELSE NULL END AS artists_json,
+    songs.source_type AS source_type,
+    songs.media_store_date_added AS media_store_date_added,
+    songs.media_store_date_modified AS media_store_date_modified,
+    songs.title_user_edited AS title_user_edited,
+    songs.artist_user_edited AS artist_user_edited,
+    songs.album_user_edited AS album_user_edited,
+    songs.genre_user_edited AS genre_user_edited,
+    songs.stable_key AS stable_key,
+    songs.file_size AS file_size,
+    songs.library_item_id AS library_item_id,
+    songs.mb_recording_id AS mb_recording_id,
+    songs.mb_release_id AS mb_release_id,
+    songs.mb_artist_id AS mb_artist_id,
+    songs.album_grouping_key AS album_grouping_key,
+    songs.artist_grouping_key AS artist_grouping_key,
+    CASE WHEN length(CAST(songs.genres_json AS BLOB)) <= 200000 THEN songs.genres_json ELSE NULL END AS genres_json,
+    songs.raw_track_number AS raw_track_number,
+    songs.raw_disc_number AS raw_disc_number,
+    songs.is_compilation AS is_compilation
 """
 
 data class DeviceCapabilitySongRow(
@@ -164,10 +243,17 @@ data class MusicBrainzCurrentState(
 interface MusicDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertSongsIgnoreConflicts(songs: List<SongEntity>): List<Long>
+    suspend fun insertSongsCheckedValues(songs: List<SongEntity>): List<Long>
 
     @Update
-    suspend fun updateSongs(songs: List<SongEntity>)
+    suspend fun updateSongsCheckedValues(songs: List<SongEntity>)
+
+    suspend fun insertSongsIgnoreConflicts(songs: List<SongEntity>): List<Long> = insertSongsCheckedValues(songs.map { song ->
+        song.copy(lyrics = com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.forStorage(song.id, song.lyrics))
+    })
+    suspend fun updateSongs(songs: List<SongEntity>) = updateSongsCheckedValues(songs.map { song ->
+        song.copy(lyrics = com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.forStorage(song.id, song.lyrics))
+    })
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAlbumsIgnoreConflicts(albums: List<AlbumEntity>): List<Long>
@@ -358,7 +444,7 @@ interface MusicDao {
     @Query("UPDATE songs SET library_item_id = :libraryItemId WHERE id = :locator")
     suspend fun assignLibraryItemId(locator: Long, libraryItemId: String)
 
-    @Query("SELECT * FROM songs WHERE id = :locator")
+    @Query("SELECT " + SONG_STORAGE_PROJECTION + " FROM songs WHERE id = :locator")
     suspend fun getSongByLocatorOnce(locator: Long): SongEntity?
 
     /** The durable identity the locator currently projects, or null when the locator is not a library row (B28a). */
@@ -383,7 +469,7 @@ interface MusicDao {
     // three subtly different lifecycle checks across twenty queries is how a phantom track survives
     // in the one screen nobody re-checked.
     @Query(
-        "SELECT songs.* FROM songs " +
+        "SELECT " + SONG_STORAGE_PROJECTION + " FROM songs " +
             "INNER JOIN library_items ON library_items.library_item_id = songs.library_item_id " +
             "WHERE songs.id = :locator " +
             "AND library_items.state = 'ACTIVE' " +
@@ -734,14 +820,14 @@ interface MusicDao {
         applyDirectoryFilter: Boolean
     ): Flow<List<SongEntity>>
 
-    @Query("SELECT * FROM songs WHERE album_id = :albumId ORDER BY disc_number ASC, track_number ASC")
+    @Query("SELECT " + SONG_LIST_PROJECTION + " FROM songs WHERE album_id = :albumId ORDER BY disc_number ASC, track_number ASC")
     fun getSongsByAlbumId(albumId: Long): Flow<List<SongEntity>>
 
-    @Query("SELECT * FROM songs WHERE artist_id = :artistId ORDER BY title ASC")
+    @Query("SELECT " + SONG_LIST_PROJECTION + " FROM songs WHERE artist_id = :artistId ORDER BY title ASC")
     fun getSongsByArtistId(artistId: Long): Flow<List<SongEntity>>
 
     @Query("""
-        SELECT songs.* FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         INNER JOIN songs_fts ON songs_fts.rowid = songs.id
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
         AND songs_fts MATCH :matchQuery
@@ -754,7 +840,7 @@ interface MusicDao {
     ): Flow<List<SongEntity>>
 
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
         AND (title LIKE '%' || :query || '%' OR artist_name LIKE '%' || :query || '%')
         ORDER BY title ASC
@@ -852,7 +938,7 @@ interface MusicDao {
     ): SongEntity?
 
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
     """)
     fun getAllSongs(
@@ -988,7 +1074,7 @@ interface MusicDao {
      * Room auto-generates the PagingSource implementation.
      */
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
         AND (
             :filterMode = 0
@@ -1070,7 +1156,7 @@ interface MusicDao {
      * Joins songs with favorites table and supports multi-sort.
      */
     @Query("""
-        SELECT songs.* FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         INNER JOIN favorites ON songs.id = favorites.songId AND favorites.isFavorite = 1
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
         AND (
@@ -1107,7 +1193,7 @@ interface MusicDao {
      * Returns all favorite songs as a list (for playback queue when shuffling).
      */
     @Query("""
-        SELECT songs.* FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         INNER JOIN favorites ON songs.id = favorites.songId AND favorites.isFavorite = 1
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
         AND (
@@ -1196,7 +1282,7 @@ interface MusicDao {
      * Returns a PagingSource for search results, enabling efficient pagination for large result sets.
      */
     @Query("""
-        SELECT songs.* FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         INNER JOIN songs_fts ON songs_fts.rowid = songs.id
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
         AND songs_fts MATCH :matchQuery
@@ -1222,7 +1308,7 @@ interface MusicDao {
      * Search songs with a result limit for non-paginated contexts (FTS).
      */
     @Query("""
-        SELECT songs.* FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         INNER JOIN songs_fts ON songs_fts.rowid = songs.id
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
         AND songs_fts MATCH :matchQuery
@@ -1240,7 +1326,7 @@ interface MusicDao {
      * LIKE-based search focusing only on titles.
      */
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
         AND title LIKE '%' || :query || '%'
         ORDER BY title ASC
@@ -1257,7 +1343,7 @@ interface MusicDao {
      * LIKE-based fallback search for songs that FTS tokenization may miss.
      */
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
         AND (title LIKE '%' || :query || '%' OR artist_name LIKE '%' || :query || '%')
         ORDER BY title ASC
@@ -1320,7 +1406,7 @@ interface MusicDao {
      * Returns a PagingSource for songs in a specific genre.
      */
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR parent_directory_path IN (:allowedParentDirs))
         AND genre LIKE :genreName
         ORDER BY title ASC
@@ -1863,7 +1949,7 @@ interface MusicDao {
     suspend fun getArtistCustomImage(artistId: Long): String?
 
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
         AND genre LIKE :genreName
         ORDER BY title ASC
@@ -1880,7 +1966,7 @@ interface MusicDao {
     // for genre names. All six arms use LIKE so that "rock" matches "Rock", "Rock,Pop",
     // "Rock, Pop", "Pop,Rock", "Pop, Rock", and "Pop,Rock,Jazz".
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
         AND (
             genre LIKE :genreName
@@ -1904,7 +1990,7 @@ interface MusicDao {
     ): Flow<List<SongEntity>>
 
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
         AND (genre IS NULL OR genre = '')
         ORDER BY title ASC
@@ -2207,7 +2293,16 @@ interface MusicDao {
     suspend fun musicBrainzCurrentState(songId: Long): MusicBrainzCurrentState?
 
     @Query("UPDATE songs SET lyrics = :lyrics WHERE id = :songId")
-    suspend fun updateLyrics(songId: Long, lyrics: String)
+    suspend fun updateLyricsCheckedValue(songId: Long, lyrics: String?)
+
+    suspend fun updateLyrics(songId: Long, lyrics: String) = updateLyricsCheckedValue(songId,
+        com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.forStorage(songId, lyrics))
+
+    @Query("SELECT id AS songId, substr(lyrics, 1, 50001) AS text, length(lyrics) AS characters, length(CAST(lyrics AS BLOB)) AS bytes, instr(lyrics, char(0)) > 0 AS hasNul FROM songs WHERE lyrics IS NOT NULL AND id > :afterId ORDER BY id LIMIT :limit")
+    suspend fun lyricsRepairPage(afterId: Long, limit: Int): List<LyricsRepairRow>
+
+    @Query("SELECT " + SONG_LIST_PROJECTION + " FROM songs WHERE songs.id = :songId AND (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))")
+    suspend fun getSongListRow(songId: Long, allowedParentDirs: List<String>, applyDirectoryFilter: Boolean): SongEntity?
 
     @Query("UPDATE songs SET lyrics = NULL WHERE id = :songId")
     suspend fun resetLyrics(songId: Long)
@@ -2280,7 +2375,7 @@ interface MusicDao {
      * Get all songs for a specific artist using the junction table.
      */
     @Query("""
-        SELECT songs.* FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         INNER JOIN song_artist_cross_ref ON songs.id = song_artist_cross_ref.song_id
         WHERE song_artist_cross_ref.artist_id = :artistId
         ORDER BY songs.title ASC
@@ -2294,7 +2389,7 @@ interface MusicDao {
      * shows the compilation tracks rather than an empty screen).
      */
     @Query("""
-        SELECT * FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         WHERE album_artist_id = :artistId
         ORDER BY title ASC
     """)
@@ -2304,7 +2399,7 @@ interface MusicDao {
      * Get all songs for a specific artist (one-shot).
      */
     @Query("""
-        SELECT songs.* FROM songs
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
         INNER JOIN song_artist_cross_ref ON songs.id = song_artist_cross_ref.song_id
         WHERE song_artist_cross_ref.artist_id = :artistId
         ORDER BY songs.title ASC
