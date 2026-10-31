@@ -17,7 +17,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -183,15 +182,6 @@ fun ThemeSelectorItem(
     }
 }
 
-@Composable
-fun ExpressiveSettingsGroup(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        content()
-    }
-}
 
 /**
  * A slider row.
@@ -377,4 +367,3 @@ fun ActionSettingsItem(
         }
     }
 }
-

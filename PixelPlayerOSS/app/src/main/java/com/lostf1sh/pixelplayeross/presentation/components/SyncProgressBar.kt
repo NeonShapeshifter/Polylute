@@ -3,7 +3,6 @@ package com.lostf1sh.pixelplayeross.presentation.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
@@ -153,41 +151,5 @@ private fun getPhaseText(syncProgress: SyncProgress): String {
             }
         }
         else -> stringResource(R.string.sync_pending)
-    }
-}
-
-/**
- * Compact progress indicator for use in smaller spaces.
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-fun CompactSyncProgressIndicator(
-    syncProgress: SyncProgress,
-    modifier: Modifier = Modifier
-) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = syncProgress.progress.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 300),
-        label = "compactProgressAnimation"
-    )
-
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        LinearWavyProgressIndicator(
-            progress = { animatedProgress },
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.primaryContainer,
-        )
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Text(
-            text = stringResource(R.string.presentation_batch_g_sync_percent, (animatedProgress * 100).roundToInt()),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }

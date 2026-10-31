@@ -128,6 +128,56 @@ class DapDeviceOwnerController(context: Context) {
      */
     internal fun settleHomeExit(): HomeExitSettlement = reconciler.settle()
 
+    /** Restore update-revoked music access once, on any Device Owner DAP. */
+    fun restoreMusicAccessOnce() = synchronized(musicAccessRestoreLock) {
+        val marker = java.io.File(appContext.filesDir, "music-access-restore-b44.done")
+        if (marker.exists()) return@synchronized
+        val pending = java.io.File(appContext.filesDir, "music-access-restore-b44.pending")
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            android.Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            android.Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        var grantApplied = pending.exists()
+        try {
+            val owner = devicePolicyManager.isDeviceOwnerApp(appContext.packageName)
+            val granted = appContext.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+            if (owner && (pending.exists() || !granted)) {
+                if (!pending.exists()) {
+                    // If the process stops after GRANTED, the next start only releases DEFAULT.
+                    pending.writeText(permission)
+                    if (!setMusicPermissionState(permission, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)) {
+                        pending.delete()
+                        Timber.tag(TAG).w("Music access grant refused; will retry next start")
+                        return@synchronized
+                    }
+                }
+                grantApplied = true
+                if (!setMusicPermissionState(permission, DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)) {
+                    Timber.tag(TAG).w("Music access policy release refused; will retry DEFAULT next start")
+                    return@synchronized
+                }
+                Timber.tag(TAG).i("Music access restored; permission policy returned to DEFAULT")
+            }
+            marker.writeText("done")
+            pending.delete()
+        } catch (error: Exception) {
+            // A denied grant can retry; a grant already applied must only have its policy released.
+            if (!grantApplied && appContext.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+                pending.delete()
+            }
+            Timber.tag(TAG).w(error, "Music access restoration will retry next start")
+        }
+    }
+
+    private fun setMusicPermissionState(permission: String, state: Int): Boolean =
+        devicePolicyManager.setPermissionGrantState(
+            adminComponent,
+            appContext.packageName,
+            permission,
+            state,
+        )
+
     fun enableDedicatedMode(): Boolean {
         if (!devicePolicyManager.isDeviceOwnerApp(appContext.packageName)) return false
         // asking for the DAP back is the listener's own word on it: whatever exit was waiting to be settled is over
@@ -472,6 +522,7 @@ class DapDeviceOwnerController(context: Context) {
     }
 
     private companion object {
+        val musicAccessRestoreLock = Any()
         const val TAG = "DapDeviceOwner"
     }
 }

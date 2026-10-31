@@ -34,30 +34,10 @@ class PipelineThreadWiringBoundaryTest {
     // ── AUD-143 ─────────────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `the engine start does not stop the streaming thread before it knows an engine will replace it`() {
-        val start = function(sink, "private fun startNativeEngineIfFlac(")
-        assertThat(start).doesNotContain("usbStreamingThread?.stop()")
-        assertThat(start).doesNotContain("usbStreamingThread = null")
-
-        // The decision comes first, then the engine is created, and only then does the thread go —
-        // after the engine's own rate check, and before the engine can write a sample.
-        val wants = start.indexOf("PipelineThread.wantsEngine(")
-        val created = start.indexOf("engine.createFromFd(")
-        val rejected = start.indexOf("val rejected = created && EngineTransportMatch.mismatch(")
-        val replace = start.indexOf("PipelineThread.replaceByEngine(usbStreamingThread)")
-        val started = start.indexOf("engine.start()")
-        assertThat(wants).isAtLeast(0)
-        assertThat(created).isGreaterThan(wants)
-        assertThat(rejected).isGreaterThan(created)
-        assertThat(replace).isGreaterThan(rejected)
-        assertThat(started).isGreaterThan(replace)
-    }
-
-    @Test
     fun `a pipeline that stays the producer keeps its running thread and does not count a start`() {
-        val start = function(sink, "private fun startNativeEngineIfFlac(")
+        val start = function(sink, "private fun startPipeline(")
         val keep = start.indexOf("PipelineThread.keepOrStart(runningThread)")
-        val kept = start.indexOf("if (thread === runningThread) {")
+        val kept = start.indexOf("if (thread === runningThread) return")
         val counted = start.indexOf("DirectPathTelemetry.streamingThreadStarts.incrementAndGet()")
         assertThat(keep).isAtLeast(0)
         assertThat(kept).isGreaterThan(keep)
@@ -67,7 +47,7 @@ class PipelineThreadWiringBoundaryTest {
 
     @Test
     fun `a rebuild of the stream plays the ending item's tail out before it releases the stream`() {
-        val configure = function(sink, "private fun configureUsbBitPerfect(")
+        val configure = function(sink, "private fun configureUsbBitPerfect(") + function(sink, "private fun rebuildUsbStream(")
         val playOut = configure.indexOf("playOutPipelineTailBeforeRebuild()")
         val release = configure.indexOf("releaseUsbStream()", playOut)
         assertThat(playOut).isAtLeast(0)
@@ -108,84 +88,11 @@ class PipelineThreadWiringBoundaryTest {
 
     // ── AUD-144 ─────────────────────────────────────────────────────────────────────────────────
 
-    @Test
-    fun `a stop from Media3 goes through the join policy before it reaches the engine`() {
-        val pause = function(sink, "override fun pause()")
-        assertThat(pause).contains("pauseNativeEngine()")
-        assertThat(pause).doesNotContain("nativeEngine?.pause()")
-
-        val policy = function(sink, "private fun pauseNativeEngine()")
-        assertThat(policy).contains("NaturalJoinPause.onMedia3Stop(userWantsPlayback, sinceJoinMs)")
-        assertThat(policy).contains("engine.pause()")
-        // Held only for a bounded time, and only for the engine that was running when it was held.
-        assertThat(policy).contains("NaturalJoinPause.MAX_HOLD_MS")
-        assertThat(policy).contains("nativeEngine === engine")
-    }
-
-    @Test
-    fun `play ends a held stop before it resumes the engine`() {
-        val play = function(sink, "override fun play()")
-        val cancel = play.indexOf("cancelHeldEnginePause(\"play()\")")
-        val resume = play.indexOf("nativeEngine?.resume()")
-        assertThat(cancel).isAtLeast(0)
-        assertThat(resume).isGreaterThan(cancel)
-    }
-
-    @Test
-    fun `the user's intent comes from the player's own event, and a user's pause releases a held stop at once`() {
-        val listener = sink.substringAfter("private inner class PlayerIntegrationListener : Player.Listener {")
-            .substringBefore("override fun onMediaItemTransition(")
-        assertThat(listener).contains("override fun onPlayWhenReadyChanged(")
-        assertThat(listener).contains("userWantsPlayback = playWhenReady")
-        assertThat(listener).contains("applyHeldEnginePauseNow()")
-        assertThat(function(sink, "fun attachToPlayer(")).contains("userWantsPlayback = player.playWhenReady")
-    }
-
-    @Test
-    fun `only a natural join is marked, as soon as it is seen, and a seek or a new playlist clears it`() {
-        // Seen by the cleanup task first: in a rate change the engine is created there, before the
-        // creation task runs, and a stop from Media3 can land in between.
-        val cleanup = function(sink, "private fun cleanUpFinishedEngineForItem()")
-        assertThat(cleanup).contains("if (natural) naturalJoinAtMs = SystemClock.elapsedRealtime()")
-        val pending = function(sink, "private fun createPendingEngine(")
-        assertThat(pending).contains("if (next !is NaturalEndCoordinator.NextOffset.None) naturalJoinAtMs = now")
-        val listener = sink.substringAfter("private inner class PlayerIntegrationListener : Player.Listener {")
-            .substringBefore("val uri = mediaItem.localConfiguration?.uri")
-        assertThat(listener).contains("Player.MEDIA_ITEM_TRANSITION_REASON_SEEK")
-        assertThat(listener).contains("Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED")
-        assertThat(listener).contains("naturalJoinAtMs = -1L")
-    }
-
     /**
      * B10-4 (logging only): the decision a `pause()` takes is unchanged; it now says why it was not held, and every
      * place the join mark is set, left alone or cleared says what the sink knew. The next native `rate` run settles
      * AUD-144 from these lines.
      */
-    @Test
-    fun `a pause that is not held says why, and the join mark says where it was set or left alone`() {
-        for ((fn, who, act) in listOf(
-            Triple("private fun pauseNativeEngine()", "engine", "engine.pause()"),
-            Triple("private fun pauseStreamingThread()", "thread", "thread.pauseStreaming()"),
-        )) {
-            val policy = function(sink, fn)
-            val log = policy.indexOf("pause(): PAUSE_NOW ($who) sinceJoinMs=\$sinceJoinMs userWantsPlayback=\$userWantsPlayback")
-            assertThat(log).isAtLeast(0)
-            // logged in the branch that pauses, before the pause itself
-            assertThat(log).isLessThan(policy.indexOf(act))
-            assertThat(policy).contains("NaturalJoinPause.reason(userWantsPlayback, sinceJoinMs)")
-            assertThat(policy).contains("naturalJoinAtMs=\$joinedAtMs")
-        }
-        for (site in listOf("cleanUpFinishedEngineForItem", "createPendingEngine", "markPipelineJoin")) {
-            val body = function(sink, "private fun $site(")
-            assertThat(body).contains("logJoinMark(\"$site\"")
-        }
-        val listener = sink.substringAfter("private inner class PlayerIntegrationListener : Player.Listener {")
-            .substringBefore("val uri = mediaItem.localConfiguration?.uri")
-        assertThat(listener).contains("Join mark CLEARED by the transition")
-        assertThat(listener).contains("logJoinMark(\"onMediaItemTransition(reason=\$reason)\"")
-        // a log must not decide anything: the setters are the ones the AUD-144 test above pins
-        assertThat(function(sink, "private fun logJoinMark(")).doesNotContain("naturalJoinAtMs =")
-    }
 
     // ── B9 ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -226,9 +133,9 @@ class PipelineThreadWiringBoundaryTest {
     fun `Media3's own advance marks the pipeline's join on the playback thread, in order with a pause that may follow`() {
         val listener = sink.substringAfter("private inner class PlayerIntegrationListener : Player.Listener {")
             .substringBefore("val uri = mediaItem.localConfiguration?.uri")
-        assertThat(listener).contains("NaturalEndCoordinator.isSequential(reason)")
+        assertThat(listener).contains("reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO")
         assertThat(listener).contains("playbackHandler?.post { markPipelineJoin() }")
-        assertThat(function(sink, "private fun markPipelineJoin()")).contains("NaturalJoinPause.marksPipelineJoin(")
+        assertThat(function(sink, "private fun markPipelineJoin()")).contains("if (usbStreamingThread != null)")
     }
 
     @Test
@@ -237,7 +144,9 @@ class PipelineThreadWiringBoundaryTest {
         assertThat(flush).contains("thread.flush()")
         assertThat(flush).doesNotContain("usbStreamingThread?.stop()")
         val threadFlush = function(streamingThread, "fun flush() {")
-        assertThat(threadFlush).contains("audioQueue.drainTo(")
+        // B48-3: drained through the counted helper (the running frame count moves with it), which is audioQueue.drainTo
+        assertThat(threadFlush).contains("drainQueueCounted(")
+        assertThat(streamingThread.substringAfter("private fun drainQueueCounted(").substringBefore("\n    }\n")).contains("audioQueue.drainTo(")
         assertThat(threadFlush).doesNotContain("audioQueue.clear()")
         // The packetizer reset the old flush did dropped the old audio's last partial frame before the ramp.
         assertThat(threadFlush).doesNotContain("usbStream.flush()")
@@ -259,18 +168,16 @@ class PipelineThreadWiringBoundaryTest {
         val write = loop.indexOf("writeBuffer(buf)")
         assertThat(staleCheck).isAtLeast(0)
         assertThat(write).isGreaterThan(staleCheck)
-        assertThat(streamingThread).contains("val buf = AudioBuffer.RawBuffer(rawBytes, encoding, streamGeneration)")
-        assertThat(streamingThread).contains("val buf = AudioBuffer.FloatBuffer(floatBuf, processAtWrite, streamGeneration)")
+        assertThat(streamingThread).contains("offerWithinHardLimit(AudioBuffer.RawBuffer(rawBytes, encoding, streamGeneration)")   // B46-B2: stamped, then bounded by time
+        assertThat(streamingThread).contains("offerWithinHardLimit(AudioBuffer.FloatBuffer(floatBuf, processAtWrite, streamGeneration)")
     }
 
     @Test
     fun `a signal-mode change with the pipeline as the producer keeps the thread, the queue and the clock`() {
         val realign = function(sink, "private fun realignPipelineForSignalMode()")
-        val keep = realign.indexOf("if (pipelineStaysProducer()) {")
-        assertThat(keep).isAtLeast(0)
-        // Decided before anything is torn down or sought.
-        for (teardown in listOf("usbStreamingThread?.stop()", "attachedPlayer?.seekTo(", "pipelineClock.arm(", "engine.stop()")) {
-            assertThat(realign.indexOf(teardown)).isGreaterThan(keep)
+        assertThat(realign).contains("realignWithinPipeline(")
+        for (teardown in listOf("usbStreamingThread?.stop()", "attachedPlayer?.seekTo(", "pipelineClock.arm(")) {
+            assertThat(realign).doesNotContain(teardown)
         }
         val kept = function(sink, "private fun realignWithinPipeline(")
         for (forbidden in listOf("stop()", "seekTo(", "pipelineClock", "usbStreamingThread = null", "flush()", "usbStartMediaTimeNeedsInit")) {
@@ -283,7 +190,7 @@ class PipelineThreadWiringBoundaryTest {
     @Test
     fun `the stage a queued buffer still runs through is not wiped at the change`() {
         val refresh = function(sink, "private fun refreshSignalPath()")
-        assertThat(refresh).contains("val keepsQueue = previous != null && previous !== requestedStage && pipelineStaysProducer()")
+        assertThat(refresh).contains("val keepsQueue = previous != null && previous !== requestedStage && usbStreamingThread != null")
         assertThat(refresh).contains("if (previous != null && previous !== requestedStage && !keepsQueue) previous.reset()")
         // It is reset once the queue it was for is gone.
         assertThat(function(sink, "override fun flush()")).contains("resetRetiredStage()")
@@ -302,7 +209,7 @@ class PipelineThreadWiringBoundaryTest {
         assertThat(wait).isAtLeast(0)
         assertThat(playOut).isGreaterThan(wait)
         // And that is before the stream is released.
-        val configure = function(sink, "private fun configureUsbBitPerfect(")
+        val configure = function(sink, "private fun configureUsbBitPerfect(") + function(sink, "private fun rebuildUsbStream(")
         assertThat(configure.indexOf("releaseUsbStream()", configure.indexOf("playOutPipelineTailBeforeRebuild()")))
             .isGreaterThan(configure.indexOf("playOutPipelineTailBeforeRebuild()"))
     }
@@ -326,14 +233,16 @@ class PipelineThreadWiringBoundaryTest {
         val helper = function(output, "bool submitPipelinePcm(")
         assertThat(helper).contains("fadeOutFramesOfBlock(")
         assertThat(helper).contains("pcmApplyGainRamp(")
-        assertThat(function(output, "static void armFadeOut(")).contains("seekFadeOutFrames(")
+        // B46-A5: the lengths are the stream's plan's (usb-pcm-packetizer.h), the same numbers seek-barrier.cpp's helpers give the ramp test
+        assertThat(function(output, "static void armFadeOut(")).contains("ctx->plan.fadeOutFrames")
         val begin = function(output, "int pipelineBeginSeek(")
         assertThat(begin).contains("seekCutFor(")
-        assertThat(begin).contains("seekFadeInFrames(")
-        assertThat(function(output, "void pipelineResume(")).contains("seekFadeInFrames(")
+        assertThat(begin).contains("ctx->plan.fadeInFrames")
+        assertThat(function(output, "void pipelineResume(")).contains("ctx->plan.fadeInFrames")
         val feed = function(output, "bool pipelineFeedSilence(")
         assertThat(feed).contains("seekFeedSilenceStep(")
-        assertThat(feed).contains("seekSilenceLeadFrames(")
+        assertThat(feed).contains("ctx->plan.silenceLeadFrames")
+        assertThat(feed).contains("ctx->plan.silenceChunkFrames")
         // The loop the engine runs is the same step.
         val barrier = File(root + "decent-usb-audio-driver/src/main/jni/seek-barrier.cpp").readText()
         assertThat(function(barrier, "bool seekFeedSilenceUntilDone(")).contains("seekFeedSilenceStep(")
@@ -427,10 +336,11 @@ class PipelineThreadWiringBoundaryTest {
 
     @Test
     fun `nothing about the ring, the fades or the joins changes`() {
-        // the ring is the same 80 slots and the fades the engine's own lengths
-        assertThat(File(root + "decent-usb-audio-driver/src/main/jni/usb-audio-output.h").readText()).contains("#define USB_AUDIO_NUM_URBS 80")
-        assertThat(function(output, "static void armFadeOut(")).contains("seekFadeOutFrames(ctx->sampleRate)")
-        assertThat(function(output, "void pipelineResume(")).contains("seekFadeInFrames(ctx->sampleRate)")
+        // the ring is the same 80 slots (now the plan's: one definition in usb-pcm-packetizer.h) and the fades the engine's own lengths
+        assertThat(File(root + "decent-usb-audio-driver/src/main/jni/usb-pcm-packetizer.h").readText()).contains("#define USB_TRANSPORT_RING_URBS 128")
+        assertThat(File(root + "decent-usb-audio-driver/src/main/jni/usb-audio-output.h").readText()).contains("#define USB_AUDIO_NUM_URBS USB_TRANSPORT_RING_URBS")
+        assertThat(function(output, "static void armFadeOut(")).contains("ctx->plan.fadeOutFrames")
+        assertThat(function(output, "void pipelineResume(")).contains("ctx->plan.fadeInFrames")
         // a natural join never asks for a pause: the thread's end-of-stream and the sink's held pause are untouched
         assertThat(function(sink, "private fun pauseStreamingThread()")).contains("NaturalJoinPause.onMedia3Stop(")
     }

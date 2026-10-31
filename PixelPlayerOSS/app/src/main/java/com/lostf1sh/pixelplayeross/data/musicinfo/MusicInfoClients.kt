@@ -85,6 +85,14 @@ class MusicInfoHttp(
         }
     }
 
+    suspend fun imageExists(url: HttpUrl): Boolean = limited(url) {
+        client.newCall(request(url, "image/*").newBuilder().head().build()).execute().use { response ->
+            if (response.code == 404) return@use false
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
+            response.header("Content-Type").orEmpty().startsWith("image/")
+        }
+    }
+
     private fun request(url: HttpUrl, accept: String) =
         Request.Builder().url(url).header("User-Agent", userAgent).header("Accept", accept).get().build()
 
@@ -138,6 +146,8 @@ class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https:/
             parseArtistSearch(http.json(url), name).also { synchronized(artistMatches) { artistMatches[key] = it } }
         }
     }
+
+    suspend fun imageExists(url: String): Boolean = http.imageExists(url.toHttpUrl())
 
     /** The release (an edition of the album) with this title by this artist, or null. */
     suspend fun findRelease(album: String, artist: String): MbMatch? {
@@ -269,6 +279,22 @@ class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https:/
 class CoverArtArchiveClient(private val http: MusicInfoHttp, root: String = "https://coverartarchive.org/") {
     private val root = root.toHttpUrl()
 
+    /** Metadata only: Find must not download the image body. */
+    suspend fun frontUrl(id: String, group: Boolean): String? {
+        val url = root.newBuilder().addPathSegment(if (group) "release-group" else "release").addPathSegment(id).build()
+        val images = http.json(url)?.optJSONArray("images") ?: return null
+        for (index in 0 until images.length()) {
+            val image = images.optJSONObject(index) ?: continue
+            if (!image.optBoolean("front")) continue
+            val thumbnails = image.optJSONObject("thumbnails")
+            val front = thumbnails?.optString("500").orEmpty().ifBlank {
+                thumbnails?.optString("small").orEmpty().ifBlank { image.optString("image") }
+            }
+            if (front.startsWith("https://")) return front
+        }
+        return null
+    }
+
     /** The front cover of the release, 500 px, or null when the archive has none. */
     suspend fun front(releaseId: String, maxBytes: Long = MAX_IMAGE_BYTES): ByteArray? =
         http.bytes(root.newBuilder().addPathSegment("release").addPathSegment(releaseId).addPathSegment("front-500").build(), maxBytes)
@@ -290,6 +316,7 @@ data class CommonsImage(
     val license: String?,
     val licenseUrl: String?,
     val pageUrl: String,
+    val sizeBytes: Long? = null,
 )
 
 class WikidataClient(private val http: MusicInfoHttp, root: String = "https://www.wikidata.org/w/api.php") {
@@ -360,7 +387,7 @@ class CommonsClient(private val http: MusicInfoHttp, root: String = "https://com
     /** The picture's 800 px thumbnail address, its author and its licence, or null. */
     suspend fun imageInfo(fileName: String): CommonsImage? {
         val url = root.newBuilder().addQueryParameter("action", "query").addQueryParameter("titles", "File:$fileName")
-            .addQueryParameter("prop", "imageinfo").addQueryParameter("iiprop", "url|extmetadata").addQueryParameter("iiurlwidth", "800")
+            .addQueryParameter("prop", "imageinfo").addQueryParameter("iiprop", "url|size|extmetadata").addQueryParameter("iiurlwidth", "800")
             .addQueryParameter("format", "json").build()
         return parseImageInfo(http.json(url), fileName)
     }
@@ -392,6 +419,7 @@ class CommonsClient(private val http: MusicInfoHttp, root: String = "https://com
             val meta = info.optJSONObject("extmetadata")
             fun field(name: String) = meta?.optJSONObject(name)?.optString("value")?.let(::plain)?.takeIf { it.isNotBlank() }
             return CommonsImage(
+                sizeBytes = info.optLong("size").takeIf { it > 0 },
                 fileName = fileName,
                 thumbnailUrl = thumb,
                 author = field("Artist"),

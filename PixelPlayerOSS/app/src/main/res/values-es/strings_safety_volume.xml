@@ -2,13 +2,10 @@
 <resources>
     <string name="safety_max_title">Volumen máximo seguro</string>
     <string name="safety_max_not_set">Sin configurar</string>
-    <string name="safety_max_configured">100 % = límite configurado</string>
     <string name="safety_max_other_output">Sin configurar para esta salida</string>
     <string name="safety_max_disabled">Desactivado</string>
     <string name="safety_max_explanation">El volumen máximo seguro es tu límite personal. No mide la presión sonora ni garantiza un nivel de escucha seguro.</string>
     <string name="safety_max_current_output">Salida actual</string>
-    <string name="safety_max_unavailable_output">El volumen máximo seguro no está disponible en esta salida.</string>
-    <string name="safety_max_recalibrate">Cambió el rango de la salida. Es necesario volver a calibrar.</string>
     <string name="safety_max_not_set_output">No hay un límite configurado para esta salida.</string>
     <string name="safety_max_current_status">%1$d %% · paso real %2$d de %3$d</string>
     <string name="safety_max_use_current">Usar el volumen actual como máximo</string>
@@ -16,7 +13,6 @@
     <string name="safety_max_level_unconfirmed">El DAC no ha confirmado su nivel de volumen. El botón lo vuelve a leer; no se guarda nada hasta que se pueda confirmar.</string>
     <string name="safety_max_not_saved_unconfirmed">No se guardó nada: no se pudo leer el nivel del DAC. Revisa la conexión e inténtalo de nuevo.</string>
     <string name="safety_max_not_saved_output_changed">No se guardó nada: la salida cambió mientras se leía su nivel. Inténtalo de nuevo.</string>
-    <string name="safety_max_enabled">Volumen máximo activado</string>
     <string name="safety_max_enabled_summary">Los cambios normales de volumen se detienen en tu límite.</string>
     <string name="safety_max_reached_title">Máximo configurado alcanzado</string>
     <string name="safety_max_reached_message">Estás en el máximo configurado para %1$s. Subir más excederá tu límite.</string>
@@ -31,8 +27,6 @@
     <string name="volume_hud_state_override">SUPERADO</string>
     <string name="volume_hud_override_detail">Termina al bajar el volumen o tras %1$d min sin reproducir</string>
     <string name="volume_hud_state_maximum">MÁX</string>
-    <string name="volume_hud_level">%1$d / %2$d</string>
-    <string name="volume_hud_cd">Volumen %1$d de %2$d</string>
     <string name="safety_max_dac_own_volume_note">En un DAC USB, el volumen propio del DAC (sus botones) no se refleja en la app y Safety Max no lo limita.</string>
     <string name="safety_max_calibrate_dac_at_max">Si tu DAC tiene volumen propio (botones o rueda), súbelo antes a su máximo (el peor caso) y después calibra. La app no puede leer ese volumen: un techo calibrado con él más bajo deja de proteger en cuanto lo subes.</string>
     <string name="safety_max_calibrate_dac_notice">Este DAC no tiene un techo de Safety Max configurado: nada limita su volumen. Calibra Safety Max para él.</string>

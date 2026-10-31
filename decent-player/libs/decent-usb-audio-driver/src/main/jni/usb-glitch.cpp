@@ -36,7 +36,7 @@ void usbOutputGapAddBetweenCalls(UsbOutputGapWatch *w, int64_t betweenUs) {
     if (betweenUs > 0) w->betweenCallsUs += betweenUs;
 }
 
-bool usbOutputGapSubmit(UsbOutputGapWatch *w, bool announcedIdle, int64_t nowUs, int64_t urbUs, UsbOutputGap *gap) {
+bool usbOutputGapSubmit(UsbOutputGapWatch *w, bool announcedIdle, int64_t nowUs, int64_t urbUs, int64_t queuedLeadUs, UsbOutputGap *gap) {
     bool ranDry = false;
     if (w->armed && !announcedIdle && nowUs >= w->playoutEndUs) {
         const int64_t gapUs = nowUs - w->lastSubmitUs;
@@ -48,8 +48,11 @@ bool usbOutputGapSubmit(UsbOutputGapWatch *w, bool announcedIdle, int64_t nowUs,
         gap->otherUs = gapUs - gap->reapUs - gap->betweenCallsUs;
         ranDry = gap->dryUs >= USB_OUTPUT_GAP_MIN_DRY_US;
     }
-    // From the later of "now" and the end of what is queued: a submit into a ring that ran dry starts a new lead.
-    const int64_t from = (w->armed && !announcedIdle && nowUs < w->playoutEndUs) ? w->playoutEndUs : nowUs;
+    // From the later of "now" and the end of what is queued: a submit into a ring that ran dry starts a new lead. After an announced
+    // idle the queue is what the writer says the ring still holds (B46-B1), not nothing.
+    const int64_t queued = queuedLeadUs > 0 ? queuedLeadUs : 0;
+    const int64_t from = announcedIdle ? nowUs + queued
+                       : (w->armed && nowUs < w->playoutEndUs) ? w->playoutEndUs : nowUs;
     w->playoutEndUs = from + urbUs;
     w->lastSubmitUs = nowUs;
     w->reapUs = 0;
@@ -108,6 +111,10 @@ UsbSchedDelta usbSchedDelta(const UsbSchedBaseline *baseline, const UsbSchedSamp
     return d;
 }
 
+bool usbGapWantsCpuLine(const UsbSchedDelta *delta) {
+    return delta->valid && delta->runqUs >= USB_GAP_CPU_MIN_RUNQ_US;
+}
+
 enum UsbOutputGapWhere usbOutputGapWhere(const UsbOutputGap *gap) {
     if (gap->reapUs >= gap->betweenCallsUs && gap->reapUs >= gap->otherUs) return USB_OUTPUT_GAP_IN_REAP;
     if (gap->betweenCallsUs >= gap->otherUs) return USB_OUTPUT_GAP_BETWEEN_WRITES;
@@ -124,6 +131,8 @@ const char *usbOutputGapWhereName(enum UsbOutputGapWhere where) {
 }
 
 int64_t usbGlitchLogIntervalMs(enum UsbGlitchKind kind) {
+    // B47-A5: a lock-up and each step of its recovery are rare and bounded by the recovery's cooldown: every one is logged, never held back.
+    if (kind == USB_GLITCH_DAC_LOCKED || kind == USB_GLITCH_DAC_RECOVERY) return 0;
     return kind == USB_GLITCH_REAP_SLOW ? 30000 : 1000;
 }
 
@@ -173,13 +182,36 @@ void usbFeedbackWatchReset(UsbFeedbackWatch *w) {
  * weighted mean of [count] readings with a time constant of USB_FEEDBACK_HEALTHY_TAU_READINGS. One exp()
  * per run that ends, and runs end a few dozen times a second at most.
  */
-static void foldHealthy(UsbFeedbackWatch *w, double fpmf, int64_t count) {
+static void foldSettled(UsbFeedbackWatch *w, double fpmf, int64_t count) {
     if (count <= 0) return;
     const double decay = exp(-1.0 / USB_FEEDBACK_HEALTHY_TAU_READINGS);
     const double older = pow(decay, (double)count);               // weight the existing readings keep
     const double added = (1.0 - older) / (1.0 - decay);           // sum of the new readings' weights
     w->healthySum = w->healthySum * older + fpmf * added;
     w->healthyWeight = w->healthyWeight * older + added;
+}
+
+/** B47-A4: the oldest fresh fold joins the settled average. */
+static void settleOldest(UsbFeedbackWatch *w) {
+    if (w->freshCount <= 0) return;
+    foldSettled(w, w->fresh[0].fpmf, w->fresh[0].count);
+    for (int i = 1; i < w->freshCount; i++) w->fresh[i - 1] = w->fresh[i];
+    w->freshCount--;
+}
+
+/** B47-A4: whatever ended at least USB_FEEDBACK_HEALTHY_SETTLE_MS before [nowMs] is now part of the healthy average. */
+static void settleFolds(UsbFeedbackWatch *w, int64_t nowMs) {
+    while (w->freshCount > 0 && nowMs - w->fresh[0].endMs >= USB_FEEDBACK_HEALTHY_SETTLE_MS) settleOldest(w);
+}
+
+/** A run of [count] identical healthy readings ended at [endMs]: it waits to settle (B47-A4). */
+static void foldHealthy(UsbFeedbackWatch *w, double fpmf, int64_t count, int64_t endMs) {
+    if (count <= 0) return;
+    if (w->freshCount >= USB_FEEDBACK_FRESH_CAPACITY) settleOldest(w);   // a very busy stretch: the oldest settles early rather than being lost
+    UsbFeedbackFold &fold = w->fresh[w->freshCount++];
+    fold.endMs = endMs;
+    fold.fpmf = fpmf;
+    fold.count = count;
 }
 
 const char *usbFeedbackImplausibleName(int why) {
@@ -196,6 +228,8 @@ const char *usbFeedbackImplausibleName(int why) {
 static void setImplausible(UsbFeedbackWatch *w, enum UsbFeedbackImplausible why, double fpmf, double ppm,
                            UsbFeedbackEvent *ev) {
     const bool started = why != USB_FEEDBACK_PLAUSIBLE && !w->implausible;
+    // B47-A4: a refusal begins: the readings that have not settled are the excursion's own first ones, not the DAC's healthy clock.
+    if (started) w->freshCount = 0;
     w->implausible = why != USB_FEEDBACK_PLAUSIBLE;
     w->implausibleWhy = why;
     if (started) {
@@ -222,12 +256,15 @@ static void judgePlausibility(UsbFeedbackWatch *w, double fpmf, double ppm, int6
         w->bigRun = false;
     }
     enum UsbFeedbackImplausible why = USB_FEEDBACK_PLAUSIBLE;
-    if (mag > USB_FEEDBACK_ABSURD_PPM) {
+    if (ppm <= -50000.0 || ppm >= 50000.0) {
+        why = USB_FEEDBACK_IMPLAUSIBLE_OUT_OF_WINDOW;
+    } else if (mag > USB_FEEDBACK_ABSURD_PPM) {
         why = USB_FEEDBACK_IMPLAUSIBLE_ABSURD;
     } else if (w->bigRun && nowMs - w->bigStartMs >= USB_FEEDBACK_SUSTAINED_MS) {
         why = USB_FEEDBACK_IMPLAUSIBLE_SUSTAINED;
     }
     setImplausible(w, why, fpmf, ppm, ev);
+    if (ev->implausibleStarted) ev->implausibleRampMs = w->bigRun ? nowMs - w->bigStartMs : 0;
 }
 
 static void fillEvent(UsbFeedbackEvent *ev, enum UsbFeedbackEventKind kind, const UsbFeedbackWatch *w,
@@ -261,16 +298,29 @@ static void closeRun(UsbFeedbackWatch *w, double nominalFpmf, enum UsbFeedbackEn
         // a healthy DAC averages: it would drag `auto`'s fallback toward the very value it is there to replace.
         const double ppm = usbFeedbackPpm(w->runRaw / 65536.0, nominalFpmf);
         if (ppm <= USB_FEEDBACK_SUSTAINED_PPM && ppm >= -USB_FEEDBACK_SUSTAINED_PPM) {
-            foldHealthy(w, w->runRaw / 65536.0, w->runReadings);
+            foldHealthy(w, w->runRaw / 65536.0, w->runReadings, w->runLastMs);
         }
     }
     w->haveRun = false;
 }
 
+int64_t usbFeedbackStuckHoldMs(int policy, double ppm) {
+    const double offset = ppm < 0 ? -ppm : ppm;
+    if (policy == USB_FEEDBACK_AUTO_EARLY && offset >= USB_FEEDBACK_EARLY_MIN_PPM) return USB_FEEDBACK_EARLY_STUCK_MS;
+    return USB_FEEDBACK_STUCK_MIN_MS;
+}
+
 void usbFeedbackWatchObserve(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, int64_t nowMs,
                              UsbFeedbackEvent *ev) {
+    usbFeedbackWatchObservePolicy(w, raw, nominalFpmf, nowMs, USB_FEEDBACK_AUTO, ev);
+}
+
+void usbFeedbackWatchObservePolicy(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, int64_t nowMs, int policy,
+                                   UsbFeedbackEvent *ev) {
     ev->kind = USB_FEEDBACK_EVENT_NONE;
     ev->implausibleStarted = false;
+    ev->implausibleRampMs = 0;
+    settleFolds(w, nowMs);
     if (w->haveRun && nowMs - w->runLastMs > USB_FEEDBACK_GAP_MS) {
         closeRun(w, nominalFpmf, USB_FEEDBACK_END_GAP, raw, ev);
     }
@@ -286,9 +336,10 @@ void usbFeedbackWatchObserve(UsbFeedbackWatch *w, uint32_t raw, double nominalFp
     }
     w->runReadings++;
     w->runLastMs = nowMs;
-    if (!w->stuck && nowMs - w->runStartMs >= USB_FEEDBACK_STUCK_MIN_MS) {
+    if (!w->stuck) {
         const double ppm = usbFeedbackPpm(raw / 65536.0, nominalFpmf);
-        if (ppm > USB_FEEDBACK_STUCK_MIN_PPM || ppm < -USB_FEEDBACK_STUCK_MIN_PPM) {
+        if (nowMs - w->runStartMs >= usbFeedbackStuckHoldMs(policy, ppm) &&
+            (ppm > USB_FEEDBACK_STUCK_MIN_PPM || ppm < -USB_FEEDBACK_STUCK_MIN_PPM)) {
             w->stuck = true;
             fillEvent(ev, USB_FEEDBACK_EVENT_STUCK, w, nominalFpmf, nowMs - w->runStartMs);
         }
@@ -298,6 +349,7 @@ void usbFeedbackWatchObserve(UsbFeedbackWatch *w, uint32_t raw, double nominalFp
 void usbFeedbackWatchOutOfWindow(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, UsbFeedbackEvent *ev) {
     ev->kind = USB_FEEDBACK_EVENT_NONE;
     ev->implausibleStarted = false;
+    ev->implausibleRampMs = 0;
     const double fpmf = raw / 65536.0;
     setImplausible(w, USB_FEEDBACK_IMPLAUSIBLE_OUT_OF_WINDOW, fpmf, usbFeedbackPpm(fpmf, nominalFpmf), ev);
 }
@@ -305,6 +357,7 @@ void usbFeedbackWatchOutOfWindow(UsbFeedbackWatch *w, uint32_t raw, double nomin
 void usbFeedbackWatchEnd(UsbFeedbackWatch *w, double nominalFpmf, UsbFeedbackEvent *ev) {
     ev->kind = USB_FEEDBACK_EVENT_NONE;
     ev->implausibleStarted = false;
+    ev->implausibleRampMs = 0;
     if (w->haveRun && w->stuck) closeRun(w, nominalFpmf, USB_FEEDBACK_END_STREAM, 0, ev);
     usbFeedbackWatchReset(w);
 }
@@ -315,6 +368,7 @@ const char *usbFeedbackPolicyName(int policy) {
         case USB_FEEDBACK_NOMINAL: return "nominal";
         case USB_FEEDBACK_CLAMP: return "clamp";
         case USB_FEEDBACK_AUTO: return "auto";
+        case USB_FEEDBACK_AUTO_EARLY: return "auto-early";
         default: return "?";
     }
 }
@@ -343,10 +397,99 @@ double usbFeedbackPolicyFpmf(int policy, double followFpmf, double nominalFpmf, 
             return followFpmf;
         }
         case USB_FEEDBACK_AUTO:
+        case USB_FEEDBACK_AUTO_EARLY:
             // Stuck (frozen off nominal) or implausible (absurd, or wrong for seconds): not obeyed. Everything
             // else — a healthy DAC's blips, a crystal tens or hundreds of ppm off — is followed as before.
             return (w != nullptr && (w->stuck || w->implausible)) ? healthyOrNominal(w, nominalFpmf) : followFpmf;
         default:
             return followFpmf;
     }
+}
+
+// ── A locked-up DAC (B47-A5; see usb-glitch.h) ──────────────────────────────────────────────────
+
+void usbDacLockReset(UsbDacLockWatch *w) {
+    memset(w, 0, sizeof(*w));
+}
+
+bool usbDacLockObserve(UsbDacLockWatch *w, double ppm, int64_t nowMs, UsbDacLockEvent *ev) {
+    const double magnitude = ppm < 0.0 ? -ppm : ppm;
+    if (w->inRun && nowMs - w->lastMs > USB_DAC_LOCK_GAP_MS) usbDacLockReset(w);   // a pause between readings ends the run
+    if (magnitude < USB_DAC_LOCK_RAIL_PPM) {
+        usbDacLockReset(w);   // a reading that is a clock's again: the run is over, and so is a lock-up
+        return false;
+    }
+    if (!w->inRun) {
+        usbDacLockReset(w);
+        w->inRun = true;
+        w->startMs = nowMs;
+    }
+    w->lastMs = nowMs;
+    w->readings++;
+    w->ppm = ppm;
+    if (w->locked || nowMs - w->startMs < USB_DAC_LOCK_RAIL_MS) return false;
+    w->locked = true;
+    ev->ppm = ppm;
+    ev->railedMs = nowMs - w->startMs;
+    ev->readings = w->readings;
+    ev->lateReaps = w->lateReaps;
+    return true;
+}
+
+void usbDacLockLateReap(UsbDacLockWatch *w) {
+    if (w->inRun) w->lateReaps++;
+}
+
+int64_t usbDacLockRailedMs(const UsbDacLockWatch *w, int64_t nowMs) {
+    return w->inRun && nowMs >= w->startMs ? nowMs - w->startMs : 0;
+}
+
+// ── The recovery's escalation (B47-A5; see usb-glitch.h) ────────────────────────────────────────
+
+void usbDacRecoveryPolicyReset(UsbDacRecoveryPolicy *p) {
+    memset(p, 0, sizeof(*p));
+}
+
+int usbDacRecoveryDecide(UsbDacRecoveryPolicy *p, bool locked, bool enabled, int64_t nowMs, int64_t *lastEpisodeStartMs, int *verdictStep, bool *verdictOk, bool pending) {
+    *verdictStep = 0;
+    *verdictOk = false;
+    if (!enabled) return USB_DAC_STEP_NONE;
+    if (p->awaitingStep != 0) {
+        if (locked) {
+            *verdictStep = p->awaitingStep;   // the rail is back: that step did not hold
+            *verdictOk = false;
+            p->awaitingStep = 0;
+        } else if (!pending && nowMs - p->awaitingSinceMs >= USB_DAC_RECOVERY_VERIFY_MS) {
+            *verdictStep = p->awaitingStep;
+            *verdictOk = true;
+            p->awaitingStep = 0;
+        }
+    }
+    if (!locked) {
+        if (pending) return USB_DAC_STEP_NONE;
+        if (p->quietSinceMs == 0) p->quietSinceMs = nowMs;
+        if (p->lastStep != 0 && p->awaitingStep == 0 && nowMs - p->quietSinceMs >= USB_DAC_RECOVERY_EPISODE_END_MS) {
+            p->lastStep = 0;   // the recovery held for long enough: the next lock-up is a new episode
+            p->gaveUp = false;
+        }
+        return USB_DAC_STEP_NONE;
+    }
+    p->quietSinceMs = 0;
+    if (p->gaveUp || p->awaitingStep != 0) return USB_DAC_STEP_NONE;
+    const int next = p->lastStep + 1;
+    if (next > USB_DAC_STEP_BUS_RESET) {
+        p->gaveUp = true;
+        return USB_DAC_STEP_GIVE_UP;
+    }
+    if (next == USB_DAC_STEP_INTERFACE) {
+        if (*lastEpisodeStartMs != 0 && nowMs - *lastEpisodeStartMs < USB_DAC_RECOVERY_COOLDOWN_MS) return USB_DAC_STEP_NONE;
+        *lastEpisodeStartMs = nowMs;
+    }
+    p->lastStep = next;
+    return next;
+}
+
+void usbDacRecoveryStepDone(UsbDacRecoveryPolicy *p, int step, int64_t nowMs) {
+    p->awaitingStep = step;
+    p->awaitingSinceMs = nowMs;
 }

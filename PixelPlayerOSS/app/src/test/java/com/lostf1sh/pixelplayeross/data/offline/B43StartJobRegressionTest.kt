@@ -37,7 +37,7 @@ class B43StartJobRegressionTest {
         val manager = mockk<WorkManager>(relaxed = true)
         every { WorkManager.getInstance(any<Context>()) } returns manager
         try {
-            val constructor = OfflineDownloads::class.java.constructors.single { !it.isSynthetic }
+            val constructor = LegacyOfflineDownloads::class.java.constructors.single { !it.isSynthetic }
             val downloads = constructor.newInstance(*constructor.parameterTypes.map { type -> when (type.name) {
                 Context::class.java.name -> context
                 MusicRepository::class.java.name -> music
@@ -46,7 +46,7 @@ class B43StartJobRegressionTest {
                 MusicInfoRepository::class.java.name -> mockk<MusicInfoRepository>(relaxed = true)
                 LyricsRepository::class.java.name -> mockk<LyricsRepository>(relaxed = true)
                 else -> error("Unexpected dependency $type")
-            } }.toTypedArray()) as OfflineDownloads
+            } }.toTypedArray()) as LegacyOfflineDownloads
             downloads.start(null, setOf(OfflineKind.ARTIST_PHOTOS))
             val library = downloads.state.value!!
             downloads.record(library.id, 0, OfflineResult("first", 1, 0, 0))

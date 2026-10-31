@@ -1,5 +1,7 @@
 package com.lostf1sh.pixelplayeross.presentation.components.player
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -77,7 +79,7 @@ import org.robolectric.annotation.GraphicsMode
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], application = android.app.Application::class, qualifiers = "w360dp-h800dp-xhdpi")
+@Config(sdk = [35], application = android.app.Application::class, qualifiers = "w360dp-h805dp-xhdpi")
 open class B43PlayerRedesignTest {
 
     @get:Rule
@@ -99,14 +101,18 @@ open class B43PlayerRedesignTest {
     private val third = song(3, "Molinos de Viento")
     private val queue: ImmutableList<Song> = (listOf(first, second, third) + (4..40).map { song(it, "Cancion $it") }).toImmutableList()
 
+    private val renderFont = mutableStateOf(1.3f)
+    private val renderLyrics = mutableStateOf(true)
+    private val renderBookmark = mutableStateOf(true)
     private val words = mutableStateOf<com.lostf1sh.pixelplayeross.data.model.Lyrics?>(
         com.lostf1sh.pixelplayeross.data.model.Lyrics(synced = listOf(
             com.lostf1sh.pixelplayeross.data.model.SyncedLine(0, "Sung line"), com.lostf1sh.pixelplayeross.data.model.SyncedLine(100000, "Next line"))))
     private fun save(name: String) {
         val bitmap = com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
-        val root = java.io.File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B43-evidence", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
+        val root = java.io.File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-fix1-evidence", "regressions").apply { mkdirs() }
         java.io.File(root, "$name-${bitmap.width}x${bitmap.height}.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
+    private var hostView: android.view.View? = null
     private var sheet: QueueSheetState? = null
     private val calls = mutableListOf<String>()
     private val offsetsWhileDragging = mutableListOf<Float>()
@@ -126,7 +132,7 @@ open class B43PlayerRedesignTest {
 
     private fun uiState(songs: ImmutableList<Song>, index: Int, repeat: Int = Player.REPEAT_MODE_OFF): FullPlayerUiState {
         val current = songs[index]
-        return buildFullPlayerUiState(
+        val built = buildFullPlayerUiState(
             env = PlayerSheetEnv(
                 loadingTweaks = FullPlayerLoadingTweaks(delayAll = false), isSheetDragGestureActive = false,
                 currentSheetState = PlayerSheetState.EXPANDED, allowRealtimeUpdates = false, expansionFractionProvider = { 1f },
@@ -143,10 +149,16 @@ open class B43PlayerRedesignTest {
                 playbackPositionFlow = MutableStateFlow(9_000L),
                 externalLyricsEnabled = true, lyricsSyncOffset = 0, immersiveLyricsEnabled = false, immersiveLyricsTimeout = 4000L,
                 isImmersiveTemporarilyDisabled = false, isShuffleEnabled = false, repeatMode = repeat, isFavorite = false,
-                lyricsProvider = { words.value }, lyricsResolveCompletedProvider = { true }, underCover = true,
+                lyricsProvider = { words.value }, lyricsResolveCompletedProvider = { true }, underCover = renderLyrics.value,
             ),
             isLandscape = false,
         )
+        // Before-tree compatibility: its info model has no bookmark visibility option yet.
+        val info = built.trackInfo
+        val constructor = info.javaClass.constructors.firstOrNull { !it.isSynthetic && it.parameterCount == 6 }
+        return if (constructor == null) built else built.copy(trackInfo = constructor.newInstance(
+            info.song, info.artists, info.isFavorite, info.isBuffering, info.isPlayingProvider, renderBookmark.value,
+        ) as PlayerTrackInfoState)
     }
 
     /**
@@ -156,10 +168,13 @@ open class B43PlayerRedesignTest {
     private fun show(songs: ImmutableList<Song> = queue, index: Int = 0, strip: Boolean = true, repeat: Int = Player.REPEAT_MODE_OFF) {
         val playing = songs[index]
         compose.setContent {
+            val view = androidx.compose.ui.platform.LocalView.current
+            SideEffect { hostView = view }
             val baseDensity = LocalDensity.current
-            val density = Density(baseDensity.density, 1.3f)
+            val density = Density(baseDensity.density, renderFont.value)
             val screenHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
-            val foldedStripPx = if (strip) with(density) { (QueuePeekHeight + QueuePeekBottomGap).toPx() } else 0f
+            val navigation = WindowInsets.navigationBars.getBottom(density)
+            val foldedStripPx = if (strip) with(density) { (QueuePeekHeight + QueuePeekBottomGap).toPx() } + navigation else 0f
             val state = rememberQueueSheetState(
                 scope = rememberCoroutineScope(), screenHeightPx = screenHeightPx, density = density, currentBottomPadding = 0.dp,
                 showPlayerContentArea = true, currentSheetContentState = PlayerSheetState.EXPANDED, foldedStripPx = foldedStripPx,
@@ -177,6 +192,7 @@ open class B43PlayerRedesignTest {
                 override fun onQueueRelease(totalDrag: Float, velocity: Float) { calls += "playerSwipeRelease"; controller.endDrag(totalDrag, velocity) }
                 override fun onSeek(positionMs: Long) { calls += "seek" }
                 override fun onCollapse() { calls += "close" }
+                override fun onOpenAlbum(albumId: Long) { calls += "album-$albumId" }
             }
             val signal = remember { PlayerPageSignal() }
             CompositionLocalProvider(LocalPlayerPageSignal provides signal, LocalDensity provides density) {
@@ -204,6 +220,16 @@ open class B43PlayerRedesignTest {
             }
         }
         compose.waitForIdle()
+        compose.runOnUiThread {
+            androidx.core.view.ViewCompat.dispatchApplyWindowInsets(
+                hostView!!,
+                androidx.core.view.WindowInsetsCompat.Builder()
+                    .setInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars(), androidx.core.graphics.Insets.of(0, 74, 0, 0))
+                    .setInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars(), androidx.core.graphics.Insets.of(0, 0, 0, 44))
+                    .build(),
+            )
+        }
+        compose.waitForIdle()
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
         save("player")
@@ -221,6 +247,55 @@ open class B43PlayerRedesignTest {
         SemanticsMatcher("the seek bar") { it.config.contains(SemanticsProperties.ProgressBarRangeInfo) || it.config.contains(SemanticsActions.SetProgress) },
         useUnmergedTree = true,
     ).fetchSemanticsNode().boundsInRoot
+
+    @Test fun `B44 tapping the album title opens the album`() {
+        show()
+        compose.onNodeWithText("Gaia").performClick()
+        assertThat(calls).contains("album-9")
+    }
+
+    @Test fun `B44 repeat is left of shuffle in the player transport`() {
+        show()
+        save("b44-transport")
+        val repeat = compose.onNodeWithContentDescription(s(R.string.lock_transport_repeat)).fetchSemanticsNode().boundsInRoot
+        val shuffle = compose.onNodeWithContentDescription(s(R.string.player_shuffle)).fetchSemanticsNode().boundsInRoot
+        assertThat(repeat.center.x).isLessThan(shuffle.center.x)
+    }
+
+    @Test fun `B44 player metadata fits with bookmark shown or hidden`() { measurePlayer(false) }
+    @Test fun `B44 player matrix keeps metadata and controls within the viewport`() { measurePlayer(true) }
+    private fun measurePlayer(expectEdgeToEdge: Boolean) {
+        show()
+        val failures = mutableListOf<String>()
+        for (font in listOf(1f, 1.3f)) for (lyrics in listOf(false, true)) for (bookmark in listOf(true, false)) {
+            compose.runOnIdle {
+                renderFont.value = font
+                renderLyrics.value = lyrics
+                renderBookmark.value = bookmark
+            }
+            compose.waitForIdle()
+            val label = "b44-matrix-font-$font-lyrics-$lyrics-bookmark-$bookmark"
+            save(label)
+            val art = compose.onAllNodes(hasClickAction() and hasAnyAncestor(hasTestTag(PlayerPagesTags.Cover)), useUnmergedTree = true)
+                .fetchSemanticsNodes().first { it.boundsInRoot.width > 100 && it.boundsInRoot.height > 100 }.boundsInRoot
+            val viewport = compose.onAllNodes(isRoot()).fetchSemanticsNodes().maxBy { it.boundsInRoot.width }.boundsInRoot
+            val controls = compose.onNodeWithContentDescription(s(R.string.cd_play)).fetchSemanticsNode().boundsInRoot
+            if (kotlin.math.abs(art.width - art.height) > 1) failures += "$label cover not square $art"
+            if (expectEdgeToEdge && !lyrics && kotlin.math.abs(art.width - viewport.width) > 1) failures += "$label not edge to edge ${art.width} of ${viewport.width}"
+            if (controls.bottom > viewport.bottom) failures += "$label controls clipped"
+            val album = compose.onAllNodesWithText("Gaia", useUnmergedTree = true).fetchSemanticsNodes()
+            if (album.isEmpty()) failures += "$label no album title"
+            for (name in listOf(first.title, first.artist, "Gaia")) {
+                val nodes = compose.onAllNodesWithText(name, useUnmergedTree = true).fetchSemanticsNodes()
+                val node = nodes.firstOrNull { it.boundsInRoot.top < controls.top }
+                if (node == null || node.boundsInRoot.top < 0 || node.boundsInRoot.bottom > controls.top) failures += "$label clipped metadata $name"
+            }
+            val bookmarkCount = compose.onAllNodesWithContentDescription(s(R.string.player_add_bookmark)).fetchSemanticsNodes().size
+            if (bookmarkCount != if (bookmark) 1 else 0) failures += "$label bookmark visibility $bookmarkCount"
+            println("B44 $label art=${art.width / 2}dp controlsBottom=${controls.bottom / 2}dp viewport=${viewport.width / 2}x${viewport.height / 2}dp")
+        }
+        assertThat(failures).isEmpty()
+    }
 
     @Test fun `strip lyrics opens its page and the top chevron is absent`() {
         show()

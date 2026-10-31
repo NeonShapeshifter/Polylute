@@ -8,21 +8,8 @@ import com.lostf1sh.pixelplayeross.data.headphones.SafetyVolumeBackendKind
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.EqualizerOutputState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.SafetyMaxOutputState
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
-import com.lostf1sh.pixelplayeross.ui.ds.DapState
-import com.lostf1sh.pixelplayeross.ui.ds.DapStateKind
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
 
-@Composable
-internal fun EqualizerOutputStatus(state: EqualizerOutputState) {
-    DapState(
-        kind = when (state) {
-            EqualizerOutputState.APPLIED -> DapStateKind.Selected
-            EqualizerOutputState.OFF -> DapStateKind.Off
-            else -> DapStateKind.Bypassed
-        },
-        label = equalizerOutputLabel(state),
-    )
-}
 
 @Composable
 internal fun equalizerOutputLabel(state: EqualizerOutputState): String = stringResource(

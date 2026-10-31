@@ -14,6 +14,13 @@
 
 #define URB_QUARANTINE_CAPACITY 256
 
+/**
+ * The most URBs one barrier freezes as targets (usb-audio-output.h's BarrierSnapshot). Defined here with the other two ring
+ * bookkeeping capacities, URB_QUARANTINE_CAPACITY and URB_DRAIN_MAX, because usb-pcm-packetizer.h checks all three against the
+ * ring's size at compile time (B46-A1).
+ */
+#define USB_AUDIO_MAX_BARRIER_TARGETS 192   // B47-A2: 160 -> 192 with the ring at 128 URBs (ring + the feedback URB must fit)
+
 /** Parks [urb]. False when full: the caller must then keep waiting instead of reusing it. */
 bool urbQuarantineAdd(void *urb);
 
@@ -27,7 +34,7 @@ int urbQuarantineCount(void);
  * whichever phase reaped it — a data completion reaped while the feedback URB was being drained
  * is as final as one reaped in phase 3.
  */
-#define URB_DRAIN_MAX 128
+#define URB_DRAIN_MAX 192   // B47-A2: 128 -> 192, same reason
 
 typedef struct {
     const void *pending[URB_DRAIN_MAX];

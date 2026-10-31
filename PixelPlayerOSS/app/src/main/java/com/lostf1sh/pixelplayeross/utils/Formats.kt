@@ -30,18 +30,6 @@ fun formatTotalDuration(songs: List<Song>): String {
     }
 }
 
-fun formatListeningDurationLong(milliseconds: Long): String {
-    val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(milliseconds)
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
-    val seconds = TimeUnit.MILLISECONDS.toSeconds(milliseconds) % 60
-    return when {
-        hours > 0 && minutes > 0 -> String.format(Locale.US, "%d h %02d m", hours, minutes)
-        hours > 0 -> String.format(Locale.US, "%d h", hours)
-        minutes > 0 -> String.format(Locale.US, "%d m", minutes)
-        else -> String.format(Locale.US, "%d s", seconds)
-    }
-}
 
 fun formatListeningDurationCompact(milliseconds: Long): String {
     val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(milliseconds)
@@ -72,19 +60,3 @@ fun formatSongCountLabel(count: Int): String =
         count,
         count,
     )
-
-fun formatTimeAgo(timestamp: Long): String {
-    if (timestamp <= 0) return "Never"
-    val diff = System.currentTimeMillis() - timestamp
-    val seconds = diff / 1000
-    val minutes = seconds / 60
-    val hours = minutes / 60
-    val days = hours / 24
-
-    return when {
-        days > 0 -> if (days == 1L) "1 day ago" else "$days days ago"
-        hours > 0 -> if (hours == 1L) "1 hour ago" else "$hours hours ago"
-        minutes > 0 -> if (minutes == 1L) "1 minute ago" else "$minutes minutes ago"
-        else -> "Just now"
-    }
-}

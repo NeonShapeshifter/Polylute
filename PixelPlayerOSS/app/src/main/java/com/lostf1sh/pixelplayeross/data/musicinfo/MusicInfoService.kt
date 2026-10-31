@@ -1,5 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.musicinfo
 
+import com.lostf1sh.pixelplayeross.data.offline.InfoKind
+
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -66,6 +68,42 @@ class MusicInfoService(
     private val assets: com.lostf1sh.pixelplayeross.data.network.DownloadAssetRegistry? = null,
 ) {
     private val deletedDownloads = cache.deletedDownloads
+    private val discovery = MusicInfoDiscoveryRemote(brainz, coverArt, wikidata, commons, wikipedia, languages)
+
+    internal fun savedRevision(): Any = cache.savedRevision() to languages().distinct()
+
+    fun savedSnapshot(): SavedMusicInfo = SavedMusicInfo(cache.savedEntries(), languages().distinct())
+
+    suspend fun discover(kind: InfoKind, name: String, artist: String?): ResolvedInfo? = withContext(io) {
+        withContext(MusicInfoRefresh()) { discovery.find(kind, name, artist) }
+    }
+
+    /** Commit only an explicitly chosen discovery result; no identifier lookup happens here. */
+    suspend fun saveDiscovered(kind: InfoKind, name: String, artist: String?, payload: String): Boolean = withContext(io) {
+        val value = JSONObject(payload)
+        when (kind) {
+            InfoKind.BIO,
+            InfoKind.DESCRIPTION -> {
+                val about = if (kind == InfoKind.BIO) AboutKind.ARTIST else AboutKind.ALBUM
+                saveDescription(about, name, artist.takeIf { about == AboutKind.ALBUM }, Description(value.getString("text"), value.getString("title"), value.getString("pageUrl"), value.getString("language"))) != null
+            }
+            InfoKind.PHOTO,
+            InfoKind.COVER -> {
+                val photo = kind == InfoKind.PHOTO
+                val cacheKind = if (photo) MusicInfoCache.Kind.ARTIST_PHOTO else MusicInfoCache.Kind.COVER
+                val cacheKey = if (photo) photoKey(name) else coverKey(name, artist.orEmpty())
+                val key = if (photo) DownloadKeys.photo(name) else DownloadKeys.cover(name, artist.orEmpty())
+                val bytes = brainz.linkedImage(value.getString("url"))?.takeIf(DownloadedImage::decodes)
+                    ?: return@withContext false
+                deletedDownloads.commitIfAllowed(key) {
+                    val file = cache.putFile(cacheKind, cacheKey, bytes, "img", value.toString())
+                    note(cacheKind, cacheKey, file, written = true)
+                    true
+                } == true
+            }
+            InfoKind.LYRICS -> error("Lyrics use the lyrics repository")
+        }
+    }
 
     suspend fun suppressArtist(name: String) {
         deletedDownloads.mark(DownloadKeys.artist(name))

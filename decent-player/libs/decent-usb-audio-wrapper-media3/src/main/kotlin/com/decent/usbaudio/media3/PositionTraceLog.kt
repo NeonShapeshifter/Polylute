@@ -3,7 +3,7 @@ package com.decent.usbaudio.media3
 import java.util.concurrent.Executor
 
 /**
- * Persistent ring of every native-engine seek and every anchor/offset change (AUD-139), each with
+ * Persistent ring of every renderer anchor/offset change (AUD-139), each with
  * its origin and the positions of Media3 and the engine at that instant.
  *
  * The logcat buffer on the device is 256 KiB and vendor spam fills it in seconds: the forward jumps

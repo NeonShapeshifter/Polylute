@@ -177,6 +177,8 @@ static const char *eventKindName(int kind) {
         case USB_POLICY_IDLE: return "idle";
         case USB_POLICY_SEEK: return "seek";
         case USB_POLICY_RESUME: return "resume";
+        case USB_POLICY_DAC_LOCKED: return "dac-locked";
+        case USB_POLICY_DAC_RECOVERY: return "dac-recovery";
         default: return "?";
     }
 }

@@ -3,7 +3,6 @@ package com.lostf1sh.pixelplayeross.presentation.components.scoped
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -14,8 +13,6 @@ import androidx.compose.ui.unit.lerp
 import com.lostf1sh.pixelplayeross.data.preferences.NavBarStyle
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState
 
-private const val PREDICTIVE_BACK_SWIPE_EDGE_LEFT = 0
-private const val PREDICTIVE_BACK_SWIPE_EDGE_RIGHT = 1
 
 internal data class SheetVisualState(
     val currentBottomPadding: Dp,

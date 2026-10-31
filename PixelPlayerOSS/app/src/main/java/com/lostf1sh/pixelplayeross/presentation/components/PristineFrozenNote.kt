@@ -137,19 +137,3 @@ fun PristineFrozenNote(
         }
     }
 }
-
-/**
- * B16-G5: under the crossfade and speed settings, with a USB DAC connected and the lock off: they work, and they take
- * playback off USB Direct (USB Direct has neither yet). Said plainly, because the readout switches to % and the DAC's own
- * volume and Safety Max's hardware level are not what is playing.
- */
-@Composable
-fun AndroidRouteNote(feature: PristineFrozenFeature, status: AudioStatus, modifier: Modifier = Modifier) {
-    val note = status.androidRouteNote(feature) ?: return
-    Text(
-        text = stringResource(note),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.fillMaxWidth(),
-    )
-}

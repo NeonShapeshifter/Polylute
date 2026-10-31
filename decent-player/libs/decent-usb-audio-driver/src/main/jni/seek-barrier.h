@@ -1,6 +1,5 @@
-// Click-free seek in the native engine (AUD-107): ramp shapes and the silence feed that keeps the
-// DAC's isochronous stream full while the decoder seeks. Pure logic, host-tested; the engine
-// supplies the USB side through SeekFeedOps.
+// Click-free writer seek: ramp shapes and the silence feed keep the isochronous stream full.
+// Pure logic, host-tested; SeekFeedOps supplies the USB operations.
 #ifndef SEEK_BARRIER_H
 #define SEEK_BARRIER_H
 
@@ -64,17 +63,17 @@ typedef enum {
     SEEK_CUT_FADE = 0,
     /** Nothing audible is queued: the ring is discarded before the decoder moves. */
     SEEK_CUT_DISCARD = 1,
-    /** A fresh engine's item start: the previous track's queued tail must play out. */
+    /** A fresh item start: the previous track's queued tail must play out. */
     SEEK_CUT_KEEP_TAIL = 2,
 } SeekCut;
 
 /**
- * [hasSubmittedAudio]: this engine has queued audio. [unplayedFrames]: what is submitted to the DAC
+ * [hasSubmittedAudio]: the writer has queued audio. [unplayedFrames]: what is submitted to the DAC
  * and not yet played (the ring's depth, from `usbQueuedFrames`, which retires what already played).
- * [tailToKeep]: the previous engine's tail was cut with a fade or ended naturally.
+ * [tailToKeep]: the previous item's tail was cut with a fade or ended naturally.
  *
  * The pause state is deliberately not an input (AUD-140). A pause queues its 8 ms fade-out *behind*
- * the ring, so a paused engine, faded or not, still has up to 80 ms of audio at full level in front
+ * the ring, so a paused writer, faded or not, still has up to the ring's lead (128 ms) of audio at full level in front
  * of that fade; only a ring that has played out is silent. Anything unplayed is faded out and the DAC
  * is fed silence while the decoder seeks; the discard is for a ring with nothing left to play.
  */

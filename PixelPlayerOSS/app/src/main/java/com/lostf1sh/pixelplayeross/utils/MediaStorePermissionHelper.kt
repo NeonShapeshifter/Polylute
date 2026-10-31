@@ -92,13 +92,19 @@ object MediaStorePermissionHelper {
 
         return buildList {
             specificVolumes.forEach { volumeName ->
-                add(MediaStore.Audio.Media.getContentUri(volumeName, songId))
+                add(audioItemUri(volumeName, songId))
             }
-            add(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY, songId))
+            add(audioItemUri(MediaStore.VOLUME_EXTERNAL_PRIMARY, songId))
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                add(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL, songId))
+                add(audioItemUri(MediaStore.VOLUME_EXTERNAL, songId))
             }
         }.distinctBy { it.toString() }
+    }
+
+    private fun audioItemUri(volume: String, songId: Long): Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        MediaStore.Audio.Media.getContentUri(volume, songId)
+    } else {
+        ContentUris.withAppendedId(MediaStore.Audio.Media.getContentUri(volume), songId)
     }
 
     fun isMediaStoreItemUriString(contentUriString: String): Boolean {

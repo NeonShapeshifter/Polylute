@@ -158,19 +158,17 @@ class BackAffordanceBoundaryTest {
             "presentation/screens/PlaylistDetailScreen.kt",
             // Internal diagnostics, deliberately not churned.
             "presentation/screens/MaintenanceScreen.kt",
-            // KNOWN RESIDUAL, recorded rather than fixed: these five bars each carry a real action
+            // KNOWN RESIDUAL, recorded rather than fixed: these four bars each carry a real action
             // and still draw their own back, so they show a chevron in Gestures mode. The freeze
             // review scoped them out of mandatory conversion — the brief converts bars that hold
             // only a title and/or Back — and each needs the same substitution Artist and Playlist
             // already had: `onBack = null` plus a `DapOverlayBack` in the surrounding BoxScope.
             "presentation/components/QueueBottomSheet.kt",
             "presentation/components/EditSongSheet.kt",
-            "presentation/components/ReorderPresetsSheet.kt",
             "presentation/components/FileExplorerBottomSheet.kt",
             "presentation/screens/EditTransitionScreen.kt",
-            // The design-system definition and its preview, not a surface.
+            // The design-system definition, not a surface.
             "ui/ds/DapChrome.kt",
-            "ui/ds/DapSurfacePreviews.kt",
         )
         val base = root.resolve("src/main/java/com/lostf1sh/pixelplayeross")
         val offenders = base.walkTopDown()

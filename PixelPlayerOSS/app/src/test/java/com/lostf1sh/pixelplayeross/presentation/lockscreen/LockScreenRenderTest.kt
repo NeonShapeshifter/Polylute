@@ -80,6 +80,19 @@ open class LockScreenRenderTest {
     }
     }
 
+    @Test fun `B44 lock transport puts repeat before shuffle`() {
+        setLock()
+        val bitmap = com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
+        val root = java.io.File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-evidence", System.getenv("B44_VARIANT") ?: "after")
+        root.mkdirs()
+        java.io.File(root, "lock-transport-${palette.background.value}.png").outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        val repeat = compose.onNodeWithContentDescription(s(R.string.lock_transport_repeat)).fetchSemanticsNode().boundsInRoot
+        val shuffle = compose.onNodeWithContentDescription(s(R.string.player_shuffle)).fetchSemanticsNode().boundsInRoot
+        assertTrue("repeat must precede shuffle", repeat.center.x < shuffle.center.x)
+    }
+
     // ── the design's texts ───────────────────────────────────────────────────────────────────────────
 
     @Test

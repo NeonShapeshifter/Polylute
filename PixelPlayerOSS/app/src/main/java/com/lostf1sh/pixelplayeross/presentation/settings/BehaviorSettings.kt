@@ -26,6 +26,7 @@ data class BehaviorSettingsState(
     val folderBackGestureNavigation: Boolean,
     val tapBackgroundClosesPlayer: Boolean,
     val hapticsEnabled: Boolean,
+    val repeatSharedSongsInShuffle: Boolean = false,
 ) {
     companion object {
         fun from(ui: SettingsUiState) = BehaviorSettingsState(
@@ -36,6 +37,7 @@ data class BehaviorSettingsState(
             folderBackGestureNavigation = ui.folderBackGestureNavigation,
             tapBackgroundClosesPlayer = ui.tapBackgroundClosesPlayer,
             hapticsEnabled = ui.hapticsEnabled,
+            repeatSharedSongsInShuffle = ui.repeatSharedSongsInShuffle,
         )
     }
 }
@@ -49,6 +51,7 @@ interface BehaviorSettingsActions {
     fun onFolderBackGestureNavigationChange(value: Boolean)
     fun onTapBackgroundClosesPlayerChange(value: Boolean)
     fun onHapticsEnabledChange(value: Boolean)
+    fun onRepeatSharedSongsInShuffleChange(value: Boolean)
 }
 
 @Composable
@@ -95,6 +98,12 @@ fun BehaviorSettingsScreen(state: BehaviorSettingsState, actions: BehaviorSettin
     }
 
     SettingsSubsection(title = stringResource(R.string.setcat_queue_behaviour)) {
+        SwitchSettingItem(
+            title = stringResource(R.string.setcat_repeat_shared_shuffle_title),
+            subtitle = stringResource(R.string.setcat_repeat_shared_shuffle_desc),
+            checked = state.repeatSharedSongsInShuffle,
+            onCheckedChange = actions::onRepeatSharedSongsInShuffleChange,
+        )
         SwitchSettingItem(
             title = stringResource(R.string.setcat_show_queue_history_title),
             subtitle = stringResource(R.string.setcat_show_queue_history_subtitle),

@@ -65,6 +65,7 @@ val hasPinnedDebugSigning = debugSigningStoreFile.isFile &&
 // (see `bundle { abi.enableSplit }` below), so nothing is lost. Decided from what was asked for, so that
 // `./gradlew assembleRelease` and `./gradlew bundleRelease` each work with no flag. `-Ppixelplayer.enableAbiSplits=`
 // still overrides. Asking for both in one invocation gives the bundle's configuration: build them separately.
+val requestsDebug = gradle.startParameter.taskNames.any { it.contains("debug", ignoreCase = true) }
 val requestsBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
 val enableAbiSplits = providers.gradleProperty("pixelplayer.enableAbiSplits")
     .map { it.toBoolean() }
@@ -120,12 +121,12 @@ android {
         // is what Android, the Device Owner, the authorities (`${applicationId}.provider`) and the media session see; the packages are not.
         // The debug build is another app (`app.polylute.debug`).
         applicationId = "app.polylute"
-        minSdk = 30
+        minSdk = 29
         targetSdk = 37
-        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.1.1, code 3) and
+        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.2.0, code 5) and
         // these are what is used when it holds none.
-        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 3
-        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.1.1"
+        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 5
+        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -214,6 +215,7 @@ android {
             reset()
             if (enableAbiSplits) {
                 include("arm64-v8a", "armeabi-v7a")
+                if (requestsDebug) include("x86_64")
                 isUniversalApk = false
             }
         }
@@ -398,4 +400,20 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // B46-A3: Kotlin's format preflight asks the native transport plan; the unit tests load a host build of it (the driver module's
+    // buildHostTransportPlanLib) instead of the Android library.
+    dependsOn(":decent-usb-audio-driver:buildHostTransportPlanLib")
+    jvmArgs("-Djava.library.path=" + project(":decent-usb-audio-driver").layout.buildDirectory.dir("host-native").get().asFile.absolutePath)
+}
+
+// APK splits choose debug architectures; bundles need the same release boundary explicitly.
+androidComponents.onVariants { variant ->
+    if (variant.buildType != "debug") {
+        variant.packaging.jniLibs.excludes.addAll("lib/x86/**", "lib/x86_64/**")
+    }
+}
+
+// The manifest regression test checks both build types, including on a clean unit-test build.
+tasks.matching { it.name == "testDebugUnitTest" }.configureEach {
+    dependsOn("processReleaseMainManifest")
 }

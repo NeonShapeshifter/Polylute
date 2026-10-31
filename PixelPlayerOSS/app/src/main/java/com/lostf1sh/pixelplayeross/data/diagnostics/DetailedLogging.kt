@@ -55,7 +55,7 @@ object DetailedLogPolicy {
     val TECHNICAL_TAGS: Set<String> = setOf(
         // the DAC, its HID conversation and its EQ
         "DAC_HID", "DacShare", "DacHeadphoneAssociation", "FixedOutputNotice", "UsbDirectAudio", "UsbAudioPermission",
-        "UsbAudioDevice", "UsbAudioSink", "UsbAudioStream", "UsbStreamingThread", "NativeAudioEngine", "PcmFloatCapability",
+        "UsbAudioDevice", "UsbAudioSink", "UsbAudioStream", "UsbStreamingThread", "PcmFloatCapability",
         "DirectDuck", "DirectPresence", "NoiseMark",
         // the volume, and its ceiling
         "SafetyVolume", "SafetyMaxNotice", "Polylute:override-confirm", "ScreenTimeout",

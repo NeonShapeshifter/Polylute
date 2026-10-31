@@ -3,7 +3,7 @@ package com.lostf1sh.pixelplayeross.data.identity
 import java.security.MessageDigest
 
 /**
- * PixelPlayer's own durable identity for a library item.
+ * Polylute's own durable identity for a library item.
  *
  * ## The problem this solves
  *

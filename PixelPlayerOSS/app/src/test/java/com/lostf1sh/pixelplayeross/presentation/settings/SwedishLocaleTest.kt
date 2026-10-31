@@ -45,7 +45,8 @@ class SwedishLocaleTest {
         assertThat(sv.strings.keys - en.strings.keys).isEmpty()
         assertThat(en.strings.keys - sv.strings.keys).isEmpty()
         assertThat(sv.plurals.keys).isEqualTo(en.plurals.keys)
-        assertThat(sv.strings.size).isAtLeast(2404)
+        // B49 archives 352 translatable strings together across locales; 2,346 complete translations remain.
+        assertThat(sv.strings.size).isAtLeast(2346)
     }
 
     @Test

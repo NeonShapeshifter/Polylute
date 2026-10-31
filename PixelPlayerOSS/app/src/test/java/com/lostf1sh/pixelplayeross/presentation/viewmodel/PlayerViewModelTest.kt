@@ -110,6 +110,7 @@ class PlayerViewModelTest {
         mockkStatic(ContextCompat::class)
         val directExecutor = java.util.concurrent.Executor { it.run() }
         every { ContextCompat.getMainExecutor(any()) } returns directExecutor
+        coEvery { mockUserPreferencesRepository.repeatSharedSongsInShuffleFlow } returns flowOf(false)
         coEvery { mockUserPreferencesRepository.favoriteSongIdsFlow } returns flowOf(emptySet())
         coEvery { mockUserPreferencesRepository.songsSortOptionFlow } returns flowOf("SongTitleAZ")
         coEvery { mockUserPreferencesRepository.albumsSortOptionFlow } returns flowOf("AlbumTitleAZ")
@@ -460,6 +461,7 @@ class PlayerViewModelTest {
                 val songs = firstArg<List<Song>>()
                 QueueStateHolder.ShuffleDeal(songs.first(), 0, IntArray(songs.size) { it })
             }
+            every { mockDualPlayerEngine.queueLoadHold } returns com.lostf1sh.pixelplayeross.data.service.player.QueueLoadSkipHold { 0L }
             mockkObject(MediaItemBuilder)
             every { MediaItemBuilder.build(any()) } returns MediaItem.Builder().setMediaId("test").setUri("file:///tmp/test.mp3").build()
             val mockedPlaybackUri = mockk<android.net.Uri>(relaxed = true)
@@ -580,42 +582,29 @@ class PlayerViewModelTest {
         }
 
         @Test
-        fun `shuffleRandomAlbum shuffles the album in the order its page lists it`() = runTest {
-            val album = Album(
-                id = 77L, title = "Album Roulette", artist = "Artist A", year = 2024, dateAdded = 0L, albumArtUriString = null, songCount = 4,
-            )
-            // Disc 2 track 1 comes last on the page; the repository's own order is not the page's.
-            val d2t1 = libraryOf(4)[0].copy(id = "0", title = "Disc two", discNumber = 2, trackNumber = 1)
-            val d1t2 = libraryOf(4)[1].copy(id = "1", title = "B side", discNumber = 1, trackNumber = 2)
-            val d1t1 = libraryOf(4)[2].copy(id = "2", title = "A side", discNumber = 1, trackNumber = 1)
-            val loose = libraryOf(4)[3].copy(id = "3", title = "No track", discNumber = null, trackNumber = 0)
-            every { mockLibraryStateHolder.albums } returns MutableStateFlow(persistentListOf(album))
-            every { mockMusicRepository.getSongsForAlbum(album.id) } returns flowOf(listOf(d2t1, loose, d1t2, d1t1))
-            theLibraryListsThese(listOf(d1t1), everySong = listOf(d1t1))
-
+        fun `B44 albums shuffle loads every album as a complete ordered block`() = runTest {
+            val songs = libraryOf(8).mapIndexed { index, song -> song.copy(albumId = 70L + index / 4, trackNumber = 4 - index % 4) }
+            val albums = (70L..71L).map { Album(id = it, title = "Album $it", artist = "Artist", year = 2024, dateAdded = 0, albumArtUriString = null, songCount = 4) }
+            every { mockLibraryStateHolder.albums } returns MutableStateFlow(albums.toImmutableList())
+            for (album in albums) every { mockMusicRepository.getSongsForAlbum(album.id) } returns flowOf(songs.filter { it.albumId == album.id })
+            theLibraryListsThese(songs)
             playerViewModel.shuffleRandomAlbum()
-            untilShuffled()
-
-            assertEquals(listOf("2", "1", "3", "0"), capturedQueue().map { it.id })
+            letItSettle()
+            for (album in albums) coVerify(exactly = 1) { mockMusicRepository.getSongsForAlbum(album.id) }
+            coVerify(exactly = 0) { mockQueueStateHolder.dealShuffledQueue(any(), any()) }
         }
 
         @Test
-        fun `shuffleRandomArtist shuffles the artist in the order its page lists it, album by album`() = runTest {
-            val artist = Artist(id = 88L, name = "Artist Roulette", songCount = 4)
-            val base = libraryOf(4)
-            // Two albums: 2019 (newer) and 2001. The query returns them by title; the page puts the newer album first.
-            val oldB = base[0].copy(id = "0", title = "Aaa", album = "Old", albumId = 1L, year = 2001, trackNumber = 2)
-            val oldA = base[1].copy(id = "1", title = "Bbb", album = "Old", albumId = 1L, year = 2001, trackNumber = 1)
-            val newA = base[2].copy(id = "2", title = "Ccc", album = "New", albumId = 2L, year = 2019, trackNumber = 1)
-            val newB = base[3].copy(id = "3", title = "Ddd", album = "New", albumId = 2L, year = 2019, trackNumber = 2)
-            every { mockLibraryStateHolder.artists } returns MutableStateFlow(persistentListOf(artist))
-            every { mockMusicRepository.getSongsForArtist(artist.id) } returns flowOf(listOf(oldB, oldA, newA, newB))
-            theLibraryListsThese(listOf(oldB), everySong = listOf(oldB))
-
+        fun `B44 artists shuffle loads every artist in artist page order`() = runTest {
+            val songs = libraryOf(8).mapIndexed { index, song -> song.copy(artistId = 80L + index / 4, trackNumber = 4 - index % 4) }
+            val artists = (80L..81L).map { Artist(it, "Artist $it", 4) }
+            every { mockLibraryStateHolder.artists } returns MutableStateFlow(artists.toImmutableList())
+            for (artist in artists) every { mockMusicRepository.getSongsForArtist(artist.id) } returns flowOf(songs.filter { it.artistId == artist.id })
+            theLibraryListsThese(songs)
             playerViewModel.shuffleRandomArtist()
-            untilShuffled()
-
-            assertEquals(listOf("2", "3", "1", "0"), capturedQueue().map { it.id })
+            letItSettle()
+            for (artist in artists) coVerify(exactly = 1) { mockMusicRepository.getSongsForArtist(artist.id) }
+            coVerify(exactly = 0) { mockQueueStateHolder.dealShuffledQueue(any(), any()) }
         }
 
         @Test

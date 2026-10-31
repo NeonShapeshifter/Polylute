@@ -17,14 +17,11 @@
     <string name="settings_category_library_subtitle">Your music collection</string>
     <string name="settings_category_appearance_title">Appearance</string>
     <string name="settings_category_appearance_subtitle">Theme, player, lyrics and lock screen</string>
-    <string name="settings_category_playback_title">Playback</string>
-    <string name="settings_category_playback_subtitle">Audio behavior, crossfade, and background play</string>
     <string name="settings_category_behavior_title">Behavior</string>
     <string name="settings_category_behavior_subtitle">Gestures and haptics</string>
     <string name="settings_category_backup_title">Backup &amp; Restore</string>
     <string name="settings_category_backup_subtitle">Playlists, settings and profiles</string>
     <string name="settings_category_equalizer_title">Equalizer</string>
-    <string name="settings_category_equalizer_subtitle">Adjust audio frequencies and presets</string>
     <string name="settings_category_device_capabilities_title">Device Capabilities</string>
     <string name="settings_category_device_capabilities_subtitle">Audio specs, codecs, and decoder info</string>
     <string name="settings_category_about_title">About</string>
@@ -32,7 +29,6 @@
 
     <string name="label_on">On</string>
     <string name="label_off">Off</string>
-    <string name="cd_open">Open</string>
     <string name="cd_select_all">Select all</string>
     <string name="cd_clear_selection">Clear selection</string>
     <string name="cd_close_notice">Close notice</string>
@@ -55,7 +51,6 @@
     <string name="setcat_auto_scan_lrc_subtitle">Automatically scan and assign .lrc files in the same folder during library sync.</string>
     <string name="setcat_external_lyrics_title">Online lyrics from LRCLIB</string>
     <string name="setcat_external_lyrics_subtitle">Allow searches and manual fetches from lrclib.net when lyrics are missing locally.</string>
-    <string name="setcat_lyrics_management">Lyrics Management</string>
     <string name="setcat_lyrics_source_priority_label">Lyrics Source Priority</string>
     <string name="setcat_lyrics_source_priority_desc">Choose which source to try first when fetching lyrics.</string>
     <string name="setcat_lyrics_embedded_first">Embedded First</string>
@@ -69,28 +64,14 @@
     <string name="setcat_app_language_desc">Choose the language used across the app interface.</string>
     <string name="setcat_language_system">System default</string>
     <string name="setcat_language_english" translatable="false">English</string>
-    <string name="setcat_language_arabic" translatable="false">العربية</string>
-    <string name="setcat_language_german" translatable="false">Deutsch</string>
     <string name="setcat_language_spanish" translatable="false">Español</string>
     <string name="setcat_language_swedish" translatable="false">Svenska</string>
-    <string name="setcat_language_french" translatable="false">Français</string>
-    <string name="setcat_language_indonesian" translatable="false">Bahasa Indonesia</string>
-    <string name="setcat_language_italian" translatable="false">Italiano</string>
-    <string name="setcat_language_korean" translatable="false">한국어</string>
-    <string name="setcat_language_norwegian_bokmal" translatable="false">Norsk bokmål</string>
-    <string name="setcat_language_russian" translatable="false">Русский</string>
-    <string name="setcat_language_turkish" translatable="false">Türkçe</string>
-    <string name="language_zh_rCN" translatable="false">简体中文</string>
-    <string name="setcat_app_theme_label">App Theme</string>
-    <string name="setcat_app_theme_desc">Switch between light, dark, or follow system appearance.</string>
     <string name="setcat_dap_lock_screen_title">DAP Lock Screen</string>
     <string name="setcat_dap_lock_screen_subtitle">Show the DAP playback screen as the first screen when the device wakes in Dedicated Mode. While it is active, the system swipe lock is not used.</string>
     <string name="lock_screen_open_app">Open app</string>
     <string name="lock_transport_previous">Previous track</string>
     <string name="lock_transport_next">Next track</string>
     <string name="lock_transport_repeat">Repeat</string>
-    <string name="setcat_base_theme_label">Base theme</string>
-    <string name="setcat_base_theme_desc">The app\'s surfaces and text. Applies immediately, and works with every accent.</string>
     <string name="setcat_theme_label">Theme</string>
     <string name="setcat_theme_desc">Surfaces and text across the whole app. Follow System uses Graphite or Light with the device.</string>
     <string name="setcat_theme_option_graphite">Graphite</string>
@@ -98,35 +79,12 @@
     <string name="setcat_theme_option_light">Light</string>
     <string name="setcat_accent_label">Accent</string>
     <string name="setcat_accent_desc">Drives selected controls, progress and active playback states. Warnings and errors keep their own colours.</string>
-    <string name="setcat_theme_light">Light Theme</string>
-    <string name="setcat_theme_dark">Dark Theme</string>
     <string name="setcat_theme_follow_system">Follow System</string>
-    <string name="setcat_smooth_corners_title">Use Smooth Corners</string>
-    <string name="setcat_smooth_corners_subtitle">Use complex shaped corners effectively improving aesthetics but may affect performance on low-end devices</string>
     <string name="setcat_now_playing">Player</string>
     <string name="setcat_player_theme_label">Player colour</string>
     <string name="setcat_show_player_file_info_title">Show player file info</string>
     <string name="setcat_show_player_file_info_subtitle">Show codec, bitrate, and sample rate in the player progress section.</string>
     <string name="setcat_album_art_palette_title">Album Art Palette Style</string>
-    <string name="setcat_carousel_style_label">Carousel Style</string>
-    <string name="setcat_carousel_style_desc">Choose the appearance for the album carousel.</string>
-    <string name="setcat_carousel_no_peek">No Peek</string>
-    <string name="setcat_carousel_one_peek">One Peek</string>
-    <string name="setcat_home_collage">Home Collage</string>
-    <string name="setcat_collage_pattern_label">Collage Pattern</string>
-    <string name="setcat_collage_pattern_desc">Choose the shape arrangement for the Your Mix collage.</string>
-    <string name="setcat_auto_rotate_patterns_title">Auto-Rotate Patterns</string>
-    <string name="setcat_auto_rotate_patterns_subtitle">Cycle through collage patterns each time you visit Home.</string>
-    <string name="setcat_navigation_bar">Navigation Bar</string>
-    <string name="setcat_navbar_style_label">NavBar Style</string>
-    <string name="setcat_navbar_style_desc">Choose the appearance for the navigation bar.</string>
-    <string name="setcat_navbar_style_default">Default</string>
-    <string name="setcat_navbar_style_full_width">Full Width</string>
-    <string name="setcat_compact_mode_title">Compact mode</string>
-    <string name="setcat_compact_mode_subtitle">Show only icons and reduce the navbar height.</string>
-    <string name="setcat_navbar_corner_title">NavBar Corner Radius</string>
-    <string name="setcat_navbar_corner_subtitle">Adjust the corner radius of the navigation bar.</string>
-    <string name="setcat_lyrics_screen">Lyrics Screen</string>
     <string name="setcat_immersive_lyrics_title">Immersive Lyrics</string>
     <string name="setcat_immersive_lyrics_subtitle">While a song plays, hide the controls and enlarge the text after a quiet moment. A touch brings them back.</string>
     <string name="setcat_auto_hide_delay_label">Auto-hide Delay</string>
@@ -149,7 +107,6 @@
     <string name="setcat_keep_playing_desc">If off, removing the app from recents will stop playback.</string>
     <string name="setcat_gain_mode_track">Track</string>
     <string name="setcat_gain_mode_album">Album</string>
-    <string name="setcat_headphones">Headphones</string>
     <string name="setcat_headphones_resume_title">Resume when headphones reconnect</string>
     <string name="setcat_headphones_resume_subtitle">If playback paused because headphones were removed, resume automatically when they connect again.</string>
     <string name="setcat_crossfade_label">Crossfade</string>
@@ -179,11 +136,6 @@
     <string name="setcat_restore_backup_section">Restore Backup</string>
     <string name="setcat_import_backup_title">Import Backup</string>
     <string name="setcat_import_backup_subtitle">Browse or pick from recent backups. Selected data will replace current data.</string>
-    <string name="setcat_experiments">Experiments</string>
-    <string name="setcat_experimental_title">Experimental</string>
-    <string name="setcat_experimental_subtitle">Player UI loading experiments and toggles.</string>
-    <string name="setcat_test_setup_title">Test Setup Flow</string>
-    <string name="setcat_test_setup_subtitle">Launch the onboarding setup screen for testing.</string>
     <string name="setcat_maintenance">Maintenance</string>
     <string name="setcat_force_daily_mix_title">Force Daily Mix Regeneration</string>
     <string name="setcat_force_daily_mix_subtitle">Re-creates the daily mix playlist immediately.</string>
@@ -235,13 +187,10 @@
     <string name="toast_regenerated_palettes_all">Regenerated %1$d album art palettes</string>
     <string name="toast_regenerated_palettes_partial">Regenerated %1$d of %2$d album art palettes</string>
 
-    <string name="dialog_reset_lyrics_title">Reset imported lyrics?</string>
-    <string name="dialog_cannot_undo">This action cannot be undone.</string>
     <string name="confirm">Confirm</string>
     <string name="dialog_rebuild_database_title">Rebuild database?</string>
     <string name="dialog_rebuild_database_message">This will rebuild the local library from MediaStore. Favorites, imported lyrics and your metadata edits are kept. This action cannot be undone.</string>
     <string name="rebuild">Rebuild</string>
-    <string name="sync_indicator_rebuilding">Rebuilding database</string>
     <string name="toast_rebuilding_database">Rebuilding database…</string>
     <string name="dialog_regenerate_daily_mix_title">Regenerate Daily Mix?</string>
     <string name="dialog_regenerate_daily_mix_body">This will discard the current mix and generate a new one based on recent listening habits.</string>
@@ -317,8 +266,8 @@
     <string name="backup_section_playback_history_desc">When each song was played.</string>
     <string name="backup_section_quick_fill">QuickFill genres</string>
     <string name="backup_section_quick_fill_desc">Custom genres and their icons.</string>
-    <string name="backup_section_artist_images">Artist images</string>
-    <string name="backup_section_artist_images_desc">Cached artist image addresses.</string>
+    <string name="backup_section_artist_images">Artist and genre images</string>
+    <string name="backup_section_artist_images_desc">Artist pictures and your own genre images.</string>
     <string name="backup_section_equalizer">Equalizer</string>
     <string name="backup_section_equalizer_desc">Your equalizer presets and audio profiles.</string>
 
@@ -346,12 +295,9 @@
     <string name="backup_error_payload_over_limit">%1$s is %2$d MB, which exceeds the %3$d MB restore safety limit.</string>
     <string name="backup_error_validation_failed">Backup file failed validation: %1$s</string>
     <string name="backup_error_validation_failed_section">Validation failed for %1$s: %2$s</string>
-    <string name="backup_error_decrypted_too_large">The decrypted backup exceeds the %1$d MB safety limit.</string>
-    <string name="backup_error_truncated">The backup file is incomplete.</string>
     <string name="backup_error_snapshot_failed">Could not capture the current state: %1$s</string>
     <string name="backup_error_history_write_failed">The listening history could not be written to storage. The previous history was kept.</string>
     <string name="backup_error_unknown">Unknown error</string>
-    <string name="backup_error_rollback_failed">Restore failed at %1$s: %2$s. Some applied changes could not be rolled back.</string>
     <string name="backup_error_rolled_back">Restore failed at %1$s: %2$s. All applied changes were rolled back.</string>
     <string name="backup_error_unknown_section">an unknown section</string>
     <!-- Backup validation diagnostics. Shown as the detail of a failed or partial restore. -->

@@ -28,13 +28,19 @@ import android.util.Log
  *
  * @author DecentPlayer project
  */
-class UsbAudioDevice private constructor(private val context: Context) {
+class UsbAudioDevice private constructor(private val context: Context) : StreamingDeviceOps {
 
     private var usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
     private var connection: UsbDeviceConnection? = null
     private var currentDevice: UsbDevice? = null
     private var claimedInterface: UsbInterface? = null
     private var claimedControlInterface: UsbInterface? = null
+
+    /**
+     * B48-1: who may touch this device's interfaces right now, and the generation of the stream or attachment they are touching. The singleton is the one object every party
+     * (the sink's playback thread, its writer's recovery, the engine's hand-back, the unplug) already reaches the device through, so it is where the owner lives.
+     */
+    val owner = UsbDeviceOwner(deviceGone = { usbManager.deviceList.values.none(::isCompatibleUsbAudioDevice) }, log = { Log.i(TAG, it) })
 
     /**
      * The playback alt chosen by [openDevice], and its interface number. Every streaming parameter —
@@ -778,7 +784,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * asks of the guard).
      */
     @Synchronized
-    fun restoreLevelAfterReconfigure(reason: String): OpenLevelCheck {
+    override fun restoreLevelAfterReconfigure(reason: String): OpenLevelCheck {
         if (volumeTopology == null) {
             openLevelSettled = true
             return OpenLevelCheck.NO_HARDWARE_VOLUME
@@ -910,7 +916,18 @@ class UsbAudioDevice private constructor(private val context: Context) {
     @Volatile
     var resetLevelListener: ((ResetLevelRestorer.Outcome) -> Unit)? = null
 
+    /**
+     * Gives the DAC back to Android. B48-1: one of the owner's exclusive sections, so a recovery of the stream that is going away has let go of the interfaces first and
+     * claims nothing after this (its generation is no longer the current one); the stream's facts are cleared with it.
+     */
     fun releaseToAndroid() {
+        owner.exclusive("hand-back") {
+            owner.clearStream()
+            handBackToAndroid()
+        }
+    }
+
+    private fun handBackToAndroid() {
         val conn = connection ?: return
         releaseListener?.invoke()
         var owedOutcome: ResetLevelRestorer.Outcome? = null
@@ -1065,6 +1082,37 @@ class UsbAudioDevice private constructor(private val context: Context) {
      */
     internal var busReset: (fd: Int) -> Int = { fd -> runCatching { UsbAudioStream.nativeUsbResetForRebind(fd) }.getOrDefault(-1) }
 
+    /**
+     * B47-A5, step 2 of a locked-up DAC's recovery: [busReset] (the hand-back's reset, `USBDEVFS_RESET`), the interfaces claimed again and the DAC's level restored by the rule of
+     * every open, all through [StreamingBusReset]; what Polylute holds afterwards is recorded as exactly what was claimed (as [releaseToAndroid] does after its reset). The writer thread
+     * calls it with the stream's ring drained and the interface at alt 0; the caller then sets the clock and the alternate setting again (the reset forgets both). True when both interfaces
+     * are held and the level is confirmed.
+     */
+    override fun resetAndReclaimForStreaming(): Boolean {
+        val conn = connection ?: return false
+        val streaming = claimedInterface ?: return false
+        val controlOnRelease = claimedControlInterface
+        val control = controlOnRelease?.takeIf { it.id != streaming.id }
+        val fd = conn.fileDescriptor
+        val result = StreamingBusReset(
+            reset = { busReset(fd) >= 0 },
+            hasStreaming = true,
+            hasControl = control != null,
+            claimStreaming = { runCatching { conn.claimInterface(streaming, true) }.getOrDefault(false) },
+            claimControl = { control != null && runCatching { conn.claimInterface(control, true) }.getOrDefault(false) },
+            restoreLevel = { restoreLevelAfterReconfigure("bus-reset-recovery") },
+        ).run()
+        claimedInterface = if (result.heldStreaming) streaming else null
+        claimedControlInterface = if (result.heldControl) controlOnRelease else null
+        if (result.levelOwed) {
+            levelOwedAfterReset = true
+            openLevelSettled = false
+            openLevelCheck = OpenLevelCheck.UNVERIFIED
+        }
+        Log.w(TAG, "resetAndReclaimForStreaming: ${result.outcome}; Polylute holds streaming=${result.heldStreaming} control=${result.heldControl}; ok=${result.ok}")
+        return result.ok
+    }
+
     fun closeDevice() {
         levelOwedAfterReset = false
         volumeTopology = null
@@ -1098,7 +1146,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
      *   wIndex = (clockSourceEntityId << 8) | audioControlInterfaceNumber
      *   data = 4-byte LE sample rate
      */
-    fun setSampleRate(sampleRateHz: Int): Boolean {
+    override fun setSampleRate(sampleRateHz: Int): Boolean {
         val conn = connection ?: return false
         // AUD-126: the DAC may reset its Feature Unit here; reads until the restore are not Direct's level.
         openLevelSettled = false
@@ -1138,7 +1186,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * Read the current sample rate from the DAC via UAC2 GET_CUR.
      * This verifies whether our SET_CUR actually took effect.
      */
-    fun readSampleRate(): Int {
+    override fun readSampleRate(): Int {
         val conn = connection ?: return -1
         val data = ByteArray(4)
 
@@ -1250,7 +1298,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * UAC2 spec: Clock Source descriptor, CS = 0x02 (CUR_CLOCK_VALID_CONTROL)
      * Returns: true if clock is valid, false if not or on error.
      */
-    fun readClockValid(): Boolean {
+    override fun readClockValid(): Boolean {
         val conn = connection ?: return false
         val data = ByteArray(1)
 
@@ -1285,7 +1333,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * Set the alternate setting on the streaming interface via Java API.
      * This may properly allocate USB bandwidth, which the native ioctl might not.
      */
-    fun setAltSetting(altSetting: Int): Boolean {
+    override fun setAltSetting(altSetting: Int): Boolean {
         val conn = connection ?: return false
         val device = currentDevice ?: return false
         // AUD-126: as for the clock — the level is settled again by restoreLevelAfterReconfigure.
@@ -1300,6 +1348,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 iface.id == selectedStreamingInterfaceNumber &&
                 iface.alternateSetting == altSetting) {
                 val result = conn.setInterface(iface)
+                if (result && altSetting > 0) UsbAudioStream.nativeNoteDataAltSet(conn.fileDescriptor)
                 Log.i(TAG, "setAltSetting($altSetting) via Java API: $result " +
                         "(iface id=${iface.id}, endpoints=${iface.endpointCount})")
                 return result

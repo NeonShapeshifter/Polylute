@@ -81,14 +81,29 @@ ALLOWED_ASSETS = (
 # the second is in `assets/licenses/`, which this scan does not read (`AppAssetsBoundaryTest` and `LicenseDocumentTest` pin that file).
 OLD_PRODUCT_NAMES = ("PixelPlayerOSS",)
 
-DEFAULT_DEBUG_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / "app/src/debug/AndroidManifest.xml"
+# B45: retired second producer. Inspect native binaries as well as dex/resources.
+RETIRED_PRODUCER = (
+    "NativeAudioEngine", "native-audio-engine", "SET_FORCE_NATIVE_ENGINE", "NativeEnginePolicy",
+)
 
+def retired_producer_hits(path):
+    hits = []
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
+            if not (is_inspected(info.filename) or info.filename.endswith(".so")):
+                continue
+            data = archive.read(info)
+            for needle in RETIRED_PRODUCER:
+                if needle.encode() in data or needle.encode("utf-16-le") in data:
+                    hits.append((info.filename, needle))
+    return hits
+
+DEFAULT_DEBUG_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / "app/src/debug/AndroidManifest.xml"
 
 def debug_actions(manifest_path):
     """Every `com.lostf1sh.pixelplayeross.debug.*` action the debug manifest declares."""
     text = pathlib.Path(manifest_path).read_text(encoding="utf-8")
     return sorted(set(re.findall(r'android:name="(com\.lostf1sh\.pixelplayeross\.debug\.[A-Za-z0-9_.]+)"', text)))
-
 
 def debug_source_classes(java_dir):
     """`dir/Name` (the dex spelling, without the `L` and `;`) of every class, object and interface the debug source set declares."""
@@ -102,7 +117,6 @@ def debug_source_classes(java_dir):
             names.add(package.group(1).replace(".", "/") + "/" + m.group(1))
     return sorted(names)
 
-
 def crash_texts(res_dir):
     """The three languages' title and subtitle of the test crash row, read from the resources so they cannot drift."""
     found = []
@@ -112,7 +126,6 @@ def crash_texts(res_dir):
             if m:
                 found.append(m.group(1).replace("\\'", "'").replace("&amp;", "&"))
     return found
-
 
 def needles(debug_manifest, res_dir, debug_java=None):
     java = pathlib.Path(debug_java) if debug_java else pathlib.Path(debug_manifest).parent / "java"
@@ -125,11 +138,9 @@ def needles(debug_manifest, res_dir, debug_java=None):
     result += [("old product name", name) for name in OLD_PRODUCT_NAMES]
     return result
 
-
 def is_inspected(name):
     base = name.rsplit("/", 1)[-1]
     return name.endswith(".dex") or base in ("resources.pb", "resources.arsc", "AndroidManifest.xml")
-
 
 def scan(path, wanted):
     """[(file in the archive, kind, needle)] for every needle found in what the archive ships."""
@@ -146,7 +157,6 @@ def scan(path, wanted):
                     hits.append((info.filename, kind, needle))
     return hits, inspected
 
-
 def missing_required(path, required=REQUIRED):
     """[(kind, needle)] of every required thing the archive's code and resources do not carry (B39-S2)."""
     found = set()
@@ -160,12 +170,10 @@ def missing_required(path, required=REQUIRED):
                     found.add((kind, needle))
     return [item for item in required if item not in found]
 
-
 def asset_of(entry):
     """The path under `assets/` of an archive entry (`assets/x` in an APK, `<module>/assets/x` in a bundle), or None if it is not an asset."""
     m = re.match(r"^(?:[^/]+/)?assets/(.+)$", entry)
     return m.group(1) if m and not entry.endswith("/") else None
-
 
 def unexpected_assets(path, allowed=ALLOWED_ASSETS):
     """[entry] for every file under `assets/` that is not on the allowlist."""
@@ -175,6 +183,13 @@ def unexpected_assets(path, allowed=ALLOWED_ASSETS):
             if asset_of(info.filename) is not None and asset_of(info.filename) not in allowed
         )
 
+def native_abis(path):
+    with zipfile.ZipFile(path) as archive:
+        return sorted({match.group(1) for name in archive.namelist()
+                       if (match := re.match(r"^(?:[^/]+/)?lib/([^/]+)/[^/]+\.so$", name))})
+
+def unexpected_native_abis(path):
+    return sorted(set(native_abis(path)) - {"arm64-v8a", "armeabi-v7a"})
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -187,6 +202,16 @@ def main(argv):
     failed = False
     inspected_total = 0
     for path in args.files:
+        retired = retired_producer_hits(path)
+        for entry, needle in retired:
+            print(f"  FAIL {path}: retired producer {needle} in {entry}")
+        failed = failed or bool(retired)
+        abis = native_abis(path)
+        unexpected_abis = unexpected_native_abis(path)
+        print(f"  native ABIs: {', '.join(abis) or 'none in fixture'}")
+        for abi in unexpected_abis:
+            print(f"  FAIL {path}: debug-only native ABI {abi} in release")
+        failed = failed or bool(unexpected_abis)
         hits, inspected = scan(path, wanted)
         inspected_total += inspected
         print(f"== {path}: {inspected} files read, {len(wanted)} things looked for")
@@ -212,7 +237,6 @@ def main(argv):
         return 2
     print("release surface:", "FAILED" if failed else "clean")
     return 1 if failed else 0
-
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="presentation_batch_f_cd_selected">Selected</string>
-    <string name="presentation_batch_f_refresh_library_title">Refresh Library</string>
-    <string name="presentation_batch_f_refresh_library_subtitle">Scan entire library for new and modified files.</string>
     <string name="presentation_batch_f_full_rescan">Full Rescan</string>
     <string name="presentation_batch_f_rebuild_database">Rebuild database</string>
     <string name="presentation_batch_f_sync_phase_preparing">Preparing sync</string>
@@ -12,18 +10,11 @@
     <string name="presentation_batch_f_sync_phase_scanning_lrc">Scanning lyrics files</string>
     <string name="presentation_batch_f_sync_phase_cleaning_cache">Cleaning album art cache</string>
     <string name="presentation_batch_f_sync_phase_completing">Completing sync</string>
-    <string name="presentation_batch_f_sync_progress_detailed">%1$s • %2$d%% (%3$d/%4$d)</string>
-    <string name="presentation_batch_f_sync_progress_indeterminate">%1$s…</string>
-    <string name="presentation_batch_f_refresh_lyrics_title">Refresh Lyrics</string>
-    <string name="presentation_batch_f_refresh_lyrics_subtitle">Automatically fetch lyrics for all songs using lrclib.</string>
-    <string name="presentation_batch_f_cd_refresh_lyrics">Refresh lyrics</string>
-    <string name="presentation_batch_f_refresh_lyrics_processing">Processing %1$d of %2$d songs</string>
     <string name="presentation_batch_f_save">Save</string>
 
     <string name="presentation_batch_f_new_smart_playlist">New smart playlist</string>
     <string name="presentation_batch_f_new_playlist">New playlist</string>
     <string name="presentation_batch_f_add_songs">Add Songs</string>
-    <string name="presentation_batch_f_cd_back_or_cancel">Back or Cancel</string>
     <string name="presentation_batch_f_next">Next</string>
     <string name="presentation_batch_f_create">Create</string>
     <string name="presentation_batch_f_edit_playlist">Edit Playlist</string>

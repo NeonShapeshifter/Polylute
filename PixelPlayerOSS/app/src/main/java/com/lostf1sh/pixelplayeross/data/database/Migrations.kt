@@ -251,7 +251,7 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
 }
 
 /**
- * Phase 12.1B — a durable, PixelPlayer-owned identity.
+ * Phase 12.1B — a durable, Polylute-owned identity.
  *
  * Adds `songs.stable_key` / `songs.file_size` and `song_engagements.stable_key`. Purely additive:
  * every existing row keeps its id, its play counts, its favourites and its lyrics.
@@ -589,4 +589,52 @@ private fun SupportSQLiteDatabase.repairIndexDrift() {
     // artefact behind is not a migration.
     execSQL("CREATE INDEX IF NOT EXISTS `index_songs_stable_key` ON `songs` (`stable_key`)")
     execSQL("CREATE INDEX IF NOT EXISTS `index_songs_library_item_id` ON `songs` (`library_item_id`)")
+}
+
+/** Discovery is indexed separately; the existing downloaded-content store is untouched. */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+                CREATE TABLE IF NOT EXISTS info_discovery (
+                    `key` TEXT NOT NULL PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    artistKey TEXT NOT NULL,
+                    artistName TEXT NOT NULL,
+                    albumKey TEXT NOT NULL,
+                    albumName TEXT NOT NULL,
+                    songId TEXT NOT NULL,
+                    searchText TEXT NOT NULL,
+                    availability TEXT NOT NULL,
+                    payload TEXT,
+                    sourceBytes INTEGER,
+                    checkedAt INTEGER NOT NULL,
+                    saved INTEGER NOT NULL,
+                    selected INTEGER NOT NULL,
+                    findPending INTEGER NOT NULL,
+                    priority INTEGER NOT NULL,
+                    downloadState TEXT NOT NULL,
+                    attempts INTEGER NOT NULL,
+                    retryAt INTEGER NOT NULL,
+                    albumArtist TEXT NOT NULL
+                )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_info_discovery_artistKey ON info_discovery (artistKey)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_info_discovery_findPending_priority ON info_discovery (findPending, priority)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_info_discovery_downloadState_retryAt ON info_discovery (downloadState, retryAt)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS info_scopes (scope TEXT NOT NULL, itemKey TEXT NOT NULL, PRIMARY KEY(scope, itemKey))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_info_scopes_itemKey ON info_scopes (itemKey)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS info_artist_members (scope TEXT NOT NULL, artistKey TEXT NOT NULL, artistName TEXT NOT NULL, itemKey TEXT NOT NULL, searchText TEXT NOT NULL, PRIMARY KEY(scope, artistKey, itemKey))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_info_artist_members_itemKey ON info_artist_members (itemKey)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS info_queue (id INTEGER NOT NULL PRIMARY KEY, paused INTEGER NOT NULL, currentArtist TEXT NOT NULL, findMeasuredMs INTEGER NOT NULL, findMeasuredCount INTEGER NOT NULL, legacyDropped INTEGER NOT NULL)")
+    }
+}
+
+/** Listener-picked genre images; all prior tables and identities remain intact. */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS genre_images (genre_key TEXT NOT NULL PRIMARY KEY, image_path TEXT NOT NULL, updated_at INTEGER NOT NULL)")
+    }
 }

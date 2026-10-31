@@ -50,12 +50,6 @@ class DirectSignalController(
      */
     private val handoffContextProvider: () -> String? = { null },
     /**
-     * DEBUG ONLY: plan B (see [NativeEngineDebugSwitch]). Off unless given, which is the default (B12a): the
-     * ExoPlayer pipeline carries PRISTINE and no engine exists. It changes which producer carries a pristine
-     * FLAC, never the mode: [mode] does not read it.
-     */
-    private val debugForceNativeEngineProvider: () -> Boolean = { false },
-    /**
      * DEBUG ONLY (B12a-4, see [RateSwitchPrerollSetting]): ms of silence ahead of an item's first frame after a rate
      * change. 0 unless given, which is the default; read where a stream is rebuilt, never on the audio path.
      */
@@ -72,8 +66,6 @@ class DirectSignalController(
     )
 
     override fun handoffContext(): String? = handoffContextProvider()
-
-    override fun debugForceNativeEngine(): Boolean = debugForceNativeEngineProvider()
 
     override fun rateSwitchPrerollMs(): Int = rateSwitchPrerollMsProvider()
 

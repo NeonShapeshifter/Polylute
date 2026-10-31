@@ -136,6 +136,7 @@ fun FullPlayerContent(
         albumArtQuality = fullPlayerSlice.albumArtQuality,
         audioMetadata = fullPlayerSlice.audioMetadata,
         showFileInfo = fullPlayerSlice.showPlayerFileInfo,
+        showBookmarkButton = fullPlayerSlice.showBookmarkButton,
         isFavorite = isFavorite,
         isBuffering = isBuffering,
         isShuffleEnabled = isShuffleEnabled,

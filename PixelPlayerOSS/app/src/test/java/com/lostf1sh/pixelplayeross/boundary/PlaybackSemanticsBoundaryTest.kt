@@ -15,22 +15,6 @@ class PlaybackSemanticsBoundaryTest {
      * AUD-016 as reworked for AUD-128 (written after the code): no seek at the natural end; the clock
      * runs on, the next item's configure waits for Media3's own transition, and so does the cleanup.
      */
-    @Test
-    fun `the native end of file is resolved by Media3's own transition, without a seek`() {
-        assertThat(sink).contains("naturalEnd.onEngineFinished(engine.getPositionUs(), windowOffsetUs, now)")
-        assertThat(sink).contains("directResult = windowOffsetUs + naturalEnd.positionUs(SystemClock.elapsedRealtime())")
-        assertThat(sink).contains("if (nativeEngine?.isRunning == true || naturalEnd.pending) {")
-        assertThat(sink).contains("if (nativeEngine?.isRunning == false && !naturalEnd.pending) {")
-        val cleanup = sink.substringAfter("private fun cleanUpFinishedEngineForItem() {").substringBefore("\n    }\n")
-        // B7-fix (AUD-129): resolution moved to createPendingEngine, which applies the exact offset.
-        assertThat(cleanup).contains("val natural = naturalEnd.pending")
-        assertThat(cleanup).contains("if (natural) return")
-        val create = sink.substringAfter("private fun createPendingEngine(reason: Int) {").substringBefore("\n    }\n")
-        // B7-fix2 (AUD-136): Media3's offset for the new period, adopted via adoptItemOffset.
-        assertThat(create).contains("val next = naturalEnd.onItemTransition(offsetLedger.playingOffsetUs())")
-        assertThat(create).contains("adoptItemOffset(next.offsetUs, reportedBeforeUs, \"NATURAL_END_MEDIA3\")")
-        assertThat(sink).doesNotContain("p.seekTo(plan.itemIndex, plan.endPositionMs)")
-    }
 
     /** AUD-017: one end-of-track timer, the service's; the UI arms it and only reports. */
     @Test

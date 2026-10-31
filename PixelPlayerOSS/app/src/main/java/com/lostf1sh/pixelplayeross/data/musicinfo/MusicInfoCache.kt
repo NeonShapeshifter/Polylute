@@ -31,8 +31,9 @@ class MusicInfoCache(
     private val lock = Any()
     private val index = LinkedHashMap<String, Entry>()
     private var loaded = false
+    private var revision = 0L
 
-    private fun id(kind: Kind, key: String): String = kind.prefix + "_" + sha1(key.trim().lowercase())
+    private fun id(kind: Kind, key: String): String = savedEntryId(kind, key)
 
     private fun indexFile() = File(dir, INDEX)
 
@@ -54,6 +55,7 @@ class MusicInfoCache(
     }
 
     private fun save() {
+        revision++
         runCatching {
             dir.mkdirs()
             val entries = JSONObject()
@@ -76,6 +78,33 @@ class MusicInfoCache(
         if (entry.missingUntilMs > 0) return null
         entry.lastAccessMs = now()
         Hit(entry.file?.let { File(dir, it) }, entry.meta)
+    }
+
+    data class SavedEntry(val id: String, val kind: Kind, val meta: String?)
+
+    /** A single read-only pass. Catalog refresh must not touch LRU times or register claims. */
+    fun savedEntries(): List<SavedEntry> = synchronized(lock) {
+        load()
+        index.values.filter { entry ->
+            entry.missingUntilMs == 0L &&
+                (entry.kind == Kind.ABOUT || entry.file?.let { File(dir, it).isFile } == true)
+        }.map { SavedEntry(it.name, it.kind, it.meta) }
+    }
+
+    /** Constant-size checks also notice removed files or a replaced cache directory. */
+    internal fun savedRevision(): List<Any?> = synchronized(lock) {
+        listOf(revision, fileStamp(dir), fileStamp(indexFile()))
+    }
+
+    private fun fileStamp(file: File): Any? = try {
+        val attributes = java.nio.file.Files.readAttributes(
+            file.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java
+        )
+        listOf(attributes.fileKey()?.toString(), attributes.lastModifiedTime(), attributes.size())
+    } catch (_: java.nio.file.NoSuchFileException) {
+        null
+    } catch (_: java.io.IOException) {
+        Any() // An unreadable stamp cannot authorize a cached catalog result.
     }
 
     /** The last lookup for this key found nothing, and that is still recent. */
@@ -118,6 +147,14 @@ class MusicInfoCache(
             index.values.filter { it.missingUntilMs > 0 }.minByOrNull { it.lastAccessMs }?.let { index.remove(it.name) } ?: break
         }
         save()
+    }
+
+    /** Old failures and real absences were indistinguishable. Drop those marks once at startup. */
+    fun dropMissingMarks() = synchronized(lock) {
+        load()
+        val missing = index.values.filter { it.missingUntilMs > 0L }.map { it.name }
+        for (name in missing) index.remove(name)
+        if (missing.isNotEmpty()) save()
     }
 
     /** Repair only unreadable images; never age out a working downloaded picture. */
@@ -169,6 +206,7 @@ class MusicInfoCache(
 
     /** "Delete downloaded data": everything, the index included. Returns the bytes freed. */
     fun clear(): Long = synchronized(lock) {
+        revision++
         load()
         val freed = index.values.sumOf { it.bytes }
         index.clear()
@@ -197,7 +235,12 @@ class MusicInfoCache(
         const val MISSING_TTL_MS = 30L * 24 * 60 * 60 * 1000
         private const val MAX_MISSING_MARKS = 3_000
 
+        internal fun savedEntryId(kind: Kind, key: String): String =
+            kind.prefix + "_" + sha1(key.trim().lowercase())
+
         private fun sha1(value: String): String =
-            MessageDigest.getInstance("SHA-1").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("SHA-1").digest(value.toByteArray()).joinToString("") {
+                (it.toInt() and 255).toString(16).padStart(2, '0')
+            }
     }
 }

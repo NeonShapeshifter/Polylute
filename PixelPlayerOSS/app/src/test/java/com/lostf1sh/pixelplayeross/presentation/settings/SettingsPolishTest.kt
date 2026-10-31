@@ -212,10 +212,8 @@ class SettingsPolishTest {
             "presentation_batch_f_exp_visual_quality",
             "presentation_batch_f_exp_screen_title",
         )
-        // The shipped languages (en, es, sv) are in the source set; the ten unbuilt ones (B14-4) are kept under
-        // translations-unbuilt/ and must not carry the dead strings back in when one of them is brought back.
-        val locales = listOf("src/main/res/values", "src/main/res/values-es", "src/main/res/values-sv") +
-            listOf("ar", "de", "fr", "in", "it", "ko", "nb", "ru", "tr", "zh-rCN").map { "translations-unbuilt/values-$it" }
+        // B49: the ten unbuilt languages live in the workspace archive. Check all three shipped locales here.
+        val locales = listOf("src/main/res/values", "src/main/res/values-es", "src/main/res/values-sv")
         locales.forEach { locale ->
             val text = resourceFile("app/$locale/strings_presentation_batch_f.xml").readText()
             removed.forEach { key ->

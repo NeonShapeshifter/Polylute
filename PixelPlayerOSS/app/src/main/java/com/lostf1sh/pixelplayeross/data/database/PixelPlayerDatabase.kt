@@ -7,6 +7,11 @@ import timber.log.Timber
 
 @Database(
     entities = [
+        com.lostf1sh.pixelplayeross.data.offline.InfoDiscovery::class,
+        com.lostf1sh.pixelplayeross.data.offline.InfoScope::class,
+        com.lostf1sh.pixelplayeross.data.offline.InfoQueue::class,
+        com.lostf1sh.pixelplayeross.data.offline.InfoArtistMember::class,
+        GenreImageEntity::class,
         AlbumArtThemeEntity::class,
         SearchHistoryEntity::class,
         SongEntity::class,
@@ -26,10 +31,11 @@ import timber.log.Timber
         com.lostf1sh.pixelplayeross.data.collections.SmartCollectionEntity::class,
         com.lostf1sh.pixelplayeross.data.collections.SmartCollectionRuleEntity::class
     ],
-    version = 13,
+    version = 15,
     exportSchema = true
 )
 abstract class PixelPlayerDatabase : RoomDatabase() {
+    abstract fun musicInfoDiscoveryDao(): com.lostf1sh.pixelplayeross.data.offline.MusicInfoDiscoveryDao
     abstract fun albumArtThemeDao(): AlbumArtThemeDao
     abstract fun searchHistoryDao(): SearchHistoryDao
     abstract fun musicDao(): MusicDao

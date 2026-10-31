@@ -2,13 +2,17 @@
 
 #include <string.h>
 
+#include "usb-pcm-packetizer.h"  // the named lengths and usbFramesForMs only: this file links without the packetizer
+
 // C headers only: the host test is built without the C++ standard library.
 
-int seekFadeOutFrames(int sampleRate) { return sampleRate * 8 / 1000; }     // 8 ms
-int seekFadeInFrames(int sampleRate) { return sampleRate * 15 / 1000; }     // 15 ms
-// Half the 80-URB ring: the depth that keeps streaming glitch-free, halved because nothing but
-// silence is being queued. It bounds how long new audio can wait behind silence after the seek.
-int seekSilenceLeadFrames(int sampleRate) { return sampleRate * 40 / 1000; }
+// The lengths are the transport plan's (usb-pcm-packetizer.h, B46-A5): the writer reads them from its plan, these functions give
+// the same numbers to the host test of the ramps.
+int seekFadeOutFrames(int sampleRate) { return (int)usbFramesForMs(sampleRate, USB_TRANSPORT_FADE_OUT_MS); }
+int seekFadeInFrames(int sampleRate) { return (int)usbFramesForMs(sampleRate, USB_TRANSPORT_FADE_IN_MS); }
+// USB_TRANSPORT_SILENCE_LEAD_MS (110 ms of the 128-URB ring, B46-B1 / B47-A2): how deep the silence feed keeps the ring. It bounds how
+// long new audio can wait behind silence after the seek.
+int seekSilenceLeadFrames(int sampleRate) { return (int)usbFramesForMs(sampleRate, USB_TRANSPORT_SILENCE_LEAD_MS); }
 
 static int32_t readSample(const uint8_t *p, int bytesPerSample) {
     if (bytesPerSample == 4) {

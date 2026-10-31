@@ -258,7 +258,9 @@ private data class PendingBatchMetadataEdit(
     val discNumber: Int?,
     val replayGainTrackGainDb: String?,
     val replayGainAlbumGainDb: String?,
-    val coverArtUpdate: CoverArtUpdate?
+    val coverArtUpdate: CoverArtUpdate?,
+    val previousSuccess: Int = 0,
+    val previousFailure: Int = 0,
 )
 
 private data class PendingLyricsSave(
@@ -521,6 +523,9 @@ class PlayerViewModel @Inject constructor(
             initialValue = FullPlayerLoadingTweaks()
         )
 
+    val showBookmarkButton: StateFlow<Boolean> = userPreferencesRepository.showBookmarkButtonFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val showPlayerFileInfo: StateFlow<Boolean> = userPreferencesRepository.showPlayerFileInfoFlow
         .stateIn(
             scope = viewModelScope,
@@ -552,7 +557,7 @@ class PlayerViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = LyricsSourcePreference.EMBEDDED_FIRST
+            initialValue = LyricsSourcePreference.LOCAL_FIRST
         )
 
     /**
@@ -663,6 +668,9 @@ class PlayerViewModel @Inject constructor(
     private var pendingMetadataEdit: PendingMetadataEdit? = null
     private var pendingBatchMetadataEdit: PendingBatchMetadataEdit? = null
     private var pendingLyricsSave: PendingLyricsSave? = null
+    private data class Android10Consent(val retry: suspend () -> Unit, val declined: suspend () -> Unit)
+    private var pendingAndroid10Delete: Android10Consent? = null
+
     private var pendingDeleteSong: Song? = null
     private var pendingDeleteCallback: ((Boolean) -> Unit)? = null
 
@@ -1397,7 +1405,8 @@ class PlayerViewModel @Inject constructor(
         val isBluetoothEnabled: Boolean = false,
         val bluetoothName: String? = null,
         /** B41: two lines of synced lyrics under the cover. */
-        val lyricsUnderCover: Boolean = true
+        val lyricsUnderCover: Boolean = true,
+        val showBookmarkButton: Boolean = true,
     )
 
     private val fullPlayerSlicePart1 = combine(
@@ -1446,8 +1455,9 @@ class PlayerViewModel @Inject constructor(
 
     val fullPlayerSlice: StateFlow<FullPlayerSlice> = combine(
         fullPlayerSlicePart1,
-        fullPlayerSlicePart2
-    ) { p1, p2 ->
+        fullPlayerSlicePart2,
+        showBookmarkButton,
+    ) { p1, p2, bookmark ->
         FullPlayerSlice(
             currentSongArtists = p1.currentSongArtists,
             lyricsSyncOffset = p1.lyricsSyncOffset,
@@ -1459,7 +1469,8 @@ class PlayerViewModel @Inject constructor(
             isImmersiveTemporarilyDisabled = p2.isImmersiveTemporarilyDisabled,
             isBluetoothEnabled = p2.isBluetoothEnabled,
             bluetoothName = p2.bluetoothName,
-            lyricsUnderCover = p2.lyricsUnderCover
+            lyricsUnderCover = p2.lyricsUnderCover,
+            showBookmarkButton = bookmark,
         )
     }
         .distinctUntilChanged()
@@ -1655,37 +1666,43 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    /** Albums > Shuffle picks an album and shuffles it: the album as its page lists it (disc, track), random on top. */
-    fun shuffleRandomAlbum() {
-        viewModelScope.launch {
-            val allAlbums = libraryStateHolder.albums.value
-            if (allAlbums.isNotEmpty()) {
-                val randomAlbum = allAlbums.random()
-                val albumSongs = SourceOrder.albumPage(musicRepository.getSongsForAlbum(randomAlbum.id).first())
-                if (albumSongs.isNotEmpty()) {
-                    playSongsShuffled(
-                        albumSongs, randomAlbum.title, startAtZero = true,
-                        source = ListenSource(ListenSourceKind.ALBUM, randomAlbum.id.toString()),
-                    )
-                }
-            }
+    /** The random choice is the order of complete blocks, never the order inside one. */
+    fun shuffleRandomAlbum() = shuffleSourceBlocks(R.string.shuffle_all_albums) {
+        libraryStateHolder.albums.value.map { album ->
+            ListenSource(ListenSourceKind.ALBUM, album.id.toString()) to musicRepository.getSongsForAlbum(album.id).first()
         }
     }
 
-    /** Artists > Shuffle picks an artist and shuffles it: the artist as its page lists it (album by album), random on top. */
-    fun shuffleRandomArtist() {
-        viewModelScope.launch {
-            val allArtists = libraryStateHolder.artists.value
-            if (allArtists.isNotEmpty()) {
-                val randomArtist = allArtists.random()
-                val artistSongs = SourceOrder.artistPage(musicRepository.getSongsForArtist(randomArtist.id).first())
-                if (artistSongs.isNotEmpty()) {
-                    playSongsShuffled(
-                        artistSongs, randomArtist.name, startAtZero = true,
-                        source = ListenSource(ListenSourceKind.ARTIST, randomArtist.id.toString()),
-                    )
-                }
+    fun shuffleRandomArtist() = shuffleSourceBlocks(R.string.shuffle_all_artists) {
+        libraryStateHolder.artists.value.map { artist ->
+            ListenSource(ListenSourceKind.ARTIST, artist.id.toString()) to musicRepository.getSongsForArtist(artist.id).first()
+        }
+    }
+
+    fun shuffleRandomGenre() = shuffleSourceBlocks(R.string.shuffle_all_genres) {
+        musicRepository.getGenres().first().map { genre ->
+            ListenSource(ListenSourceKind.GENRE, genre.id) to musicRepository.getMusicByGenre(genre.name).first()
+        }
+    }
+
+    private fun shuffleSourceBlocks(
+        @androidx.annotation.StringRes title: Int,
+        load: suspend () -> List<Pair<ListenSource, List<Song>>>,
+    ) {
+        cancelPendingFullQueuePlayback()
+        val requestToken = fullQueuePlaybackToken
+        fullQueuePlaybackJob = viewModelScope.launch {
+            val queue = withContext(Dispatchers.IO) {
+                val repeatShared = userPreferencesRepository.repeatSharedSongsInShuffleFlow.first()
+                blockQueue(load().map { SourceSongBlock(it.first, it.second) }, repeatSharedSongs = repeatShared)
             }
+            throwIfFullQueuePlaybackRequestIsStale(requestToken)
+            val songs = hydrateSongsIfNeeded(queue.songs)
+            throwIfFullQueuePlaybackRequestIsStale(requestToken)
+            if (songs.isEmpty()) return@launch
+            // The ordinary staged loader publishes the first window and the rest once each.
+            // Explicit false also overrides persistent shuffle for this already-ordered queue.
+            internalPlaySongs(songs, songs.first(), context.getString(title), shuffle = false, source = queue.source)
         }
     }
 
@@ -3784,8 +3801,11 @@ class PlayerViewModel @Inject constructor(
                         windowFirstId = firstItems.first().mediaId,
                         windowLastId = firstItems.last().mediaId,
                         buildItems = { range ->
-                            withContext(Dispatchers.Default) {
-                                List(range.count()) { offset -> buildPlaybackMediaItem(songsToPlay[range.first + offset], playlistId) }
+                            // B47-A1: in slices, with a pause between them, on a background thread of its own (QueueLoadPlanning.kt)
+                            withContext(QueueBuildDispatcher.dispatcher) {
+                                buildInSlices(range) { slice ->
+                                    List(slice.count()) { offset -> buildPlaybackMediaItem(songsToPlay[slice.first + offset], playlistId) }
+                                }
                             }
                         },
                         hold = loadHold,
@@ -4040,24 +4060,8 @@ class PlayerViewModel @Inject constructor(
         dualPlayerEngine.setPlayOrder(order)
     }
 
-    private fun buildPlaybackMediaItem(song: Song, playlistId: String? = null): MediaItem {
-        val baseItem = MediaItemBuilder.build(song)
-        if (playlistId == null) {
-            return baseItem
-        }
-
-        val mergedExtras = Bundle(baseItem.mediaMetadata.extras ?: Bundle()).apply {
-            putString("playlistId", playlistId)
-        }
-
-        return baseItem.buildUpon()
-            .setMediaMetadata(
-                baseItem.mediaMetadata.buildUpon()
-                    .setExtras(mergedExtras)
-                    .build()
-            )
-            .build()
-    }
+    /** B47-A1: one pass (the playlist id goes into the item's extras as they are built); it used to build the item, copy its 13 extras and build it again for every song of a playlist. */
+    private fun buildPlaybackMediaItem(song: Song, playlistId: String? = null): MediaItem = MediaItemBuilder.build(song, playlistId)
 
     /**
      * Plays all selected songs, preserving their selection order.
@@ -4355,44 +4359,50 @@ class PlayerViewModel @Inject constructor(
                 return@launch
             }
 
-            var successCount = 0
-            deletableSongs.forEach { song ->
-                val success = metadataEditStateHolder.deleteSong(song)
-                if (success) {
-                    detachDeletedSongFromPlayback(song)
-                    removeSong(song)
-                    successCount++
-                }
-            }
-
-            when {
-                successCount == deletableSongs.size && skippedCount == 0 ->
-                    _toastEvents.emit(
-                        context.resources.getQuantityString(R.plurals.n_files_deleted, successCount, successCount),
-                    )
-                successCount == deletableSongs.size && skippedCount > 0 ->
-                    _toastEvents.emit(
-                        context.getString(
-                            R.string.player_batch_delete_files_deleted_skipped_format,
-                            successCount,
-                            skippedCount,
-                        ),
-                    )
-                successCount > 0 ->
-                    _toastEvents.emit(
-                        context.getString(
-                            R.string.player_batch_delete_partial_format,
-                            successCount,
-                            deletableSongs.size,
-                        ),
-                    )
-                else ->
-                    _toastEvents.emit(context.getString(R.string.player_delete_files_failed))
-            }
-
-            multiSelectionStateHolder.clearSelection()
-            onComplete()
+            deleteConfirmedBatch(deletableSongs, skippedCount, onComplete)
         }
+    }
+
+    private suspend fun deleteConfirmedBatch(
+        songs: List<Song>,
+        skippedCount: Int,
+        onComplete: () -> Unit,
+        previouslyDeleted: Int = 0,
+        originalTotal: Int = songs.size,
+    ) {
+        var successCount = previouslyDeleted
+        for ((index, song) in songs.withIndex()) {
+            val success = try {
+                metadataEditStateHolder.deleteSong(song)
+            } catch (error: android.app.RecoverableSecurityException) {
+                if (android.os.Build.VERSION.SDK_INT != android.os.Build.VERSION_CODES.Q) throw error
+                val completed = successCount
+                pendingAndroid10Delete = Android10Consent(
+                    retry = { deleteConfirmedBatch(songs.drop(index), skippedCount, onComplete, completed, originalTotal) },
+                    declined = {
+                        _toastEvents.emit(context.getString(R.string.player_deletion_cancelled))
+                        multiSelectionStateHolder.clearSelection()
+                        onComplete()
+                    },
+                )
+                _deletePermissionRequest.emit(error.userAction.actionIntent.intentSender)
+                return
+            }
+            if (success) {
+                detachDeletedSongFromPlayback(song)
+                removeSong(song)
+                successCount++
+            }
+        }
+        val message = when {
+            successCount == originalTotal && skippedCount == 0 -> context.resources.getQuantityString(R.plurals.n_files_deleted, successCount, successCount)
+            successCount == originalTotal -> context.getString(R.string.player_batch_delete_files_deleted_skipped_format, successCount, skippedCount)
+            successCount > 0 -> context.getString(R.string.player_batch_delete_partial_format, successCount, originalTotal)
+            else -> context.getString(R.string.player_delete_files_failed)
+        }
+        _toastEvents.emit(message)
+        multiSelectionStateHolder.clearSelection()
+        onComplete()
     }
 
     private suspend fun showMultiDeleteConfirmation(activity: Activity, count: Int): Boolean {
@@ -4462,21 +4472,39 @@ class PlayerViewModel @Inject constructor(
                 return@launch
             }
 
-            val success = songRemovalStateHolder.deleteSongFile(song)
-            if (success) {
-                _toastEvents.emit(context.getString(R.string.player_file_deleted))
-                detachDeletedSongFromPlayback(song)
-                removeSong(song)
-                onResult(true)
-            } else {
-                _toastEvents.emit(context.getString(R.string.player_delete_file_not_found))
-                onResult(false)
-            }
+            deleteConfirmedSong(song, onResult)
         }
+    }
+
+    private suspend fun deleteConfirmedSong(song: Song, onResult: (Boolean) -> Unit) {
+        val success = try {
+            songRemovalStateHolder.deleteSongFile(song)
+        } catch (error: android.app.RecoverableSecurityException) {
+            if (android.os.Build.VERSION.SDK_INT != android.os.Build.VERSION_CODES.Q) throw error
+            pendingAndroid10Delete = Android10Consent(
+                retry = { deleteConfirmedSong(song, onResult) },
+                declined = { onResult(false) },
+            )
+            _deletePermissionRequest.emit(error.userAction.actionIntent.intentSender)
+            return
+        }
+        if (success) {
+            _toastEvents.emit(context.getString(R.string.player_file_deleted))
+            detachDeletedSongFromPlayback(song)
+            removeSong(song)
+        } else {
+            _toastEvents.emit(context.getString(R.string.player_delete_file_not_found))
+        }
+        onResult(success)
     }
 
     /** Called from the UI after the user approves or denies the MediaStore delete request. */
     fun onDeletePermissionResult(granted: Boolean) {
+        pendingAndroid10Delete?.let { consent ->
+            pendingAndroid10Delete = null
+            viewModelScope.launch { if (granted) consent.retry() else consent.declined() }
+            return
+        }
         val batchSongs = pendingBatchDeleteSongs
         if (batchSongs != null) {
             val skippedCount = pendingBatchDeleteSkippedCount
@@ -5005,7 +5033,7 @@ class PlayerViewModel @Inject constructor(
                 emptyList()
             }
 
-            if (localSongsNeedingPermission.isNotEmpty()) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && localSongsNeedingPermission.isNotEmpty()) {
                 val uris = localSongsNeedingPermission.mapNotNull { (_, songId) ->
                     android.provider.MediaStore.Audio.Media.getContentUri(
                         android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY,
@@ -5059,13 +5087,15 @@ class PlayerViewModel @Inject constructor(
         discNumber: Int?,
         replayGainTrackGainDb: String?,
         replayGainAlbumGainDb: String?,
-        coverArtUpdate: CoverArtUpdate?
+        coverArtUpdate: CoverArtUpdate?,
+        previousSuccess: Int = 0,
+        previousFailure: Int = 0,
     ) {
-        var successCount = 0
-        var failureCount = 0
+        var successCount = previousSuccess
+        var failureCount = previousFailure
         val previousAlbumArts = mutableSetOf<String?>()
 
-        songs.forEach { song ->
+        songs.forEachIndexed { index, song ->
             previousAlbumArts.add(song.albumArtUriString)
 
             val result = metadataEditStateHolder.saveMetadata(
@@ -5084,6 +5114,15 @@ class PlayerViewModel @Inject constructor(
                 coverArtUpdate = coverArtUpdate
             )
 
+            result.permissionIntentSender?.let { sender ->
+                pendingBatchMetadataEdit = PendingBatchMetadataEdit(
+                    songs.drop(index), title, artist, album, albumArtist, composer, genre, lyrics,
+                    trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate,
+                    successCount, failureCount,
+                )
+                _writePermissionRequest.emit(sender)
+                return
+            }
             if (result.success && result.updatedSong != null) {
                 successCount++
                 val updatedSong = result.updatedSong
@@ -5158,7 +5197,7 @@ class PlayerViewModel @Inject constructor(
         val message = when {
             failureCount == 0 -> context.getString(R.string.batch_edit_success, successCount)
             successCount == 0 -> context.getString(R.string.batch_edit_failed)
-            else -> context.getString(R.string.batch_edit_partial_success, successCount, songs.size)
+            else -> context.getString(R.string.batch_edit_partial_success, successCount, songs.size + previousSuccess + previousFailure)
         }
         _toastEvents.emit(message)
     }
@@ -5236,7 +5275,9 @@ class PlayerViewModel @Inject constructor(
                     batchMetadata.discNumber,
                     batchMetadata.replayGainTrackGainDb,
                     batchMetadata.replayGainAlbumGainDb,
-                    batchMetadata.coverArtUpdate
+                    batchMetadata.coverArtUpdate,
+                    batchMetadata.previousSuccess,
+                    batchMetadata.previousFailure,
                 )
             }
             return
@@ -5363,6 +5404,13 @@ class PlayerViewModel @Inject constructor(
             newReplayGainAlbumGainDb = newReplayGainAlbumGainDb,
             coverArtUpdate = coverArtUpdate
         )
+
+        result.permissionIntentSender?.let { sender ->
+            pendingMetadataEdit = PendingMetadataEdit(song, newTitle, newArtist, newAlbum, newAlbumArtist, newComposer,
+                newGenre, newLyrics, newTrackNumber, newDiscNumber, newReplayGainTrackGainDb, newReplayGainAlbumGainDb, coverArtUpdate)
+            _writePermissionRequest.emit(sender)
+            return
+        }
 
         Timber.tag("PlayerViewModel").e("METADATA_EDIT_VM: Result success=${result.success}")
 
@@ -5561,19 +5609,19 @@ class PlayerViewModel @Inject constructor(
                 val songs = withContext(Dispatchers.IO) {
                     musicRepository.getAllSongsOnce()
                 }
-                Timber.tag("PixelPlayerBenchmark").i(
+                Timber.tag("PolyluteBenchmark").i(
                     "prepare player attempt=$attempt controllerReady=$controllerReady songs=${songs.size}"
                 )
                 if (controllerReady && songs.isNotEmpty()) {
                     playSongs(songs, songs.first(), "Benchmark Player")
                     delay(700L)
                     collapsePlayerSheet()
-                    Timber.tag("PixelPlayerBenchmark").i("Benchmark player prepared with ${songs.first().title}")
+                    Timber.tag("PolyluteBenchmark").i("Benchmark player prepared with ${songs.first().title}")
                     return@launch
                 }
                 delay(500L)
             }
-            Timber.tag("PixelPlayerBenchmark").w("Unable to prepare benchmark player from library")
+            Timber.tag("PolyluteBenchmark").w("Unable to prepare benchmark player from library")
         }
     }
 
@@ -5682,7 +5730,7 @@ class PlayerViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = true
+            initialValue = false
         )
 
     fun toggleGenreViewMode() {

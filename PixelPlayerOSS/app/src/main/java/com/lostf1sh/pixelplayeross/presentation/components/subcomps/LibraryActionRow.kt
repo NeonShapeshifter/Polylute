@@ -36,14 +36,12 @@ import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Shuffle
-import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Dataset
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
@@ -77,7 +75,7 @@ import com.lostf1sh.pixelplayeross.ui.theme.RoundedSans
 import java.io.File
 import androidx.compose.ui.res.stringResource
 
-val defaultShape = RoundedCornerShape(26.dp)
+
 val genHeight = 42.dp
 
 @OptIn(ExperimentalMaterial3Api::class)

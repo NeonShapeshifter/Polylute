@@ -3,10 +3,12 @@
  * @brief Direct USB audio output context for bit-perfect playback.
  *
  * Pipeline architecture:
- * - Pre-allocated ring buffer of 64 URB slots
- * - Each URB = 8 ISO packets (1ms of audio at high-speed)
+ * - Pre-allocated ring buffer of USB_TRANSPORT_RING_URBS (80) URB slots
+ * - Each URB = USB_PCM_PACKETS_PER_URB (8) ISO packets (1ms of audio at high-speed)
  * - URBs complete in FIFO order (ISO_ASAP guarantees this)
  * - No malloc/free during streaming — avoids MTE pointer tag issues
+ * - Every number of the transport (ring depth, slot sizes, thresholds, silence, fades) comes from the UsbTransportPlan
+ *   (usb-pcm-packetizer.h) the stream is created with, held in UsbAudioContext::plan
  */
 
 #pragma once
@@ -21,20 +23,13 @@
 #include "usb-pcm-packetizer.h"
 
 /**
- * Number of isochronous packets per URB submission.
- * At USB high-speed (125us microframes), 8 packets = 1ms of audio.
+ * Capacity of the context's per-URB arrays: the ring the plan describes (USB_TRANSPORT_RING_URBS, usb-pcm-packetizer.h; 80 URBs of
+ * about 1 ms, which empirically gives the xHCI host controller enough scheduling headroom to maintain continuous isochronous output
+ * without underruns on commodity Android SoCs: smaller pipelines, under ~64 URBs at 44.1 kHz, trigger glitches as the ring drains
+ * faster than the URB submit/reap cycle can refill it). Runtime code reads the depth from `ctx->plan.ringUrbs`; this name is only
+ * the size of the arrays and the plan refuses a policy that asks for more.
  */
-#define USB_AUDIO_PACKETS_PER_URB 8
-
-/**
- * Number of URBs in the ring buffer.
- * 80 URBs ≈ 80 ms of in-flight audio at 44.1 kHz, which empirically gives
- * the xHCI host controller enough scheduling headroom to maintain
- * continuous isochronous output without underruns on commodity Android
- * SoCs. Smaller pipelines (< ~64 URBs at 44.1 kHz) trigger glitches as
- * the ring drains faster than the URB submit/reap cycle can refill it.
- */
-#define USB_AUDIO_NUM_URBS 80
+#define USB_AUDIO_NUM_URBS USB_TRANSPORT_RING_URBS
 
 // URB slot size: usbUrbSlotBytes(maxPacketSize) (usb-pcm-packetizer.h). The fixed 4096 assumed at most
 // 384 kHz and was overrun above ~512 kHz (audit 2).
@@ -99,7 +94,7 @@ struct BarrierTarget {
     int discardErrno{0};
 };
 
-#define USB_AUDIO_MAX_BARRIER_TARGETS 160
+// USB_AUDIO_MAX_BARRIER_TARGETS lives in urb-quarantine.h with the quarantine and drain capacities (B46-A1).
 
 /** Frozen target set for one barrier, plus the identity-match outcome. */
 struct BarrierSnapshot {
@@ -134,7 +129,7 @@ struct BarrierSnapshot {
 struct UrbSlot {
     /**
      * The URB struct, heap-allocated with enough trailing space for
-     * USB_AUDIO_PACKETS_PER_URB iso_frame_desc entries.
+     * USB_PCM_PACKETS_PER_URB iso_frame_desc entries.
      */
     struct usbdevfs_urb *urb;
 
@@ -146,13 +141,12 @@ struct UrbSlot {
 };
 
 /**
- * The ExoPlayer pipeline's pause / seek / skip barrier (B9), the counterpart of what the native engine
- * does in its decode thread (AUD-107/123/140): the ring is never cut. What is in it plays out, the real
+ * The ExoPlayer pipeline's pause / seek / skip barrier (B9): the ring is never cut. What is in it plays out, the real
  * continuation of the audio (the next buffer the writer has) is ramped to zero in 8 ms behind it, the
  * DAC is fed silence until the first buffer of the new position, and that buffer fades in over 15 ms.
  *
  * Only the thread that submits PCM touches this (the pipeline's writer, under the sink's stream lock),
- * exactly like the ring indices. The native engine does not use it.
+ * exactly like the ring indices.
  */
 struct PipelineGesture {
     /** Real audio has been submitted on this stream: only then does a gesture have anything to fade. */
@@ -212,6 +206,16 @@ struct UsbAudioContext {
     int32_t bytesPerFrame;
     int32_t maxPacketSize;
 
+    /**
+     * B46-A2: the plan this stream was created with (usb-pcm-packetizer.h). The ring depth, the slot and residual sizes, the
+     * back-pressure thresholds, the silence lead and chunk, the fades and the interval rate all come from here; the context's
+     * `sampleRate`, `bytesPerFrame` and `maxPacketSize` are the inputs it was made from.
+     */
+    UsbTransportPlan plan;
+    /** What the plan was made from, kept for the start-up log and for a rate change on a live stream. */
+    UsbTransportFormat planFormat;
+    UsbTransportEndpoint planEndpoint;
+
     std::atomic<bool> running;
 
     /** Scratch buffer for PCM format conversion (float -> int16/24/32). */
@@ -244,8 +248,8 @@ struct UsbAudioContext {
     int urbsInFlight;
 
     /**
-     * A stopped engine queued its faded-out continuation (AUD-123): a teardown must let the ring
-     * play out before discarding, or it cuts the fade itself. Cleared by the next engine's audio.
+     * The writer queued its faded-out continuation or a natural end: a teardown must let the ring
+     * play out before discarding, or it cuts the fade itself. Cleared by the next live audio.
      */
     bool playOutBeforeDrain;
 
@@ -262,6 +266,22 @@ struct UsbAudioContext {
 
     /** Monotonic ms of the last data URB submitted; 0 before the first (AUD-124 RING_EMPTY). */
     int64_t lastSubmitMs;
+
+    /**
+     * B48-fix1: the next audio the writer submits must find the ring at the plan's resume lead. Set wherever audio starts into a ring that is, or may be, played
+     * out: a stream's start, a recovery's restart (`usbDacRecoveryEnd`), a seek that left nothing audible (`pipelineBeginSeek`). Taken by `primeRingForResume`, which
+     * the resume after a pause also runs (B47-A3): one priming path. `primeWhy` names the start for the log line.
+     */
+    bool primeOwed;
+    const char *primeWhy;
+
+    /**
+     * B48-fix1: the feedback start guard (USB_TRANSPORT_FEEDBACK_START_GUARD_MS). `startGuardPending` is set when the streaming interface (re)starts (a stream's start,
+     * a recovery's restart); the first URB the stream sends afterwards starts the clock (`startGuardUntilMs`, monotonic ms). While either holds, the packetizer is given the
+     * nominal rate whatever the feedback reads (effectiveFpmf); the readings keep feeding the watch, the average and the lock detector. A skip on the cached stream sets neither.
+     */
+    bool startGuardPending;
+    int64_t startGuardUntilMs;
 
     /**
      * B23-P2: the time model of what the ring still holds (see usb-glitch.h, "Output gaps"), and when the last
@@ -286,8 +306,8 @@ struct UsbAudioContext {
     /**
      * URB ownership accounting.
      *
-     * The ring is a fixed array of [USB_AUDIO_NUM_URBS] slots, so the reusable population is
-     * always `USB_AUDIO_NUM_URBS - urbsInFlight` — provided every submission is eventually
+     * The ring is a fixed array of [USB_AUDIO_NUM_URBS] slots, of which the plan uses `plan.ringUrbs`, so the reusable population is
+     * always `plan.ringUrbs - urbsInFlight` — provided every submission is eventually
      * accounted for by a reap or a discard-and-reap. `USBDEVFS_DISCARDURB` only *requests*
      * cancellation: the URB stays kernel-owned until its completion is reaped, so a discard that
      * is never retired would silently shrink the pool. These counters exist to make that visible
@@ -353,12 +373,27 @@ struct UsbAudioContext {
      */
     UsbFeedbackWatch feedbackWatch;
 
+    /** B47-A5: the lock-up detector's run (usb-glitch.h): fed by every feedback reading and every late completion, on the reaping thread. */
+    UsbDacLockWatch dacLock;
+    /** B47-A5: where the recovery's escalation stands for this stream (usb-glitch.h). Only the writer thread touches it. */
+    UsbDacRecoveryPolicy dacPolicy;
+
     /**
      * B41-fix1 (A1b): the DAC's last word, the last reading inside the +-5 % window, whatever the policy made of it. It is what
      * the logs show as `fpmf=` and what `follow` sends. `calibratedFpmf` is the follower: under `auto` it does not take a reading
      * the watch judges implausible, so nothing that reads it can pick up a value the policy is there to refuse.
      */
     double readingFpmf;
+    /** Latest clean Q16.16 reading, including values outside the follower's window. */
+    double liveFpmf;
+    /** Observing the one-shot must not change the existing startup calibration policy. */
+    bool continuousFeedbackSeen;
+    int64_t acceptedAtMs;            // last in-window reading (`readingFpmf`), -1 until one arrives
+    int64_t dataAltSetMs;            // successful data SETINTERFACE, -1 if the caller did not record one
+    bool feedbackOutsideWindow;
+    bool feedbackWindowLogPending;
+    int64_t outsideSinceMs;
+    int64_t windowLogMs[2];
     /** Whether the policy was refusing the feedback (stuck or implausible, under `auto`) after the last reading. */
     bool refusing;
     /**
@@ -370,7 +405,7 @@ struct UsbAudioContext {
     int64_t streamSeq;
 };
 
-// ── Functions accessible from native-audio-engine ──────────────────
+// ── Writer helpers shared with host transport tests ──────────────────
 
 /**
  * Submit PCM data (already in the target bit depth) to the USB pipeline.
@@ -379,6 +414,13 @@ struct UsbAudioContext {
  *         all queued and nothing more will be (AUD-013).
  */
 bool submitPcmToUrbs(UsbAudioContext *ctx, const uint8_t *pcmData, int totalBytes);
+
+/**
+ * B46-A4: the stream's plan as the flat array of usb-pcm-packetizer.h (UsbPlanField), for the diagnostics and for Kotlin's
+ * reading of the queue limits. [prerollMs] asks the same plan for a rate-change pre-roll of that length (0: none); nothing else in
+ * it depends on it.
+ */
+void usbStreamTransportPlan(const UsbAudioContext *ctx, int prerollMs, int64_t out[USB_PLAN_FIELD_COUNT]);
 
 /**
  * Frames queued to the DAC and not yet played: every completion already available is retired
@@ -432,6 +474,57 @@ void usbFeedbackStats(int64_t out[USB_FEEDBACK_STATS_COUNT]);
  */
 size_t usbSecondSummaries(int64_t windowMs, char *out, size_t capacity);
 
+// ── The locked-up DAC (B47-A5) ─────────────────────────────────────────────────────────────────────
+//
+// The native layer DETECTS (usb-glitch.h, UsbDacLockWatch) and exposes what the writer thread needs to act; the steps themselves (a SETINTERFACE
+// cycle, a bus reset) are the Kotlin side's, because they go through UsbAudioDevice and its level restore (B39/B40). All of this is process-wide
+// state or per stream state read from the writer thread; nothing here touches the ring unless the writer asks.
+
+/** Automatic recovery on or off (SET_DAC_RECOVERY in the debug bridge). On by default, in debug and in release; process-only, never persisted. */
+void usbSetDacRecoveryEnabled(bool enabled);
+bool usbDacRecoveryEnabled();
+
+/**
+ * B48-fix1: the feedback start guard on or off (SET_FEEDBACK_START_GUARD in the debug bridge). On by default, in debug and in release; process-only, never persisted.
+ * `follow` never obeys it (that policy is the diagnostic one: it sends what the DAC asks).
+ */
+void usbSetFeedbackStartGuardEnabled(bool enabled);
+bool usbFeedbackStartGuardEnabled();
+
+/** A manual request from the debug bridge (RECOVER_DAC_NOW): 1 or 2, 0 clears. The writer consumes it with [usbTakeManualDacRecovery]. */
+void usbRequestDacRecovery(int step);
+int usbTakeManualDacRecovery();
+
+#define USB_DAC_STATE_COUNT 6
+/**
+ * [locked now (0/1), locks detected in the process, ms the open rail has lasted, its ppm, late completions during it, the step to take now]. The last is the manual request
+ * (RECOVER_DAC_NOW; it bypasses the policy) or else the escalation's decision (usbDacRecoveryDecide) and is 0 almost always; 3 means the steps are used up (already logged; the writer has nothing to do).
+ * Writer thread only, when it is streaming and neither paused nor in a seek: calling it is what lets the policy look.
+ */
+void usbDacLockState(UsbAudioContext *ctx, int64_t out[USB_DAC_STATE_COUNT]);
+
+/**
+ * Step 0 of every recovery step, on the writer thread, after the pause-style fade (the faded tail is queued): lets the tail play out (bounded), then discards what is
+ * left with the seek barrier's own drain (the quarantine rules apply), feedback URB included. The ring is empty and nothing is in flight when it returns true.
+ */
+bool usbDacRecoveryBegin(UsbAudioContext *ctx);
+
+/** After the interface was restarted (and, for step 2, the bus reset and the claims): re-arms the stream as nativeUsbAudioStart does for its feedback, keeping the frame count and the gesture state. */
+bool usbDacRecoveryEnd(UsbAudioContext *ctx);
+
+/** B47-A1: the OUTPUT_GAP_CPU line (who had the CPU), for a gap whose writer sat [runqUs] in the run queue. Called by the gap report; a test calls it directly. */
+void usbReportOutputGapCpu(const UsbAudioContext *ctx, int64_t runqUs, int64_t cpuUs);
+
+/** Host tests: forgets when the last recovery episode began, so the 30 s cooldown of one scenario does not hold back the next. */
+void usbDacRecoveryForgetEpisodes();
+
+/** Process totals: [enabled, locks, step 1 runs, step 1 ok, step 2 runs, step 2 ok, gave up, ms of the last recovery]. */
+#define USB_DAC_RECOVERY_STATS_COUNT 8
+void usbDacRecoveryStats(int64_t out[USB_DAC_RECOVERY_STATS_COUNT]);
+
+/** A step ended, from Kotlin: [result] 0 = it ran, 1 = it failed. Logs `DAC_RECOVERY step=... result=ran|failed`, counts it, puts it in the second ring and starts the policy's verdict clock. */
+void usbNoteDacRecovery(UsbAudioContext *ctx, int step, int result, int64_t elapsedMs);
+
 /** What a seek asks of the pipeline's writer. */
 enum PipelineSeekPlan {
     /** Nothing audible is on its way to the DAC: nothing to fade, no silence to feed. */
@@ -473,7 +566,7 @@ bool pipelineConsumePauseApplied(UsbAudioContext *ctx);
 bool pipelineBeginPause(UsbAudioContext *ctx);
 
 /**
- * A seek or a skip: decides from what is still unplayed (`seekCutFor`, as the engine does), drops what a
+ * A seek or a skip: decides from what is still unplayed (`seekCutFor`), drops what a
  * pause kept, and arms the fade-in of the first audio at the new position. Returns a [PipelineSeekPlan].
  * Repeated seeks coalesce: a ring that already ends in a fade asks for silence only. Writer thread only.
  */
@@ -490,7 +583,7 @@ void pipelineResume(UsbAudioContext *ctx);
 
 /**
  * One step of the silence feed that keeps the DAC's ring from running dry until the first buffer of the
- * new position (`seekFeedSilenceStep`, the engine's own loop body). False when the stream failed.
+ * new position (`seekFeedSilenceStep`). False when the stream failed.
  */
 bool pipelineFeedSilence(UsbAudioContext *ctx);
 
@@ -529,3 +622,6 @@ void observeSubmittedUsbPayload(const UsbAudioContext *ctx,
                                 const uint8_t *payload,
                                 int payloadBytes,
                                 int packetCount);
+
+/** Records the successful data SETINTERFACE on the cold path, before the stream exists. */
+void usbNoteDataAltSet(int fd);

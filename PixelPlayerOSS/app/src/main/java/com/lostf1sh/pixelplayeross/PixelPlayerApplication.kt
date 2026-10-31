@@ -13,6 +13,7 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import com.lostf1sh.pixelplayeross.dap.admin.DapDeviceOwnerController
 import com.lostf1sh.pixelplayeross.data.dac.DacProfileRepository
 import com.lostf1sh.pixelplayeross.data.startup.LegacyCloudDataCleanup
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
@@ -83,6 +84,12 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
     @Inject
     lateinit var brokenLyricsCleanup: dagger.Lazy<com.lostf1sh.pixelplayeross.data.startup.BrokenLyricsCleanup>
 
+    @Inject
+    lateinit var startupMusicInfo: dagger.Lazy<com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository>
+
+    @Inject
+    lateinit var musicInfoDownloads: dagger.Lazy<com.lostf1sh.pixelplayeross.data.offline.MusicInfoDownloads>
+
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -140,6 +147,12 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
         libraryMetadataRepair.get().start(startupScope)
 
         startupScope.launch {
+            runCatching { DapDeviceOwnerController(this@PixelPlayerApplication).restoreMusicAccessOnce() }
+                .onFailure { Timber.tag("DapDeviceOwner").w(it, "Music access was not restored") }
+            runCatching { startupMusicInfo.get().repairAtStartupOnce() }
+                .onFailure { Timber.tag("MusicInfo").w(it, "Music info repair will retry next start") }
+            runCatching { musicInfoDownloads.get().initialize() }
+                .onFailure { Timber.tag("MusicInfo").w(it, "Queue migration will retry next start") }
             runCatching { brokenLyricsCleanup.get().runOnce() }.onFailure { Timber.tag("LyricsRepair").w(it, "Lyrics cleanup will retry next start") }
             // Retire the legacy crossfade-duration preference before anything can read a
             // transition duration, so no screen and no playback path can observe the old key.

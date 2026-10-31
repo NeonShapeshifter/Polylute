@@ -155,7 +155,8 @@ class B27WiringBoundaryTest {
     fun `A5 the output records the seconds where it already looks at the reading and the packets, and nowhere on the PCM path`() {
         val jni = File("../../decent-player/libs/decent-usb-audio-driver/src/main/jni")
         val output = code(text(File(jni, "usb-audio-output.cpp")))
-        assertThat(body(output, "static void handleFeedbackCompletion(UsbAudioContext *ctx)")).contains("usbSecondRingFeedback(&g_secondRing")
+        assertThat(body(output, "static void handleFeedbackCompletion(UsbAudioContext *ctx)")).contains("observeCleanFeedback(ctx, feedbackData(ctx), true)")
+        assertThat(body(output, "static void observeCleanFeedback(")).contains("usbSecondRingFeedback(&g_secondRing")
         assertThat(body(output, "static void checkIsoCompletion(UsbAudioContext *ctx, const struct usbdevfs_urb *c)")).contains("usbSecondRingIso(&g_secondRing")
         // nothing in the packetizer, the converters or the submit
         for (pcm in listOf("usb-pcm-packetizer.cpp", "usb-pcm-convert.cpp")) {

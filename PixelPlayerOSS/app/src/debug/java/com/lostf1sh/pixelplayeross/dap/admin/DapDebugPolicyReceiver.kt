@@ -10,6 +10,7 @@ import android.os.Build
 import android.util.Log
 import com.decent.usbaudio.FeedbackPolicy
 import com.decent.usbaudio.UsbAudioStream
+import com.decent.usbaudio.UsbTransportPlan
 import com.decent.usbaudio.media3.DirectPathTelemetry
 import com.decent.usbaudio.media3.DirectPlaybackPresence
 import com.decent.usbaudio.media3.RateSwitchPreroll
@@ -21,7 +22,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteState
 import com.lostf1sh.pixelplayeross.data.service.player.DualPlayerEngine
-import com.lostf1sh.pixelplayeross.data.service.player.NativeEngineDebugSwitch
 import com.lostf1sh.pixelplayeross.data.service.player.RateSwitchPrerollSetting
 import com.lostf1sh.pixelplayeross.data.service.player.UsbDirectAudioDiagnostics
 import com.lostf1sh.pixelplayeross.data.volume.PristineLockDiagnostic
@@ -268,25 +268,6 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
                 }
                 reportPristineLockOverride(context, intent.getStringExtra(EXTRA_TAG))
             }
-            ACTION_SET_FORCE_NATIVE_ENGINE -> {
-                // B12a plan B. The extra is required: a missing or misspelled one must not read as "off".
-                if (!intent.hasExtra(EXTRA_ENABLED)) {
-                    Log.w(TAG, "SET_FORCE_NATIVE_ENGINE needs --ez enabled true|false; unchanged")
-                } else {
-                    NativeEngineDebugSwitch.shared(context).set(intent.getBooleanExtra(EXTRA_ENABLED, false))
-                }
-                reportForceNativeEngine(context, "set", intent.getStringExtra(EXTRA_TAG))
-            }
-            ACTION_REPORT_FORCE_NATIVE_ENGINE ->
-                reportForceNativeEngine(context, "report", intent.getStringExtra(EXTRA_TAG))
-            // Retired by B12a: the pipeline is the default PRISTINE producer, so there is nothing left to force
-            // and the persisted value is inert. A script that still sends them gets a warning, not a silent no-op.
-            ACTION_SET_PRISTINE_EXOPLAYER_PIPELINE, ACTION_REPORT_PRISTINE_EXOPLAYER_PIPELINE -> {
-                Log.w(TAG, "${intent.action?.substringAfterLast('.')} is retired (B12a): PRISTINE already goes through the " +
-                    "ExoPlayer pipeline by default and the old persisted value is ignored; " +
-                    "SET_FORCE_NATIVE_ENGINE --ez enabled true brings the native engine back")
-                reportForceNativeEngine(context, "retired-action", intent.getStringExtra(EXTRA_TAG))
-            }
             ACTION_SET_USB_WAIT_MODE -> {
                 // AUD-145. The extra is required, like the other switches: a missing one must not read as a mode.
                 when (intent.getStringExtra(EXTRA_MODE)) {
@@ -306,12 +287,44 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
                 // B10-2. Required, like the other switches: a missing or misspelled mode must not read as `follow`.
                 val mode = FeedbackPolicy.parse(intent.getStringExtra(EXTRA_MODE))
                 if (mode == null) {
-                    Log.w(TAG, "SET_FEEDBACK_POLICY needs --es mode follow|nominal|clamp|auto; unchanged")
+                    Log.w(TAG, "SET_FEEDBACK_POLICY needs --es mode follow|nominal|clamp|auto|auto-early; unchanged")
                 } else {
                     runCatching { UsbAudioStream.nativeSetFeedbackPolicy(mode) }
                         .onFailure { Log.w(TAG, "SET_FEEDBACK_POLICY: native layer unavailable", it) }
                 }
                 reportFeedbackPolicy(context, intent.getStringExtra(EXTRA_TAG))
+            }
+            ACTION_SET_DAC_RECOVERY -> {
+                // B47-A5. The extra is required, like the other switches: a missing one must not read as "on" or "off". Process-only.
+                if (!intent.hasExtra(EXTRA_ENABLED)) {
+                    timber.log.Timber.tag(TAG).w("SET_DAC_RECOVERY needs --ez enabled true|false; unchanged")
+                } else {
+                    runCatching { UsbAudioStream.nativeSetDacRecoveryEnabled(intent.getBooleanExtra(EXTRA_ENABLED, true)) }
+                        .onFailure { timber.log.Timber.tag(TAG).w(it, "SET_DAC_RECOVERY: native layer unavailable") }
+                }
+                reportDacRecovery(context, intent.getStringExtra(EXTRA_TAG))
+            }
+            ACTION_SET_FEEDBACK_START_GUARD -> {
+                // B48-fix1. The extra is required, like the other switches: a missing one must not read as "on" or "off". Process-only.
+                if (!intent.hasExtra(EXTRA_ENABLED)) {
+                    timber.log.Timber.tag(TAG).w("SET_FEEDBACK_START_GUARD needs --ez enabled true|false; unchanged")
+                } else {
+                    runCatching { UsbAudioStream.nativeSetFeedbackStartGuardEnabled(intent.getBooleanExtra(EXTRA_ENABLED, true)) }
+                        .onFailure { timber.log.Timber.tag(TAG).w(it, "SET_FEEDBACK_START_GUARD: native layer unavailable") }
+                }
+                reportFeedbackStartGuard(context, intent.getStringExtra(EXTRA_TAG))
+            }
+            ACTION_RECOVER_DAC_NOW -> {
+                // B47-A5. Asks the writer for recovery step 1 (restart the streaming interface) or 2 (bus reset and claims again) at its next look, whatever the
+                // detector says, so the reviewer can test each on the real Melody when it locks up. Not while paused or in a seek: the request waits for the writer to play.
+                val step = intent.getIntExtra(EXTRA_STEP, 0)
+                if (step != 1 && step != 2) {
+                    timber.log.Timber.tag(TAG).w("RECOVER_DAC_NOW needs --ei step 1|2; nothing asked")
+                } else {
+                    runCatching { UsbAudioStream.nativeRequestDacRecovery(step) }
+                        .onFailure { timber.log.Timber.tag(TAG).w(it, "RECOVER_DAC_NOW: native layer unavailable") }
+                }
+                reportDacRecovery(context, intent.getStringExtra(EXTRA_TAG))
             }
             ACTION_SET_RATE_SWITCH_PREROLL -> {
                 // B12a-4. Required, like the other switches, and only 0, 250, 500 or 1000: a missing or any other
@@ -398,18 +411,38 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
      */
     private fun reportFeedbackPolicy(context: Context, tag: String?) {
         val stats = runCatching { UsbAudioStream.nativeGetFeedbackStats() }.getOrNull()
-        val rate = stats?.getOrNull(10)
-        val line = "FEEDBACK_POLICY|mode=${FeedbackPolicy.name(stats?.getOrNull(0))}" +
-            "|stuck=${stats?.getOrNull(1)?.let { it == 1L } ?: "?"}" +
-            "|lastFpmf=${fpmfText(FeedbackPolicy.fpmf(stats?.getOrNull(9)))}" +
-            "|nominal=${fpmfText(rate?.takeIf { it > 0 }?.let { it / 8_000.0 })}" +
-            "|sending=${fpmfText(FeedbackPolicy.fpmf(stats?.getOrNull(11)))}" +
-            "|episodes=${stats?.getOrNull(2)}|stuckMs=${stats?.getOrNull(4)}" +
-            "|rejected=${stats?.getOrNull(12)}|streaks=${stats?.getOrNull(13)}" +
-            "|lastRejected=${fpmfText(FeedbackPolicy.fpmf(stats?.getOrNull(14)))}" +
-            "|tag=${tag ?: "-"}"
+        val plan = runCatching { DirectPathTelemetry.usbTransportPlanProvider?.invoke() }.getOrNull()
+        val line = FeedbackPolicyReport.line(stats, plan, tag)
         Log.i(TAG, line)
         appendDiagnostic(context, "feedback-policy.txt", line)
+    }
+
+    /**
+     * B47-A5. `enabled` is the process override (on by default, debug and release; a new process is on again); `locks` the lock-ups the detector found in this process;
+     * `step1`/`step2` as `ok/run` (a step is ok when the rail stayed away for 4 s after it); `gaveUp` how often both steps were used up; `lastMs` the writer's time in the last step.
+     */
+    private fun reportDacRecovery(context: Context, tag: String?) {
+        val stats = runCatching { UsbAudioStream.nativeGetDacRecoveryStats() }.getOrNull()
+        val line = "DAC_RECOVERY|enabled=${stats?.getOrNull(0)?.let { it == 1L } ?: "?"}" +
+            "|locks=${stats?.getOrNull(1)}" +
+            "|step1=${stats?.getOrNull(3)}/${stats?.getOrNull(2)}|step2=${stats?.getOrNull(5)}/${stats?.getOrNull(4)}" +
+            "|gaveUp=${stats?.getOrNull(6)}|lastMs=${stats?.getOrNull(7)}" +
+            "|tag=${tag ?: "-"}"
+        timber.log.Timber.tag(TAG).i(line)
+        appendDiagnostic(context, "dac-recovery.txt", line)
+    }
+
+    /**
+     * B48-fix1. `enabled` is the process override (on by default, debug and release; a new process is on again); `ms` the plan's guard (the first milliseconds after the streaming
+     * interface starts that go out at the nominal rate), 0 when no stream has been planned yet. Each stream start says it too: `Start: feedback start guard=500 ms` (or `off`).
+     */
+    private fun reportFeedbackStartGuard(context: Context, tag: String?) {
+        val enabled = runCatching { UsbAudioStream.nativeFeedbackStartGuardEnabled() }.getOrNull()
+        val planFields = runCatching { DirectPathTelemetry.usbTransportPlanProvider?.invoke() }.getOrNull()
+        val plan = planFields?.takeIf { it.size >= UsbTransportPlan.Field.COUNT }?.let { UsbTransportPlan(it) }
+        val line = "FEEDBACK_START_GUARD|enabled=${enabled ?: "?"}|ms=${plan?.feedbackStartGuardMs ?: 0}|tag=${tag ?: "-"}"
+        timber.log.Timber.tag(TAG).i(line)
+        appendDiagnostic(context, "feedback-start-guard.txt", line)
     }
 
     /**
@@ -441,30 +474,6 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
             "|tag=${tag ?: "-"}"
         Log.i(TAG, line)
         appendDiagnostic(context, "direct-presence.txt", line)
-    }
-
-    /** `6.0049`, or `none` before the first reading of a stream (a value of 0 means nothing was read). */
-    private fun fpmfText(fpmf: Double?): String =
-        if (fpmf == null || fpmf <= 0.0) "none" else "%.4f".format(java.util.Locale.ROOT, fpmf)
-
-    /**
-     * Says whether plan B (the native engine) is on, and what the sink last decided under it (B12a).
-     *
-     * `forced` is the persisted switch, off by default (the ExoPlayer pipeline is the PRISTINE producer);
-     * `lastDecisionForced` is whether it was on at the sink's most recent producer decision, which lags
-     * `forced` until the next track starts (the sink reads the switch only where it decides whether an
-     * engine may exist). `producer` is `EXOPLAYER` by default and `NATIVE_FLAC` for a local PRISTINE FLAC
-     * with plan B on. Written to a file as well as to logcat, like the other reports here. [tag] is echoed
-     * back (`--es tag <nonce>`), so a script can tell this reading from an older line still in the log buffer.
-     */
-    private fun reportForceNativeEngine(context: Context, why: String, tag: String?) {
-        val line = "FORCE_NATIVE_ENGINE|$why" +
-            "|forced=${NativeEngineDebugSwitch.shared(context).isForced()}" +
-            "|lastDecisionForced=${DirectPathTelemetry.debugForcedNativeEngine}" +
-            "|producer=${DirectPathTelemetry.producer}" +
-            "|tag=${tag ?: "-"}"
-        Log.i(TAG, line)
-        appendDiagnostic(context, "force-native-engine.txt", line)
     }
 
     /**
@@ -731,24 +740,6 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
             "com.lostf1sh.pixelplayeross.debug.SET_PRISTINE_LOCK_OVERRIDE"
         const val EXTRA_IGNORE = "ignore"
 
-        /**
-         * Bit-perfect measurement (`B-bitperfect-medicion.md`): `--ez enabled true|false` sends
-         * PRISTINE FLACs through the ExoPlayer pipeline instead of the native engine. Persisted, off by
-         * default; the report action prints the current value.
-         */
-        const val ACTION_SET_FORCE_NATIVE_ENGINE =
-            "com.lostf1sh.pixelplayeross.debug.SET_FORCE_NATIVE_ENGINE"
-        const val ACTION_REPORT_FORCE_NATIVE_ENGINE =
-            "com.lostf1sh.pixelplayeross.debug.REPORT_FORCE_NATIVE_ENGINE"
-        /** Retired in B12a (the pipeline is the default); kept so an old script gets a warning. */
-        const val ACTION_SET_PRISTINE_EXOPLAYER_PIPELINE =
-            "com.lostf1sh.pixelplayeross.debug.SET_PRISTINE_EXOPLAYER_PIPELINE"
-        const val ACTION_REPORT_PRISTINE_EXOPLAYER_PIPELINE =
-            "com.lostf1sh.pixelplayeross.debug.REPORT_PRISTINE_EXOPLAYER_PIPELINE"
-        /**
-         * AUD-145: `--es mode poll|sleep` picks how the USB writer waits for a URB completion (poll(2) on
-         * the usbfs fd, or the old 125 µs sleep). Not persisted; `tag` is echoed in the reply line.
-         */
         const val ACTION_SET_USB_WAIT_MODE =
             "com.lostf1sh.pixelplayeross.debug.SET_USB_WAIT_MODE"
         /**
@@ -764,6 +755,16 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
             "com.lostf1sh.pixelplayeross.debug.SET_FEEDBACK_POLICY"
         const val ACTION_MARK_NOISE =
             "com.lostf1sh.pixelplayeross.debug.MARK_NOISE"
+        /** B47-A5: `--ez enabled false|true` — automatic recovery of a locked-up DAC off or on. Process-only, like SET_FEEDBACK_POLICY. Debug builds only. */
+        const val ACTION_SET_DAC_RECOVERY =
+            "com.lostf1sh.pixelplayeross.debug.SET_DAC_RECOVERY"
+        /** B47-A5: `--ei step 1|2` — run recovery step 1 (restart the streaming interface) or 2 (bus reset and claims again) now. Debug builds only. */
+        const val ACTION_RECOVER_DAC_NOW =
+            "com.lostf1sh.pixelplayeross.debug.RECOVER_DAC_NOW"
+        /** B48-fix1: `--ez enabled false|true` — the feedback start guard (nominal-rate packets for the first 500 ms after the interface starts) off or on. Process-only. Debug builds only. */
+        const val ACTION_SET_FEEDBACK_START_GUARD =
+            "com.lostf1sh.pixelplayeross.debug.SET_FEEDBACK_START_GUARD"
+        const val EXTRA_STEP = "step"
         const val EXTRA_MODE = "mode"
         const val EXTRA_ENABLED = "enabled"
         const val EXTRA_MS = "ms"
@@ -776,4 +777,29 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
         private const val DIAGNOSTIC_FILE_MAX_LINES = 400
         private const val TAG = "DapDebugPolicyReceiver"
     }
+}
+
+/**
+ * The `FEEDBACK_POLICY|…` line of `REPORT_FEEDBACK_POLICY` (debug only), as a pure function of what it reads so that its text can be pinned.
+ *
+ * B48-3: `nominal=` is the stream's **transport plan's** nominal frames per service interval (`NOMINAL_NUM / NOMINAL_DEN`, [UsbTransportPlan.nominalFramesPerInterval]), the number
+ * the native feedback calibration starts from, and `none` when there is no plan (no stream). It used to be `rate / 8000.0`, which is the same number only for a 125 µs service interval.
+ */
+internal object FeedbackPolicyReport {
+    fun line(stats: LongArray?, planFields: LongArray?, tag: String?): String {
+        val plan = planFields?.takeIf { it.size >= UsbTransportPlan.Field.COUNT }?.let { UsbTransportPlan(it) }
+        return "FEEDBACK_POLICY|mode=${FeedbackPolicy.name(stats?.getOrNull(0))}" +
+            "|stuck=${stats?.getOrNull(1)?.let { it == 1L } ?: "?"}" +
+            "|lastFpmf=${fpmfText(FeedbackPolicy.fpmf(stats?.getOrNull(9)))}" +
+            "|nominal=${fpmfText(plan?.nominalFramesPerInterval)}" +
+            "|sending=${fpmfText(FeedbackPolicy.fpmf(stats?.getOrNull(11)))}" +
+            "|episodes=${stats?.getOrNull(2)}|stuckMs=${stats?.getOrNull(4)}" +
+            "|rejected=${stats?.getOrNull(12)}|streaks=${stats?.getOrNull(13)}" +
+            "|lastRejected=${fpmfText(FeedbackPolicy.fpmf(stats?.getOrNull(14)))}" +
+            "|tag=${tag ?: "-"}"
+    }
+
+    /** `6.0049`, or `none` before the first reading of a stream (a value of 0 means nothing was read). */
+    fun fpmfText(fpmf: Double?): String =
+        if (fpmf == null || fpmf <= 0.0) "none" else "%.4f".format(java.util.Locale.ROOT, fpmf)
 }

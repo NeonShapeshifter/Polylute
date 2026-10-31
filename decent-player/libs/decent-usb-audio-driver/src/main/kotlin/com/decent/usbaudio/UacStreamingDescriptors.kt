@@ -1,7 +1,5 @@
 package com.decent.usbaudio
 
-import kotlin.math.ceil
-
 /**
  * One UAC2 AudioStreaming playback alternate setting, read from the raw configuration descriptors.
  *
@@ -20,6 +18,10 @@ data class UacStreamingAlt(
     val endpointOutAddress: Int,
     val maxPacketBytes: Int,
     val feedbackEndpointAddress: Int,
+    /** The data endpoint's `bInterval` (0: not reported); the transport plan notes a value other than 1 (B46-A4). */
+    val bInterval: Int = 0,
+    /** The feedback endpoint's packet size, 4 for Q16.16 (0: no feedback endpoint, or not reported); a 3 is the 10.14 of full speed. */
+    val feedbackMaxPacketBytes: Int = 0,
 ) {
     /** FORMAT_TYPE_I with the PCM bit (D0) of `bmFormats`; RAW/DSD alts are never streamed. */
     val isPcm: Boolean
@@ -54,7 +56,6 @@ object UacStreamingDescriptors {
     private const val TRANSFER_ISOCHRONOUS = 1
     private const val USAGE_FEEDBACK = 1
     private const val DIR_IN = 0x80
-    private const val MICROFRAMES_PER_SECOND = 8000.0
 
     fun parse(raw: ByteArray?): List<UacStreamingAlt> {
         raw ?: return emptyList()
@@ -96,9 +97,11 @@ object UacStreamingDescriptors {
                             if (alt.endpointOut < 0) {
                                 alt.endpointOut = address
                                 alt.maxPacket = maxPacket
+                                alt.interval = if (length >= 7) raw.u8(i + 6) else 0
                             }
                         } else if (usage == USAGE_FEEDBACK || alt.feedback < 0) {
                             alt.feedback = address
+                            alt.feedbackPacket = maxPacket
                         }
                     }
                 }
@@ -138,8 +141,7 @@ object UacStreamingDescriptors {
         val interfaceNumber = selectForPlayback(alts)?.interfaceNumber ?: return null
         val candidates = alts.filter {
             it.interfaceNumber == interfaceNumber && it.isPcm && it.altSetting > 0 && it.subslotSize in 2..4 &&
-                it.channels == channels && canCarry(it, sampleRateHz, channels) &&
-                (sourceBits == null || UsbPcmConversion.canConvert(sourceBits, it.containerBits))
+                it.channels == channels && UsbTransportPlanner.plan(it, sampleRateHz, channels, sourceBits).supported
         }
         return candidates.maxWithOrNull(
             compareBy<UacStreamingAlt>({ it.bitResolution }, { it.containerBits }, { it.maxPacketBytes })
@@ -148,15 +150,12 @@ object UacStreamingDescriptors {
     }
 
     /**
-     * Whether [alt] can carry [sampleRateHz] with [channels] channels: the largest microframe packet
-     * (`ceil(rate / 8000)` frames) must fit its maxPacket. The packetizer refuses larger packets, so a
-     * failed check here is silence later.
+     * Whether [alt] can carry [sampleRateHz] with [channels] channels: the largest microframe packet must fit its maxPacket.
+     * The packetizer refuses larger packets, so a failed check here is silence later. Decided by the native transport plan
+     * (B46-A3), the same function the writer plans its ring with, not by a second formula here.
      */
-    fun canCarry(alt: UacStreamingAlt, sampleRateHz: Int, channels: Int): Boolean {
-        if (sampleRateHz <= 0 || channels <= 0) return false
-        val framesPerMicroframe = ceil(sampleRateHz / MICROFRAMES_PER_SECOND).toInt()
-        return alt.maxPacketBytes >= framesPerMicroframe * channels * alt.subslotSize
-    }
+    fun canCarry(alt: UacStreamingAlt, sampleRateHz: Int, channels: Int): Boolean =
+        UsbTransportPlanner.plan(alt, sampleRateHz, channels, sourceBits = null).supported
 
     private class Builder(val interfaceNumber: Int, val altSetting: Int) {
         var formatType = 0
@@ -167,11 +166,13 @@ object UacStreamingDescriptors {
         var endpointOut = -1
         var maxPacket = 0
         var feedback = -1
+        var interval = 0
+        var feedbackPacket = 0
 
         /** Only an alt with a playback (OUT) data endpoint is a playback alt; capture has none. */
         fun build(): UacStreamingAlt? = if (endpointOut < 0) null else UacStreamingAlt(
             interfaceNumber, altSetting, formatType, bmFormats, channels, subslotSize, bitResolution,
-            endpointOut, maxPacket, feedback,
+            endpointOut, maxPacket, feedback, interval, feedbackPacket,
         )
     }
 

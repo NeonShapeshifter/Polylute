@@ -34,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.layoutId
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -183,5 +182,5 @@ fun RowScope.CustomNavigationBarItem(
     }
 }
 
-private val EaseOutQuart = CubicBezierEasing(0.25f, 1f, 0.5f, 1f)
+
 private val EaseInQuart = CubicBezierEasing(0.5f, 0f, 0.75f, 0f)

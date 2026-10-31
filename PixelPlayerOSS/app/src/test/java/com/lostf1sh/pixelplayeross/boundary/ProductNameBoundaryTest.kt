@@ -81,29 +81,25 @@ class ProductNameBoundaryTest {
 
     // --- the code ----------------------------------------------------------------------------------------------------------------------
 
-    /** String literals of the Kotlin sources that hold the old name as a word, and why each stays. */
-    private val allowedLiteralHits: Map<String, String> = mapOf(
-        "MusicService_PixelPlayer" to "a logcat tag (an identifier read by developers and by the Maintenance log export, not shown on a screen)",
-    )
-
     @Test
-    fun `no string literal in the sources names the old product except the allow-listed log tag`() {
+    fun `no string literal in the sources names the old product`() {
         val offenders = mutableListOf<String>()
         var literalsRead = 0
-        var allowedSeen = 0
+        var serviceTagsSeen = 0
         // "PixelPlayer" or "PixelPlayerOSS" as a word: not the start of PixelPlayerGlanceWidget or PixelPlayerBenchmark, not the package pixelplayeross
         val word = Regex("PixelPlayer(?:OSS)?(?![A-Za-z0-9])")
         sourceFiles().forEach { file ->
             KotlinLiterals.of(file.readText()).forEach { literal ->
                 literalsRead++
+                if (literal.text == "PolyluteMusicService") serviceTagsSeen++
                 if (!word.containsMatchIn(literal.text)) return@forEach
-                if (literal.text in allowedLiteralHits) allowedSeen++ else offenders += "${file.path}:${literal.line}: \"${literal.text.take(100)}\""
+                offenders += "${file.path}:${literal.line}: \"${literal.text.take(100)}\""
             }
         }
         assertWithMessage("a literal that shows the old name").that(offenders).isEmpty()
-        // guard the guard: thousands of literals were read, and the log tag was among them (MusicService.kt twice, ReplayGainProcessor.kt once)
+        // B49: the same three log-tag uses now say Polylute; no old-product exception remains.
         assertThat(literalsRead).isGreaterThan(5000)
-        assertThat(allowedSeen).isEqualTo(3)
+        assertThat(serviceTagsSeen).isEqualTo(3)
     }
 
     @Test

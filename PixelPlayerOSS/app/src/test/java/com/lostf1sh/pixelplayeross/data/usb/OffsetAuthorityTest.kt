@@ -60,14 +60,4 @@ class OffsetAuthorityTest {
         assertThat(OffsetAuthority.media3Anchor(start + 500_000_000L, start, 90_000_000L, 200_000_000L)).isNull()
     }
 
-    @Test
-    fun `a flush keeps the explicit epoch the seek it follows opened, even if the engine already did it`() {
-        // Issued at reset count 7, flush has just counted 8: this flush is that seek's.
-        assertThat(OffsetAuthority.keepExplicitEpochAtFlush(false, AnchorSource.EXPLICIT_SEEK_TARGET, 7, 8)).isTrue()
-        // A later, unrelated reset: the host position is the authority again.
-        assertThat(OffsetAuthority.keepExplicitEpochAtFlush(false, AnchorSource.EXPLICIT_SEEK_TARGET, 5, 8)).isFalse()
-        // Already latched, or not an explicit epoch: unchanged rules.
-        assertThat(OffsetAuthority.keepExplicitEpochAtFlush(true, AnchorSource.EXPLICIT_SEEK_TARGET, 7, 8)).isFalse()
-        assertThat(OffsetAuthority.keepExplicitEpochAtFlush(false, AnchorSource.IMPLICIT_RESTART, 7, 8)).isFalse()
-    }
 }

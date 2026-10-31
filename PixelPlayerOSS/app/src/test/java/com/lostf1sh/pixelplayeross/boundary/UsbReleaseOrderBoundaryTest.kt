@@ -35,7 +35,7 @@ class UsbReleaseOrderBoundaryTest {
 
     @Test
     fun `the streaming interface is released before the control interface`() {
-        val release = body(driver, "fun releaseToAndroid(")
+        val release = body(driver, "fun handBackToAndroid(")
         val streaming = release.indexOf("releaseInterface(streaming)")
         val control = release.indexOf("releaseInterface(control)")
         assertThat(streaming).isAtLeast(0)
@@ -45,7 +45,7 @@ class UsbReleaseOrderBoundaryTest {
 
     @Test
     fun `CONNECT is only issued to an interface without a driver`() {
-        assertThat(body(driver, "fun releaseToAndroid(")).contains("nativeReattachKernelDriverIfUnbound")
+        assertThat(body(driver, "fun handBackToAndroid(")).contains("nativeReattachKernelDriverIfUnbound")
         val native = jni.substringAfter("Java_com_decent_usbaudio_UsbAudioStream_nativeReattachKernelDriverIfUnbound(")
         assertThat(native).isNotEqualTo(jni)
         assertThat(native.indexOf("USBDEVFS_GETDRIVER")).isLessThan(native.indexOf("USBDEVFS_CONNECT"))

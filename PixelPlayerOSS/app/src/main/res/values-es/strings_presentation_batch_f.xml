@@ -10,8 +10,6 @@
     <string name="presentation_batch_f_auto_generated_collage">Collage generado automáticamente</string>
     <string name="presentation_batch_f_background_color">Color de fondo</string>
     <string name="presentation_batch_f_cd_add_photo">Añadir foto</string>
-    <string name="presentation_batch_f_cd_back_or_cancel">Atrás o cancelar</string>
-    <string name="presentation_batch_f_cd_refresh_lyrics">Actualizar letras</string>
     <string name="presentation_batch_f_cd_selected">Seleccionado</string>
     <string name="presentation_batch_f_change">Cambiar</string>
     <string name="presentation_batch_f_corner_radius">Radio de esquina</string>
@@ -40,11 +38,6 @@
     <string name="presentation_batch_f_playlist_name_placeholder">Mi mezcla genial</string>
     <string name="presentation_batch_f_playlist_name_required">Escribe un nombre</string>
     <string name="presentation_batch_f_rebuild_database">Reconstruir base de datos</string>
-    <string name="presentation_batch_f_refresh_library_subtitle">Buscar en toda la biblioteca archivos nuevos y modificados.</string>
-    <string name="presentation_batch_f_refresh_library_title">Actualizar biblioteca</string>
-    <string name="presentation_batch_f_refresh_lyrics_processing">Procesando %1$d de %2$d canciones</string>
-    <string name="presentation_batch_f_refresh_lyrics_subtitle">Obtener automáticamente letras para todas las canciones con lrclib.</string>
-    <string name="presentation_batch_f_refresh_lyrics_title">Actualizar letras</string>
     <string name="presentation_batch_f_remove">Quitar</string>
     <string name="presentation_batch_f_rotation">Rotación</string>
     <string name="presentation_batch_f_save">Guardar</string>
@@ -70,8 +63,6 @@
     <string name="presentation_batch_f_sync_phase_reading_mediastore">Leyendo MediaStore</string>
     <string name="presentation_batch_f_sync_phase_saving_db">Guardando en la base de datos</string>
     <string name="presentation_batch_f_sync_phase_scanning_lrc">Buscando archivos de letras</string>
-    <string name="presentation_batch_f_sync_progress_detailed">%1$s • %2$d%% (%3$d/%4$d)</string>
-    <string name="presentation_batch_f_sync_progress_indeterminate">%1$s…</string>
     <string name="presentation_batch_f_tab_default">Predeterminado</string>
     <string name="presentation_batch_f_tab_icon">Icono</string>
     <string name="presentation_batch_f_tab_image">Imagen</string>

@@ -1,7 +1,6 @@
 package com.lostf1sh.pixelplayeross.boundary
 
 import com.decent.usbaudio.media3.DirectSignalMode
-import com.decent.usbaudio.media3.NativeEnginePolicy
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import org.junit.jupiter.api.Test
@@ -52,7 +51,7 @@ class DirectFormatNegotiationBoundaryTest {
         // R4-1: a format the DAC cannot carry must never touch ownership of the device. The rate
         // ranges are the one check that stays after the claim (a class GET RANGE on the AudioControl
         // interface, which usbfs only allows once the interface is claimed).
-        val configure = body(sink, "private fun configureUsbBitPerfect(")
+        val configure = body(sink, "private fun configureUsbBitPerfect(") + body(sink, "private fun rebuildUsbStream(")
         val preflight = configure.indexOf("UacStreamingDescriptors.selectForFormat(")
         assertThat(preflight).isAtLeast(0)
         assertThat(preflight).isLessThan(configure.indexOf("usbAudioDevice.openDevice("))
@@ -82,15 +81,8 @@ class DirectFormatNegotiationBoundaryTest {
     }
 
     @Test
-    fun `a mono source is streamed as stereo, duplicated, and never through the native engine`() {
+    fun `a mono source is streamed as stereo and duplicated by the pipeline`() {
         assertThat(sink).contains("upmixMonoSource = ch == 1")
-        // The decision moved into NativeEnginePolicy (debug switch): the source now delegates, and the
-        // invariant is pinned on the policy itself — for plan B on as well as off (B12a).
-        assertThat(body(sink, "private fun nativeEngineAllowed(")).contains("upmixMonoSource")
-        for (planB in listOf(false, true)) {
-            assertThat(NativeEnginePolicy.allowed(DirectSignalMode.PRISTINE, 0, upmixMonoSource = true, debugForceNativeEngine = planB))
-                .isFalse()
-        }
         assertThat(body(sink, "override fun handleBuffer(")).contains("MonoUpmix.duplicate(")
     }
 }

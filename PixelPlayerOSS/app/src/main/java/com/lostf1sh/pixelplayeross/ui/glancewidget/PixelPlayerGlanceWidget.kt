@@ -45,11 +45,9 @@ import androidx.glance.text.TextStyle
 import com.lostf1sh.pixelplayeross.MainActivity
 import com.lostf1sh.pixelplayeross.data.model.PlayerInfo
 import com.lostf1sh.pixelplayeross.R
-import androidx.core.graphics.scale
 import androidx.glance.unit.ColorProvider
 import com.lostf1sh.pixelplayeross.data.model.QueueItem
 import com.lostf1sh.pixelplayeross.utils.createScalableBackgroundBitmap
-import java.util.Locale
 import timber.log.Timber
 
 class PixelPlayerGlanceWidget : GlanceAppWidget() {
@@ -77,7 +75,7 @@ class PixelPlayerGlanceWidget : GlanceAppWidget() {
             val playerInfo = currentState<PlayerInfo>()
             val currentSize = LocalSize.current
 
-            Timber.tag("PixelPlayerGlanceWidget")
+            Timber.tag("PolyluteGlanceWidget")
                 .d("Providing Glance. PlayerInfo: title='${playerInfo.songTitle}', artist='${playerInfo.artistName}', isPlaying=${playerInfo.isPlaying}, hasBitmap=${playerInfo.albumArtBitmapData != null}, progress=${playerInfo.currentPositionMs}/${playerInfo.totalDurationMs}")
 
             GlanceTheme {
@@ -99,7 +97,7 @@ class PixelPlayerGlanceWidget : GlanceAppWidget() {
         val albumArtBitmapData = playerInfo.albumArtBitmapData
         val albumArtUri = playerInfo.albumArtUri
 
-        Timber.tag("PixelPlayerGlanceWidget")
+        Timber.tag("PolyluteGlanceWidget")
             .d("WidgetUi: PlayerInfo received. Title: $title, Artist: $artist, HasBitmapData: ${albumArtBitmapData != null}, BitmapDataSize: ${albumArtBitmapData?.size ?: "N/A"}")
 
         val actualBackgroundColor = GlanceTheme.colors.surface
@@ -1356,12 +1354,4 @@ class PixelPlayerGlanceWidget : GlanceAppWidget() {
 
         }
     }
-}
-
-private fun formatDurationGlance(millis: Long): String {
-    if (millis < 0) return "00:00"
-    val totalSeconds = millis / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return String.format(Locale.US, "%02d:%02d", minutes, seconds)
 }

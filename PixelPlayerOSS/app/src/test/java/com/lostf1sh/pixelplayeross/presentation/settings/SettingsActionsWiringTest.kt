@@ -93,6 +93,7 @@ class SettingsActionsWiringTest {
         actions.onKeepPlayingInBackgroundChange(false)
         actions.onResumeOnHeadsetReconnectChange(true)
         actions.onShowQueueHistoryChange(false)
+        actions.onRepeatSharedSongsInShuffleChange(true)
         actions.onFolderBackGestureNavigationChange(false)
         actions.onTapBackgroundClosesPlayerChange(true)
         actions.onHapticsEnabledChange(false)
@@ -100,6 +101,7 @@ class SettingsActionsWiringTest {
         verify(exactly = 1) { vm.setKeepPlayingInBackground(false) }
         verify(exactly = 1) { vm.setResumeOnHeadsetReconnect(true) }
         verify(exactly = 1) { vm.setShowQueueHistory(false) }
+        verify(exactly = 1) { vm.setRepeatSharedSongsInShuffle(true) }
         verify(exactly = 1) { vm.setFolderBackGestureNavigation(false) }
         verify(exactly = 1) { vm.setTapBackgroundClosesPlayer(true) }
         verify(exactly = 1) { vm.setHapticsEnabled(false) }

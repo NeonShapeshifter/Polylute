@@ -2,16 +2,9 @@
 <resources>
     <string name="dap_device_admin_label">Administración de Polylute DAP</string>
     <string name="dap_device_admin_description">Gestiona únicamente las políticas necesarias para el modo DAP dedicado y la recuperación del propietario.</string>
-    <string name="settings_category_wireless_title">Conexiones inalámbricas</string>
-    <string name="settings_category_wireless_subtitle">Wi‑Fi y audio Bluetooth</string>
-    <string name="settings_category_display_title">Pantalla</string>
-    <string name="settings_category_display_subtitle">Brillo y tiempo de apagado</string>
-    <string name="settings_category_storage_title">Almacenamiento</string>
-    <string name="settings_category_storage_subtitle">Fuentes de música y espacio disponible</string>
 
     <string name="dap_controls_title">Controles del dispositivo</string>
     <string name="dap_brightness_title">Brillo</string>
-    <string name="dap_volume_output_title">Volumen / Salida</string>
     <string name="dap_battery_title">Batería</string>
     <string name="dap_battery_charging">Cargando</string>
     <string name="dap_battery_not_charging">Sin cargar</string>
@@ -47,7 +40,6 @@
     <string name="dap_timeout_never_while_playing">Nunca mientras reproduce</string>
     <string name="dap_timeout_never_while_playing_desc">Mantiene la pantalla encendida solo durante reproducción activa. Pausar o detener restaura el apagado normal.</string>
     <string name="dap_write_settings_required">Android exige autorización única para cambiar el tiempo de apagado del sistema.</string>
-    <string name="dap_authorize_timeout">Autorizar control de apagado</string>
     <string name="dap_timeout_system_never_title">La pantalla nunca se apaga sola</string>
     <string name="dap_timeout_system_never_body">El tiempo de apagado de Android está en \u00abnunca\u00bb. La pantalla sigue encendida hasta que pulses el botón de encendido, no aparece el bloqueo y el dispositivo no entra en reposo. La reproducción no se ve afectada.</string>
     <string name="dap_timeout_system_never_action">Poner 1 minuto</string>
@@ -80,34 +72,21 @@
     <string name="dap_storage_usb">Almacenamiento USB</string>
     <string name="dap_storage_no_external">No se detectó almacenamiento musical externo</string>
     <string name="dap_library_scan">Escanear biblioteca</string>
-    <string name="dap_library_scan_desc">Buscar música local nueva o modificada</string>
-    <string name="dap_library_full_rescan">Reescaneo completo</string>
-    <string name="dap_library_full_rescan_desc">Volver a leer toda la biblioteca musical local</string>
-    <string name="dap_library_scanning">Escaneando biblioteca…</string>
     <string name="dap_pssd_future_note">El PSSD externo aparecerá aquí solo después de validar almacenamiento físico.</string>
 
-    <string name="dap_audio_current_output">Salida actual</string>
-    <string name="dap_audio_android_volume">Volumen multimedia de Android</string>
-    <string name="dap_audio_direct_volume_note">USB Direct envía PCM sin escalar. Ajusta el nivel en el DAC o amplificador.</string>
-    <string name="dap_audio_diagnostics_title">Diagnósticos técnicos USB</string>
 
-    <string name="dac_settings_title">DAC</string>
     <string name="dac_no_connected">Ningún DAC conectado</string>
     <string name="dac_more">Más DACs</string>
     <string name="dac_none_known">No hay perfiles DAC conocidos</string>
     <string name="dac_profile_title">Perfil del DAC</string>
     <string name="dac_profile_not_found">Este perfil de DAC ya no está disponible.</string>
-    <string name="dac_status_label">Estado</string>
     <string name="dac_status_active">Activo</string>
     <string name="dac_status_connected">Conectado</string>
     <string name="dac_status_not_connected">No conectado</string>
-    <string name="dac_usb_audio">Audio USB</string>
     <string name="dac_device_title">Dispositivo</string>
     <string name="dac_name">Nombre</string>
     <string name="dac_manufacturer">Fabricante</string>
     <string name="dac_product">Producto</string>
-    <string name="dac_vid">ID de fabricante USB</string>
-    <string name="dac_pid">ID de producto USB</string>
     <string name="dac_serial">Número de serie</string>
     <string name="dac_identity">Identidad del perfil</string>
     <string name="dac_identity_model_scoped">Compartido por este modelo (sin número de serie estable)</string>
@@ -127,16 +106,11 @@
     <string name="headphone_new">Nuevo auricular</string>
     <string name="headphone_create">Crear</string>
     <string name="headphone_name">Nombre</string>
-    <string name="headphone_profile_title">Perfil de auriculares</string>
     <string name="headphone_profile_not_found">Este perfil de auriculares ya no está disponible.</string>
     <string name="headphone_status_selected">Seleccionado</string>
     <string name="headphone_status_selected_for">Seleccionado para %1$s</string>
     <string name="headphone_select">Seleccionar auricular</string>
-    <string name="headphone_equalizer_summary_on">Activado · %1$s</string>
-    <string name="headphone_equalizer_summary_off">Desactivado · %1$s</string>
     <string name="headphone_dac_section">DAC</string>
     <string name="headphone_rename">Cambiar nombre</string>
     <string name="headphone_forget">Olvidar auricular</string>
-    <string name="headphone_forget_title">¿Olvidar este auricular?</string>
-    <string name="headphone_forget_message">Se eliminarán el perfil local y sus asociaciones DAC recordadas. Los perfiles DAC y el audio del sistema no cambiarán.</string>
 </resources>

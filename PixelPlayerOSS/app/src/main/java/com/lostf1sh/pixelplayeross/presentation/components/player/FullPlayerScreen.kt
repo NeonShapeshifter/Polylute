@@ -205,6 +205,7 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
                     isLandscape = isLandscape,
                     onArtistClick = onArtistClick,
                     onAddBookmark = onAddBookmark,
+                    isVisible = pages.isOnPlayer,
                 )
             }
             val progressSurface: @Composable () -> Unit = {

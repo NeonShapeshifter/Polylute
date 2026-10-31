@@ -1,12 +1,20 @@
 package com.lostf1sh.pixelplayeross.presentation.components.player
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Text
 import com.lostf1sh.pixelplayeross.ui.ds.DapStateIconButton
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.semantics
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.Lifecycle
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -19,15 +27,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Artist
-import com.lostf1sh.pixelplayeross.data.model.Lyrics
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.components.LocalMaterialTheme
 import com.lostf1sh.pixelplayeross.presentation.components.songArtistLabel
@@ -65,19 +69,19 @@ internal fun PlayerTrackInfoSurface(
     isLandscape: Boolean,
     onArtistClick: () -> Unit,
     onAddBookmark: () -> Unit,
+    isVisible: Boolean = true,
 ) {
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val metadataVisible = isVisible && env.allowRealtimeUpdates &&
+        env.currentSheetState == PlayerSheetState.EXPANDED && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     val song = info.song
     val currentSongArtists = info.artists
     val loadingTweaks = env.loadingTweaks
     val isSheetDragGestureActive = env.isSheetDragGestureActive
     val expansionFractionProvider = env.expansionFractionProvider
     val currentSheetState = env.currentSheetState
-    val isPlayingProvider = info.isPlayingProvider
     val placeholderColor = LocalMaterialTheme.current.onPrimaryContainer.copy(alpha = 0.1f)
     val placeholderOnColor = LocalMaterialTheme.current.onPrimaryContainer.copy(alpha = 0.2f)
-    val playerOnBaseColor = LocalMaterialTheme.current.onPrimaryContainer
-    val gradientEdgeColor = LocalMaterialTheme.current.primaryContainer
-    val chipColor = LocalMaterialTheme.current.onPrimary.copy(alpha = 0.8f)
     val chipContentColor = LocalMaterialTheme.current.primary
     val onFavoriteToggle = remember(actions) { actions::onFavoriteToggle }
     val shouldDelay = loadingTweaks.delayAll || loadingTweaks.delaySongMetadata
@@ -113,11 +117,7 @@ internal fun PlayerTrackInfoSurface(
             song = song,
             currentSongArtists = currentSongArtists,
             expansionFractionProvider = expansionFractionProvider,
-            textColor = playerOnBaseColor,
-            artistTextColor = playerOnBaseColor.copy(alpha = 0.7f),
             actions = actions,
-            gradientEdgeColor = gradientEdgeColor,
-            chipColor = chipColor,
             chipContentColor = chipContentColor,
             isFavorite = info.isFavorite,
             isBuffering = info.isBuffering,
@@ -127,8 +127,9 @@ internal fun PlayerTrackInfoSurface(
             ),
             onClickFavorite = onFavoriteToggle,
             onClickBookmark = onAddBookmark,
+            showBookmarkButton = info.showBookmarkButton,
             onClickArtist = onArtistClick,
-            isPlayingProvider = isPlayingProvider
+            metadataVisible = metadataVisible,
         )
     }
 }
@@ -140,11 +141,7 @@ private fun SongMetadataDisplaySection(
     song: Song?,
     currentSongArtists: ImmutableList<Artist>,
     expansionFractionProvider: () -> Float,
-    textColor: Color,
-    artistTextColor: Color,
-    gradientEdgeColor: Color,
     actions: FullPlayerActions,
-    chipColor: Color,
     chipContentColor: Color,
     isFavorite: Boolean,
     isBuffering: Boolean,
@@ -152,161 +149,203 @@ private fun SongMetadataDisplaySection(
     onClickFavorite: () -> Unit,
     onClickBookmark: () -> Unit,
     onClickArtist: () -> Unit,
+    showBookmarkButton: Boolean,
     modifier: Modifier = Modifier,
-    isPlayingProvider: () -> Boolean = { true }
+    metadataVisible: Boolean,
 ) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        song?.let { currentSong ->
-            PlayerSongInfo(
-                title = songTitleLabel(currentSong),
-                // The player's identity block, not a row's description: this line is part of what
-                // the screen is, and it is an affordance to the artist, so it says something even
-                // when the file names nobody. A row omits a missing artist; the player does not.
-                artist = songArtistLabel(currentSong) ?: stringResource(R.string.unknown_artist),
-                artistId = currentSong.artistId,
-                artists = currentSongArtists,
-                expansionFractionProvider = expansionFractionProvider,
-                textColor = textColor,
-                artistTextColor = artistTextColor,
-                gradientEdgeColor = gradientEdgeColor,
-                actions = actions,
-                onClickArtist = onClickArtist,
-                modifier = Modifier
-                    .weight(1f)
-                    .align(Alignment.CenterVertically),
-                isPlayingProvider = isPlayingProvider
-            )
-        }
-
-
-        AnimatedVisibility(
-            visible = isBuffering,
-            enter = DapMotion.contentEnter(),
-            exit = DapMotion.contentExitTransition()
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = chipColor,
-                modifier = Modifier.padding(end = 8.dp)
-            ) {
-                Box(
-                    modifier = Modifier.padding(10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    LoadingIndicator(
-                        modifier = Modifier.size(28.dp),
-                        color = chipContentColor
-                    )
+    val coroutineScope = rememberCoroutineScope()
+    var navigating by remember { mutableStateOf(false) }
+    val artistId = currentSongArtists.firstOrNull { it.id != 0L && it.id != -1L }?.id ?: song?.artistId ?: 0L
+    val artistClick = {
+        if (!navigating) {
+            coroutineScope.launch {
+                navigating = true
+                try {
+                    onClickArtist()
+                } finally {
+                    navigating = false
                 }
             }
         }
-
-        // B22: the bookmark and the heart, side by side at the end of the title. Lyrics lives in the header and nowhere
-        // else; the heart is a state button like shuffle (accent and a dot when the track is liked).
-        DapStateIconButton(
-            contentDescription = stringResource(R.string.player_add_bookmark),
-            active = false,
-            onClick = onClickBookmark,
-        ) { tint ->
-            androidx.compose.material3.Icon(
-                imageVector = Icons.Outlined.BookmarkBorder,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(24.dp),
-            )
+        Unit
+    }
+    val artistLongClick = {
+        if (!navigating) {
+            coroutineScope.launch {
+                navigating = true
+                try {
+                    actions.onOpenArtist(artistId)
+                } finally {
+                    navigating = false
+                }
+            }
         }
-        DapStateIconButton(
-            contentDescription = favoriteLabel,
-            active = isFavorite,
-            onClick = onClickFavorite,
-        ) { tint -> DapIcon(kind = DapIconKind.Heart, tint = tint, size = 24.dp) }
+        Unit
+    }
+    Column(
+        modifier.fillMaxWidth().graphicsLayer {
+            val fraction = expansionFractionProvider()
+            alpha = fraction
+            translationY = (1f - fraction) * 24f
+        },
+    ) {
+        val motionAllowed = metadataVisible && !com.lostf1sh.pixelplayeross.ui.ds.rememberDapReducedMotion()
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SongTitleText(
+                title = song?.let { songTitleLabel(it) }.orEmpty(),
+                motionAllowed = motionAllowed,
+                modifier = Modifier.weight(1f),
+            )
+            if (isBuffering) {
+                LoadingIndicator(Modifier.size(28.dp), color = chipContentColor)
+            }
+            if (showBookmarkButton) {
+                DapStateIconButton(
+                    contentDescription = stringResource(R.string.player_add_bookmark),
+                    active = false,
+                    onClick = onClickBookmark,
+                ) { tint ->
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.Outlined.BookmarkBorder,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            DapStateIconButton(
+                contentDescription = favoriteLabel,
+                active = isFavorite,
+                onClick = onClickFavorite,
+            ) { tint -> DapIcon(kind = DapIconKind.Heart, tint = tint, size = 24.dp) }
+        }
+        Spacer(Modifier.height(2.dp))
+        ArtistAlbumMetadata(
+            artist = song?.let { songArtistLabel(it) } ?: stringResource(R.string.unknown_artist),
+            album = song?.album?.ifBlank { null } ?: stringResource(R.string.unknown_album),
+            motionAllowed = motionAllowed,
+            onArtistClick = artistClick,
+            onArtistLongClick = artistLongClick,
+            onAlbumClick = { song?.let { actions.onOpenAlbum(it.albumId) } },
+        )
     }
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
+internal val PlayerMetadataScrolling = SemanticsPropertyKey<Boolean>("PlayerMetadataScrolling")
+
+/**
+ * B47-B2: the song's title, on the space the buttons beside it leave (the weight the caller gives it). One that fits does not move. One that does not fit scrolls with the
+ * same marquee and under the same gate as the metadata line below it ([motionAllowed]: the player page is visible, the sheet expanded, realtime updates allowed, the screen
+ * RESUMED, motion not reduced); without the gate it ends in an ellipsis, as it always did. The buttons are not part of this and neither move nor shrink.
+ */
 @Composable
-private fun PlayerSongInfo(
-    title: String,
-    artist: String,
-    artistId: Long,
-    artists: ImmutableList<Artist>,
-    expansionFractionProvider: () -> Float,
-    textColor: Color,
-    artistTextColor: Color,
-    gradientEdgeColor: Color,
-    actions: FullPlayerActions,
-    onClickArtist: () -> Unit,
-    modifier: Modifier = Modifier,
-    isPlayingProvider: () -> Boolean = { true }
-) {
-    val coroutineScope = rememberCoroutineScope()
-    var isNavigatingToArtist by remember { mutableStateOf(false) }
-    val resolvedArtistId by remember(artists, artistId) {
-        derivedStateOf { artists.firstOrNull { it.id != 0L && it.id != -1L }?.id ?: artistId }
-    }
-    Column(
-        horizontalAlignment = Alignment.Start,
-        modifier = modifier
-            .padding(vertical = 4.dp)
-            .fillMaxWidth()
-            .graphicsLayer {
-                val fraction = expansionFractionProvider()
-                alpha = fraction
-                translationY = (1f - fraction) * 24f
-            }
-    ) {
-        // One line and an ellipsis (B22): a long title ends in "…", it does not scroll or wrap into the controls.
+private fun SongTitleText(title: String, motionAllowed: Boolean, modifier: Modifier) {
+    val measurer = rememberTextMeasurer(cacheSize = 4)
+    // The slot the buttons leave, and the title's natural width against it: decided from the measurement, as the metadata line does. (The text's own layout cannot say: under the
+    // marquee it is laid out with unbounded width and never overflows, which would turn the marquee off, and back on, without end.)
+    BoxWithConstraints(modifier) {
+        val titleWidth = measurer.measure(title, DapType.Heading, maxLines = 1, softWrap = false).size.width
+        val scrolling = titleWidth > constraints.maxWidth && motionAllowed
         Text(
             text = title,
             style = DapType.Heading,
             color = Dap.primaryText,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = artist,
-            style = DapType.Subtitle,
-            color = Dap.secondaryText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            overflow = if (scrolling) TextOverflow.Clip else TextOverflow.Ellipsis,
             modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {
-                        if (isNavigatingToArtist) return@combinedClickable
-                        coroutineScope.launch {
-                            isNavigatingToArtist = true
-                            try {
-                                onClickArtist()
-                            } finally {
-                                isNavigatingToArtist = false
-                            }
-                        }
-                    },
-                    onLongClick = {
-                        if (isNavigatingToArtist) return@combinedClickable
-                        coroutineScope.launch {
-                            isNavigatingToArtist = true
-                            try {
-                                actions.onOpenArtist(resolvedArtistId)
-                            } finally {
-                                isNavigatingToArtist = false
-                            }
-                        }
-                    }
-                ),
+                .clipToBounds()
+                .then(if (scrolling) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier)
+                .semantics { this[PlayerMetadataScrolling] = scrolling },
         )
     }
+}
+
+/** B47-B1: how the artist and the album share the line. Widths in pixels. */
+internal data class ArtistAlbumLinePlan(
+    /** The artist takes all the width the other parts leave (a weight of 1); otherwise it keeps its natural width. */
+    val artistFills: Boolean,
+    val albumFills: Boolean,
+    /** What each shows does not fit the width it gets: it scrolls if motion is allowed, else it ends in an ellipsis. */
+    val artistOverflows: Boolean,
+    val albumOverflows: Boolean,
+)
+
+/**
+ * B47-B1, the owner's screenshots of 2026-10-29: "Bad Bunny" / "nadie sabe lo que va a pasar mañana" took two equal halves, the separator disappeared and about half the line stood
+ * empty. The rule now:
+ *  - both fit on the line with the separator: natural widths, nothing moves;
+ *  - one of them is short (at most half of what the separator leaves): it keeps its natural width, then the separator, and the other takes ALL the rest and scrolls only if that is
+ *    still not enough;
+ *  - both are long: each gets half (as before), and each scrolls only if it overflows its share.
+ * The separator is always there: it is part of the line whenever there are two texts.
+ */
+internal fun planArtistAlbumLine(artistWidth: Int, albumWidth: Int, separatorWidth: Int, available: Int): ArtistAlbumLinePlan {
+    if (artistWidth + separatorWidth + albumWidth <= available) return ArtistAlbumLinePlan(false, false, false, false)
+    val share = ((available - separatorWidth) / 2).coerceAtLeast(0)
+    return when {
+        artistWidth <= share -> ArtistAlbumLinePlan(false, true, false, albumWidth > available - artistWidth - separatorWidth)
+        albumWidth <= share -> ArtistAlbumLinePlan(true, false, artistWidth > available - albumWidth - separatorWidth, false)
+        else -> ArtistAlbumLinePlan(true, true, artistWidth > share, albumWidth > share)
+    }
+}
+
+/** Short credits share their natural width. Overflow: the short side keeps its width and the long one takes the rest; two long ones get equal halves (see [planArtistAlbumLine]). */
+@Composable
+private fun ArtistAlbumMetadata(
+    artist: String,
+    album: String,
+    motionAllowed: Boolean,
+    onArtistClick: () -> Unit,
+    onArtistLongClick: () -> Unit,
+    onAlbumClick: () -> Unit,
+) {
+    val measurer = rememberTextMeasurer(cacheSize = 6)
+    val style = DapType.BodyLarge
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val artistWidth = measurer.measure(artist, style, maxLines = 1, softWrap = false).size.width
+        val albumWidth = measurer.measure(album, style, maxLines = 1, softWrap = false).size.width
+        val separatorWidth = measurer.measure(" · ", style, maxLines = 1, softWrap = false).size.width
+        val plan = planArtistAlbumLine(artistWidth, albumWidth, separatorWidth, constraints.maxWidth)
+        Row(Modifier.fillMaxWidth()) {
+            MetadataText(
+                text = artist,
+                modifier = if (plan.artistFills) Modifier.weight(1f) else Modifier,
+                scrolling = plan.artistOverflows && motionAllowed,
+                onClick = onArtistClick,
+                onLongClick = onArtistLongClick,
+            )
+            Text(" · ", style = style, color = Dap.secondaryText, maxLines = 1)
+            MetadataText(
+                text = album,
+                modifier = if (plan.albumFills) Modifier.weight(1f) else Modifier,
+                scrolling = plan.albumOverflows && motionAllowed,
+                onClick = onAlbumClick,
+                onLongClick = onAlbumClick,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetadataText(
+    text: String,
+    modifier: Modifier,
+    scrolling: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        style = DapType.BodyLarge,
+        color = Dap.secondaryText,
+        maxLines = 1,
+        overflow = if (scrolling) TextOverflow.Clip else TextOverflow.Ellipsis,
+        modifier = modifier
+            .clipToBounds()
+            .then(if (scrolling) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier)
+            .semantics { this[PlayerMetadataScrolling] = scrolling }
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+    )
 }
 
 @Composable

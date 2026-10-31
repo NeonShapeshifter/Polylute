@@ -55,7 +55,8 @@ class RateSwitchPrerollWiringBoundaryTest {
 
     @Test
     fun `the rebuild decides from the previous stream's rate, after the cache check and before the stream is replaced`() {
-        val configure = sinkFunction("private fun configureUsbBitPerfect(")
+        // B48-1: the cache check stays in configureUsbBitPerfect, the rebuild proper (under the device's owner) is rebuildUsbStream; the order is read across both
+        val configure = sinkFunction("private fun configureUsbBitPerfect(") + sinkFunction("private fun rebuildUsbStream(")
         // the same-rate cached stream returns before the pre-roll is ever considered
         assertThat(configure.indexOf("pendingPreroll(previousRateHz = currentSampleRate, newRateHz = sampleRate)"))
             .isGreaterThan(configure.indexOf("USB stream cached for rate=\$sampleRate ch=\$channelCount — reusing"))
@@ -70,11 +71,9 @@ class RateSwitchPrerollWiringBoundaryTest {
 
     @Test
     fun `the silence is queued on a thread that was just created for the rebuilt stream, never on a kept one`() {
-        val start = sinkFunction("private fun startNativeEngineIfFlac(")
-        assertThat(start.indexOf("queuePrerollIfOwed(thread)")).isGreaterThan(start.indexOf("if (thread === runningThread) {"))
-        assertThat(start.indexOf("queuePrerollIfOwed(thread)")).isGreaterThan(start.indexOf("return\n        }\n        DirectPathTelemetry.streamingThreadStarts"))
-        // plan B: an engine that takes over drops it
-        assertThat(start).contains("pendingPrerollMs = 0   // plan B: the engine does not get the pre-roll (B12a-4)")
+        val start = sinkFunction("private fun startPipeline(")
+        assertThat(start.indexOf("queuePrerollIfOwed(thread, stream)")).isGreaterThan(start.indexOf("if (thread === runningThread) return"))
+
     }
 
     @Test

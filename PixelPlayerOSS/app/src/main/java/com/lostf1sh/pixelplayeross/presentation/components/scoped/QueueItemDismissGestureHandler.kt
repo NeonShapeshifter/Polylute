@@ -7,10 +7,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.Density
 import androidx.core.view.HapticFeedbackConstantsCompat
@@ -19,7 +17,6 @@ import com.lostf1sh.pixelplayeross.presentation.utils.performAppCompatHapticFeed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import kotlin.math.sign
 
 private enum class QueueDismissDragPhase { IDLE, TENSION, SNAPPING, FREE_DRAG }
 
@@ -186,28 +183,5 @@ internal class QueueItemDismissGestureHandler(
                 )
             )
         }
-    }
-}
-
-@Composable
-internal fun rememberQueueItemDismissGestureHandler(
-    scope: CoroutineScope,
-    density: Density,
-    hapticView: View,
-    appHapticsConfig: AppHapticsConfig,
-    offsetAnimatable: Animatable<Float, AnimationVector1D>,
-    itemWidthPx: Float,
-    onDismiss: () -> Unit
-): QueueItemDismissGestureHandler {
-    return remember(scope, density, hapticView, appHapticsConfig, offsetAnimatable, itemWidthPx, onDismiss) {
-        QueueItemDismissGestureHandler(
-            scope = scope,
-            density = density,
-            hapticView = hapticView,
-            appHapticsConfig = appHapticsConfig,
-            offsetAnimatable = offsetAnimatable,
-            itemWidthPx = itemWidthPx,
-            onDismiss = onDismiss
-        )
     }
 }

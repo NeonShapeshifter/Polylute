@@ -49,6 +49,7 @@ class B42Fix3AppearanceThemeRowTest {
         override fun onAppColorSourceChange(value: String) {}
         override fun onCoverThemeChoiceChange(value: String) {}
         override fun onPlayerThemePreferenceChange(value: String) {}
+        override fun onShowBookmarkButtonChange(value: Boolean) {}
         override fun onShowPlayerFileInfoChange(value: Boolean) {}
         override fun onAlbumArtQualityChange(value: com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality) {}
         override fun onLaunchTabChange(value: String) {}

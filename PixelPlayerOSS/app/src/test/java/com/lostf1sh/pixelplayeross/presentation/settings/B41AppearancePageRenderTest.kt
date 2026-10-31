@@ -47,6 +47,7 @@ open class B41AppearancePageRenderTest {
         override fun onAppColorSourceChange(value: String) {}
         override fun onCoverThemeChoiceChange(value: String) {}
         override fun onPlayerThemePreferenceChange(value: String) {}
+        override fun onShowBookmarkButtonChange(value: Boolean) {}
         override fun onShowPlayerFileInfoChange(value: Boolean) {}
         override fun onAlbumArtQualityChange(value: AlbumArtQuality) {}
         override fun onLaunchTabChange(value: String) {}

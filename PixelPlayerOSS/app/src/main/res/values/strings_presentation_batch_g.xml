@@ -77,7 +77,6 @@
     <string name="presentation_batch_g_artist_item_word_delimiters">Word Delimiters</string>
     <string name="presentation_batch_g_artist_word_none">None</string>
     <string name="presentation_batch_g_artist_word_current_prefix">Current: %1$s</string>
-    <string name="presentation_batch_g_artist_cd_configure">Configure</string>
     <string name="presentation_batch_g_artist_extract_from_title">Extract Artists from Title</string>
     <string name="presentation_batch_g_artist_extract_from_title_sub">Detect feat., ft., with in song titles</string>
     <string name="presentation_batch_g_artist_section_library_org">Library Organization</string>
@@ -105,19 +104,12 @@ Backslash (\) can be used to escape character delimiters.</string>
     <string name="presentation_batch_g_artist_rescan_banner_body">Artist settings have changed. Rescan your library to apply.</string>
     <string name="presentation_batch_g_artist_rescan_scanning">Scanning…</string>
     <string name="presentation_batch_g_artist_rescan">Rescan</string>
-    <string name="presentation_batch_g_topbar_build_stable">Stable</string>
-    <string name="presentation_batch_g_topbar_build_debug">Debug</string>
-    <string name="presentation_batch_g_topbar_cd_changelog">Changelog</string>
-    <string name="presentation_batch_g_lyrics_cd_options">Lyrics options</string>
-    <string name="presentation_batch_g_streaming_title">Cloud Streaming</string>
-    <string name="presentation_batch_g_streaming_subtitle">Stream music from your cloud accounts</string>
     <string name="presentation_batch_g_sort_source">Source</string>
     <string name="presentation_batch_g_sort_order">Order</string>
     <string name="presentation_batch_g_sort_descending">Descending</string>
     <string name="presentation_batch_g_sort_ascending">Ascending</string>
     <string name="presentation_batch_g_sort_original_order">Original Order</string>
     <string name="presentation_batch_g_cd_switch_on">Switch is on</string>
-    <string name="presentation_batch_g_file_explorer_cd_close">Close</string>
     <string name="presentation_batch_g_file_explorer_cd_refresh">Refresh</string>
     <string name="presentation_batch_g_file_explorer_cd_done">Done</string>
     <string name="presentation_batch_g_file_explorer_done">Done</string>
@@ -126,20 +118,12 @@ Backslash (\) can be used to escape character delimiters.</string>
     <string name="presentation_batch_g_file_explorer_cd_go_root">Go to root</string>
     <string name="presentation_batch_g_daily_mix_queue_name">Daily Mix</string>
     <string name="presentation_batch_g_daily_mix_see_all">Check all of Daily Mix</string>
-    <string name="presentation_batch_g_selection_one_song">song selected</string>
-    <string name="presentation_batch_g_selection_n_songs">songs selected</string>
-    <string name="presentation_batch_g_selection_cd_share">Share selected</string>
-    <string name="presentation_batch_g_selection_cd_like">Like selected</string>
-    <string name="presentation_batch_g_selection_play">Play</string>
     <string name="presentation_batch_g_selection_all">All</string>
     <string name="presentation_batch_g_selection_deselect">Deselect</string>
     <string name="presentation_batch_g_selection_cd_more">More options</string>
-    <string name="presentation_batch_g_selection_overflow_count">+%1$d</string>
     <string name="presentation_batch_g_list_song_artist_album">%1$s • %2$s</string>
     <string name="presentation_batch_g_list_cd_selected">Selected</string>
     <string name="presentation_batch_g_list_cd_more_for_title">More options for %1$s</string>
-    <string name="presentation_batch_g_list_cd_album_art_for">Album art for %1$s</string>
-    <string name="presentation_batch_g_list_cd_playing">Playing</string>
     <string name="presentation_batch_g_sync_percent">%1$d%%</string>
     <string name="presentation_batch_g_stats_overview_title">Listening stats</string>
     <string name="presentation_batch_g_stats_overview_total_plays">Total plays</string>
@@ -147,8 +131,6 @@ Backslash (\) can be used to escape character delimiters.</string>
     <string name="presentation_batch_g_stats_overview_top_track">Top track</string>
     <string name="presentation_batch_g_stats_overview_top_track_line">%1$s • %2$d plays</string>
     <string name="presentation_batch_g_recently_played_title">Recently Played</string>
-    <string name="presentation_batch_g_changelog_title">Changelog</string>
-    <string name="presentation_batch_g_changelog_view_github">View on GitHub</string>
     <string name="presentation_batch_g_presets_saved_title">Saved Presets</string>
     <string name="presentation_batch_g_presets_empty">No custom presets saved yet.</string>
     <string name="presentation_batch_g_presets_cd_unpin">Unpin</string>
@@ -161,23 +143,6 @@ Backslash (\) can be used to escape character delimiters.</string>
     <string name="presentation_batch_g_album_sel_limit">Limit: %1$d albums per selection.</string>
     <string name="presentation_batch_g_app_name" translatable="false">@string/app_name</string>
     <string name="presentation_batch_g_app_tagline">Music Player</string>
-    <string name="presentation_batch_g_brick_high">HIGH %1$d</string>
-    <string name="presentation_batch_g_brick_cd_close">Close</string>
-    <string name="presentation_batch_g_brick_stat_score">SCORE</string>
-    <string name="presentation_batch_g_brick_stat_lvl">LVL %1$d</string>
-    <string name="presentation_batch_g_brick_stat_lives">LIVES</string>
-    <string name="presentation_batch_g_brick_level_complete">LEVEL COMPLETE!</string>
-    <string name="presentation_batch_g_brick_game_over">GAME OVER</string>
-    <string name="presentation_batch_g_brick_score_line">Score: %1$d</string>
-    <string name="presentation_batch_g_brick_try_again">Try Again?</string>
-    <string name="presentation_batch_g_brick_next_level">Next Level</string>
-    <string name="presentation_batch_g_brick_restart">Restart Game</string>
-    <string name="presentation_batch_g_brick_tap_relaunch">TAP TO RELAUNCH</string>
-    <string name="presentation_batch_g_brick_play_random">Play Random Music</string>
-    <string name="presentation_batch_g_brick_title">Brick Breaker</string>
-    <string name="presentation_batch_g_brick_high_score">HIGH SCORE  %1$d</string>
-    <string name="presentation_batch_g_brick_play">Play</string>
-    <string name="presentation_batch_g_brick_drag_paddle">Drag to move the paddle</string>
     <string name="presentation_batch_g_backup_restore_modules">Restore Modules</string>
     <string name="presentation_batch_g_backup_restoring">Restoring</string>
     <string name="presentation_batch_g_backup_restore_selected">Restore Selected</string>
@@ -191,14 +156,8 @@ Backslash (\) can be used to escape character delimiters.</string>
     <string name="presentation_batch_g_backup_transfer_progress">Transfer in progress…</string>
     <string name="presentation_batch_g_backup_cd_select_all">Select all</string>
     <string name="presentation_batch_g_backup_cd_clear_selection">Clear selection</string>
-    <string name="presentation_batch_g_backup_entries_will_replace">%1$d entries · Will replace current data</string>
     <string name="presentation_batch_g_player_cd_collapse">Collapse player</string>
-    <string name="presentation_batch_g_player_cd_lyrics">Lyrics</string>
 
-    <string name="presentation_batch_g_changelog_sec_initial_release">Initial release</string>
-    <string name="presentation_batch_g_changelog_sec_removed_for_foss">Removed for FOSS</string>
-    <string name="presentation_batch_g_changelog_sec_release_readiness">Release readiness</string>
-    <string name="presentation_batch_g_changelog_sec_security_privacy">Security and privacy</string>
     <string-array name="presentation_batch_g_changelog_060_whats_new">
         <item>Recently Played and persistent queue restoration keep your listening session ready.</item>
         <item>Backup &amp; Restore v3 and account management tools are now included.</item>
@@ -309,9 +268,6 @@ Backslash (\) can be used to escape character delimiters.</string>
         <item>Also includes smart playlist persistence, duplicate-track scanning, playback speed control, clearer playback/sync failure messages, and improved accessibility.</item>
     </string-array>
 
-    <string name="presentation_batch_g_changelog_sec_whats_new">What\'s new</string>
-    <string name="presentation_batch_g_changelog_sec_improvements">Improvements</string>
-    <string name="presentation_batch_g_changelog_sec_under_the_hood">Under the hood</string>
     <string-array name="presentation_batch_g_changelog_v020_whats_new">
         <item>Material 3 Expressive design pass: a new motion scheme, wavy progress indicators, and shape-morphing animations throughout the app.</item>
         <item>Jellyfin servers over plain HTTP are now allowed for VPN and local-network hosts.</item>

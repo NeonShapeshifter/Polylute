@@ -168,11 +168,15 @@ class CloudRemovalBoundaryTest {
         // No removed server-sync worker or automatic periodic download may return.
         val workers = Project.mainSources().filter { "@HiltWorker" in it.readText() }
 
-        assertThat(workers.map { it.name }).containsExactly("SyncWorker.kt", "OfflineDownloadWorker.kt")
-        val offline = workers.single { it.name == "OfflineDownloadWorker.kt" }.readText()
-        assertThat(offline).doesNotContain("Result.retry()")
+        assertThat(workers.map { it.name }).containsExactly("SyncWorker.kt", "MusicInfoWorkers.kt")
+        val offline = workers.single { it.name == "MusicInfoWorkers.kt" }.readText()
+        assertThat(offline).contains("MusicInfoFindWorker")
+        assertThat(offline).contains("MusicInfoQueueWorker")
         val manager = Project.mainSources().single { it.name == "OfflineDownloads.kt" }.readText()
-        assertThat(manager).contains("OneTimeWorkRequestBuilder<OfflineDownloadWorker>")
+        val queue = Project.mainSources().single { it.name == "MusicInfoDownloads.kt" }.readText()
+        assertThat(queue).contains("OneTimeWorkRequestBuilder<MusicInfoFindWorker>")
+        assertThat(queue).contains("OneTimeWorkRequestBuilder<MusicInfoQueueWorker>")
+        assertThat(queue).contains("offlineNetworkConstraints()")
         assertThat(manager).contains("offlineNetworkConstraints()")
         assertThat(manager).contains("NetworkType.UNMETERED")
         assertThat(manager).contains("TRANSPORT_WIFI")

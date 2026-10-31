@@ -242,6 +242,22 @@ data class MusicBrainzCurrentState(
 @Dao
 interface MusicDao {
 
+    @Query("SELECT * FROM genre_images")
+    fun observeGenreImages(): Flow<List<GenreImageEntity>>
+
+    @Query("SELECT * FROM genre_images")
+    suspend fun getGenreImagesOnce(): List<GenreImageEntity>
+
+    @Query("SELECT * FROM genre_images WHERE genre_key = :key")
+    suspend fun getGenreImage(key: String): GenreImageEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun setGenreImage(image: GenreImageEntity)
+
+    @Query("DELETE FROM genre_images WHERE genre_key = :key")
+    suspend fun deleteGenreImage(key: String)
+
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertSongsCheckedValues(songs: List<SongEntity>): List<Long>
 
@@ -1999,6 +2015,9 @@ interface MusicDao {
         allowedParentDirs: List<String>,
         applyDirectoryFilter: Boolean
     ): Flow<List<SongEntity>>
+
+    @Query("SELECT genre, COUNT(*) AS songCount FROM songs WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs)) GROUP BY genre")
+    fun getGenreCounts(allowedParentDirs: List<String>, applyDirectoryFilter: Boolean): Flow<List<GenreCountRow>>
 
     @Query("SELECT DISTINCT genre FROM songs WHERE genre IS NOT NULL AND genre != '' ORDER BY genre ASC")
     fun getUniqueGenres(): Flow<List<String>>

@@ -71,6 +71,7 @@ data class PlayerTrackInfoState(
     val isFavorite: Boolean,
     val isBuffering: Boolean,
     val isPlayingProvider: () -> Boolean,
+    val showBookmarkButton: Boolean = true,
 )
 
 /** The seek bar, the two times and the technical line (format, rate, depth). */
@@ -176,6 +177,7 @@ internal fun buildFullPlayerUiState(
     totalDurationProvider: () -> Long,
     lyrics: PlayerLyricsState,
     isLandscape: Boolean,
+    showBookmarkButton: Boolean = true,
 ): FullPlayerUiState = FullPlayerUiState(
     env = env,
     cover = PlayerCoverState(
@@ -194,6 +196,7 @@ internal fun buildFullPlayerUiState(
         artists = artists,
         isFavorite = isFavorite,
         isBuffering = isBuffering,
+        showBookmarkButton = showBookmarkButton,
         isPlayingProvider = isPlayingProvider,
     ),
     progress = PlayerProgressState.of(

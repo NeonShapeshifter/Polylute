@@ -104,4 +104,17 @@ class B43ImagesTest {
             assertThat(requests).isNotEmpty()
         } finally { scope.cancel(); folder.deleteRecursively(); File(context.filesDir, "music-info-images-1.1.1.done").delete() }
     }
+
+    @Test fun `discovery resolves a photo without downloading or saving and selection reuses its URL`() = runBlocking {
+        val resolver = service()
+        val result = resolver.discover(com.lostf1sh.pixelplayeross.data.offline.InfoKind.PHOTO, "A", null)!!
+        assertThat(requests.none { it.host == "upload.wikimedia.org" }).isTrue()
+        assertThat(cache.usedBytes()).isEqualTo(0)
+        assertThat(java.io.File(dir, "index.json").exists()).isFalse()
+        val lookups = requests.count { it.host == "musicbrainz.org" }
+        assertThat(resolver.saveDiscovered(com.lostf1sh.pixelplayeross.data.offline.InfoKind.PHOTO, "A", null, result.payload)).isTrue()
+        assertThat(requests.count { it.host == "musicbrainz.org" }).isEqualTo(lookups)
+        assertThat(requests.count { it.host == "upload.wikimedia.org" }).isEqualTo(1)
+        assertThat(resolver.cachedArtistPhoto("A")?.author).isEqualTo("Jane")
+    }
 }

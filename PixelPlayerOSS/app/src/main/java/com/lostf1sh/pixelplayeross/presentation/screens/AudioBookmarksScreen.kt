@@ -56,12 +56,10 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.SortByAlpha
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -120,7 +118,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.ExperimentalTextApi
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -927,46 +924,6 @@ private fun rememberBookmarksCollapsibleTopBarState(
     )
 }
 
-private fun bookmarkExpandedFolderKey(
-    listState: LazyListState,
-    focusableKeys: Set<Any>,
-    currentFocusedKey: Any?,
-    switchThresholdPx: Int,
-    collapsedFolderItemHeightPx: Int,
-    lastFocusableIndex: Int?,
-    endEdgeFocusThresholdPx: Int
-): Any? {
-    val layoutInfo = listState.layoutInfo
-    val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
-    val visibleFolders = layoutInfo.visibleItemsInfo
-        .filter { itemInfo -> focusableKeys.contains(itemInfo.key) }
-        .map { itemInfo ->
-            BookmarkVisibleItemGeometry(
-                key = itemInfo.key,
-                index = itemInfo.index,
-                itemCenterPx = itemInfo.offset + itemInfo.size / 2,
-                itemSizePx = itemInfo.size,
-                itemEndPx = itemInfo.offset + itemInfo.size
-            )
-        }
-    val stableFocusFolders = bookmarkStableFocusGeometries(
-        visibleItems = visibleFolders,
-        collapsedItemSizePx = collapsedFolderItemHeightPx
-    )
-
-    return bookmarkFocusedItemKey(
-        visibleItems = stableFocusFolders,
-        totalItemsCount = layoutInfo.totalItemsCount,
-        viewportCenterPx = viewportCenter,
-        canScrollBackward = listState.canScrollBackward,
-        canScrollForward = listState.canScrollForward,
-        currentFocusedKey = currentFocusedKey,
-        switchThresholdPx = switchThresholdPx,
-        lastFocusableIndex = lastFocusableIndex,
-        viewportEndPx = layoutInfo.viewportEndOffset,
-        endEdgeFocusThresholdPx = endEdgeFocusThresholdPx
-    )
-}
 
 @Composable
 private fun BookmarkKeepSearchTopBar(

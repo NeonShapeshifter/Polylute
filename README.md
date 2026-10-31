@@ -6,7 +6,7 @@ It can send audio straight to a USB DAC, bit-perfect (Purity), or through its ow
 
 ## Requirements
 
-- Android 11 (API 30) or newer.
+- Android 10 (API 29) or newer.
 - A USB DAC for Purity and for Resonance over USB.
 - To build: JDK 21, Android SDK 37, Android NDK 29.0.14206865 and CMake 3.21 or newer. Set the SDK path in `PixelPlayerOSS/local.properties` (`sdk.dir=...`) or with `ANDROID_HOME`.
 

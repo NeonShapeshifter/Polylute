@@ -73,7 +73,7 @@ class B42Fix1PagesGlassBoundaryTest {
     /** The windows with no copy of the glass behind them: the ones left out of it and the small dialogs (the lists of `GlassSheetBoundaryTest`). */
     private val withoutTheGlass = listOf(
         "presentation/components/EditSongSheet.kt", "presentation/components/EditMultipleSongsSheet.kt",
-        "presentation/components/ReorderPresetsSheet.kt", "presentation/screens/CreatePlaylistScreen.kt",
+        "presentation/screens/CreatePlaylistScreen.kt",
         "presentation/components/BackupModuleSelectionDialog.kt", "presentation/settings/BackupDialogs.kt",
         "presentation/components/PlaylistCreationDialogs.kt", "presentation/settings/BackupTransferProgress.kt",
         "presentation/components/subcomps/FetchLyricsDialog.kt", "presentation/components/PlaylistContainer.kt",

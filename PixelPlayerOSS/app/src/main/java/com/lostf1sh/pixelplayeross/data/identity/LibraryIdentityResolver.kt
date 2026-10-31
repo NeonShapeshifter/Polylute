@@ -11,7 +11,7 @@ package com.lostf1sh.pixelplayeross.data.identity
  * * **Fingerprint** — deterministic evidence derived from scanned file metadata. Cheap, may be
  *   ambiguous, and legitimately changes when the underlying file materially changes. It is
  *   *matching evidence*.
- * * **Library item id** — an opaque, PixelPlayer-owned identifier, generated once and never
+ * * **Library item id** — an opaque, Polylute-owned identifier, generated once and never
  *   recomputed from metadata. It is the identity. User state hangs off this and nothing else.
  *
  * The earlier implementation used the fingerprint *as* the identity, which is subtly wrong: a

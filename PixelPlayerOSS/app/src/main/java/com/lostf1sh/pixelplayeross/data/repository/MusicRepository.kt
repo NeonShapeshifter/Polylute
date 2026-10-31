@@ -140,6 +140,9 @@ interface MusicRepository {
      * Returns the complete list of songs once.
      * @return List of Song objects.
      */
+    /** Directory choices affect catalog membership independently of Room writes. */
+    suspend fun catalogFilterKey(): String = ""
+
     suspend fun getAllSongsOnce(): List<Song>
 
     /**

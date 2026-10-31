@@ -2,7 +2,6 @@ package com.lostf1sh.pixelplayeross.data.service.player
 
 import android.content.Context
 import androidx.media3.common.Player
-import com.decent.usbaudio.media3.BootstrapSeekPolicy
 import com.google.common.truth.Truth.assertThat
 import io.mockk.every
 import io.mockk.mockk
@@ -65,19 +64,6 @@ class SeekAuthorityTest {
         player().seekTo(12_345L)
         assertThat(seeks).containsExactly(12_345L)
         verify { inner.seekTo(12_345L) }
-    }
-
-    @Test
-    fun `the bootstrap does not trust a stale explicit target`() {
-        // The device case: engine at 5.4 s, target 0, explicit target 0 left by the item start.
-        assertThat(BootstrapSeekPolicy.alreadyThere(0L, 5_400_000L, explicitTargetUs = 0L, explicitIsFresh = false))
-            .isFalse()
-        // A fresh explicit seek to the same target already moved the engine: skipping is right.
-        assertThat(BootstrapSeekPolicy.alreadyThere(0L, 300_000L, explicitTargetUs = 0L, explicitIsFresh = true))
-            .isTrue()
-        // The engine genuinely at the target.
-        assertThat(BootstrapSeekPolicy.alreadyThere(0L, 40_000L, explicitTargetUs = -1L, explicitIsFresh = false))
-            .isTrue()
     }
 
     @Test

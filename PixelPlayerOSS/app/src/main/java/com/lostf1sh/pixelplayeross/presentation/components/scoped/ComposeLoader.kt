@@ -6,41 +6,14 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
 
-@Composable
-fun DeferAt(
-    expansionFraction: Float,
-    threshold: Float,
-    keepAliveKey: Any? = "default",
-    content: @Composable () -> Unit
-) {
-    var ready by rememberSaveable(keepAliveKey) { mutableStateOf(false) }
-    LaunchedEffect(expansionFraction) {
-        if (!ready && expansionFraction >= threshold) ready = true
-    }
-    if (ready) content()
-}
-
-
-@Composable
-fun DeferUntil(
-    condition: Boolean,
-    keepAliveKey: Any? = "default",
-    content: @Composable () -> Unit
-) {
-    var ready by rememberSaveable(keepAliveKey) { mutableStateOf(false) }
-    LaunchedEffect(condition) { if (condition) ready = true }
-    if (ready) content()
-}
 
 @Composable
 fun rememberSmoothProgress(

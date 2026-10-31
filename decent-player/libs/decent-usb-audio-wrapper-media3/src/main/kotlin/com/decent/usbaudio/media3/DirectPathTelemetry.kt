@@ -2,6 +2,7 @@ package com.decent.usbaudio.media3
 
 import android.os.SystemClock
 import com.decent.usbaudio.FeedbackPolicy
+import com.decent.usbaudio.UsbTransportPlan
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -40,6 +41,9 @@ import java.util.concurrent.atomic.AtomicLong
  * It observes; it does not decide.
  */
 object DirectPathTelemetry {
+
+    /** Sentinel shared by the legacy capture columns and live pipeline measurements. */
+    const val ANCHOR_UNSET = Long.MIN_VALUE
 
     /** Enables timing and transition recording. Set by the host when a capture session starts. */
     @Volatile
@@ -80,22 +84,15 @@ object DirectPathTelemetry {
     @Volatile
     var producer: Producer = Producer.NONE
 
-    /**
-     * DEBUG ONLY: plan B (`DirectSignalSource.debugForceNativeEngine`) was on the last time the sink
-     * decided a producer, i.e. the native engine was allowed to exist. False is the B12a default and
-     * means the ExoPlayer pipeline carries PRISTINE. A state, not a counter, so [reset] leaves it alone.
-     */
-    @Volatile
-    var debugForcedNativeEngine: Boolean = false
+    /** Legacy capture field, permanently false. No preferences are consulted. */
+    const val debugForcedNativeEngine: Boolean = false
 
-    val nativeEngineStarts = AtomicLong()
-    val nativeEngineStops = AtomicLong()
     val streamingThreadStarts = AtomicLong()
     val streamingThreadStops = AtomicLong()
 
     /**
      * AUD-144: stops from Media3 (the rebuffer right after a natural join, with the user still
-     * playing) that were held back from the native engine instead of pausing it.
+     * playing) that were held back from the writer instead of pausing it.
      */
     val naturalJoinPausesHeld = AtomicLong()
 
@@ -107,6 +104,8 @@ object DirectPathTelemetry {
      */
     val pipelinePauseFades = AtomicLong()
     val pipelineSeekFades = AtomicLong()
+    /** B47-A5: recovery steps of a locked-up DAC the writer ran (each is a fade-out, an interface restart and a fade-in at the same position). */
+    val dacRecoveries = AtomicLong()
 
     /**
      * B9-3: a PRISTINE ↔ PROCESSED change with the pipeline as the producer on both sides, which kept
@@ -152,6 +151,13 @@ object DirectPathTelemetry {
     @Volatile
     var usbFeedbackStatsProvider: (() -> LongArray)? = null
 
+    /**
+     * B46-A4: the transport plan of the stream in use, the flat array of `UsbTransportPlan.Field`, empty when there is none.
+     * Set by the sink, like the other providers.
+     */
+    @Volatile
+    var usbTransportPlanProvider: (() -> LongArray)? = null
+
     // ── Signal path ─────────────────────────────────────────────────────
 
     /** Times the signal path actually moved between pristine and processed. */
@@ -175,16 +181,8 @@ object DirectPathTelemetry {
     @Volatile
     var bitPerfectReason: BitPerfectReason? = null
 
-    /**
-     * The native engine's position, published on each position query.
-     *
-     * Compared against the player's reported position at the same instant, this is how the engine's
-     * lead over the audible position is measured rather than assumed. `framesDecoded` counts frames
-     * *submitted* to USB, so a lead is expected; what matters is its size against the block
-     * deadline.
-     */
-    @Volatile
-    var liveEnginePositionUs: Long = ANCHOR_UNSET
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val liveEnginePositionUs: Long = ANCHOR_UNSET
 
     /**
      * The offset the sink held when it last answered a position query.
@@ -200,58 +198,34 @@ object DirectPathTelemetry {
     @Volatile
     var liveSinkReturnedUs: Long = ANCHOR_UNSET
 
-    // ── Seek protocol ───────────────────────────────────────────────────
-    //
-    // Requested and completed are separate on purpose. `getPositionUs` is set to the target the
-    // moment a seek is requested so the reported position does not jump backwards, which means it
-    // says nothing about whether the decoder has actually moved. Only a matching completed
-    // generation does.
+    // Legacy seek columns remain for capture consumers; there is no separate seek protocol.
 
-    /** Generation of the most recent seek pushed by the host. */
-    @Volatile
-    var seekRequestedGeneration: Long = 0
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val seekRequestedGeneration: Long = 0
 
-    /** Media target, microseconds, of the most recent seek pushed by the host. */
-    @Volatile
-    var seekTargetUs: Long = -1
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val seekTargetUs: Long = -1
 
-    /** Generation the decoder has finished seeking to. Reaching [seekRequestedGeneration] means done. */
-    @Volatile
-    var seekCompletedGeneration: Long = 0
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val seekCompletedGeneration: Long = 0
 
-    /** Media target, microseconds, the decoder actually landed on. */
-    @Volatile
-    var seekCompletedTargetUs: Long = -1
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val seekCompletedTargetUs: Long = -1
 
-    /** Whether the most recently completed seek succeeded; false means the position is not the target. */
-    @Volatile
-    var seekCompletedOk: Boolean = true
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val seekCompletedOk: Boolean = true
 
-    /**
-     * Outcome of the most recent seek: `PENDING`, `SUCCESS` or `FAILED`.
-     *
-     * Kept beside [seekCompletedGeneration] because the generation only says the attempt finished.
-     * A FAILED generation means the target did not become the position.
-     */
-    @Volatile
-    var seekOutcome: String = "PENDING"
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val seekOutcome: String = "PENDING"
 
-    /**
-     * URB ownership reading sampled around the seek barrier.
-     *
-     * `reusable` must be constant across repeated barriers; a count that shrinks cycle after cycle
-     * means cancelled URBs are not being retired. See `UsbAudioStream.urbDiag`.
-     */
-    @Volatile
-    var urbDiagBeforeSeek: String = "-"
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val urbDiagBeforeSeek: String = "-"
 
-    @Volatile
-    var urbDiagAfterSeek: String = "-"
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val urbDiagAfterSeek: String = "-"
 
-
-    /** Identity-based barrier verdict; see `UsbAudioStream.barrierIdentityDiag`. */
-    @Volatile
-    var barrierIdentity: String = "-"
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val barrierIdentity: String = "-"
 
     /**
      * Which caller initiated the most recent `AudioSink.flush()`, and when.
@@ -304,15 +278,8 @@ object DirectPathTelemetry {
     /** How many latches have consumed a diagnostic substitution. Expected 0 or 1 per run. */
     val diagnosticRebaseApplies = java.util.concurrent.atomic.AtomicLong()
 
-    /**
-     * DIAGNOSTIC ONLY: the media position the current playback epoch started from, captured at the
-     * production restart decision that established it.
-     *
-     * Sourced from the realign's engine-seek target — the exact value the new epoch begins at — and
-     * never from a later `Player.currentPosition` sample or from the first presentation timestamp.
-     */
-    @Volatile
-    var diagnosticEngineStartTargetUs: Long = -1L
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val diagnosticEngineStartTargetUs: Long = -1L
 
     /** Where the armed diagnostic operand came from, so the latch record names its real provenance. */
     @Volatile
@@ -380,27 +347,23 @@ object DirectPathTelemetry {
     // never recorded, so it was impossible to tell which operand was wrong or which coordinate
     // system it was in. Combining them before logging is what made that unanswerable.
 
-    const val ANCHOR_UNSET = Long.MIN_VALUE
 
     /** ExoPlayer-timeline position of the track's sample 0, as the sink held it. */
     @Volatile
     var anchorWindowOffsetUs: Long = ANCHOR_UNSET
 
-    /** `NativeAudioEngine.getPositionUs()` — frames decoded from sample 0, as microseconds. */
-    @Volatile
-    var anchorEnginePositionUs: Long = ANCHOR_UNSET
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val anchorEnginePositionUs: Long = ANCHOR_UNSET
 
-    /** The sink's derived media position: `windowOffset + enginePosition`. */
+    /** The pipeline's derived media position after removing the renderer offset. */
     @Volatile
     var anchorDerivedUs: Long = ANCHOR_UNSET
 
-    /** `engine.isRunning` at capture time; false after a destroy. */
-    @Volatile
-    var anchorEngineRunning: Boolean = false
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val anchorEngineRunning: Boolean = false
 
-    /** `engine.isCreated` at capture time. */
-    @Volatile
-    var anchorEngineCreated: Boolean = false
+    /** Legacy capture column, fixed now that Media3 owns playback and seeking. */
+    const val anchorEngineCreated: Boolean = false
 
     /** Which producer the anchor was taken from. */
     @Volatile
@@ -620,6 +583,7 @@ object DirectPathTelemetry {
         val naturalJoinPausesHeld: Long,
         val pipelinePauseFades: Long,
         val pipelineSeekFades: Long,
+        val dacRecoveries: Long,
         val pipelineRealignsKept: Long,
         /** B12a-3: the silent playback that makes Android see Direct playing; see [presenceStarts]. */
         val presenceActive: Boolean,
@@ -660,6 +624,17 @@ object DirectPathTelemetry {
         val feedbackRejectedReadings: Long,
         val feedbackImplausibleStreaks: Long,
         val feedbackRejectedFpmf: Double,
+        /**
+         * B46-A4: the transport plan of the stream in use: the service interval in microseconds (0: not read), the ring in URBs,
+         * the producer queue limits in frames, and the assumptions the plan was made with (`UsbTransportPlan.Assumption` bits; -1: not read).
+         * A non-zero value means the device's timing is not the one the output drives (full speed, another bInterval, a 3-byte
+         * feedback, an unreadable bus speed): it played as high speed, and the log said so (`TRANSPORT_ASSUMPTION`).
+         */
+        val transportIntervalUs: Long = 0L,
+        val transportRingUrbs: Long = 0L,
+        val transportQueueSoftFrames: Long = 0L,
+        val transportQueueHardFrames: Long = 0L,
+        val transportAssumptions: Long = -1L,
     ) {
         /** Mean nanoseconds inside the stage, or null when it never ran. */
         val meanProcessNanos: Long?
@@ -691,10 +666,12 @@ object DirectPathTelemetry {
             ?.takeIf { it.size >= 5 }
         val feedback = runCatching { usbFeedbackStatsProvider?.invoke() }.getOrNull()
             ?.takeIf { it.size >= 12 }
-        return snapshotWith(wait, feedback)
+        val transport = runCatching { usbTransportPlanProvider?.invoke() }.getOrNull()
+            ?.takeIf { it.size >= UsbTransportPlan.Field.COUNT }
+        return snapshotWith(wait, feedback, transport)
     }
 
-    private fun snapshotWith(wait: LongArray?, feedback: LongArray?): Snapshot = Snapshot(
+    private fun snapshotWith(wait: LongArray?, feedback: LongArray?, transport: LongArray?): Snapshot = Snapshot(
         captureEnabled = captureEnabled,
         elapsedRealtimeMs = SystemClock.elapsedRealtime(),
         usbClaims = usbClaims.get(),
@@ -705,8 +682,8 @@ object DirectPathTelemetry {
         usbRequestedRateHz = usbRequestedRateHz,
         usbConfirmedRateHz = usbConfirmedRateHz,
         producer = producer,
-        nativeEngineStarts = nativeEngineStarts.get(),
-        nativeEngineStops = nativeEngineStops.get(),
+        nativeEngineStarts = 0L,
+        nativeEngineStops = 0L,
         streamingThreadStarts = streamingThreadStarts.get(),
         streamingThreadStops = streamingThreadStops.get(),
         modeTransitions = modeTransitions.get(),
@@ -741,6 +718,7 @@ object DirectPathTelemetry {
         naturalJoinPausesHeld = naturalJoinPausesHeld.get(),
         pipelinePauseFades = pipelinePauseFades.get(),
         pipelineSeekFades = pipelineSeekFades.get(),
+        dacRecoveries = dacRecoveries.get(),
         pipelineRealignsKept = pipelineRealignsKept.get(),
         presenceActive = presenceActive,
         rateSwitchPrerolls = rateSwitchPrerolls.get(),
@@ -767,15 +745,19 @@ object DirectPathTelemetry {
         feedbackRejectedReadings = feedback?.getOrNull(12) ?: 0L,
         feedbackImplausibleStreaks = feedback?.getOrNull(13) ?: 0L,
         feedbackRejectedFpmf = FeedbackPolicy.fpmf(feedback?.getOrNull(14)) ?: 0.0,
+        transportIntervalUs = transport?.get(UsbTransportPlan.Field.SERVICE_INTERVAL_US) ?: 0L,
+        transportRingUrbs = transport?.get(UsbTransportPlan.Field.RING_URBS) ?: 0L,
+        transportQueueSoftFrames = transport?.get(UsbTransportPlan.Field.QUEUE_SOFT_FRAMES) ?: 0L,
+        transportQueueHardFrames = transport?.get(UsbTransportPlan.Field.QUEUE_HARD_FRAMES) ?: 0L,
+        transportAssumptions = transport?.get(UsbTransportPlan.Field.ASSUMPTIONS) ?: -1L,
     )
 
     /** Clears every counter and the ring, so a session starts from a known zero. */
     fun reset() {
         usbClaims.set(0); usbReleases.set(0); usbClaimFailures.set(0)
-        nativeEngineStarts.set(0); nativeEngineStops.set(0)
         streamingThreadStarts.set(0); streamingThreadStops.set(0)
         naturalJoinPausesHeld.set(0)
-        pipelinePauseFades.set(0); pipelineSeekFades.set(0); pipelineRealignsKept.set(0)
+        pipelinePauseFades.set(0); pipelineSeekFades.set(0); pipelineRealignsKept.set(0); dacRecoveries.set(0)
         presenceStarts.set(0); presenceStops.set(0); presenceFailures.set(0)
         rateSwitchPrerolls.set(0)
         modeTransitions.set(0); stageConfigures.set(0)

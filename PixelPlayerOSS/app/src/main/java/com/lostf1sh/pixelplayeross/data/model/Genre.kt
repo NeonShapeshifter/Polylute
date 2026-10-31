@@ -10,7 +10,9 @@ data class Genre(
     val lightColorHex: String? = null,
     val onLightColorHex: String? = null,
     val darkColorHex: String? = null,
-    val onDarkColorHex: String? = null
+    val onDarkColorHex: String? = null,
+    val songCount: Int = 0,
+    val imagePath: String? = null,
 ) {
     companion object {
         const val UNKNOWN_ID = "unknown"

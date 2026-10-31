@@ -6,30 +6,9 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import java.io.ByteArrayInputStream
-import java.io.File
-import java.io.FileOutputStream
 import java.net.URLConnection
 import java.util.Locale
-import timber.log.Timber
 
-internal fun createTempAudioFileFromUri(context: Context, uri: Uri): File? {
-    return try {
-        val fileExtension = resolveAudioFileExtension(context, uri)
-        val inputStream = context.contentResolver.openInputStream(uri)
-        val tempFile = File.createTempFile("pixelplayer_audio_", fileExtension, context.cacheDir)
-        tempFile.deleteOnExit()
-        val outputStream = FileOutputStream(tempFile)
-        inputStream?.use { input ->
-            outputStream.use { output ->
-                input.copyTo(output)
-            }
-        }
-        tempFile
-    } catch (error: Exception) {
-        Timber.tag("AudioMetadataUtils").e(error, "Error creating temp file from URI: $uri")
-        null
-    }
-}
 
 internal fun resolveAudioFileExtension(context: Context, uri: Uri): String {
     fun normalizeExtension(extension: String): String {

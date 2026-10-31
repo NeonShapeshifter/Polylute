@@ -2,8 +2,6 @@
 <resources>
     <string name="presentation_batch_d_library_title">Library</string>
     <string name="presentation_batch_d_open_settings_cd">Settings</string>
-    <string name="presentation_batch_d_edit_library_tabs_cd">Edit</string>
-    <string name="presentation_batch_d_reorder_tabs_cd">Reorder tabs</string>
     <string name="presentation_batch_d_sort_by">Sort by</string>
     <string name="presentation_batch_d_view_section_view">View</string>
     <string name="presentation_batch_d_playlist_view">Playlist View</string>
@@ -17,7 +15,6 @@
     <string name="presentation_batch_d_library_tabs_sheet_title">Library tabs</string>
     <string name="presentation_batch_d_library_tabs_sheet_subtitle">Jump directly to any tab or reorder them.</string>
     <string name="presentation_batch_d_reorder_tabs_label">Reorder tabs</string>
-    <string name="presentation_batch_d_cd_folder">Folder</string>
 
     <string name="presentation_batch_d_merge_playlists_title">Merge Playlists</string>
     <string name="presentation_batch_d_merge_playlists_prompt">Enter a name for the merged playlist:</string>
@@ -25,34 +22,10 @@
     <string name="presentation_batch_d_merge_playlists_body">This will merge %1$d selected playlists into one.</string>
 
 
-    <string name="presentation_batch_d_eq_change_view_mode_cd">Change view mode</string>
-    <string name="presentation_batch_d_eq_disable_cd">Disable equalizer</string>
-    <string name="presentation_batch_d_eq_enable_cd">Enable equalizer</string>
-    <string name="presentation_batch_d_eq_edit_tab_title">Edit</string>
-    <string name="presentation_batch_d_eq_edit_presets_cd">Edit presets</string>
-    <string name="presentation_batch_d_eq_custom_preset_cd">Custom preset</string>
-    <string name="presentation_batch_d_eq_presets_cd">Presets</string>
-    <string name="presentation_batch_d_action_update">Update</string>
     <string name="presentation_batch_d_eq_bass_boost">Bass Boost</string>
     <string name="presentation_batch_d_eq_virtualizer">Virtualizer</string>
     <string name="presentation_batch_d_eq_loudness">Loudness</string>
-    <string name="presentation_batch_d_eq_effect_not_supported">Not supported</string>
     <string name="presentation_batch_d_eq_effect_not_supported_device">Not supported on this device</string>
-    <string name="presentation_batch_d_eq_volume">Volume</string>
-    <string name="presentation_batch_d_eq_frequency_response">Frequency Response</string>
-    <string name="presentation_batch_d_eq_unit_hz">Hz</string>
-    <string name="presentation_batch_d_eq_band_bass">Bass</string>
-    <string name="presentation_batch_d_eq_band_low_mids">Low Mids</string>
-    <string name="presentation_batch_d_eq_band_high_mids">High Mids</string>
-    <string name="presentation_batch_d_eq_band_treble">Treble</string>
-    <string name="presentation_batch_d_eq_band_bass_low">Bass / Low</string>
-    <string name="presentation_batch_d_eq_band_mid_high">Mid / High</string>
-    <string name="presentation_batch_d_eq_page_n">Page %1$d</string>
-    <string name="presentation_batch_d_eq_mode">Mode</string>
-    <string name="presentation_batch_d_eq_mode_10">10-band</string>
-    <string name="presentation_batch_d_eq_mode_15">15-band</string>
-    <string name="presentation_batch_d_eq_mode_10_description">Ten filters, one octave apart.</string>
-    <string name="presentation_batch_d_eq_mode_15_description">Fifteen filters, two-thirds of an octave apart.</string>
 
     <string name="presentation_batch_d_transition_snackbar_using_global">Using global defaults</string>
     <string name="presentation_batch_d_transition_snackbar_saved">Changes saved successfully</string>
@@ -90,12 +63,9 @@
     <string name="presentation_batch_d_edit_artist_image_cd">Edit artist image</string>
     <string name="presentation_batch_d_change_photo">Change photo</string>
     <string name="presentation_batch_d_reset_to_default">Reset to default</string>
-    <string name="presentation_batch_d_cd_shuffle_play_artist">Shuffle play artist</string>
-    <string name="presentation_batch_d_cd_artist">Artist</string>
     <string name="eq_preset_custom_description">Your own curve. Editing any band keeps it custom.</string>
     <string name="eq_preset_update">Update preset</string>
     <string name="eq_reset_flat">Reset to flat</string>
-    <string name="eq_bands_hint">Tap or drag a band to change it.</string>
     <string name="eq_preset_flat">Flat</string>
     <string name="eq_preset_rock">Rock</string>
     <string name="eq_preset_pop">Pop</string>
@@ -109,6 +79,5 @@
     <string name="eq_preset_custom">Custom</string>
     <string name="headphone_processing_title">Processing</string>
     <string name="headphone_processing_strength">Strength</string>
-    <string name="headphone_processing_eq_note">Edited on the equalizer screen.</string>
     <string name="headphone_processing_effect_off">Off</string>
 </resources>

@@ -1,8 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.repository
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.LruCache
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
@@ -19,15 +17,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
 import java.io.File
-import java.io.FileOutputStream
-import kotlin.math.max
-import kotlin.math.roundToInt
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import timber.log.Timber
-import androidx.core.graphics.scale
 
 /**
  * Artist pictures: the listener's own, else one downloaded from Wikimedia Commons (B40-F4, when the switch is on), else none.
@@ -49,23 +43,8 @@ class ArtistImageRepository @Inject constructor(
         private const val PREFETCH_CONCURRENCY = 3
         private const val NETWORK_RETRY_ATTEMPTS = 3
         private const val NETWORK_RETRY_INITIAL_DELAY_MS = 500L
-        private const val MAX_CUSTOM_IMAGE_SOURCE_BYTES = 24L * 1024L * 1024L
-        private const val MAX_CUSTOM_IMAGE_DIMENSION_PX = 16_384
-        private const val MAX_CUSTOM_IMAGE_TOTAL_PIXELS = 80_000_000L
-        private const val TARGET_CUSTOM_IMAGE_MAX_DIMENSION_PX = 2_048
-        private const val TARGET_CUSTOM_IMAGE_MAX_PIXELS = 4_194_304L
-
-        internal fun calculateCustomImageSampleSize(width: Int, height: Int): Int {
-            var sampleSize = 1
-            while (
-                width / sampleSize > TARGET_CUSTOM_IMAGE_MAX_DIMENSION_PX ||
-                height / sampleSize > TARGET_CUSTOM_IMAGE_MAX_DIMENSION_PX ||
-                (width.toLong() / sampleSize) * (height.toLong() / sampleSize) > TARGET_CUSTOM_IMAGE_MAX_PIXELS
-            ) {
-                sampleSize = sampleSize shl 1
-            }
-            return sampleSize.coerceAtLeast(1)
-        }
+        internal fun calculateCustomImageSampleSize(width: Int, height: Int): Int =
+            CustomImageFiles.calculateCustomImageSampleSize(width, height)
     }
 
     private val memoryCache = LruCache<String, String>(CACHE_SIZE)
@@ -147,8 +126,8 @@ class ArtistImageRepository @Inject constructor(
     private fun isRemote(url: String): Boolean = url.startsWith("http://") || url.startsWith("https://")
 
     /**
-     * Prefetch artist images for a list of artists in background.
-     * Useful for batch loading when displaying artist lists.
+     * Fetch missing pictures for the credited artists of the song on screen.
+     * Library lists never call this; catalog downloads belong to the downloader.
      */
     suspend fun prefetchArtistImages(artists: List<Pair<Long, String>>) = withContext(Dispatchers.IO) {
         if (!userPreferencesRepository.musicInfoArtistPhotosEnabledFlow.first()) return@withContext
@@ -269,102 +248,16 @@ class ArtistImageRepository @Inject constructor(
     suspend fun setCustomArtistImage(context: Context, artistId: Long, sourceUri: Uri): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val bitmap = decodeCustomArtistBitmap(context, sourceUri) ?: return@withContext null
-                val scaledBitmap = scaleBitmapIfNeeded(bitmap)
-                try {
-                    val destFile = File(context.filesDir, "artist_art_${artistId}.jpg")
-                    FileOutputStream(destFile).use { out ->
-                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                    }
-
-                    val internalPath = destFile.absolutePath
-
-                    musicDao.updateArtistCustomImage(artistId, internalPath)
-
-                    Timber.tag(TAG).d("Custom artist image saved: $internalPath")
-                    internalPath
-                } finally {
-                    if (scaledBitmap !== bitmap) {
-                        bitmap.recycle()
-                    }
-                    scaledBitmap.recycle()
-                }
+                val internalPath = CustomImageFiles.copy(context, sourceUri, "artist_art_${artistId}.jpg")
+                    ?: return@withContext null
+                musicDao.updateArtistCustomImage(artistId, internalPath)
+                internalPath
             } catch (e: Exception) {
                 Timber.tag(TAG)
                     .e("Failed to save custom artist image for id=$artistId: ${e.message}")
                 null
             }
         }
-    }
-
-    private fun decodeCustomArtistBitmap(context: Context, sourceUri: Uri): Bitmap? {
-        val resolver = context.contentResolver
-        val mimeType = resolver.getType(sourceUri)?.lowercase()
-        if (mimeType != null && !mimeType.startsWith("image/")) {
-            Timber.tag(TAG).w("Rejected custom artist image with unsupported MIME type: $mimeType")
-            return null
-        }
-
-        runCatching { resolver.openAssetFileDescriptor(sourceUri, "r") }.getOrNull()?.use { descriptor ->
-            val declaredLength = descriptor.length
-            if (declaredLength > MAX_CUSTOM_IMAGE_SOURCE_BYTES) {
-                Timber.tag(TAG)
-                    .w("Rejected custom artist image larger than allowed source size: $declaredLength")
-                return null
-            }
-        }
-
-        val bounds = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
-        
-        resolver.openInputStream(sourceUri)?.use { inputStream ->
-            BitmapFactory.decodeStream(inputStream, null, bounds)
-        }
-
-        val width = bounds.outWidth
-        val height = bounds.outHeight
-        if (width <= 0 || height <= 0) {
-            Timber.tag(TAG)
-                .w("Rejected custom artist image with invalid bounds: ${width}x${height}")
-            return null
-        }
-        if (width > MAX_CUSTOM_IMAGE_DIMENSION_PX || height > MAX_CUSTOM_IMAGE_DIMENSION_PX) {
-            Timber.tag(TAG)
-                .w("Rejected custom artist image with oversized bounds: ${width}x${height}")
-            return null
-        }
-        if (width.toLong() * height.toLong() > MAX_CUSTOM_IMAGE_TOTAL_PIXELS) {
-            Timber.tag(TAG)
-                .w("Rejected custom artist image with excessive pixel count: ${width}x${height}")
-            return null
-        }
-
-        val decodeOptions = BitmapFactory.Options().apply {
-            inSampleSize = calculateCustomImageSampleSize(width, height)
-            inPreferredConfig = Bitmap.Config.RGB_565
-        }
-
-        return try {
-            resolver.openInputStream(sourceUri)?.use { inputStream ->
-                BitmapFactory.decodeStream(inputStream, null, decodeOptions)
-            }
-        } catch (oom: OutOfMemoryError) {
-            Timber.tag(TAG).e(oom, "Failed to decode custom artist image due to OOM")
-            null
-        }
-    }
-
-    private fun scaleBitmapIfNeeded(bitmap: Bitmap): Bitmap {
-        val longestEdge = max(bitmap.width, bitmap.height)
-        if (longestEdge <= TARGET_CUSTOM_IMAGE_MAX_DIMENSION_PX) {
-            return bitmap
-        }
-
-        val scale = TARGET_CUSTOM_IMAGE_MAX_DIMENSION_PX.toFloat() / longestEdge.toFloat()
-        val scaledWidth = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
-        val scaledHeight = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
-        return bitmap.scale(scaledWidth, scaledHeight)
     }
 
     /**
@@ -376,11 +269,7 @@ class ArtistImageRepository @Inject constructor(
     suspend fun clearCustomArtistImage(context: Context, artistId: Long) {
         withContext(Dispatchers.IO) {
             try {
-                val destFile = File(context.filesDir, "artist_art_${artistId}.jpg")
-                if (destFile.exists()) {
-                    destFile.delete()
-                    Timber.tag(TAG).d("Deleted custom artist image file: ${destFile.absolutePath}")
-                }
+                CustomImageFiles.remove(context, File(context.filesDir, "artist_art_${artistId}.jpg").absolutePath, "artist_art_")
                 musicDao.updateArtistCustomImage(artistId, null)
             } catch (e: Exception) {
                 Timber.tag(TAG)

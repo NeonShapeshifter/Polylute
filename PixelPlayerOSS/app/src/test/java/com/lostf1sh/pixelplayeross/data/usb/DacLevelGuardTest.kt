@@ -104,9 +104,16 @@ class DacLevelGuardTest {
         val sink = File(
             "../../decent-player/libs/decent-usb-audio-wrapper-media3/src/main/kotlin/com/decent/usbaudio/media3/UsbAudioSink.kt"
         ).readText().replace("\r\n", "\n")
-        val sequence = sink.substringAfter("// Step 5: setAlt(N)").substringBefore("if (!stream.start())")
-        assertThat(sequence).contains("usbAudioDevice.restoreLevelAfterReconfigure(")
+        // B48-1: the reconfigure (start-up and recovery run the same one) lives in the driver's StreamingInterfaceSequence, over a StreamingDeviceOps the device implements
+        val sequenceSource = File(
+            "../../decent-player/libs/decent-usb-audio-driver/src/main/kotlin/com/decent/usbaudio/StreamingInterfaceSequence.kt"
+        ).readText().replace("\r\n", "\n")
+        val sequence = sequenceSource.substringAfter("// Step 5: setAlt(N)").substringBefore("return InterfaceReconfigured(confirmedSampleRate, null)")
+        assertThat(sequence).contains("device.restoreLevelAfterReconfigure(")
         assertThat(sequence).contains("OpenLevelCheck.UNVERIFIED")
+        assertThat(sink).contains("streamingSequence.reconfigure(sampleRate, altSetting")
+        // and it still runs after the alt and before the stream starts
+        assertThat(sink.indexOf("streamingSequence.reconfigure(")).isLessThan(sink.indexOf("if (!stream.start())"))
         val device = File(
             "../../decent-player/libs/decent-usb-audio-driver/src/main/kotlin/com/decent/usbaudio/UsbAudioDevice.kt"
         ).readText().replace("\r\n", "\n")

@@ -96,12 +96,13 @@ object MediaItemBuilder {
     const val EXTERNAL_EXTRA_SAMPLE_RATE = EXTERNAL_EXTRA_PREFIX + "SAMPLE_RATE"
     const val EXTERNAL_EXTRA_FILE_PATH = EXTERNAL_EXTRA_PREFIX + "FILE_PATH"
 
-    fun build(song: Song): MediaItem {
+    /** [playlistId], when given, is one more extra of the item (`playlistId`), put in the same pass: the item is built once. */
+    fun build(song: Song, playlistId: String? = null): MediaItem {
         return MediaItem.Builder()
             .setMediaId(song.id)
             .setUri(playbackUri(song))
             .setMimeType(playbackMimeType(song))
-            .setMediaMetadata(buildMediaMetadataForSong(song))
+            .setMediaMetadata(buildMediaMetadataForSong(song, playlistId = playlistId))
             .build()
     }
 
@@ -262,7 +263,8 @@ object MediaItemBuilder {
     @OptIn(UnstableApi::class)
     private fun buildMediaMetadataForSong(
         song: Song,
-        exposedArtworkUri: Uri? = artworkUri(song.albumArtUriString)
+        exposedArtworkUri: Uri? = artworkUri(song.albumArtUriString),
+        playlistId: String? = null,
     ): MediaMetadata {
         val metadataBuilder = MediaMetadata.Builder()
             .setTitle(song.title)
@@ -289,6 +291,7 @@ object MediaItemBuilder {
             putInt(EXTERNAL_EXTRA_BITRATE, song.bitrate ?: 0)
             putInt(EXTERNAL_EXTRA_SAMPLE_RATE, song.sampleRate ?: 0)
             putString(EXTERNAL_EXTRA_FILE_PATH, song.path)
+            if (playlistId != null) putString("playlistId", playlistId)
         }
 
         metadataBuilder.setExtras(extras)

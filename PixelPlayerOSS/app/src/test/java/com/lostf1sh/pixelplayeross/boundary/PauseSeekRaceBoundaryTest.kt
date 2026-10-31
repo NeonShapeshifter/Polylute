@@ -17,36 +17,7 @@ class PauseSeekRaceBoundaryTest {
     private val jni = "../../decent-player/libs/decent-usb-audio-driver/src/main/jni"
     private fun read(name: String) = File("$jni/$name").readText().replace("\r\n", "\n")
 
-    private val engine = read("native-audio-engine.cpp")
     private val output = read("usb-audio-output.cpp")
-
-    private val seekBlock = engine.substringAfter("const bool pauseFaded = engine->pauseFadeQueued;")
-        .substringBefore("if (seekOk) {")
-
-    @Test
-    fun `the seek cut is decided by what is unplayed in the ring, not by the pause`() {
-        assertThat(seekBlock).contains("const int64_t unplayedFrames = usbQueuedFrames(engine->usbCtx);")
-        assertThat(seekBlock).contains("seekCutFor(engine->hasSubmittedAudio, unplayedFrames,")
-        // No pause flag reaches the decision.
-        val call = seekBlock.substringAfter("seekCutFor(").substringBefore(");")
-        assertThat(call).doesNotContain("paused")
-        assertThat(call).doesNotContain("pauseFaded")
-        assertThat(call).doesNotContain("urbsInFlight")
-    }
-
-    @Test
-    fun `a pause that already faded the ring does not get a second continuation fade`() {
-        assertThat(seekBlock).contains("if (!pauseFaded) queueSeekFadeOut(engine);")
-        // The silence feed still runs, and the resume fades in as after any pause.
-        assertThat(seekBlock).contains("seekWhileFeedingSilence(engine, (FLAC__uint64)targetSample)")
-        assertThat(seekBlock).contains("if (engine->paused.load()) engine->pauseFadeQueued = true;")
-    }
-
-    @Test
-    fun `the discard branch is only for a ring with nothing left to play`() {
-        val discard = seekBlock.substringAfter("} else {")
-        assertThat(discard).contains("if (cut != SEEK_CUT_KEEP_TAIL) discardQueuedPcm(engine->usbCtx);")
-    }
 
     @Test
     fun `RING_EMPTY counts a dry ring whatever its duration`() {
@@ -59,10 +30,6 @@ class PauseSeekRaceBoundaryTest {
 
     @Test
     fun `an intentional idle is announced so a resume is not counted as a starvation`() {
-        // The native engine's pause branch zeroes the stamp before it waits.
-        val pause = engine.substringAfter("// Handle pause").substringBefore("waitWhilePaused(engine);")
-        assertThat(pause).contains("engine->usbCtx->lastSubmitMs = 0;")
-        // The ExoPlayer pipeline's writer does the same from the thread that writes.
         val thread = File(
             "../../decent-player/libs/decent-usb-audio-wrapper-media3/src/main/kotlin/com/decent/usbaudio/media3/UsbStreamingThread.kt"
         ).readText().replace("\r\n", "\n")

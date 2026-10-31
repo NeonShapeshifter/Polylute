@@ -78,7 +78,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 
-
 data class ActiveDecoderInfo(
     val name: String,
     val isHardware: Boolean
@@ -367,10 +366,6 @@ class DualPlayerEngine @Inject constructor(
         // Diagnostics only: a renderer-domain anchor is only interpretable next to the player
         // state that produced it. Never an anchor itself (AUD-139).
         handoffContextProvider = { diagnosticHandoffContext },
-        // DEBUG ONLY: plan B (B12a) — the persisted switch that brings the native engine back, loaded once
-        // here (not on the audio thread) and read from the cache. Off unless the debug bridge turned it
-        // on, and inert in a release build: the ExoPlayer pipeline carries PRISTINE and no engine exists.
-        debugForceNativeEngineProvider = NativeEngineDebugSwitch.shared(context)::isForced,
         // DEBUG ONLY (B12a-4): the persisted pre-roll after a rate change, 0 by default and in release.
         rateSwitchPrerollMsProvider = RateSwitchPrerollSetting.shared(context)::ms,
     )
@@ -728,7 +723,7 @@ class DualPlayerEngine @Inject constructor(
     fun setOnPlayerAboutToBeReleasedListener(listener: (Player) -> Unit) {
         onPlayerAboutToBeReleasedListener = listener
     }
-    
+
     private val _activeAudioSessionId = MutableStateFlow(0)
     val activeAudioSessionId: StateFlow<Int> = _activeAudioSessionId.asStateFlow()
 
@@ -815,6 +810,9 @@ class DualPlayerEngine @Inject constructor(
         val usbDevice = usbAudioDevice.findUsbAudioDevice()
         // B25-S1: first, before anything below can rebuild the player on the Android path with the play intent.
         observeUsbPresence(usbDevice != null, "USB availability changed")
+        // B48-1: after the pause, which must not wait for anything: the device's owner learns the DAC is gone, so a recovery in the middle of its sequence stops at its next
+        // call and nothing is claimed after the detach. Never waits for the recovery.
+        if (usbDevice == null) usbAudioDevice.owner.deviceDetached()
         val masterSink = if (::playerA.isInitialized) playerUsbSinks[playerA] else null
         val sinkDiagnostics = masterSink?.diagnostics
         if (usbDevice != null && (
@@ -1072,12 +1070,7 @@ class DualPlayerEngine @Inject constructor(
         publishAppliedSignal()
         // Push the change into the Direct pipeline before anything else looks at it.
         //
-        // This is the authoritative trigger for a signal-mode transition, and it is deliberately
-        // not the route reevaluation below. A mode change is not a backend change and does not
-        // rebuild the player, and it cannot be discovered by the sink's PCM path: while the native
-        // engine owns a local FLAC, `NativeEngineAwareLoadControl` stops ExoPlayer loading and
-        // `handleBuffer` may never be called again for that track. Waiting for it produced a
-        // `DIRECT_PROCESSED` route, an untouched native engine, and a `StuckPlayerException`.
+        // Push signal-mode changes even when playback is paused and PCM callbacks are idle.
         if (::playerA.isInitialized) {
             playerUsbSinks[playerA]?.requestSignalMode()
         }
@@ -2016,7 +2009,7 @@ class DualPlayerEngine @Inject constructor(
             lastMediaItemTransitionAtMs = SystemClock.elapsedRealtime()
             cancelAudioOffloadFallback()
             mainHandler.post { reevaluateAutomaticRoute("Source changed") }
-            
+
             if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 cancelNext()
             }
@@ -2701,8 +2694,7 @@ class DualPlayerEngine @Inject constructor(
     private fun scheduleAudioOffloadFallbackIfNeeded(player: ExoPlayer) {
         cancelAudioOffloadFallback()
         if (!audioOffloadEnabled || transitionRunning || !player.playWhenReady || player.isPlaying) return
-        // On USB Direct the PCM never reaches the platform AudioTrack that offload is about, and the
-        // player can sit in BUFFERING for seconds while the native engine and the USB stream come up.
+        // USB Direct does not use the platform AudioTrack that offload is about.
         // Arming this there read that as "offload stalled" and rebuilt the whole player mid-track,
         // which reopened the DAC and restarted the song. Measured: a rebuild 4.4 s after every
         // library tap, with the stream reopened and the start position re-declared.
@@ -2760,7 +2752,7 @@ class DualPlayerEngine @Inject constructor(
         if (!::playerA.isInitialized) return
         val mode = wakeModeFor(playerA.currentMediaItem)
         if (currentWakeMode == mode) return
-        
+
         try {
             playerA.setWakeMode(mode)
             playerB?.setWakeMode(mode)
@@ -2871,11 +2863,7 @@ class DualPlayerEngine @Inject constructor(
         playerA.playbackParameters = playbackParameters
 
         if (mediaItems.isNotEmpty()) {
-            // This is a RESUME at `positionMs`, so the Direct path is told the same number before
-            // the item starts. Without it Media3 resumes here while the native engine starts at its
-            // START-FRESH default of 0, and the first mapping latch bakes the difference into
-            // windowOffsetUs — measured on the HONOR as a player position running 149s ahead of the
-            // native engine for the whole item.
+            // Restore Media3 and the Direct renderer mapping at the same declared position.
             declareItemStartTarget(positionMs)
             playerA.setMediaItems(mediaItems, currentIndex, positionMs)
             playerA.repeatMode = repeatMode
@@ -3056,21 +3044,13 @@ class DualPlayerEngine @Inject constructor(
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
             .build()
-            
+
         val dataSourceFactory = DefaultDataSource.Factory(context)
         val extractorsFactory = DefaultExtractorsFactory()
             .setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
             .setFlacExtractorFlags(FlacExtractor.FLAG_DISABLE_ID3_METADATA)
 
-        val loadControl = UsbAudioSink.wrapLoadControl(
-            buildAdaptiveLoadControl(),
-            // READY follows the native engine, not Media3's buffer, once the engine exists (AUD-114).
-            isEngineReady = { builtUsbSink?.isNativeEngineReadyForCurrentItem == true },
-            // Media3 may load the next item in the engine's last seconds (AUD-130).
-            isEnginePreloadWindow = { builtUsbSink?.isNativeEngineNearEnd == true },
-        ) {
-            builtUsbSink?.isNativeEngineActive == true
-        }
+        val loadControl = buildAdaptiveLoadControl()
 
         val player = ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory))

@@ -37,8 +37,10 @@ class B41Fix1DriverBoundaryTest {
         // a transfer that is not a reading is re-queued like any other: the continuous read still resubmits at its end
         val handler = body(output, "static void handleFeedbackCompletion(")
         assertThat(handler.indexOf("submitFeedbackUrb(ctx);")).isGreaterThan(handler.indexOf("noteFeedbackDropped("))
-        // ... and the start keeps the nominal rate when the read was not one
-        assertThat(body(output, "Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(")).contains("startVerdict != USB_FEEDBACK_PACKET_OK")
+        // ... and the start keeps the nominal rate when the read was not one. B47-A5: that block is `startFeedbackTracking`, which the start and the recovery's re-arm both
+        // run (one path, not two); the start calls it.
+        assertThat(body(output, "static const char *startFeedbackTracking(")).contains("startVerdict != USB_FEEDBACK_PACKET_OK")
+        assertThat(body(output, "Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(")).contains("startFeedbackTracking(ctx)")
     }
 
     @Test
@@ -59,7 +61,7 @@ class B41Fix1DriverBoundaryTest {
         assertThat(output.split("refusalEpoch++").size - 1).isEqualTo(1)
         assertThat(body(output, "static void updateRefusal(")).contains("if (refusing && !ctx->refusing) ctx->refusalEpoch++;")
         // the follower: a refused reading never enters it under `auto`; `follow` takes everything in the window, as it always did
-        assertThat(body(output, "static void handleFeedbackCompletion(")).contains("if (!(ctx->refusing && usbFeedbackPolicy() == USB_FEEDBACK_AUTO)) ctx->calibratedFpmf = newFpmf;")
+        assertThat(body(output, "static void observeCleanFeedback(")).contains("if (!(ctx->refusing && usbFeedbackPolicyRefuses(usbFeedbackPolicy()))) ctx->calibratedFpmf = applied;")
         // the logs still show the DAC's word, not the follower's
         assertThat(output).contains("ctx->urbsInFlight, inputBitDepth, ctx->readingFpmf,")
     }

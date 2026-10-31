@@ -252,7 +252,8 @@ class DirectPlaybackPresenceTest {
         assertThat(pause.indexOf("pauseStreamingThread()")).isLessThan(pause.indexOf("updatePresence()"))
         assertThat(pause).contains("isPlaying = false")
         assertThat(sink.substringAfter("override fun release() {").substringBefore("\n    }\n")).contains("presence?.release()")
-        assertThat(sink.substringAfter("private fun releaseUsbStream() {").substringBefore("\n    }\n")).contains("updatePresence()")
+        // B48-1: the release proper (inside the device's owner) is releaseOwnedStream
+        assertThat(sink.substringAfter("private fun releaseOwnedStream(").substringBefore("\n    }\n")).contains("updatePresence()")
         // started with the stream
         assertThat(sink).contains("usbAudioStream = stream\n        currentSampleRate = sampleRate\n        currentChannelCount = channelCount\n        muteDelegateIfNeeded()\n        updatePresence()")
         // and only for a Direct sink the config wants it for

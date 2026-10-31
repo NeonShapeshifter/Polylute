@@ -163,7 +163,7 @@ suspend fun loadArtworkBytesViaCoil(context: Context, uri: Uri): ByteArray? {
             config = ArtworkTransportSanitizer.WIDGET_CONFIG,
         )
     }.getOrElse { error ->
-        Timber.tag("MusicService_PixelPlayer").w(error, "Artwork read failed via Coil for uri=%s", uri)
+        Timber.tag("PolyluteMusicService").w(error, "Artwork read failed via Coil for uri=%s", uri)
         null
     }
 }
@@ -269,7 +269,7 @@ class MusicService : MediaSessionService() {
     private var temporaryForegroundNotificationVisible = false
 
     companion object {
-        private const val TAG = "MusicService_PixelPlayer"
+        private const val TAG = "PolyluteMusicService"
         const val NOTIFICATION_ID = 101
         const val ACTION_SLEEP_TIMER_EXPIRED = "com.lostf1sh.pixelplayeross.ACTION_SLEEP_TIMER_EXPIRED"
         /** AUD-103: the widget queue tap's media id, numeric or not. */

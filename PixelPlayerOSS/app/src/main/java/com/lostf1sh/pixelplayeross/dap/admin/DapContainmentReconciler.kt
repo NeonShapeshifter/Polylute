@@ -108,7 +108,7 @@ internal class DapContainmentReconciler(
     /**
      * Makes the containment flag agree with the authoritative Android state.
      *
-     * `ProductModeResolver` treats Device Owner + PixelPlayer-as-HOME as proof that the appliance
+     * `ProductModeResolver` treats Device Owner + Polylute-as-HOME as proof that the appliance
      * was provisioned, and reports `DEDICATED_ACTIVE`. The flag this method writes is what
      * `DapContainmentPolicy.shouldEnterLockTask` actually gates on — through
      * `DapDeviceOwnerState.isDedicatedModeEnabled` — and nothing was reconciling the two.
@@ -120,7 +120,7 @@ internal class DapContainmentReconciler(
      * early-returns on the flag before it ever asks.
      *
      * Re-asserting is safe only when the listener has not chosen to leave. B34 said "a deliberate exit clears HOME ownership first, and once
-     * PixelPlayer is no longer HOME this writes nothing", which left a window: between the clear and the pick Polylute *is* still HOME. The
+     * Polylute is no longer HOME this writes nothing", which left a window: between the clear and the pick Polylute *is* still HOME. The
      * recorded exit ([DapDeviceOwnerState.isHomeExitChosen]) closes it; [restore] returns before it gets here, and this checks again.
      */
     private fun reconcileContainmentFlag(state: DapDeviceOwnerState) {

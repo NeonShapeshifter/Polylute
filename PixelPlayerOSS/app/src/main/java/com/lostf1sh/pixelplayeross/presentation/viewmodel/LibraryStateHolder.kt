@@ -36,7 +36,9 @@ import javax.inject.Singleton
 private const val ENABLE_FOLDERS_STORAGE_FILTER = false
 private data class GenreSeed(
     val id: String,
-    val name: String
+    val name: String,
+    val songCount: Int,
+    val imagePath: String?,
 )
 
 /**
@@ -152,7 +154,9 @@ class LibraryStateHolder @Inject constructor(
             genres.map { genre ->
                 GenreSeed(
                     id = genre.id,
-                    name = genre.name
+                    name = genre.name,
+                    songCount = genre.songCount,
+                    imagePath = genre.imagePath,
                 )
             }
         }
@@ -165,6 +169,8 @@ class LibraryStateHolder @Inject constructor(
                 com.lostf1sh.pixelplayeross.data.model.Genre(
                     id = seed.id,
                     name = seed.name,
+                    songCount = seed.songCount,
+                    imagePath = seed.imagePath,
                     lightColorHex = lightThemeColor.container.toHexString(),
                     onLightColorHex = lightThemeColor.onContainer.toHexString(),
                     darkColorHex = darkThemeColor.container.toHexString(),

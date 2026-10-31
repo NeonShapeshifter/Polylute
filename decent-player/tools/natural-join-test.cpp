@@ -1,37 +1,10 @@
-// Host simulation of the native engine and the USB output at a natural track join (AUD-144, AUD-143,
-// AUD-145).
-//
-// What runs is the real code: usb-audio-output.cpp, native-audio-engine.cpp, flac_parser.cc and
-// libFLAC, entered through the same JNI functions the Kotlin sink calls (env and object are never
-// dereferenced by the ones used here; the pipeline's raw write gets a minimal fake JNIEnv). Only the
-// kernel is faked: `ioctl` and `poll` on one file descriptor play usbfs. A submitted ISO URB completes
-// when its audio would have been heard (1 ms of audio per URB, back to back), and every accepted audio
-// payload is captured at SUBMITURB, the boundary the device's payload harness measures.
-//
-// B9 adds the ExoPlayer pipeline's pause / seek / skip barrier to the same simulation (section 6): the
-// writer's protocol (what UsbStreamingThread does through the JNI entry points) is driven here against
-// the real usb-audio-output.cpp, and the captured payload is compared sample by sample with
-// `pcmApplyGainRamp` — fade shape, frame count, the continuity of the ring (no empty microframe) and the
-// audio of the old position never playing after the new one starts.
-//
-// B10 adds section 7: the DAC's feedback endpoint stuck at a value (the "shh", AUD-124) through the real
-// output — the detector fires, the feedback policies put the packet sizes the policy says on the wire, and
-// a policy switched in mid-stream does not jump. The fake endpoint answers what the test says, a constant or
-// a healthy dither, and every packet's frame count is recorded at SUBMITURB.
-//
-// Why it exists: on the HONOR, two same-rate FLACs played back to back reached the DAC with the right
-// byte count and the wrong hash (B8a, `bp-native-gap`: 27b6aa95… for a7482ec2…), and so did a 96 →
-// 44.1 kHz pair. The block hash was reproduced on the host to the bit as the engine's *pause* fade
-// (8 ms out, 15 ms in) starting at the second decoded block of the new track: Media3 stops its
-// renderers for a ~35 ms rebuffer right after the transition and the engine took the stop for a
-// user's pause. This file pins both halves of that: the engine is bit-exact across a join, and a pause
-// still fades exactly as AUD-123/140 designed — so the join must never be sent one.
+// Host simulation of the USB writer through the pipeline JNI protocol and a fake usbfs.
+// All writer scenarios use tools/sim-clock.h virtual time; no hardware is opened.
 #include <jni.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <linux/usbdevice_fs.h>
-#include <FLAC/stream_encoder.h>
 
 #include "seek-barrier.h"
 #include "sim-clock.h"
@@ -40,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <cmath>
 #include <chrono>
 #include <cstdarg>
 #include <cstdint>
@@ -60,7 +34,7 @@
 // ── What the library exports through JNI ────────────────────────────────────────────────────────
 extern "C" {
 JNIEXPORT jlong JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
-    JNIEnv *, jobject, jint, jint, jint, jint, jint, jint, jint, jint);
+    JNIEnv *, jobject, jint, jint, jint, jint, jint, jint, jint, jint, jint, jint);
 JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(JNIEnv *, jobject, jlong);
 JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStop(JNIEnv *, jobject, jlong);
 JNIEXPORT jint JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeDrainUrbs(JNIEnv *, jobject, jlong);
@@ -79,14 +53,11 @@ JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativePipelin
 JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativePipelineEndFadeOut(JNIEnv *, jobject, jlong);
 JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativePipelineResume(JNIEnv *, jobject, jlong);
 JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativePipelineFeedSilence(JNIEnv *, jobject, jlong);
-JNIEXPORT jlong JNICALL Java_com_decent_usbaudio_NativeAudioEngine_nativeCreateFromFd(JNIEnv *, jobject, jint, jlong);
-JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_NativeAudioEngine_nativeStart(JNIEnv *, jobject, jlong);
-JNIEXPORT void JNICALL Java_com_decent_usbaudio_NativeAudioEngine_nativePause(JNIEnv *, jobject, jlong);
-JNIEXPORT void JNICALL Java_com_decent_usbaudio_NativeAudioEngine_nativeResume(JNIEnv *, jobject, jlong);
-JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_NativeAudioEngine_nativeSeek(JNIEnv *, jobject, jlong, jlong, jlong);
-JNIEXPORT void JNICALL Java_com_decent_usbaudio_NativeAudioEngine_nativeDestroy(JNIEnv *, jobject, jlong);
-JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_NativeAudioEngine_nativeIsRunning(JNIEnv *, jobject, jlong);
-JNIEXPORT jint JNICALL Java_com_decent_usbaudio_NativeAudioEngine_nativeGetExitReason(JNIEnv *, jobject, jlong);
+JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeDacRecoveryBegin(JNIEnv *, jobject, jlong);
+JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeDacRecoveryEnd(JNIEnv *, jobject, jlong);
+JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeNoteDacRecovery(JNIEnv *, jobject, jlong, jint, jint, jlong);
+JNIEXPORT jint JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbResetForRebind(JNIEnv *, jclass, jint);
+
 }
 
 namespace {
@@ -94,6 +65,8 @@ namespace {
 constexpr int kFakeFd = 777;
 constexpr int kEndpointOut = 0x07;
 constexpr int kEndpointFeedback = 0x88;
+constexpr int kFakeBInterval = 1;       // the fake DAC's data endpoint: a packet every microframe
+constexpr int kFakeFeedbackBytes = 4;   // and a Q16.16 feedback packet
 
 // B27-A0: the process clock. Real time, except inside a `simclock::VirtualTime` scope (the pipeline tests, whose writer is the
 // test thread): there it only moves when that thread waits, so how fast the host is changes the wall time, never the verdict.
@@ -124,13 +97,73 @@ struct SubmittedUrb {
     bool stuck;
 };
 
+#ifdef B48FIX1_BEFORE
+// HEAD has no start guard and no priming of a start: the same tests run there, and what they ask for is not there.
+void setStartGuard(bool) {}
+bool startGuardDefaultIsOn() { return false; }
+int64_t silenceToReach(int64_t lead, int64_t chunk, int64_t queued) {
+    return (lead <= 0 || chunk <= 0 || queued >= lead) ? 0 : ((lead - queued + chunk - 1) / chunk) * chunk;
+}
+#else
+void setStartGuard(bool on) { usbSetFeedbackStartGuardEnabled(on); }
+bool startGuardDefaultIsOn() { return false; }
+int64_t silenceToReach(int64_t lead, int64_t chunk, int64_t queued) { return usbSilenceFramesToReach(lead, chunk, queued); }
+#endif
+
 struct FakeUsb {
     std::mutex mu;
     std::deque<Pending> inflight;
     std::vector<uint8_t> capture;  // every accepted audio payload byte, in submission order
+    // B48-fix1: every start of audio into a ring that may be empty is primed with silence (the plan's resume lead), so the DAC plays that silence before the first sample of a stream.
+    // `streamStarts` are the capture offsets at which a stream was created (`createStream`); `audible()` is the capture without those leading silences, which is what every test that
+    // compares the wire with the source asks for. The silence itself is pinned by its own test (`testEveryStartPrimesTheRing`): exactly the plan's amount, then the source.
+    // B48-fix1: what the simulation needs to see a start's first URBs. `urbsSinceStart` counts audio URBs from the last `markStreamStart` / `markRestart`; when
+    // `stallAfterFirstUrbUs` is set, the writer is delayed that long right after the first URB that carries a sample (the thread preempted, or slow work between two URBs).
+    // It is the first AUDIBLE URB and not the first URB of any kind: an isochronous URB plays as soon as it is submitted, so a start whose only URB in flight is one packet of its own
+    // silence runs dry in any stall, primed or not. What priming promises is that the ring already holds the plan's lead when the first sample goes out; HEAD's first URB is audible.
+    // `procOpenCostUs` is what the host simulation cannot see for itself: a read of a /proc file costs the real device milliseconds (the writer's scheduling line took 3-11 ms
+    // on the HONOR), the host's cost is wall time that the virtual clock does not count. Off (0) except in the tests of the start.
+    std::vector<std::pair<int64_t, std::string>> trainLines;
+    int urbsSinceStart = 0;
+    bool audibleSinceStart = false;
+    int64_t stallAfterFirstUrbUs = 0;
+    int64_t procOpenCostUs = 0;
+    std::vector<int> writerLineAtUrb;           // how many audio URBs had gone out when each `Writer thread:` line was written
+    std::vector<std::string> startLines;        // `Start: feedback start guard=...` and `Prime: ...` lines
+    void markRestart() {
+        std::lock_guard<std::mutex> lock(mu);
+        urbsSinceStart = 0;
+        audibleSinceStart = false;
+    }
+    struct StreamStart { size_t offset; int bytesPerFrame; };
+    std::vector<StreamStart> streamStarts;
+    void markStreamStart() {
+        std::lock_guard<std::mutex> lock(mu);
+        streamStarts.push_back(StreamStart{capture.size(), bytesPerFrame});
+        urbsSinceStart = 0;
+        audibleSinceStart = false;
+    }
+    /** The silence a stream started with, in bytes: the zero run from [start], rounded down to a whole frame of that stream (a source frame always has a non-zero byte; the noise sources do). */
+    static size_t silenceRun(const std::vector<uint8_t> &bytes, const StreamStart &start) {
+        size_t run = 0;
+        while (start.offset + run < bytes.size() && bytes[start.offset + run] == 0) run++;
+        return start.bytesPerFrame > 0 ? run / (size_t)start.bytesPerFrame * (size_t)start.bytesPerFrame : run;
+    }
+    std::vector<uint8_t> audible() {
+        std::lock_guard<std::mutex> lock(mu);
+        std::vector<uint8_t> out = capture;
+        for (size_t i = streamStarts.size(); i-- > 0;) {
+            const StreamStart &start = streamStarts[i];
+            if (start.offset > out.size()) continue;
+            const size_t run = silenceRun(out, start);
+            out.erase(out.begin() + (long)start.offset, out.begin() + (long)(start.offset + run));
+        }
+        return out;
+    }
     int64_t lastCompleteUs = 0;
     int rate = 96000;
     int bytesPerFrame = 8;
+    int speed = 3;                 // B46-A4: what USBDEVFS_GET_SPEED answers (3 = high speed); a test sets 2 for a full-speed DAC
     double feedbackFpmf = 12.0;
     // B41-fix1: a script for the feedback endpoint (a function of the moment the transfer is submitted), which beats the constant
     // and the blips, and a log of the audio URBs with their moment, for tests that ask what went on the wire after a given reading.
@@ -144,8 +177,24 @@ struct FakeUsb {
     int gaps = 0;
     int64_t gapUs = 0;
     int64_t maxGapUs = 0;
+    std::vector<int64_t> gapList;  // B47-A3: every empty stretch the fake DAC found, in order (a pause's idle is one of them)
     int ringEmptyLogs = 0;         // USB_GLITCH RING_EMPTY lines the output itself reported
     std::vector<std::string> outputGapLines;  // B23-P2: the USB_GLITCH OUTPUT_GAP lines, whole, as logcat shows them
+    std::vector<std::string> transportLines;  // B46-A4: the stream-start plan line and every TRANSPORT_ASSUMPTION line
+    std::vector<std::string> schedulingLines; // B47-A1: the "Writer thread:" line of a writer's first write, and every OUTPUT_GAP_CPU line
+    // B46-B3: when each audio URB's frames are played (its completion moment, with its frame count), in submission order, and a one-shot
+    // delay inside the writer's next poll: a wake-up that comes late (the thread was runnable, not running).
+    std::vector<std::pair<int64_t, int>> playedAt;
+    int64_t stallNextPollUs = 0;
+    /** Frames whose URBs have finished playing at [t] (URB granularity: a URB in progress counts when it is done). */
+    int64_t playedFrames(int64_t t) {
+        std::lock_guard<std::mutex> lock(mu);
+        int64_t frames = 0;
+        for (const auto &entry : playedAt) {
+            if (entry.first <= t) frames += entry.second;
+        }
+        return frames;
+    }
     // The feedback endpoint (B10): what it answers, optionally with a periodic blip like a healthy DAC's
     // dither, and the frames of every data packet in submission order.
     int feedbackBlipEvery = 0;     // every Nth reading is [feedbackBlipFpmf] instead (0: never)
@@ -153,6 +202,16 @@ struct FakeUsb {
     int64_t feedbackReads = 0;
     std::vector<uint8_t> packetFrames;
     std::vector<std::string> feedbackGlitches;  // the USB_GLITCH FEEDBACK_STUCK / FEEDBACK_UNSTUCK / FEEDBACK_REJECTED lines
+    // B47-A5: a DAC that copies 2026-10-29. After a real underrun (the bus found dry for 2 ms or more) its feedback rails at +4.99 % and its completions come late;
+    // `lockMode` says what gets it out: 1 = SETINTERFACE (a streaming-interface restart), 2 = a bus reset, 3 = nothing; 0 = a healthy DAC.
+    int lockMode = 0;
+    bool lockArmed = false;        // the test's injected underrun is about to happen: only a gap found while armed locks the DAC (a pause or a restart leaves the bus dry by design)
+    bool lockedUp = false;
+    int64_t lockedAtUs = 0;
+    int64_t lockedLateCount = 0;
+    int setInterfaceCalls = 0;
+    int resetCalls = 0;
+    int64_t unlockedAtUs = 0;
     bool hold = false;             // completions never come (a stalled host)
     bool gone = false;             // the device is unplugged
     bool silentPoll = false;       // a kernel that never reports POLLOUT for ISO completions
@@ -171,20 +230,42 @@ struct FakeUsb {
         lastCompleteUs = t;
     }
     void reset(int newRate, int newBytesPerFrame) {
+        trainLines.clear();
         std::lock_guard<std::mutex> lock(mu);
         inflight.clear();
         capture.clear();
+        streamStarts.clear();
+        urbsSinceStart = 0;
+        audibleSinceStart = false;
+        stallAfterFirstUrbUs = 0;
+        procOpenCostUs = 0;
+        writerLineAtUrb.clear();
+        startLines.clear();
         lastCompleteUs = 0;
         rate = newRate;
         bytesPerFrame = newBytesPerFrame;
+        speed = 3;
         audioUrbs = 0;
         audioDiscards = 0;
         anyAudio = false;
         gaps = 0;
         gapUs = 0;
         maxGapUs = 0;
+        gapList.clear();
+        lockMode = 0;
+        lockArmed = false;
+        lockedUp = false;
+        lockedAtUs = 0;
+        lockedLateCount = 0;
+        setInterfaceCalls = 0;
+        resetCalls = 0;
+        unlockedAtUs = 0;
         ringEmptyLogs = 0;
         outputGapLines.clear();
+        transportLines.clear();
+        schedulingLines.clear();
+        playedAt.clear();
+        stallNextPollUs = 0;
         feedbackBlipEvery = 0;
         feedbackReads = 0;
         feedbackScript = nullptr;
@@ -210,14 +291,23 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
         errno = ENOTTY;
         return -1;
     }
+    // B48-fix1: declared before the lock, so it runs after the lock is released: the writer is delayed after its first URB of a start (see FakeUsb::stallAfterFirstUrbUs)
+    struct LateStall {
+        int64_t us = 0;
+        ~LateStall() {
+            if (us > 0 && simclock::isVirtual()) simclock::sleepNs(us * 1000);
+        }
+    } lateStall;
     std::lock_guard<std::mutex> lock(g_usb.mu);
     const int64_t now = nowUs();
     switch (request) {
+        case USBDEVFS_GET_SPEED:
+            return g_usb.speed;
         case USBDEVFS_SUBMITURB: {
             auto *u = static_cast<usbdevfs_urb *>(arg);
             Pending p{u, 0, false};
             if (u->endpoint == kEndpointFeedback) {
-                double answer = g_usb.feedbackFpmf;
+                double answer = g_usb.lockedUp ? (g_usb.rate / 8000.0) * 1.0499 : g_usb.feedbackFpmf;
                 if (g_usb.feedbackBlipEvery > 0 && ++g_usb.feedbackReads % g_usb.feedbackBlipEvery == 0) {
                     answer = g_usb.feedbackBlipFpmf;
                 }
@@ -235,6 +325,14 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
                 const uint8_t *bytes = static_cast<const uint8_t *>(u->buffer);
                 g_usb.capture.insert(g_usb.capture.end(), bytes, bytes + u->buffer_length);
                 g_usb.audioUrbs++;
+                g_usb.urbsSinceStart++;
+                if (!g_usb.audibleSinceStart && std::any_of(bytes, bytes + u->buffer_length, [](uint8_t b) { return b != 0; })) {
+                    g_usb.audibleSinceStart = true;
+                    if (g_usb.stallAfterFirstUrbUs > 0) {
+                        lateStall.us = g_usb.stallAfterFirstUrbUs;
+                        g_usb.stallAfterFirstUrbUs = 0;
+                    }
+                }
                 int64_t feedbackNow[USB_FEEDBACK_STATS_COUNT];
                 usbFeedbackStats(feedbackNow);   // atomics only: safe under the fake kernel's lock, on the thread that is submitting
                 g_usb.submitted.push_back(SubmittedUrb{now, u->buffer_length / g_usb.bytesPerFrame, u->number_of_packets, feedbackNow[1] != 0});
@@ -252,11 +350,20 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
                     g_usb.gaps++;
                     g_usb.gapUs += now - g_usb.lastCompleteUs;
                     g_usb.maxGapUs = std::max(g_usb.maxGapUs, now - g_usb.lastCompleteUs);
+                    g_usb.gapList.push_back(now - g_usb.lastCompleteUs);
+                }
+                if (g_usb.lockMode != 0 && g_usb.lockArmed && !g_usb.lockedUp && g_usb.anyAudio && g_usb.lastCompleteUs > 0 && !g_usb.hold &&
+                    now >= g_usb.lastCompleteUs + 2000) {
+                    g_usb.lockedUp = true;   // a real underrun of 2 ms or more
+                    g_usb.lockArmed = false;
+                    g_usb.lockedAtUs = now;
                 }
                 g_usb.anyAudio = true;
                 const int64_t durUs = (int64_t)u->buffer_length * 1000000LL / g_usb.bytesPerFrame / g_usb.rate;
                 p.completeAtUs = g_usb.hold ? now + 3600LL * 1000000LL : std::max(g_usb.lastCompleteUs, now) + durUs;
+                if (g_usb.lockedUp && ++g_usb.lockedLateCount % 100 == 0) p.completeAtUs += 30000;   // the oldest URB of a full ring takes ~30 ms
                 if (!g_usb.hold) g_usb.lastCompleteUs = p.completeAtUs;
+                g_usb.playedAt.push_back(std::make_pair(p.completeAtUs, (int)(u->buffer_length / g_usb.bytesPerFrame)));
             }
             g_usb.inflight.push_back(p);
             return 0;
@@ -296,6 +403,20 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
             errno = EINVAL;
             return -1;
         }
+        case USBDEVFS_SETINTERFACE:
+            g_usb.setInterfaceCalls++;
+            if (g_usb.lockMode == 1 && g_usb.lockedUp) {
+                g_usb.lockedUp = false;
+                g_usb.unlockedAtUs = now;
+            }
+            return 0;
+        case USBDEVFS_RESET:
+            g_usb.resetCalls++;
+            if (g_usb.lockMode == 2 && g_usb.lockedUp) {
+                g_usb.lockedUp = false;
+                g_usb.unlockedAtUs = now;
+            }
+            return 0;
         default:
             return 0;
     }
@@ -304,6 +425,13 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
 // usbfs reports POLLOUT while a completed URB waits to be reaped, POLLHUP once the device is gone.
 extern "C" int poll(struct pollfd *fds, nfds_t nfds, int timeoutMs) {
     if (nfds != 1 || fds[0].fd != kFakeFd) return (int)syscall(SYS_poll, fds, nfds, timeoutMs);
+    int64_t lateWakeUs = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        lateWakeUs = g_usb.stallNextPollUs;
+        g_usb.stallNextPollUs = 0;
+    }
+    if (lateWakeUs > 0 && simclock::isVirtual()) simclock::sleepNs(lateWakeUs * 1000);   // B46-B3: the wake-up is late; the DAC plays on
     const int64_t deadline = nowUs() + (int64_t)timeoutMs * 1000;
     for (;;) {
         int64_t nextUs = deadline;
@@ -336,8 +464,38 @@ extern "C" int poll(struct pollfd *fds, nfds_t nfds, int timeoutMs) {
     }
 }
 
+// B48-fix1: a read of a /proc file costs the real device milliseconds (see FakeUsb::procOpenCostUs): in the tests of the start it costs virtual time, where the native code does it.
+// B48-fix1: when the writer last read /proc/stat, which only the CPU baseline (usb-audio-output.cpp, takeCpuSnapshot) does: it is taken at most every 2 s, and a restart that finds it due
+// is where HEAD paid its milliseconds between the first two URBs. `testEveryStartPrimesTheRing` waits for it so that the recovery's resume always meets a due baseline.
+static std::atomic<int64_t> g_lastProcStatOpenUs{0};
+
+extern "C" int open(const char *path, int flags, ...) {
+    mode_t mode = 0;
+    if ((flags & O_CREAT) != 0) {
+        va_list ap;
+        va_start(ap, flags);
+        mode = (mode_t)va_arg(ap, int);
+        va_end(ap);
+    }
+    if (strcmp(path, "/proc/stat") == 0 && simclock::isVirtual()) g_lastProcStatOpenUs.store(nowUs());
+    if (g_usb.procOpenCostUs > 0 && strncmp(path, "/proc/", 6) == 0 && simclock::isVirtual()) simclock::sleepNs(g_usb.procOpenCostUs * 1000);
+    return (int)syscall(SYS_openat, AT_FDCWD, path, flags, mode);
+}
+
 extern "C" int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
     static const bool verbose = getenv("SIM_LOG") != nullptr;
+    if (fmt) {
+        char line[1200];
+        va_list copy;
+        va_start(copy, fmt);
+        vsnprintf(line, sizeof(line), fmt, copy);
+        va_end(copy);
+        if (strstr(line, "FEEDBACK_STUCK") || strstr(line, "DAC_LOCKED") || strstr(line, "DAC_RECOVERY") ||
+            strstr(line, "FEEDBACK_OUT_OF_WINDOW") || strstr(line, "WriteRaw:") || strstr(line, "Feedback #")) {
+            std::lock_guard<std::mutex> lock(g_usb.mu);
+            g_usb.trainLines.push_back(std::make_pair(nowUs(), std::string(line)));
+        }
+    }
     if (tag && strcmp(tag, "USB_GLITCH") == 0) {
         va_list gap;
         va_start(gap, fmt);
@@ -346,6 +504,15 @@ extern "C" int __android_log_print(int prio, const char *tag, const char *fmt, .
         if (kind && strcmp(kind, "RING_EMPTY") == 0) {
             std::lock_guard<std::mutex> lock(g_usb.mu);
             g_usb.ringEmptyLogs++;
+        }
+        if (kind && strcmp(kind, "OUTPUT_GAP_CPU") == 0) {
+            char line[700];
+            va_list copy;
+            va_start(copy, fmt);
+            vsnprintf(line, sizeof(line), fmt, copy);
+            va_end(copy);
+            std::lock_guard<std::mutex> lock(g_usb.mu);
+            g_usb.schedulingLines.push_back(line);
         }
         if (kind && strcmp(kind, "OUTPUT_GAP") == 0) {
             char line[600];
@@ -367,6 +534,34 @@ extern "C" int __android_log_print(int prio, const char *tag, const char *fmt, .
             std::lock_guard<std::mutex> lock(g_usb.mu);
             g_usb.feedbackGlitches.push_back(line);
         }
+    }
+    if (fmt && strncmp(fmt, "Writer thread: %s", 17) == 0) {
+        char line[700];
+        va_list copy;
+        va_start(copy, fmt);
+        vsnprintf(line, sizeof(line), fmt, copy);
+        va_end(copy);
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        g_usb.schedulingLines.push_back(line);
+        g_usb.writerLineAtUrb.push_back(g_usb.audioUrbs);   // B48-fix1
+    }
+    if (fmt && (strncmp(fmt, "Start: feedback start guard", 27) == 0 || strncmp(fmt, "Prime: ", 7) == 0)) {
+        char line[400];
+        va_list copy;
+        va_start(copy, fmt);
+        vsnprintf(line, sizeof(line), fmt, copy);
+        va_end(copy);
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        g_usb.startLines.push_back(line);
+    }
+    if (fmt && (strstr(fmt, "TRANSPORT_ASSUMPTION") != nullptr || strncmp(fmt, "Start: %s speed", 15) == 0)) {
+        char line[700];
+        va_list copy;
+        va_start(copy, fmt);
+        vsnprintf(line, sizeof(line), fmt, copy);
+        va_end(copy);
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        g_usb.transportLines.push_back(line);
     }
     if (!verbose) return 0;  // the gone-device case logs errors on purpose
     va_list ap;
@@ -416,25 +611,6 @@ Pcm makeNoise(int frames, int bits, uint32_t seed) {
     return p;
 }
 
-bool writeFlac(const std::string &path, const Pcm &pcm, int rate, int blocksize) {
-    FLAC__StreamEncoder *enc = FLAC__stream_encoder_new();
-    FLAC__stream_encoder_set_verify(enc, true);
-    FLAC__stream_encoder_set_compression_level(enc, 5);
-    FLAC__stream_encoder_set_channels(enc, 2);
-    FLAC__stream_encoder_set_bits_per_sample(enc, pcm.bits);
-    FLAC__stream_encoder_set_sample_rate(enc, rate);
-    FLAC__stream_encoder_set_blocksize(enc, blocksize);
-    FLAC__stream_encoder_set_total_samples_estimate(enc, pcm.frames());
-    if (FLAC__stream_encoder_init_file(enc, path.c_str(), nullptr, nullptr) != FLAC__STREAM_ENCODER_INIT_STATUS_OK) {
-        FLAC__stream_encoder_delete(enc);
-        return false;
-    }
-    const bool ok = FLAC__stream_encoder_process_interleaved(enc, pcm.samples.data(), pcm.frames());
-    FLAC__stream_encoder_finish(enc);
-    FLAC__stream_encoder_delete(enc);
-    return ok;
-}
-
 /** What the DAC's 32-bit slot carries for [pcm]: the sample MSB-justified, the low bits zero. */
 std::vector<uint8_t> toUsb32(const Pcm &pcm) {
     std::vector<uint8_t> out(pcm.samples.size() * 4);
@@ -456,98 +632,22 @@ std::vector<uint8_t> toPackedLe(const Pcm &pcm) {
     return out;
 }
 
-struct Engine {
-    jlong handle = 0;
-};
-
-Engine createEngine(jlong usb, const std::string &path) {
-    Engine e;
-    const int fd = open(path.c_str(), O_RDONLY);
-    e.handle = Java_com_decent_usbaudio_NativeAudioEngine_nativeCreateFromFd(nullptr, nullptr, fd, usb);
-    close(fd);
-    return e;
-}
-
-/** The sink's start of an engine: started, paused, placed at the item start, then resumed (playing). */
-void startEngine(const Engine &e, bool resume) {
-    Java_com_decent_usbaudio_NativeAudioEngine_nativeStart(nullptr, nullptr, e.handle);
-    Java_com_decent_usbaudio_NativeAudioEngine_nativePause(nullptr, nullptr, e.handle);
-    Java_com_decent_usbaudio_NativeAudioEngine_nativeSeek(nullptr, nullptr, e.handle, 0, 1);
-    if (resume) Java_com_decent_usbaudio_NativeAudioEngine_nativeResume(nullptr, nullptr, e.handle);
-}
-
-// ── the start race of the engine (B35, R5) ──────────────────────────────────────────────────────
-
-/**
- * `nativeStart` sets the decode thread running, and only afterwards does the sink's sequence pause it, put it at the item start and resume it. The
- * window is about 50 us wide: the decode thread needs that long to put the first block on the wire (measured unloaded, with a busy wait of N us between the
- * two calls: 0 us leaks 0 of 60 starts, 50 us 11, 100 us 53, 200 us all). A host that takes the CPU from the *test thread* for that long inside it (it
- * happens, rarely: 3 starts in 7,500 with the CPUs four times oversubscribed) lets the first block through, and the engine then does what it was told
- * in order: play, pause, seek to 0, resume. The stream is then the block or blocks that got out, the 8 ms fade-out a pause makes at the next block,
- * and the item again: longer than expected, equal to it up to the end of the first block and different from there (byte 65536 of A||B and 71680 more
- * bytes: the reviews' failure of 2026-10-20). It is a property of the engine's start protocol that the simulation's wall clock exposes, not an ordering
- * fault at the join (the join is bit-exact in the same run), and the engine is not changed here.
- *
- * What this recognises is exactly that stream and nothing else: [startByte] is where the engine's item begins, [blockFrames] its FLAC block, and
- * [got] must be [expected] up to the item, then 1 to 3 blocks of the item as they were in [source] (the PCM the engine decodes, which a test that
- * designs a fade into [expected] does not share), then the 8 ms fade-out of the next ones, then the whole item again from its start with the 15 ms
- * fade-in a resume makes after a seek, and everything after it exactly as [expected]. Anything else (a different length, a different fade, a modified
- * byte after the replay) is not it.
- */
-std::vector<uint8_t> restartedItem(const std::vector<uint8_t> &want, size_t from, size_t length, int rate) {
-    std::vector<uint8_t> item(want.begin() + (long)from, want.begin() + (long)(from + length));
-    const int fadeIn = seekFadeInFrames(rate);
-    pcmApplyGainRamp(item.data(), fadeIn, 2, 4, 0, fadeIn, true);
-    return item;
-}
-
-/** The first [replay] bytes of the item as they were, then its next frames faded out: what the engine had delivered when the pause took effect. */
-std::vector<uint8_t> replayedBlocks(const std::vector<uint8_t> &want, size_t from, size_t replay, int rate) {
-    const int fadeOut = seekFadeOutFrames(rate);
-    std::vector<uint8_t> out(want.begin() + (long)from, want.begin() + (long)(from + replay + (size_t)fadeOut * 8));
-    pcmApplyGainRamp(out.data() + replay, fadeOut, 2, 4, 0, fadeOut, false);
-    return out;
-}
-
-bool replayedStart(const std::vector<uint8_t> &source, const std::vector<uint8_t> &expected, const std::vector<uint8_t> &got, size_t startByte,
-                   int blockFrames, int rate) {
-    for (int blocks = 1; blocks <= 3; blocks++) {
-        const size_t replay = (size_t)blocks * (size_t)blockFrames * 8;
-        const size_t fade = (size_t)seekFadeOutFrames(rate) * 8;
-        if (startByte + replay + fade > source.size() || got.size() != expected.size() + replay + fade) continue;
-        std::vector<uint8_t> expect(expected.begin(), expected.begin() + (long)startByte);
-        const std::vector<uint8_t> head = replayedBlocks(source, startByte, replay, rate);
-        const std::vector<uint8_t> item = restartedItem(expected, startByte, expected.size() - startByte, rate);
-        expect.insert(expect.end(), head.begin(), head.end());
-        expect.insert(expect.end(), item.begin(), item.end());
-        if (expect == got) return true;
-    }
-    return false;
-}
-
-/** A run may be repeated while it shows only that race and attempts remain; one that shows it every time, or anything else, is a failure. */
-constexpr int kStartAttempts = 4;
-
-void noteReplayedStart(int attempt) {
-    printf("  (an engine's first block got out before its pause, as the start protocol allows: run %d of %d again)\n", attempt + 1, kStartAttempts);
-}
-
-bool waitStopped(const Engine &e, int timeoutMs) {
-    const int64_t deadline = nowUs() + (int64_t)timeoutMs * 1000;
-    while (nowUs() < deadline) {
-        if (!Java_com_decent_usbaudio_NativeAudioEngine_nativeIsRunning(nullptr, nullptr, e.handle)) return true;
-        sleepMs(2);
-    }
-    return false;
+jlong createStreamWith(int rate, int slotBits, int maxPacket, int bInterval, int feedbackBytes) {
+    return Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
+        nullptr, nullptr, kFakeFd, 1, kEndpointOut, kEndpointFeedback, rate, 2, slotBits, maxPacket, bInterval, feedbackBytes);
 }
 
 jlong createStream(int rate, int slotBits) {
-    const jlong usb = Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
-        nullptr, nullptr, kFakeFd, 1, kEndpointOut, kEndpointFeedback, rate, 2, slotBits, 400);
+#ifndef B48FIX2_BEFORE
+    usbNoteDataAltSet(kFakeFd);
+#endif
+
+    const jlong usb = createStreamWith(rate, slotBits, 400, kFakeBInterval, kFakeFeedbackBytes);
     if (usb == 0 || !Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(nullptr, nullptr, usb)) {
         fprintf(stderr, "stream did not start\n");
         exit(2);
     }
+    g_usb.markStreamStart();
     return usb;
 }
 
@@ -569,204 +669,8 @@ long firstDifference(const std::vector<uint8_t> &a, const std::vector<uint8_t> &
     return a.size() == b.size() ? -1 : (long)n;
 }
 
-struct TempDir {
-    std::string path;
-    TempDir() {
-        char tmpl[] = "/tmp/natural-join-XXXXXX";
-        path = mkdtemp(tmpl);
-    }
-    ~TempDir() {
-        for (const char *name : {"/a.flac", "/b.flac", "/c.flac"}) unlink((path + name).c_str());
-        rmdir(path.c_str());
-    }
-};
-
 constexpr int kFrames96 = 76800;   // 0.8 s at 96 kHz = 9 x 8192 + 3072
 constexpr int kFrames441 = 44100;  // 1 s at 44.1 kHz = 9 x 4608 + 2628
-constexpr int kSeam = kFrames96;   // frame at which B starts in A||B
-
-// ── 1. A natural join at the same rate: the engine is bit-exact ─────────────────────────────────
-
-/**
- * The sink's sequence at a natural end: A's decode thread ends on its own (its residual submitted, the
- * ring left to play out), Media3 moves on, the finished engine is destroyed and B's engine is created
- * on the same stream, started paused, placed at 0 and resumed. [gapMs] is the time between A's end of
- * stream and B's engine being started (88 ms in the B1-native log), [pauseAfterMs]/[resumeAfterMs]
- * model Media3's renderer stop and restart after B's start (-1: none).
- */
-std::vector<uint8_t> runSameRateJoin(const Pcm &a, const Pcm &b, int gapMs, int pauseAfterMs, int resumeAfterMs,
-                                     const std::string &dir) {
-    // With a pause, B's first block is held in the ring (a host that has not reaped yet) until the stop
-    // has been delivered: the engine then meets it as soon as that block is written, deterministically,
-    // which is where it met it on the device (after B's first block).
-    g_usb.reset(96000, 8);
-    const jlong usb = createStream(96000, 32);
-    Engine ea = createEngine(usb, dir + "/a.flac");
-    startEngine(ea, true);
-    if (!waitStopped(ea, 8000)) {
-        fprintf(stderr, "engine A never ended\n");
-        exit(2);
-    }
-    CHECK(Java_com_decent_usbaudio_NativeAudioEngine_nativeGetExitReason(nullptr, nullptr, ea.handle) == 1,
-          "A did not end at the end of the stream");
-    sleepMs(gapMs);
-    Java_com_decent_usbaudio_NativeAudioEngine_nativeDestroy(nullptr, nullptr, ea.handle);
-    Engine eb = createEngine(usb, dir + "/b.flac");
-    if (pauseAfterMs >= 0) {
-        std::lock_guard<std::mutex> lock(g_usb.mu);
-        g_usb.hold = true;
-    }
-    startEngine(eb, true);
-    if (pauseAfterMs >= 0) {
-        sleepMs(pauseAfterMs);
-        Java_com_decent_usbaudio_NativeAudioEngine_nativePause(nullptr, nullptr, eb.handle);
-        g_usb.releaseHold();
-        sleepMs(resumeAfterMs);
-        Java_com_decent_usbaudio_NativeAudioEngine_nativeResume(nullptr, nullptr, eb.handle);
-    }
-    if (!waitStopped(eb, 8000)) {
-        fprintf(stderr, "engine B never ended\n");
-        exit(2);
-    }
-    sleepMs(50);
-    Java_com_decent_usbaudio_NativeAudioEngine_nativeDestroy(nullptr, nullptr, eb.handle);
-    releaseStream(usb);
-    std::lock_guard<std::mutex> lock(g_usb.mu);
-    (void)a;
-    (void)b;
-    return g_usb.capture;
-}
-
-void testSameRateJoinIsBitExact(const Pcm &a, const Pcm &b, const std::string &dir) {
-    std::vector<uint8_t> want = toUsb32(a);
-    const std::vector<uint8_t> wantB = toUsb32(b);
-    want.insert(want.end(), wantB.begin(), wantB.end());
-    struct Timeline { int gapMs; const char *what; };
-    // 88 ms: the B1-native log. 0: B starts while A's ring is still full. 200: the ring ran dry first.
-    for (const Timeline &t : {Timeline{88, "88 ms after A's end"}, Timeline{0, "at once"}, Timeline{200, "after the ring ran dry"}}) {
-        std::vector<uint8_t> got;
-        long diff = -1;
-        for (int attempt = 1;; attempt++) {
-            got = runSameRateJoin(a, b, t.gapMs, -1, -1, dir);
-            diff = firstDifference(want, got);
-            const bool replayed = diff >= 0 && attempt < kStartAttempts &&
-                (replayedStart(want, want, got, 0, 8192, 96000) || replayedStart(want, want, got, (size_t)kFrames96 * 8, 8192, 96000));
-            if (!replayed) break;
-            noteReplayedStart(attempt);
-        }
-        CHECK(diff < 0, "B started %s: A||B differs from byte %ld (frame %ld); %zu bytes expected, %zu delivered",
-              t.what, diff, diff / 8, want.size(), got.size());
-    }
-    printf("natural join, same rate, engine untouched: %s\n", g_failures ? "FAIL" : "bit-exact");
-}
-
-// ── 2. A pause still fades (AUD-123/140): it is what the join must never be sent ────────────────
-
-/** [want] with the pause the test designs at [frame]: 8 ms out over that block's first frames, 15 ms in over the kept remainder, nothing else touched. */
-std::vector<uint8_t> designedPause(const std::vector<uint8_t> &want, long frame) {
-    std::vector<uint8_t> expect = want;
-    const int fadeOut = seekFadeOutFrames(96000), fadeIn = seekFadeInFrames(96000);
-    uint8_t *at = expect.data() + (size_t)frame * 8;
-    pcmApplyGainRamp(at, fadeOut, 2, 4, 0, fadeOut, false);
-    pcmApplyGainRamp(at + (size_t)fadeOut * 8, fadeIn, 2, 4, 0, fadeIn, true);
-    return expect;
-}
-
-void testPauseStillFades(const Pcm &a, const Pcm &b, const std::string &dir) {
-    std::vector<uint8_t> want = toUsb32(a);
-    const std::vector<uint8_t> wantB = toUsb32(b);
-    want.insert(want.end(), wantB.begin(), wantB.end());
-
-    // B resumes at its creation (the player is playing), the renderers stop once its first block is in
-    // the ring and restart 35 ms later: the shape of the rebuffer in the B1-native log.
-    std::vector<uint8_t> got;
-    for (int attempt = 1;; attempt++) {
-        got = runSameRateJoin(a, b, 88, 60, 35, dir);
-        // The first block of A or of B got out before its pause. Whatever followed was then either the pause under test (at one of B's block
-        // boundaries) or, when it was B's start that was hit, nothing: the scenario's pause met an engine that the start sequence had already paused
-        // and put back, so the stream is the plain join. Either way the scenario did not run as designed, and it is run again.
-        bool replayed = false;
-        for (int block = 0; block <= 3 && !replayed && attempt < kStartAttempts && got.size() > want.size(); block++) {
-            const std::vector<uint8_t> afterwards = block == 0 ? want : designedPause(want, (long)kSeam + 8192L * block);
-            replayed = replayedStart(want, afterwards, got, 0, 8192, 96000) ||
-                replayedStart(want, afterwards, got, (size_t)kFrames96 * 8, 8192, 96000);
-        }
-        if (!replayed) break;
-        noteReplayedStart(attempt);
-    }
-    CHECK(got.size() == want.size(), "a pause lost or invented audio: %zu bytes expected, %zu delivered", want.size(), got.size());
-    const long diff = firstDifference(want, got);
-    CHECK(diff >= 0, "the pause did not fade at all");
-    if (diff < 0) return;
-    const long frame = diff / 8;
-    // The fade-out starts at a decoded block boundary of B (8192 frames), after its first block.
-    CHECK(frame >= kSeam + 8192 && (frame - kSeam) % 8192 == 0,
-          "the fade began at frame %ld, not at a block boundary of B past its first block", frame);
-
-    // Exactly the modification of the device's block (host-verified against 24ce9b85…): 8 ms out over
-    // the block's first frames, 15 ms in over the kept remainder, nothing else touched.
-    const std::vector<uint8_t> expect = designedPause(want, frame);
-    CHECK(firstDifference(expect, got) < 0,
-          "the pause fade is not the designed one (8 ms out, 15 ms in) at frame %ld: first difference at byte %ld",
-          frame, firstDifference(expect, got));
-    printf("pause after the join's first block: fades as designed at frame %ld (B frame %ld), count exact\n", frame, frame - kSeam);
-}
-
-// ── 3. A natural join across a rate change ──────────────────────────────────────────────────────
-
-void testRateChangeJoin(const Pcm &a, const Pcm &c, const std::string &dir) {
-    std::vector<uint8_t> want = toUsb32(a);
-    const std::vector<uint8_t> wantC = toUsb32(c);
-    want.insert(want.end(), wantC.begin(), wantC.end());
-    std::vector<uint8_t> got;
-    int cutsOfAudio = 0;
-    int64_t drainMs = 0;
-    for (int attempt = 1;; attempt++) {
-        g_usb.reset(96000, 8);
-        jlong usb = createStream(96000, 32);
-        Engine ea = createEngine(usb, dir + "/a.flac");
-        startEngine(ea, true);
-        waitStopped(ea, 8000);
-        sleepMs(40);
-        // The deferred config at Media3's transition: the old stream is released (its ring plays out because
-        // the end was natural) and one at the new rate is opened.
-        Java_com_decent_usbaudio_NativeAudioEngine_nativeDestroy(nullptr, nullptr, ea.handle);
-        const int64_t drainStartUs = nowUs();
-        releaseStream(usb);
-        drainMs = (nowUs() - drainStartUs) / 1000;
-        {
-            std::lock_guard<std::mutex> lock(g_usb.mu);
-            cutsOfAudio = g_usb.audioDiscards;
-            g_usb.rate = 44100;
-            g_usb.lastCompleteUs = 0;
-        }
-        usb = createStream(44100, 32);
-        Engine ec = createEngine(usb, dir + "/c.flac");
-        startEngine(ec, true);
-        waitStopped(ec, 8000);
-        sleepMs(50);
-        Java_com_decent_usbaudio_NativeAudioEngine_nativeDestroy(nullptr, nullptr, ec.handle);
-        releaseStream(usb);
-
-        {
-            std::lock_guard<std::mutex> lock(g_usb.mu);
-            got = g_usb.capture;
-        }
-        const bool replayed = firstDifference(want, got) >= 0 && attempt < kStartAttempts &&
-            (replayedStart(want, want, got, 0, 8192, 96000) || replayedStart(want, want, got, (size_t)kFrames96 * 8, 4608, 44100));
-        if (!replayed) break;
-        noteReplayedStart(attempt);
-    }
-    CHECK(cutsOfAudio == 0, "the rate change cancelled %d URBs of A's tail still in the ring", cutsOfAudio);
-    CHECK(drainMs < 400, "the drain took %lld ms", (long long)drainMs);
-    const long diff = firstDifference(want, got);
-    CHECK(diff < 0, "96 kHz → 44.1 kHz join differs from byte %ld (%zu expected, %zu delivered)", diff, want.size(), got.size());
-    printf("natural join across a rate change: %s, the ring played out (%lld ms drain, %d URBs cut)\n",
-           diff < 0 ? "bit-exact" : "FAIL", (long long)drainMs, cutsOfAudio);
-}
-
-// ── 4. The pipeline's own end of stream (AUD-143) ───────────────────────────────────────────────
-
 struct FakeArray {
     std::vector<uint8_t> bytes;
 };
@@ -785,6 +689,113 @@ void writePipeline(JNIEnv *env, jlong usb, const Pcm &pcm, int bufferFrames) {
         chunk.bytes.assign(packed.begin() + at, packed.begin() + std::min(packed.size(), at + (size_t)bufferFrames * frameBytes));
         Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWriteRaw(env, nullptr, usb, reinterpret_cast<jbyteArray>(&chunk), pcm.bits);
     }
+}
+
+/** One PRISTINE case: two tracks with the end of the stream between them, bytes compared with the source one by one. */
+void pristineCase(JNIEnv *env, int rate, int bits, int slot) {
+    const Pcm a = makeNoise(rate / 5 + 17, bits, 0x45abc123u);
+    const Pcm b = makeNoise(rate / 7 + 31, bits, 0x45def456u);
+    g_usb.reset(rate, 2 * slot / 8);
+    const jlong usb = createStream(rate, slot);
+    writePipeline(env, usb, a, 4096);
+    CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDrainEndOfStream(env, nullptr, usb), "A residual drain failed");
+    writePipeline(env, usb, b, 4608);
+    CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDrainEndOfStream(env, nullptr, usb), "B residual drain failed");
+    releaseStream(usb);
+    std::vector<uint8_t> want;
+    for (const Pcm *pcm : {&a, &b}) {
+        for (int32_t sample : pcm->samples) {
+            const uint32_t packed = static_cast<uint32_t>(sample) << (slot - bits);
+            for (int byte = 0; byte < slot / 8; byte++) want.push_back(static_cast<uint8_t>(packed >> (8 * byte)));
+        }
+    }
+    // B48-fix1: the audible bytes: the wire without the start silence that primes the ring (the same hash as HEAD's, which had none)
+    const std::vector<uint8_t> audible = g_usb.audible();
+    const long diff = firstDifference(want, audible);
+    CHECK(diff < 0, "PRISTINE %d/%d slot %d differs at %ld", rate, bits, slot, diff);
+    CHECK(g_usb.audioDiscards == 0, "PRISTINE gapless join cancelled owned URBs");
+    // FNV-1a makes before/after logs directly comparable; equality above is byte-for-byte.
+    uint64_t hash = 14695981039346656037ull;
+    for (uint8_t byte : audible) hash = (hash ^ byte) * 1099511628211ull;
+    printf("HOST PRISTINE rate=%d bits=%d slot=%d gapless=A||B bytes=%zu fnv1a=%016llx %s\n",
+           rate, bits, slot, audible.size(), static_cast<unsigned long long>(hash), diff < 0 ? "EXACT" : "FAIL");
+}
+
+/**
+ * B46: the rates B45's test did not reach (88.2, 176.4, 352.8, 384 kHz; the fake endpoint's 400-byte maxPacket carries a widest
+ * packet of 48 frames x 8 bytes = 384, so all four fit), then one rate change between tracks. Run after the original 18, so the
+ * first 18 lines are the same lines B45 printed.
+ */
+void testPristineMoreRates(JNIEnv *env) {
+    for (int rate : {88200, 176400, 352800, 384000}) {
+        for (int bits : {16, 24, 32}) {
+            for (int slot : {16, 24, 32}) {
+                if (slot < bits) continue;
+                pristineCase(env, rate, bits, slot);
+            }
+        }
+    }
+}
+
+/**
+ * A rate change between two tracks: A at 44.1 kHz, 16-bit source in a 24-bit slot; B at 352.8 kHz, 24-bit source in a 32-bit slot.
+ * The sink rebuilds the stream at the change (a new context, a new plan: ring, slots and packet sizes of the new rate), and the
+ * wire carries A then B, each exactly as its source, with no URB cut.
+ */
+void testPristineRateChange(JNIEnv *env) {
+    const Pcm a = makeNoise(44100 / 5 + 17, 16, 0x45abc123u);
+    const Pcm b = makeNoise(352800 / 7 + 31, 24, 0x45def456u);
+    g_usb.reset(44100, 2 * 24 / 8);
+    jlong usb = createStream(44100, 24);
+    writePipeline(env, usb, a, 4096);
+    CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDrainEndOfStream(env, nullptr, usb), "A residual drain failed");
+    releaseStream(usb);
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        g_usb.rate = 352800;
+        g_usb.bytesPerFrame = 2 * 32 / 8;
+        g_usb.lastCompleteUs = 0;
+    }
+    usb = createStream(352800, 32);
+    writePipeline(env, usb, b, 4608);
+    CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDrainEndOfStream(env, nullptr, usb), "B residual drain failed");
+    releaseStream(usb);
+    std::vector<uint8_t> want;
+    const struct { const Pcm *pcm; int bits, slot; } tracks[] = {{&a, 16, 24}, {&b, 24, 32}};
+    for (const auto &track : tracks) {
+        for (int32_t sample : track.pcm->samples) {
+            const uint32_t packed = static_cast<uint32_t>(sample) << (track.slot - track.bits);
+            for (int byte = 0; byte < track.slot / 8; byte++) want.push_back(static_cast<uint8_t>(packed >> (8 * byte)));
+        }
+    }
+    const std::vector<uint8_t> audible = g_usb.audible();   // B48-fix1: without each stream's start silence
+    const long diff = firstDifference(want, audible);
+    CHECK(diff < 0, "PRISTINE rate change 44.1k->352.8k differs at %ld", diff);
+    CHECK(g_usb.audioDiscards == 0, "PRISTINE rate change cancelled owned URBs");
+    uint64_t hash = 14695981039346656037ull;
+    for (uint8_t byte : audible) hash = (hash ^ byte) * 1099511628211ull;
+    printf("HOST PRISTINE ratechange A=44100/16/slot24 B=352800/24/slot32 bytes=%zu fnv1a=%016llx %s\n",
+           audible.size(), static_cast<unsigned long long>(hash), diff < 0 ? "EXACT" : "FAIL");
+}
+
+void testPristineFormats() {
+    simclock::VirtualTime virtualTime;
+    JNINativeInterface table = {};
+    table.GetArrayLength = fakeGetArrayLength;
+    table.GetByteArrayElements = fakeGetByteArrayElements;
+    table.ReleaseByteArrayElements = fakeReleaseByteArrayElements;
+    JNIEnv env;
+    env.functions = &table;
+    for (int rate : {44100, 96000, 192000}) {
+        for (int bits : {16, 24, 32}) {
+            for (int slot : {16, 24, 32}) {
+                if (slot < bits) continue;
+                pristineCase(&env, rate, bits, slot);
+            }
+        }
+    }
+    testPristineMoreRates(&env);
+    testPristineRateChange(&env);
 }
 
 void testPipelineEndOfStreamPlaysOut(const Pcm &a, const Pcm &c) {
@@ -817,11 +828,7 @@ void testPipelineEndOfStreamPlaysOut(const Pcm &a, const Pcm &c) {
     std::vector<uint8_t> want = toUsb32(a);
     const std::vector<uint8_t> wantC = toUsb32(c);
     want.insert(want.end(), wantC.begin(), wantC.end());
-    std::vector<uint8_t> got;
-    {
-        std::lock_guard<std::mutex> lock(g_usb.mu);
-        got = g_usb.capture;
-    }
+    const std::vector<uint8_t> got = g_usb.audible();   // B48-fix1: without each stream's start silence
     const long diff = firstDifference(want, got);
     CHECK(diff < 0, "pipeline A→C differs from byte %ld (%zu expected, %zu delivered)", diff, want.size(), got.size());
 
@@ -850,8 +857,7 @@ void testPipelineEndOfStreamPlaysOut(const Pcm &a, const Pcm &c) {
 // ── 6. The pipeline's pause / seek / skip barrier (B9) ──────────────────────────────────────────
 //
 // UsbStreamingThread drives these entry points; here the same protocol is driven by hand against the real
-// output. The expected stream is built from the source PCM with `pcmApplyGainRamp` and the engine's own
-// lengths, so "the same shape as the engine's" is a byte comparison, not an impression.
+// output. The expected stream is built from source PCM and the shared ramp helpers.
 
 constexpr int kBuf = 8192;        // the decoder's block, in frames
 constexpr int kRate = 96000;
@@ -890,7 +896,7 @@ struct Writer {
         return it->second;
     }
 
-    explicit Writer(int streamRate = kRate) {
+    explicit Writer(int streamRate = kRate, bool nominalFeedback = false) {
         table.GetArrayLength = simGetLength;
         table.GetByteArrayElements = simGetBytes;
         table.ReleaseByteArrayElements = simReleaseBytes;
@@ -898,6 +904,7 @@ struct Writer {
         table.ReleaseFloatArrayElements = simReleaseFloats;
         env.functions = &table;
         g_usb.reset(streamRate, 8);
+        if (nominalFeedback) g_usb.feedbackFpmf = streamRate / 8000.0;
         usb = createStream(streamRate, 32);
         ctx = reinterpret_cast<UsbAudioContext *>(usb);
     }
@@ -906,8 +913,23 @@ struct Writer {
         Java_com_decent_usbaudio_UsbAudioStream_nativeDrainUrbs(nullptr, nullptr, usb);
         Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioDestroy(nullptr, nullptr, usb);
     }
+    /** B48-fix1: the silence the stream's first write primed the ring with (frames), the one place every stream differs from its designed bytes on purpose. */
+    int64_t startSilenceFrames = 0;
+    bool wroteAny = false;
+    /** The first write of a stream is preceded by the priming; its amount is read from the stream's own silence count. */
+    template <typename Fn> void firstWriteAccounting(Fn &&write) {
+        const int64_t before = stat(5);
+        write();
+        if (!wroteAny) {
+            wroteAny = true;
+            startSilenceFrames = stat(5) - before;
+        }
+    }
     /** One buffer of [pcm] (frames [from, from + frames)) through the raw path, as the thread writes it. */
     void write(const Pcm &pcm, int from, int frames) {
+        firstWriteAccounting([&] { writeRawBuffer(pcm, from, frames); });
+    }
+    void writeRawBuffer(const Pcm &pcm, int from, int frames) {
         const std::vector<uint8_t> &all = packedOf(pcm);
         const size_t frameBytes = (size_t)(pcm.bits / 8) * 2;
         SimArray chunk;
@@ -916,6 +938,9 @@ struct Writer {
     }
     /** The same frames through the float path (PROCESSED / FFmpeg sources): 24-bit integers are exact floats. */
     void writeFloat(const Pcm &pcm, int from, int frames) {
+        firstWriteAccounting([&] { writeFloatBuffer(pcm, from, frames); });
+    }
+    void writeFloatBuffer(const Pcm &pcm, int from, int frames) {
         SimArray chunk;
         chunk.isFloat = true;
         chunk.floats.reserve((size_t)frames * 2);
@@ -929,7 +954,13 @@ struct Writer {
     int beginSeek() { return Java_com_decent_usbaudio_UsbAudioStream_nativePipelineBeginSeek(nullptr, nullptr, usb); }
     bool fadingOut() { return Java_com_decent_usbaudio_UsbAudioStream_nativePipelineFadingOut(nullptr, nullptr, usb) == JNI_TRUE; }
     void endFadeOut() { Java_com_decent_usbaudio_UsbAudioStream_nativePipelineEndFadeOut(nullptr, nullptr, usb); }
-    void resume() { Java_com_decent_usbaudio_UsbAudioStream_nativePipelineResume(nullptr, nullptr, usb); }
+    /** B47-A3: the silence the last resume() primed the ring with, in frames: the one place the stream differs from the designed fades on purpose. */
+    int64_t resumeSilenceFrames = 0;
+    void resume() {
+        const int64_t before = stat(5);
+        Java_com_decent_usbaudio_UsbAudioStream_nativePipelineResume(nullptr, nullptr, usb);
+        resumeSilenceFrames = stat(5) - before;
+    }
     void markIdle() { Java_com_decent_usbaudio_UsbAudioStream_nativeMarkIdle(nullptr, nullptr, usb); }
     bool feedSilence() { return Java_com_decent_usbaudio_UsbAudioStream_nativePipelineFeedSilence(nullptr, nullptr, usb) == JNI_TRUE; }
     int64_t stat(int index) {
@@ -938,10 +969,7 @@ struct Writer {
         return stats[index];
     }
     int64_t queuedFrames() { return usbQueuedFrames(ctx); }
-    std::vector<uint8_t> captured() {
-        std::lock_guard<std::mutex> lock(g_usb.mu);
-        return g_usb.capture;
-    }
+    std::vector<uint8_t> captured() { return g_usb.audible(); }   // B48-fix1: without the stream's start silence
     /** What the end of stream does: the packetizer's last partial URB goes out, so every frame is on the wire. */
     std::vector<uint8_t> finish() {
         Java_com_decent_usbaudio_UsbAudioStream_nativeDrainEndOfStream(&env, nullptr, usb);
@@ -1029,6 +1057,7 @@ void testPipelinePauseResume(const Pcm &a) {
             std::vector<uint8_t> want;
             appendUsb(want, a, 0, pauseFrame);
             appendRamped(want, a, pauseFrame, kFadeOut, 0, kFadeOut, false);
+            appendSilence(want, w.resumeSilenceFrames);   // B47-A3: the silence the resume primed the ring with
             appendRamped(want, a, pauseFrame + kFadeOut, kFadeIn, 0, kFadeIn, true);
             appendUsb(want, a, pauseFrame + kFadeOut + kFadeIn, a.frames() - pauseFrame - kFadeOut - kFadeIn);
             const long diff = firstDifference(want, got);
@@ -1124,6 +1153,7 @@ void testPipelinePauseInsideBlock(const Pcm &a) {
         std::vector<uint8_t> want;
         appendUsb(want, a, 0, pauseFrame);
         appendRamped(want, a, pauseFrame, kFadeOut, 0, kFadeOut, false);
+        appendSilence(want, w.resumeSilenceFrames);
         appendRamped(want, a, pauseFrame + kFadeOut, kFadeIn, 0, kFadeIn, true);
         appendUsb(want, a, pauseFrame + kFadeOut + kFadeIn, a.frames() - pauseFrame - kFadeOut - kFadeIn);
         CHECK(got.size() == want.size(), "%s path: %zu bytes delivered for %zu (a pause inside a block lost or invented audio)",
@@ -1158,6 +1188,7 @@ void testPipelinePauseInsideBlock(const Pcm &a) {
         std::vector<uint8_t> want;
         appendUsb(want, a, 0, pauseFrame);
         appendRamped(want, a, pauseFrame, kFadeOut, 0, kFadeOut, false);
+        appendSilence(want, w.resumeSilenceFrames);
         appendRamped(want, a, pauseFrame + kFadeOut, kFadeIn, 0, kFadeIn, true);
         appendUsb(want, a, pauseFrame + kFadeOut + kFadeIn, 4 * kBuf - pauseFrame - kFadeOut - kFadeIn);
         CHECK(w.ctx->framesWritten == 4 * kBuf, "%lld frames counted for %d written", (long long)w.ctx->framesWritten, 4 * kBuf);
@@ -1186,6 +1217,7 @@ void testPipelinePauseInsideBlock(const Pcm &a) {
         std::vector<uint8_t> want;
         appendUsb(want, a, 0, pauseFrame);
         appendRamped(want, a, pauseFrame, kFadeOut, 0, kFadeOut, false);
+        appendSilence(want, w.resumeSilenceFrames);
         appendRamped(want, a, pauseFrame + kFadeOut, kFadeIn, 0, kFadeIn, true);
         appendUsb(want, a, pauseFrame + kFadeOut + kFadeIn, next + kBuf - pauseFrame - kFadeOut - kFadeIn);
         CHECK(firstDifference(want, w.finish()) < 0, "a pause whose ramp spans blocks differs from the designed shape");
@@ -1233,6 +1265,7 @@ void testPipelinePauseEdges(const Pcm &a) {
         w.write(a, next, kBuf);
         std::vector<uint8_t> want;
         appendUsb(want, a, 0, 2 * kBuf);
+        appendSilence(want, w.resumeSilenceFrames);
         appendRamped(want, a, 2 * kBuf, kFadeIn, 0, kFadeIn, true);
         appendUsb(want, a, 2 * kBuf + kFadeIn, kBuf - kFadeIn);
         CHECK(firstDifference(want, w.finish()) < 0, "a pause with nothing behind it changed more than the fade-in of what follows");
@@ -1268,7 +1301,7 @@ void testPipelineSeek(const Pcm &a, const Pcm &n) {
     const int64_t seekStartUs = nowUs();
     while (nowUs() - seekStartUs < 150000) CHECK(w.feedSilence(), "the silence feed failed");
     const int64_t seekUs = nowUs() - seekStartUs;
-    const int64_t silence = w.stat(5);
+    const int64_t silence = w.stat(5) - w.startSilenceFrames;   // B48-fix1: the gesture's silence, not the start's
     // The new position: its first buffer fades in over 15 ms; nothing of the old position follows.
     const int target = 20000;
     w.write(n, target, kBuf);
@@ -1314,6 +1347,7 @@ void testPipelineSeekWhilePaused(const Pcm &a, const Pcm &n) {
         CHECK(kept == kBuf - kFadeOut, "the pause kept %lld frames of its block", (long long)kept);
         if (ringPlayedOut) listen(300);
         // The seek arrives while paused: the old position's kept block must never play again.
+        const int leftoverFrames = w.ctx->residualBytes / 8;   // the sub-URB tail of the ramp the packetizer still holds
         const int plan = w.beginSeek();
         CHECK(plan == (ringPlayedOut ? PIPELINE_SEEK_NONE : PIPELINE_SEEK_SILENCE),
               "a seek while paused (ring %s) planned %d", ringPlayedOut ? "played out" : "still playing", plan);
@@ -1325,7 +1359,11 @@ void testPipelineSeekWhilePaused(const Pcm &a, const Pcm &n) {
         w.write(n, target, kBuf);
         std::vector<uint8_t> want;
         appendUsb(want, a, 0, 3 * kBuf);
-        appendRamped(want, a, 3 * kBuf, kFadeOut, 0, kFadeOut, false);
+        // B48-fix1: a seek that finds nothing audible starts the packetisation clean (`residualBytes = 0`): the sub-URB leftover of the ramp (frames at a gain near zero) is not sent.
+        // It was 0 frames before the stream's start priming (the 3 blocks and the ramp were a whole number of URBs); the priming's silence leaves the audio 50 frames out of step.
+        const int droppedFrames = plan == PIPELINE_SEEK_NONE ? leftoverFrames : 0;
+        appendRamped(want, a, 3 * kBuf, kFadeOut - droppedFrames, 0, kFadeOut, false);
+        appendSilence(want, w.resumeSilenceFrames);
         appendRamped(want, n, target, kFadeIn, 0, kFadeIn, true);
         appendUsb(want, n, target + kFadeIn, kBuf - kFadeIn);
         const long diff = firstDifference(want, w.finish());
@@ -1371,7 +1409,7 @@ void testPipelineRepeatedSeeks(const Pcm &a, const Pcm &n) {
         while (nowUs() < until) CHECK(w.feedSilence(), "the silence feed failed");
     }
     const int64_t seekUs = nowUs() - startUs;
-    const int64_t silence = w.stat(5);
+    const int64_t silence = w.stat(5) - w.startSilenceFrames;   // B48-fix1: the gesture's silence, not the start's
     const int target = 5000;
     w.write(n, target, kBuf);
     const std::vector<uint8_t> got = w.finish();
@@ -1406,13 +1444,14 @@ void testPipelineSkipThenRebuild(const Pcm &a) {
     w.write(a, 0, 3 * kBuf);
     CHECK(w.beginSeek() == PIPELINE_SEEK_FADE, "skip did not ask for a fade");
     w.write(a, 3 * kBuf, kBuf);
+    const int leftoverFrames = w.ctx->residualBytes / 8;   // B48-fix1: the sub-URB tail of the ramp, which a release does not send (it is 0 frames when the audio and the packets line up; the start priming moves them)
     const int64_t t0 = nowUs();
     Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStop(nullptr, nullptr, w.usb);
     Java_com_decent_usbaudio_UsbAudioStream_nativeDrainUrbs(nullptr, nullptr, w.usb);
     const int64_t drainMs = (nowUs() - t0) / 1000;
     std::vector<uint8_t> want;
     appendUsb(want, a, 0, 3 * kBuf);
-    appendRamped(want, a, 3 * kBuf, kFadeOut, 0, kFadeOut, false);
+    appendRamped(want, a, 3 * kBuf, kFadeOut - leftoverFrames, 0, kFadeOut, false);
     int cuts;
     {
         std::lock_guard<std::mutex> lock(g_usb.mu);
@@ -1439,7 +1478,7 @@ void testPipelineJoinsAreUntouched(const Pcm &a, const Pcm &b) {
     CHECK(firstDifference(want, w.captured()) < 0, "pipeline same-rate join A||B is not bit-exact");
     int64_t stats[9];
     pipelineGestureStats(w.ctx, stats);
-    CHECK(stats[2] == 0 && stats[3] == 0 && stats[4] == 0 && stats[5] == 0 && stats[6] == 0 && stats[7] == 0,
+    CHECK(stats[2] == 0 && stats[3] == 0 && stats[4] == 0 && stats[5] == w.startSilenceFrames && stats[6] == 0 && stats[7] == 0,   // B48-fix1: the start's priming is the only silence
           "a join with no gesture moved the barrier's state");
     {
         std::lock_guard<std::mutex> lock(g_usb.mu);
@@ -1450,7 +1489,7 @@ void testPipelineJoinsAreUntouched(const Pcm &a, const Pcm &b) {
 }
 
 void testPipelineGestures(const Pcm &a, const Pcm &b) {
-    // Longer sources than the engine tests use: a seek and a pause need audio behind the ring.
+    // Long sources: a seek and a pause need audio behind the ring.
     const Pcm longA = makeNoise(10 * kBuf, 24, 0x7a11cafeu);
     const Pcm longN = makeNoise(40000 + 2 * kBuf, 24, 0x5eed0b9du);
     testPipelinePauseResume(longA);
@@ -1466,10 +1505,11 @@ void testPipelineGestures(const Pcm &a, const Pcm &b) {
 // ── 5. The wait between two reaps (AUD-145) ─────────────────────────────────────────────────────
 
 /**
- * Streams [pcm] through the engine in the given wait mode; returns bytes and the wait counters' delta, and in
+ * Streams [pcm] through the pipeline raw writer in the given wait mode; returns bytes and the wait counters' delta, and in
  * [completions] how many URBs completed for the writer to wait on (data URBs and feedback readings).
  */
-std::vector<uint8_t> streamOnce(bool pollMode, const std::string &path, uint64_t delta[5], int64_t *completions) {
+std::vector<uint8_t> streamOnce(bool pollMode, const Pcm &pcm, uint64_t delta[5], int64_t *completions) {
+    simclock::VirtualTime virtualTime;
     usbSetPollWait(pollMode);
     g_usb.reset(96000, 8);
     uint64_t before[5];
@@ -1477,27 +1517,32 @@ std::vector<uint8_t> streamOnce(bool pollMode, const std::string &path, uint64_t
     int64_t feedbackBefore[USB_FEEDBACK_STATS_COUNT], feedbackAfter[USB_FEEDBACK_STATS_COUNT];
     usbFeedbackStats(feedbackBefore);
     const jlong usb = createStream(96000, 32);
-    Engine e = createEngine(usb, path);
-    startEngine(e, true);
-    waitStopped(e, 8000);
-    sleepMs(100);
-    Java_com_decent_usbaudio_NativeAudioEngine_nativeDestroy(nullptr, nullptr, e.handle);
+    JNINativeInterface table = {};
+    table.GetArrayLength = fakeGetArrayLength;
+    table.GetByteArrayElements = fakeGetByteArrayElements;
+    table.ReleaseByteArrayElements = fakeReleaseByteArrayElements;
+    JNIEnv env;
+    env.functions = &table;
+    writePipeline(&env, usb, pcm, 8192);
+    CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDrainEndOfStream(&env, nullptr, usb), "wait-mode residual drain failed");
     releaseStream(usb);
     uint64_t after[5];
     usbWaitStats(after);
     usbFeedbackStats(feedbackAfter);
     for (int i = 0; i < 5; i++) delta[i] = after[i] - before[i];
     delta[0] = after[0];  // the mode is a state, not a count
-    std::lock_guard<std::mutex> lock(g_usb.mu);
-    *completions = (int64_t)g_usb.audioUrbs + (feedbackAfter[8] - feedbackBefore[8]);
-    return g_usb.capture;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        *completions = (int64_t)g_usb.audioUrbs + (feedbackAfter[8] - feedbackBefore[8]);
+    }
+    return g_usb.audible();
 }
 
-void testWaitModes(const std::string &dir) {
+void testWaitModes(const Pcm &pcm) {
     uint64_t pollDelta[5], sleepDelta[5];
     int64_t pollCompletions = 0, sleepCompletions = 0;
-    const std::vector<uint8_t> viaPoll = streamOnce(true, dir + "/a.flac", pollDelta, &pollCompletions);
-    const std::vector<uint8_t> viaSleep = streamOnce(false, dir + "/a.flac", sleepDelta, &sleepCompletions);
+    const std::vector<uint8_t> viaPoll = streamOnce(true, pcm, pollDelta, &pollCompletions);
+    const std::vector<uint8_t> viaSleep = streamOnce(false, pcm, sleepDelta, &sleepCompletions);
     CHECK(firstDifference(viaPoll, viaSleep) < 0, "the wait mode changed the audio delivered (poll %zu B, sleep %zu B)",
           viaPoll.size(), viaSleep.size());
     CHECK(viaPoll.size() == (size_t)kFrames96 * 8, "poll mode delivered %zu bytes", viaPoll.size());
@@ -1534,7 +1579,8 @@ void testWaitModes(const std::string &dir) {
  * A kernel that never reports POLLOUT for these completions must cost latency, not audio: each poll is
  * bounded, and everything already completed is reaped before the next wait.
  */
-void testSilentPollDoesNotStarve(const std::string &dir) {
+void testSilentPollDoesNotStarve(const Pcm &pcm) {
+    simclock::VirtualTime virtualTime;
     usbSetPollWait(true);
     g_usb.reset(96000, 8);
     {
@@ -1542,21 +1588,20 @@ void testSilentPollDoesNotStarve(const std::string &dir) {
         g_usb.silentPoll = true;
     }
     const jlong usb = createStream(96000, 32);
-    Engine e = createEngine(usb, dir + "/a.flac");
+    JNINativeInterface table = {};
+    table.GetArrayLength = fakeGetArrayLength;
+    table.GetByteArrayElements = fakeGetByteArrayElements;
+    table.ReleaseByteArrayElements = fakeReleaseByteArrayElements;
+    JNIEnv env;
+    env.functions = &table;
     const int64_t t0 = nowUs();
-    startEngine(e, true);
-    const bool ended = waitStopped(e, 8000);
+    writePipeline(&env, usb, pcm, 8192);
+    const bool ended = Java_com_decent_usbaudio_UsbAudioStream_nativeDrainEndOfStream(&env, nullptr, usb);
     const int64_t elapsedMs = (nowUs() - t0) / 1000;
-    sleepMs(100);
-    Java_com_decent_usbaudio_NativeAudioEngine_nativeDestroy(nullptr, nullptr, e.handle);
     releaseStream(usb);
-    std::vector<uint8_t> got;
-    {
-        std::lock_guard<std::mutex> lock(g_usb.mu);
-        got = g_usb.capture;
-    }
+    const std::vector<uint8_t> got = g_usb.audible();
     const std::vector<uint8_t> want = toUsb32(makeNoise(kFrames96, 24, 0x1234abcdu));
-    CHECK(ended, "the engine never finished against a poll that never signals");
+    CHECK(ended, "the writer never drained against a poll that never signals");
     CHECK(firstDifference(want, got) < 0, "a silent poll changed the audio (%zu of %zu bytes)", got.size(), want.size());
     // 0.8 s of audio, paced by the DAC: the writer keeps up, within the ring's slack.
     CHECK(elapsedMs < 800 + 350, "a silent poll stalled the writer: %lld ms for 800 ms of audio", (long long)elapsedMs);
@@ -1565,6 +1610,7 @@ void testSilentPollDoesNotStarve(const std::string &dir) {
 
 /** The timeouts are the ones the callers pass, in ms, whatever the wait is made of. */
 void testWaitTimeouts() {
+    simclock::VirtualTime virtualTime;
     for (bool pollMode : {true, false}) {
         usbSetPollWait(pollMode);
         g_usb.reset(96000, 8);
@@ -1611,7 +1657,6 @@ void testWaitTimeouts() {
     usbSetPollWait(true);
     printf("wait timeouts: 2 ms bound and a gone device behave the same in both modes\n");
 }
-
 
 // ── 7. The DAC's feedback stuck at a value (B10, AUD-124 "shh") ─────────────────────────────────
 
@@ -2004,7 +2049,6 @@ void testDefaultAutoRefusesImplausibleFeedback(int policyAtStart) {
            refused.mean, nominal, followed.mean);
 }
 
-
 // ── B41-fix1 (A1b): a reading the policy refuses reaches the rest of the block that is being written ───────────────────────
 //
 // 2026-10-25, the owner's HONOR, Melody, 44.1 kHz, after a seek: the feedback went +0.36 % → ... → `FEEDBACK_REJECTED absurd +20851 ppm`
@@ -2175,7 +2219,6 @@ void testStuckReachesTheBlockInProgress() {
     setFeedbackScript(nullptr);
 }
 
-
 // ── B41-fix1 (A1c): what the noise mark records about the feedback ─────────────────────────────────────────────────────────────
 
 /** The fields of a second's line that B41-fix1 added, after the twelve B27-A5 parses. */
@@ -2286,7 +2329,8 @@ void testFeedbackEvidenceInTheDump() {
             CHECK(l.ageMs >= 0 && l.ageMs < 100, "a healthy second ended %lld ms after its last reading", l.ageMs);
         }
         // the three rates are three numbers: received (mean above), given (sent), gone (applied = frames / packets)
-        CHECK(l.sentCalls >= 1 && l.wirePackets > 0 && std::fabs(l.applied - (double)l.wireFrames / (double)l.wirePackets) < 1e-4, "wire %lld frames in %lld packets, applied %.5f", l.wireFrames, l.wirePackets, l.applied);
+        CHECK((l.wirePackets == 0 && l.wireFrames == 0) ||
+              (l.sentCalls >= 1 && l.wirePackets > 0 && std::fabs(l.applied - (double)l.wireFrames / (double)l.wirePackets) < 1e-4), "wire %lld frames in %lld packets, applied %.5f", l.wireFrames, l.wirePackets, l.applied);
     }
     CHECK(healthySecs >= 3, "%d healthy seconds", healthySecs);
     CHECK(errorSecs >= 2 && dropped >= 2000, "%d seconds of errors, %ld dropped transfers (about a thousand a second)", errorSecs, dropped);
@@ -2541,7 +2585,7 @@ void testOutputGap() {
         CHECK(parsed, "the OUTPUT_GAP line is not in the documented shape: %s", first.c_str());
         if (parsed) {
             CHECK(late.gap >= 170 && late.gap <= 400, "gap=%ld ms for a 175 ms hold", late.gap);
-            CHECK(late.lead >= 60 && late.lead <= 85, "lead=%ld ms: the ring holds ~80 ms", late.lead);
+            CHECK(late.lead >= ctx->plan.ringUrbs - 20 && late.lead <= ctx->plan.ringUrbs + 5, "lead=%ld ms: the ring holds ~%d ms", late.lead, ctx->plan.ringUrbs);
             CHECK(labs(late.dry - daMeasuredMs) <= 15, "dry=%ld ms, the fake DAC measured %lld ms", late.dry, daMeasuredMs);
             CHECK(late.dry == late.gap - late.lead || labs(late.dry - (late.gap - late.lead)) <= 2, "dry=%ld is not gap-lead (%ld-%ld)", late.dry, late.gap, late.lead);
             CHECK(strcmp(late.where, "between-writes") == 0 && late.between * 10 >= late.gap * 8,
@@ -2568,8 +2612,11 @@ void testOutputGap() {
             std::lock_guard<std::mutex> lock(g_usb.mu);
             g_usb.hold = true;
         });
-        simclock::at(simclock::nowNs() + 700 * 1000000LL, [] { g_usb.releaseHold(); });
-        writeFor(ctx, kRate, 1000);
+        // B47-A2: the hold must outlast the ring's lead (128 ms: the writer's last submit is that long before the DAC would run dry) for the model to
+        // find the bus dry; at 80 ms a hold of 200 ms did.
+        const int64_t holdReleaseMs = 500 + ctx->plan.ringUrbs + 150;
+        simclock::at(simclock::nowNs() + holdReleaseMs * 1000000LL, [] { g_usb.releaseHold(); });
+        writeFor(ctx, kRate, 1300);
         std::string first;
         {
             std::lock_guard<std::mutex> lock(g_usb.mu);
@@ -2645,26 +2692,1823 @@ void testOutputGap() {
            slept.hasSched ? ("runq=" + std::to_string(slept.runq) + " ms cpu=" + std::to_string(slept.cpu) + " ms of " + std::to_string(slept.gap) + " ms").c_str() : "n/a");
 }
 
+// ── B46-A4: a device whose timing the output does not drive yet is played as it always was, and the log says so ──────────────────
+
+/** Plays one short track through a freshly created stream and returns whether the wire carries exactly its bytes. */
+bool wireCarriesExactly(JNIEnv *env, jlong usb, const Pcm &pcm, int slot) {
+    writePipeline(env, usb, pcm, 4096);
+    CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDrainEndOfStream(env, nullptr, usb), "residual drain failed");
+    std::vector<uint8_t> want;
+    for (int32_t sample : pcm.samples) {
+        const uint32_t packed = static_cast<uint32_t>(sample) << (slot - pcm.bits);
+        for (int byte = 0; byte < slot / 8; byte++) want.push_back(static_cast<uint8_t>(packed >> (8 * byte)));
+    }
+    return firstDifference(want, g_usb.audible()) < 0;
+}
+
+int countLinesWith(const char *needle) {
+    std::lock_guard<std::mutex> lock(g_usb.mu);
+    int n = 0;
+    for (const std::string &line : g_usb.transportLines) n += line.find(needle) != std::string::npos ? 1 : 0;
+    return n;
+}
+
+void testTransportAssumptions() {
+    simclock::VirtualTime virtualTime;
+    JNINativeInterface table = {};
+    table.GetArrayLength = fakeGetArrayLength;
+    table.GetByteArrayElements = fakeGetByteArrayElements;
+    table.ReleaseByteArrayElements = fakeReleaseByteArrayElements;
+    JNIEnv env;
+    env.functions = &table;
+    const Pcm pcm = makeNoise(96000 / 5 + 17, 24, 0x46a4a4a4u);
+
+    // (a) A high-speed DAC with bInterval 1 and a four-byte feedback: the plan line, and no assumption.
+    g_usb.reset(96000, 8);
+    jlong usb = createStream(96000, 32);
+    CHECK(wireCarriesExactly(&env, usb, pcm, 32), "the healthy stream differs");
+    releaseStream(usb);
+    CHECK(countLinesWith("Start: plan: interval=125 us (8000/s) nominal=96000/8000") == 1, "no plan line at the start (%zu lines)", g_usb.transportLines.size());
+    CHECK(countLinesWith("ring=128 low=64 queue=138240/1142400 frames") == 1, "the plan line does not carry the ring and the queue limits");
+    CHECK(countLinesWith("TRANSPORT_ASSUMPTION") == 0, "a high-speed DAC was reported as an assumption");
+    {
+        char text[4096];
+        usbSecondSummaries(30000, text, sizeof(text));
+        CHECK(strstr(text, "plan[speed=3 bInterval=1 feedbackBytes=4 interval=125us ring=128 pkts=8 assumptions=0x0]") != nullptr,
+              "the capture header does not carry the plan: %.320s", text);
+    }
+
+    // (b) A full-speed DAC with bInterval 4 and a three-byte 10.14 feedback: it plays today, so it still plays, byte for byte.
+    g_usb.reset(96000, 8);
+    g_usb.speed = 2;
+    usb = createStreamWith(96000, 32, 400, 4, 3);
+    CHECK(usb != 0, "a full-speed DAC must not be refused in B46");
+    if (usb != 0 && Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(nullptr, nullptr, usb)) {
+        g_usb.markStreamStart();
+        CHECK(wireCarriesExactly(&env, usb, pcm, 32), "the full-speed stream differs from the source");
+        releaseStream(usb);
+    }
+    CHECK(countLinesWith("TRANSPORT_ASSUMPTION speed=2") == 1, "no assumption for full speed");
+    CHECK(countLinesWith("TRANSPORT_ASSUMPTION data endpoint bInterval=4") == 1, "no assumption for bInterval 4");
+    CHECK(countLinesWith("TRANSPORT_ASSUMPTION feedback packet of 3 bytes") == 1, "no assumption for the 3-byte feedback");
+    {
+        char text[4096];
+        usbSecondSummaries(30000, text, sizeof(text));
+        CHECK(strstr(text, "plan[speed=2 bInterval=4 feedbackBytes=3 interval=125us ring=128 pkts=8 assumptions=0x7]") != nullptr,
+              "the capture header does not carry the assumptions: %.320s", text);
+    }
+
+    // (c) A bus whose speed cannot be read.
+    g_usb.reset(96000, 8);
+    g_usb.speed = -1;
+    usb = createStream(96000, 32);
+    releaseStream(usb);
+    CHECK(countLinesWith("TRANSPORT_ASSUMPTION bus speed unknown") == 1, "no assumption for an unreadable speed");
+
+    // (d) The refusals the output has always made are now said at the creation, not discovered as silence at the first write.
+    g_usb.reset(384000, 8);
+    CHECK(createStreamWith(384000, 32, 100, 1, 4) == 0, "a maxPacket of 100 bytes cannot carry 48 frames x 8 bytes and must refuse");
+    CHECK(createStreamWith(96000, 20, 400, 1, 4) == 0, "a 20-bit container is not a sample size");
+    printf("transport assumptions: high speed = plan line only; full speed + bInterval 4 + 3-byte feedback = still plays (bit-exact), 3 TRANSPORT_ASSUMPTION lines, "
+           "assumptions=0x7 in the capture header; unreadable speed = 1 line; impossible formats refused at creation\n");
+}
+
+// ── B46-B1: a skip while playing, and the silence fed until the new position's first buffer ─────────────────────────────────────
+//
+// The device (B45 session, 14:44:36.839 and six more): 50-140 ms after a user skip, while the streaming thread fed silence, an OUTPUT_GAP of
+// 2-9 ms with lead 1-5 ms, where=between-writes, runq 2-12 ms. The thread's order for a skip while playing is the real one: the pause fade
+// (the ring ends in an 8 ms fade of the old continuation), `markIdle` (performPause announces the idle, lastSubmitMs = 0), then the paused
+// seek's silence feed (`pipelineBeginSeek` -> SILENCE, `pipelineFeedSilence` in a loop), then the new item's first buffer.
+
+struct SkipOutcome {
+    int realGaps = 0;           // the fake DAC found nothing queued when a URB arrived (more than 1 ms late)
+    int64_t realMaxGapUs = 0;
+    size_t modelLines = 0;      // the OUTPUT_GAP lines the writer's own model reported
+    std::string firstModelLine;
+    uint64_t audibleHash = 0;   // FNV-1a of the whole wire with its all-zero frames removed: the audible samples
+    int64_t silenceFrames = 0;  // zero frames on the wire
+    int64_t minLeadFrames = 0;  // the smallest unplayed lead the silence feed saw
+    int64_t leadAtNewAudioFrames = 0;  // what the new position's first buffer waits behind: the extra latency of the silence
+    int64_t leadTargetFrames = 0;      // the plan's silence lead
+};
+
+/** [stallMs] > 0: the writer is not running for that long, [stallAfterMs] after the seek began. */
+SkipOutcome runSkip(int rate, int stallMs, int stallAfterMs) {
+    const Pcm a = makeNoise(12 * kBuf, 24, 0x5eed0001u);
+    const Pcm b = makeNoise(4 * kBuf, 24, 0x5eed0002u);
+    Writer w(rate);
+    SkipOutcome out;
+    out.leadTargetFrames = w.ctx->plan.silenceLeadFrames;
+    for (int i = 0; i < 5; i++) w.write(a, i * kBuf, kBuf);   // the ring is full, a block is in hand
+    CHECK(w.beginPause(), "the pause of a skip found nothing to fade");
+    w.write(a, 5 * kBuf, kBuf);                               // the continuation, ramped to zero in 8 ms
+    if (w.fadingOut()) w.endFadeOut();
+    w.markIdle();                                             // performPause: the ring is about to run dry by design
+    const int64_t skipUs = nowUs();
+    CHECK(w.beginSeek() == PIPELINE_SEEK_SILENCE, "the ring should already end in the pause's fade");
+    out.minLeadFrames = INT64_MAX;
+    bool stalled = stallMs <= 0;
+    // the decoder takes ~170 ms to deliver the new position (the device log: 168 ms, 242 steps)
+    while (nowUs() - skipUs < 170 * 1000) {
+        if (!stalled && nowUs() - skipUs >= (int64_t)stallAfterMs * 1000) {
+            sleepMs(stallMs);
+            stalled = true;
+        }
+        const int64_t queued = w.queuedFrames();
+        if (queued < out.minLeadFrames) out.minLeadFrames = queued;
+        CHECK(w.feedSilence(), "the silence feed failed");
+    }
+    out.leadAtNewAudioFrames = w.queuedFrames();
+    w.write(b, 0, kBuf);                                       // the first buffer of the new position (faded in)
+    w.write(b, kBuf, kBuf);
+    const std::vector<uint8_t> wire = w.finish();              // the end of the stream: the packetizer's last partial URB goes out too
+    sleepMs(300);                                              // everything submitted has been played
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        out.realGaps = g_usb.gaps;
+        out.realMaxGapUs = g_usb.maxGapUs;
+        out.modelLines = g_usb.outputGapLines.size();
+        if (!g_usb.outputGapLines.empty()) out.firstModelLine = g_usb.outputGapLines.front();
+    }
+    const size_t frameBytes = 8;   // 32-bit stereo slot
+    uint64_t hash = 14695981039346656037ull;
+    for (size_t at = 0; at + frameBytes <= wire.size(); at += frameBytes) {
+        bool zero = true;
+        for (size_t i = 0; i < frameBytes; i++) zero = zero && wire[at + i] == 0;
+        if (zero) { out.silenceFrames++; continue; }
+        for (size_t i = 0; i < frameBytes; i++) hash = (hash ^ wire[at + i]) * 1099511628211ull;
+    }
+    out.audibleHash = hash;
+    return out;
+}
+
+void testSkipSilenceFeed() {
+    static const int kRates[] = {44100, 96000, 192000};
+    static const int kStallsBelowLead[] = {0, 8, 13, 30, 45, 82, 100};   // B47-A2: 82 is the worst stall seen, 100 is 82 + 22 %
+    for (int rate : kRates) {
+        uint64_t reference = 0;
+        for (int stall : kStallsBelowLead) {
+            const SkipOutcome o = runSkip(rate, stall, 85);
+            printf("B1 skip %6d Hz, writer stalled %2d ms %d ms after the seek: fake DAC gaps=%d, model OUTPUT_GAP lines=%zu, lead min %.1f ms "
+                   "(target %.1f), new audio waits behind %.1f ms, silence %lld frames, audible=%016llx\n",
+                   rate, stall, 85, o.realGaps, o.modelLines, o.minLeadFrames * 1000.0 / rate, o.leadTargetFrames * 1000.0 / rate,
+                   o.leadAtNewAudioFrames * 1000.0 / rate, (long long)o.silenceFrames, (unsigned long long)o.audibleHash);
+            // zero OUTPUT_GAP, in the model and in the fake DAC (which counts anything over 1 ms)
+            CHECK(o.realGaps == 0, "%d Hz stall %d ms: the fake DAC ran dry %d times", rate, stall, o.realGaps);
+            CHECK(o.modelLines == 0, "%d Hz stall %d ms: %zu OUTPUT_GAP lines (first: %s)", rate, stall, o.modelLines, o.firstModelLine.c_str());
+            // the lead the stall left is the target minus the stall (and a millisecond of the URB in flight)
+            const int64_t leftMs = o.leadTargetFrames * 1000 / rate - stall;
+            CHECK(o.minLeadFrames * 1000 / rate >= leftMs - 2, "%d Hz stall %d ms: the lead fell to %lld ms, expected about %lld", rate, stall,
+                  (long long)(o.minLeadFrames * 1000 / rate), (long long)leftMs);
+            // the audible samples are the same whatever the stall and the silence in front of them
+            if (stall == 0) reference = o.audibleHash;
+            CHECK(o.audibleHash == reference, "%d Hz stall %d ms: the audible samples differ", rate, stall);
+            // the latency the lead adds to the first audio after the skip: the plan's lead, within one URB
+            CHECK(std::llabs(o.leadAtNewAudioFrames - o.leadTargetFrames) <= rate / 1000 + 2 || stall > 0,
+                  "%d Hz: the new audio waits behind %lld frames, the target is %lld", rate, (long long)o.leadAtNewAudioFrames,
+                  (long long)o.leadTargetFrames);
+        }
+        // A stall LONGER than the lead is a real dry stretch, and then the model and the fake DAC agree on it: counted exactly when the
+        // bus ran dry, with the same length (to a couple of ms).
+        const SkipOutcome dry = runSkip(rate, 140, 85);
+        printf("B1 skip %6d Hz, writer stalled 140 ms: fake DAC gaps=%d (max %.1f ms), model lines=%zu: %s\n", rate, dry.realGaps,
+               dry.realMaxGapUs / 1000.0, dry.modelLines, dry.firstModelLine.c_str());
+        CHECK(dry.realGaps >= 1 && dry.modelLines >= 1, "%d Hz: a stall of 140 ms (more than the lead) ran dry in the fake DAC %d times, the model said %zu",
+              rate, dry.realGaps, dry.modelLines);
+        GapLine line;
+        if (parseGapLine(dry.firstModelLine, &line)) {
+            CHECK(std::labs(line.dry - dry.realMaxGapUs / 1000) <= 3, "%d Hz: the model's dry=%ld ms, the fake DAC's gap %lld ms", rate, line.dry,
+                  (long long)(dry.realMaxGapUs / 1000));
+        }
+    }
+}
+
+// ── B46-B3: a late writer ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// The writer is not running for 5, 20, 50 or 100 ms, once or three times in a stream, at 44.1, 96, 192 and 384 kHz. To the native layer a
+// producer that is late and a writer that is descheduled are the same thing (it is not asked to write for a while), so one stall between two
+// writes stands for both; the second kind is the wake-up that comes late inside the reap wait (the completion was there, the thread was not).
+// The fake DAC keeps playing through the stall and finds the bus dry only if it really was.
+
+enum StallWhere { STALL_BETWEEN_WRITES, STALL_IN_WAIT };
+
+struct StallRun {
+    bool bytesExact = false;
+    int realGaps = 0;
+    int64_t realMaxGapUs = 0;
+    size_t modelLines = 0;
+    std::string firstModelLine;
+    int64_t leadAfterStallMs = INT64_MAX;   // what the ring held when the writer came back (between writes)
+    int64_t recoveryMs = 0;                 // the longest time from the end of a stall to the ring being back at 90 % of its depth
+    int maxInFlight = 0;
+    int ringUrbs = 0;                       // the plan's ring depth (B47-A2: it is no longer a constant of the test)
+    int64_t maxPositionErrorFrames = 0;     // |Media3's position - the frames the fake DAC has played|, sampled after every write
+    bool endsEqual = false;                 // frames written == frames played == frames of the source
+};
+
+StallRun runStalls(int rate, int stallMs, int count, StallWhere where) {
+    constexpr int kBlock = 2048;
+    const int spacingMs = 1200;   // above the log's one-line-per-second limit, so every dry stretch gets its own line
+    const int totalMs = 600 + count * spacingMs + 600;
+    const int frames = (int)((int64_t)rate * totalMs / 1000 / kBlock) * kBlock;
+    const Pcm src = makeNoise(frames, 24, 0x46b30000u + (uint32_t)rate);
+    Writer w(rate);
+    StallRun out;
+    out.ringUrbs = w.ctx->plan.ringUrbs;
+    const int64_t ringTargetFrames = (int64_t)rate * (out.ringUrbs * 9 / 10) / 1000;   // 90 % of the ring (a URB is 1 ms of wire time)
+    const int bytesPerFrame = w.ctx->plan.bytesPerFrame;
+    const int64_t startUs = nowUs();
+    int stalls = 0;
+    int64_t stallEndUs = -1;
+    for (int at = 0; at + kBlock <= frames; at += kBlock) {
+        const int64_t sinceStartMs = (nowUs() - startUs) / 1000;
+        if (stalls < count && sinceStartMs >= 600 + (int64_t)stalls * spacingMs) {
+            stalls++;
+            if (where == STALL_BETWEEN_WRITES) {
+                sleepMs(stallMs);
+                out.leadAfterStallMs = std::min<int64_t>(out.leadAfterStallMs, w.queuedFrames() * 1000 / rate);
+                stallEndUs = nowUs();
+            } else {
+                std::lock_guard<std::mutex> lock(g_usb.mu);
+                g_usb.stallNextPollUs = (int64_t)stallMs * 1000;
+            }
+        }
+        w.write(src, at, kBlock);
+        if (where == STALL_IN_WAIT && stalls > 0 && stallEndUs < 0 && g_usb.stallNextPollUs == 0) stallEndUs = nowUs();
+        out.maxInFlight = std::max(out.maxInFlight, w.ctx->urbsInFlight);
+        const int64_t queued = w.queuedFrames();
+        if (stallEndUs >= 0 && queued >= ringTargetFrames) {
+            out.recoveryMs = std::max<int64_t>(out.recoveryMs, (nowUs() - stallEndUs) / 1000);
+            stallEndUs = -1;
+        }
+        // Media3's position: the frames written, less the ones still queued (and the partial URB the packetizer holds back)
+        // B48-fix1: the start's priming silence is in the ring and in the played count, but not in the audio: leave it out of both
+        const int64_t played = g_usb.playedFrames(nowUs());
+        const int64_t silenceQueued = std::max<int64_t>(0, w.startSilenceFrames - played);
+        const int64_t position = w.ctx->framesWritten - w.ctx->residualBytes / bytesPerFrame - (queued - silenceQueued);
+        const int64_t playedAudio = played - std::min<int64_t>(played, w.startSilenceFrames);
+        out.maxPositionErrorFrames = std::max<int64_t>(out.maxPositionErrorFrames, std::llabs(position - playedAudio));
+    }
+    const std::vector<uint8_t> wire = w.finish();
+    const std::vector<uint8_t> want = toUsb32(src);
+    out.bytesExact = wire.size() == want.size() && firstDifference(want, wire) < 0;
+    sleepMs(400);
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        out.realGaps = g_usb.gaps;
+        out.realMaxGapUs = g_usb.maxGapUs;
+        out.modelLines = g_usb.outputGapLines.size();
+        if (!g_usb.outputGapLines.empty()) out.firstModelLine = g_usb.outputGapLines.front();
+    }
+    out.endsEqual = w.ctx->framesWritten == frames && g_usb.playedFrames(nowUs()) == frames + w.startSilenceFrames;   // B48-fix1: the frames played include the start's priming
+    return out;
+}
+
+void testWriterRecovery() {
+    static const int kRates[] = {44100, 96000, 192000, 384000};
+    static const int kStalls[] = {5, 20, 50, 100, 120, 150};   // B47-A2: 120 is under the 128 ms ring, 150 over it
+    for (int rate : kRates) {
+        for (int stall : kStalls) {
+            for (int count : {1, 3}) {
+                for (int where = 0; where < 2; where++) {
+                    const StallRun r = runStalls(rate, stall, count, where == 0 ? STALL_BETWEEN_WRITES : STALL_IN_WAIT);
+                    printf("B3 %6d Hz stall %3d ms x%d %-14s: bytes %s, fake DAC gaps=%d (max %.1f ms), OUTPUT_GAP lines=%zu, lead after the stall %s ms, "
+                           "back to 90%% in %lld ms, max %d URBs in flight, position error %lld frames, ends %s\n",
+                           rate, stall, count, where == 0 ? "between-writes" : "in-wait", r.bytesExact ? "EXACT" : "DIFFER", r.realGaps,
+                           r.realMaxGapUs / 1000.0, r.modelLines,
+                           r.leadAfterStallMs == INT64_MAX ? "n/a" : std::to_string((long long)r.leadAfterStallMs).c_str(),
+                           (long long)r.recoveryMs, r.maxInFlight, (long long)r.maxPositionErrorFrames, r.endsEqual ? "equal" : "UNEQUAL");
+                    CHECK(r.bytesExact, "%d Hz stall %d x%d %d: a frame was lost, repeated or moved", rate, stall, count, where);
+                    CHECK(r.endsEqual, "%d Hz stall %d x%d %d: frames written / played / source differ", rate, stall, count, where);
+                    CHECK(r.maxInFlight <= r.ringUrbs, "%d Hz stall %d: %d URBs in flight, more than the ring holds (%d)", rate, stall, r.maxInFlight, r.ringUrbs);
+                    CHECK(r.maxPositionErrorFrames <= rate / 1000 + 2, "%d Hz stall %d x%d %d: the position is %lld frames from what was played", rate, stall,
+                          count, where, (long long)r.maxPositionErrorFrames);
+                    if (stall + 3 < r.ringUrbs) {
+                        // under the ring's depth the bus never ran dry, and the model says nothing
+                        CHECK(r.realGaps == 0 && r.modelLines == 0, "%d Hz stall %d x%d %d: fake DAC gaps=%d, OUTPUT_GAP lines=%zu (first: %s)", rate, stall, count,
+                              where, r.realGaps, r.modelLines, r.firstModelLine.c_str());
+                    } else {
+                        // a stall longer than the ring is a real dry stretch, counted by both, once per stall
+                        CHECK(r.realGaps == count && (int)r.modelLines == count, "%d Hz stall %d x%d %d: fake DAC gaps=%d, OUTPUT_GAP lines=%zu", rate, stall,
+                              count, where, r.realGaps, r.modelLines);
+                        GapLine line;
+                        if (parseGapLine(r.firstModelLine, &line)) {
+                            CHECK(std::labs(line.dry - r.realMaxGapUs / 1000) <= 3, "%d Hz: the model's dry=%ld ms, the fake DAC's longest gap %lld ms", rate, line.dry,
+                                  (long long)(r.realMaxGapUs / 1000));
+                        }
+                    }
+                    // back to its depth within the time a block takes to be written, plus the stall's own wake-up
+                    CHECK(r.recoveryMs <= 2LL * 2048 * 1000 / rate + 5, "%d Hz stall %d: %lld ms to get back to depth", rate, stall, (long long)r.recoveryMs);
+                    if (where == 0 && stall + 3 < r.ringUrbs) {
+                        CHECK(r.leadAfterStallMs >= r.ringUrbs - stall - 3, "%d Hz stall %d: the stall left %lld ms of the %d", rate, stall, (long long)r.leadAfterStallMs, r.ringUrbs);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// ── B47-A2: a lead that survives the worst stall seen ───────────────────────────────────────────────────────────────────────────────
+//
+// 2026-10-29 17:32:33: the writer was runnable and not running for 82 ms (`OUTPUT_GAP gap=83 ms lead=80 ms runq=82 ms cpu=0 ms`) and the 80 ms ring
+// ran out for ~3 ms. The target of the plan is a stall of 100 ms (the 82 + 22 %) that leaves the DAC with data, in steady playback and right after a
+// skip, and one of 120 ms in steady playback. Every number printed here is the host simulation's (virtual clock, fake DAC that knows when it ran
+// dry), not a device number.
+
+void testLeadSurvivesTheWorstStall() {
+    static const int kRates[] = {44100, 96000, 192000, 384000};
+    static const int kStalls[] = {82, 100, 120};
+    for (int rate : kRates) {
+        const uint64_t reference = runSkip(rate, 0, 85).audibleHash;
+        for (int stall : kStalls) {
+            const StallRun mid = runStalls(rate, stall, 1, STALL_BETWEEN_WRITES);
+            const SkipOutcome skip = runSkip(rate, stall, 85);
+            const int leadMs = (int)(skip.leadTargetFrames * 1000 / rate);
+            printf("A2 %6d Hz, writer stalled %3d ms (ring %d ms, skip lead %d ms): mid-stream: fake DAC dry %d x (max %.1f ms), bytes %s; "
+                   "right after a skip: dry %d x (max %.1f ms), audible samples %s\n",
+                   rate, stall, mid.ringUrbs, leadMs, mid.realGaps, mid.realMaxGapUs / 1000.0, mid.bytesExact ? "EXACT" : "DIFFER",
+                   skip.realGaps, skip.realMaxGapUs / 1000.0, skip.audibleHash == reference ? "equal" : "DIFFER");
+            CHECK(mid.bytesExact && mid.endsEqual, "%d Hz stall %d: a frame was lost, repeated or moved", rate, stall);
+            CHECK(skip.audibleHash == reference, "%d Hz stall %d: the audible samples after a skip differ", rate, stall);
+            // the target: 120 ms in steady playback, 100 ms right after a skip, both with the DAC still fed
+            CHECK(mid.realGaps == 0, "%d Hz: a writer stalled %d ms mid-stream left the DAC dry %d times (max %.1f ms; the ring holds %d ms)", rate, stall,
+                  mid.realGaps, mid.realMaxGapUs / 1000.0, mid.ringUrbs);
+            if (stall <= 100) {
+                CHECK(skip.realGaps == 0, "%d Hz: a writer stalled %d ms right after a skip left the DAC dry %d times (max %.1f ms; the lead is %d ms)", rate, stall,
+                      skip.realGaps, skip.realMaxGapUs / 1000.0, leadMs);
+            } else {
+                // past the silence lead the dry stretch is the part of the stall the lead did not cover
+                CHECK(skip.realMaxGapUs / 1000 <= stall - leadMs + 3, "%d Hz stall %d after a skip: dry %.1f ms, more than the %d ms beyond the lead", rate, stall,
+                      skip.realMaxGapUs / 1000.0, stall - leadMs);
+            }
+        }
+    }
+}
+
+/** What a pause, a seek and a skip cost in latency: the ring's lead when the request arrives, then the 8 ms fade behind it. */
+// ── B47-A1: who had the CPU ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+void testWhoHadTheCpu() {
+    constexpr int kRate = 48000;
+    const Pcm src = makeNoise(4 * 2048, 24, 0xa1000001u);
+    Writer w(kRate);
+    for (int at = 0; at < 4 * 2048; at += 2048) w.write(src, at, 2048);
+    std::vector<std::string> lines;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        lines = g_usb.schedulingLines;
+    }
+    // the first write of a writer thread says what its scheduling is, once per stream and thread
+    size_t writerLines = 0;
+    std::string writerLine;
+    for (const std::string &l : lines) {
+        if (l.find("Writer thread:") != std::string::npos) { writerLines++; writerLine = l; }
+    }
+    printf("A1 writer scheduling line: %s\n", writerLine.c_str());
+    CHECK(writerLines == 1, "%zu Writer thread lines for one stream and one writer thread", writerLines);
+    CHECK(writerLine.find("policy=OTHER") != std::string::npos && writerLine.find("allowed=") != std::string::npos && writerLine.find("lastCpu=") != std::string::npos &&
+              writerLine.find("cpuset=") != std::string::npos && writerLine.find("uclamp=") != std::string::npos,
+          "the scheduling line misses a field: %s", writerLine.c_str());
+    // the extra gap line: where the writer ran and may run, each CPU's share where /proc/stat is readable, and this process's busiest threads
+    const int64_t before = nowUs();
+    (void)before;
+    usbReportOutputGapCpu(w.ctx, 82000, 0);
+    std::string gapLine;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        for (const std::string &l : g_usb.schedulingLines) {
+            if (l.find("runq=82 ms cpu=0 ms") != std::string::npos) gapLine = l;
+        }
+    }
+    printf("A1 OUTPUT_GAP_CPU line: %s\n", gapLine.c_str());
+    CHECK(!gapLine.empty(), "no OUTPUT_GAP_CPU line for a writer that sat 82 ms in the run queue");
+    CHECK(gapLine.find("lastCpu=") != std::string::npos && gapLine.find("allowed=") != std::string::npos && gapLine.find("cpuBusy[") != std::string::npos &&
+              gapLine.find("ownThreads[") != std::string::npos && gapLine.find("rate=48000") != std::string::npos,
+          "the extra line misses a field: %s", gapLine.c_str());
+}
+
+void testLeadLatencyOfGestures() {
+    static const int kRates[] = {44100, 96000, 192000, 384000};
+    for (int rate : kRates) {
+        const Pcm src = makeNoise(rate, 24, 0xa2000000u + (uint32_t)rate);
+        Writer w(rate);
+        for (int at = 0; at + 2048 <= rate / 2; at += 2048) w.write(src, at, 2048);
+        const int64_t queuedAtRequest = w.queuedFrames();
+        const int64_t fadeFrames = w.ctx->plan.fadeOutFrames;
+        printf("A2 latency %6d Hz: ring holds %.1f ms when a pause/seek/skip arrives, +%.1f ms fade = the cut is heard %.1f ms later; "
+               "the first audio after a skip waits behind %.1f ms of silence\n",
+               rate, queuedAtRequest * 1000.0 / rate, fadeFrames * 1000.0 / rate, (queuedAtRequest + fadeFrames) * 1000.0 / rate,
+               w.ctx->plan.silenceLeadFrames * 1000.0 / rate);
+        CHECK(queuedAtRequest * 1000 / rate >= w.ctx->plan.ringUrbs - 3 && queuedAtRequest * 1000 / rate <= w.ctx->plan.ringUrbs,
+              "%d Hz: the ring holds %lld ms, the plan's ring is %d", rate, (long long)(queuedAtRequest * 1000 / rate), w.ctx->plan.ringUrbs);
+    }
+}
+
+// ── B47-A3: a resume primes the ring ────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// 2026-10-29 17:25:19 (and 14:46:49 in the B45 session): a resume after a long pause, the first URB went out alone and the next one 7 ms later
+// (`RING_EMPTY` + `OUTPUT_GAP dry=6 ms inFlight=1 where=in-write`). The simulation does the same: the pause ends in a fade whose block leaves only a few frames
+// for the resume to replay, the ring plays out, the resume replays them, and the thread needs 7 ms to bring the next buffer.
+
+struct ResumeOutcome {
+    int gapsAfterResume = 0;          // empty stretches the fake DAC found from the resume on (the pause's own idle is before it and is not counted)
+    int64_t maxGapAfterResumeUs = 0;
+    size_t modelLines = 0;
+    int ringEmptyLogs = 0;
+    int64_t silenceBeforeAudio = 0;   // zero frames on the wire right before the replayed block's first sample
+    int64_t fedSilenceFrames = 0;     // what the resume fed (the stream's own count)
+    bool audibleEqual = false;
+};
+
+ResumeOutcome runResume(int rate, int stallMs, int pausedMs) {
+    constexpr int kBlock = 2048;
+    const int keptFrames = 100;   // what the pause's block leaves for the resume: ~2 URBs
+    const Pcm src = makeNoise(rate + 8 * kBlock, 24, 0xa3000000u + (uint32_t)rate);
+    Writer w(rate);
+    ResumeOutcome out;
+    const int fade = w.ctx->plan.fadeOutFrames;
+    int next = 0;
+    for (; next < 6 * kBlock; next += kBlock) w.write(src, next, kBlock);
+    CHECK(w.beginPause(), "the pause found nothing to fade");
+    w.write(src, next, fade + keptFrames);                 // the continuation: 8 ms ramped, `keptFrames` kept for the resume
+    next += fade + keptFrames;
+    if (w.fadingOut()) w.endFadeOut();
+    w.markIdle();
+    listen(pausedMs);                                      // paused: the ring plays out and the DAC idles
+    const int64_t silenceBefore = w.stat(5);
+    size_t gapsBefore;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        gapsBefore = g_usb.gapList.size();
+    }
+    w.resume();                                            // primes the ring, then replays the kept frames, faded in
+    out.fedSilenceFrames = w.stat(5) - silenceBefore;
+    size_t gapsAtFirstUrbs;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        gapsAtFirstUrbs = g_usb.gapList.size();   // the first URB of the resume ends the pause's idle: that gap is the pause, by design
+    }
+    sleepMs(stallMs);                                      // the thread brings the next buffer
+    w.write(src, next, kBlock);
+    next += kBlock;
+    const std::vector<uint8_t> wire = w.finish();
+    sleepMs(300);
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        (void)gapsBefore;
+        for (size_t i = gapsAtFirstUrbs; i < g_usb.gapList.size(); i++) {
+            out.gapsAfterResume++;
+            out.maxGapAfterResumeUs = std::max(out.maxGapAfterResumeUs, g_usb.gapList[i]);
+        }
+        out.modelLines = g_usb.outputGapLines.size();
+        out.ringEmptyLogs = g_usb.ringEmptyLogs;
+    }
+    // The audio after the resume is the end of the wire: the kept block faded in over 15 ms, then the next buffer untouched.
+    const int keptFrom = next - kBlock - keptFrames;
+    const int fadeIn = w.ctx->plan.fadeInFrames;
+    const int rampFrames = std::min(fadeIn, keptFrames + kBlock);
+    std::vector<uint8_t> want;
+    appendRamped(want, src, keptFrom, rampFrames, 0, fadeIn, true);
+    appendUsb(want, src, keptFrom + rampFrames, keptFrames + kBlock - rampFrames);
+    const size_t frameBytes = 8;
+    if (wire.size() >= want.size()) {
+        const size_t audioAt = wire.size() - want.size();
+        const std::vector<uint8_t> got(wire.begin() + (long)audioAt, wire.end());
+        out.audibleEqual = firstDifference(want, got) < 0;
+        for (size_t at = audioAt; at >= frameBytes; at -= frameBytes) {
+            bool zero = true;
+            for (size_t i = 0; i < frameBytes; i++) zero = zero && wire[at - frameBytes + i] == 0;
+            if (!zero) break;
+            out.silenceBeforeAudio++;
+        }
+    }
+    return out;
+}
+
+ResumeOutcome runPauseKeepalive(int rate, int stallMs, int pausedMs, bool seek) {
+    constexpr int kBlock = 2048;
+    const int keptFrames = 100;   // what the pause's block leaves for the resume: ~2 URBs
+    const Pcm src = makeNoise(rate + 8 * kBlock, 24, 0xa3000000u + (uint32_t)rate);
+    Writer w(rate);
+    ResumeOutcome out;
+    const int fade = w.ctx->plan.fadeOutFrames;
+    int next = 0;
+    for (; next < 6 * kBlock; next += kBlock) w.write(src, next, kBlock);
+    CHECK(w.beginPause(), "the pause found nothing to fade");
+    w.write(src, next, fade + keptFrames);                 // the continuation: 8 ms ramped, `keptFrames` kept for the resume
+    next += fade + keptFrames;
+    if (w.fadingOut()) w.endFadeOut();
+    const int64_t pausedAtUs = nowUs();
+    const int64_t countedAtPause = w.ctx->framesWritten;
+#ifdef B48FIX2_BEFORE
+    const int keepaliveMs = 0;   // HEAD's transport has no pause window; its writer marks idle immediately.
+#else
+    const int keepaliveMs = w.ctx->plan.pauseKeepaliveMs;
+#endif
+    while ((nowUs() - pausedAtUs) / 1000 < std::min(pausedMs, keepaliveMs)) {
+        CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativePipelineFeedSilence(nullptr, nullptr, w.usb), "pause silence step failed");
+    }
+    CHECK(w.ctx->framesWritten == countedAtPause, "pause silence moved framesWritten");
+    if (pausedMs >= keepaliveMs) w.markIdle();
+    if (pausedMs > keepaliveMs) listen(pausedMs - keepaliveMs);
+    if (seek) {
+        CHECK(w.beginSeek() == PIPELINE_SEEK_SILENCE, "seek did not take over the pause's faded ring");
+        CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativePipelineFeedSilence(nullptr, nullptr, w.usb), "seek silence failed");
+    }
+    // End the dry interval for measurement before the resume's priming (not starvation for an announced idle).
+    const int64_t pauseDryUs = g_usb.gapUs + std::max<int64_t>(0, nowUs() - g_usb.lastCompleteUs);
+    printf("B48-fix2 native pause=%dms seek=%d silenceWindow=%dms DAC dry=%.3fms counted=%lld\n",
+           pausedMs, seek ? 1 : 0, keepaliveMs, pauseDryUs / 1000.0, (long long)(w.ctx->framesWritten - countedAtPause));
+    if (pausedMs < 2000) CHECK(pauseDryUs == 0, "short pause/seek left DAC dry %.3fms", pauseDryUs / 1000.0);
+    if (pausedMs == 3000) CHECK(pauseDryUs > 750000 && pauseDryUs < 1000000, "timeout dry time %.3fms", pauseDryUs / 1000.0);
+    const int64_t silenceBefore = w.stat(5);
+    size_t gapsBefore;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        gapsBefore = g_usb.gapList.size();
+    }
+    w.resume();                                            // primes the ring, then replays the kept frames, faded in
+    out.fedSilenceFrames = w.stat(5) - silenceBefore;
+    size_t gapsAtFirstUrbs;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        gapsAtFirstUrbs = g_usb.gapList.size();   // the first URB of the resume ends the pause's idle: that gap is the pause, by design
+    }
+    sleepMs(stallMs);                                      // the thread brings the next buffer
+    w.write(src, next, kBlock);
+    next += kBlock;
+    const std::vector<uint8_t> wire = w.finish();
+    sleepMs(300);
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        (void)gapsBefore;
+        for (size_t i = gapsAtFirstUrbs; i < g_usb.gapList.size(); i++) {
+            out.gapsAfterResume++;
+            out.maxGapAfterResumeUs = std::max(out.maxGapAfterResumeUs, g_usb.gapList[i]);
+        }
+        out.modelLines = g_usb.outputGapLines.size();
+        out.ringEmptyLogs = g_usb.ringEmptyLogs;
+    }
+    // The audio after the resume is the end of the wire: the kept block faded in over 15 ms, then the next buffer untouched.
+    const int replayFrames = seek ? 0 : keptFrames;
+    const int keptFrom = next - kBlock - replayFrames;
+    const int fadeIn = w.ctx->plan.fadeInFrames;
+    const int rampFrames = std::min(fadeIn, replayFrames + kBlock);
+    std::vector<uint8_t> want;
+    appendRamped(want, src, keptFrom, rampFrames, 0, fadeIn, true);
+    appendUsb(want, src, keptFrom + rampFrames, replayFrames + kBlock - rampFrames);
+    const size_t frameBytes = 8;
+    if (wire.size() >= want.size()) {
+        const size_t audioAt = wire.size() - want.size();
+        const std::vector<uint8_t> got(wire.begin() + (long)audioAt, wire.end());
+        out.audibleEqual = firstDifference(want, got) < 0;
+        for (size_t at = audioAt; at >= frameBytes; at -= frameBytes) {
+            bool zero = true;
+            for (size_t i = 0; i < frameBytes; i++) zero = zero && wire[at - frameBytes + i] == 0;
+            if (!zero) break;
+            out.silenceBeforeAudio++;
+        }
+    }
+    return out;
+}
+
+void testPauseKeepalive() {
+    for (int pausedMs : {200, 1500, 3000}) {
+        const ResumeOutcome o = runPauseKeepalive(44100, 0, pausedMs, false);
+        CHECK(o.audibleEqual, "pause %dms changed resumed samples", pausedMs);
+        if (pausedMs < 2000) CHECK(o.fedSilenceFrames == 0, "short pause owed priming %lld frames", (long long)o.fedSilenceFrames);
+        CHECK(o.modelLines == 0 && o.ringEmptyLogs == 0, "pause/idle reported starvation");
+    }
+    const ResumeOutcome seek = runPauseKeepalive(44100, 0, 200, true);
+    CHECK(seek.audibleEqual, "seek during pause changed resumed samples");
+}
+
+// The Kotlin writer owns the pause budget. Replay its before/after scheduling here through the real
+// JNI silence/seek/resume paths; B48Fix3PauseSeekKeepaliveTest exercises the actual Kotlin decisions.
+void testPauseSeekKeepalive() {
+    constexpr int kBlock = 2048;
+    const Pcm src = makeNoise(10 * kBlock, 24, 0xa3000042u);
+    Writer w(44100);
+    for (int next = 0; next < 6 * kBlock; next += kBlock) w.write(src, next, kBlock);
+    CHECK(w.beginPause(), "skip pause found nothing to fade");
+    w.write(src, 6 * kBlock, w.ctx->plan.fadeOutFrames + 100);
+    if (w.fadingOut()) w.endFadeOut();
+    const int64_t pausedAtUs = nowUs();
+    const int64_t countedAtPause = w.ctx->framesWritten;
+    const auto feedUntil = [&](int ms) {
+        while (nowUs() - pausedAtUs < ms * 1000LL) {
+            CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativePipelineFeedSilence(nullptr, nullptr, w.usb), "skip silence step failed");
+        }
+    };
+    feedUntil(42);
+    CHECK(w.beginSeek() == PIPELINE_SEEK_SILENCE, "skip seek did not take over the pause silence");
+    feedUntil(192);   // the new position's first buffer is ready 150 ms after the seek, still paused
+#ifdef B48FIX3_BEFORE
+    w.markIdle();    // HEAD's Kotlin writer has already used this pauseSerial and idles here
+    listen((int)((380000 - (nowUs() - pausedAtUs)) / 1000));
+#else
+    feedUntil(380);  // the same pause budget continues until resume, without marking idle
+#endif
+    const int64_t dryUs = g_usb.gapUs + std::max<int64_t>(0, nowUs() - g_usb.lastCompleteUs);
+    CHECK(w.ctx->framesWritten == countedAtPause, "skip silence counted as audio");
+    const int64_t silenceBeforeResume = w.stat(5);
+    w.resume();
+    const int64_t primingFrames = w.stat(5) - silenceBeforeResume;
+    w.write(src, 8 * kBlock, kBlock);   // only the new position's source, never the discarded kept tail
+    CHECK(w.ctx->framesWritten == countedAtPause + kBlock, "skip framesWritten includes silence or discarded audio");
+    const std::vector<uint8_t> wire = w.finish();
+    const int fadeIn = w.ctx->plan.fadeInFrames;
+    std::vector<uint8_t> want;
+    appendRamped(want, src, 8 * kBlock, fadeIn, 0, fadeIn, true);
+    appendUsb(want, src, 8 * kBlock + fadeIn, kBlock - fadeIn);
+    bool equal = false;
+    if (wire.size() >= want.size()) {
+        const std::vector<uint8_t> got(wire.end() - (long)want.size(), wire.end());
+        equal = firstDifference(want, got) < 0;
+    }
+    printf("B48-fix3 native seek=42ms newBuffer=192ms resume=380ms DAC dry=%.3fms priming=%lld frames audible=%s\n",
+           dryUs / 1000.0, (long long)primingFrames, equal ? "EQUAL" : "DIFFERENT");
+    CHECK(dryUs == 0, "paused skip left DAC dry %.3fms", dryUs / 1000.0);
+    CHECK(primingFrames == 0, "paused skip owed %lld frames of resume priming", (long long)primingFrames);
+    CHECK(equal, "paused skip changed the new position's samples");
+}
+
+
+void testResumePrimesTheRing() {
+    static const int kRates[] = {44100, 96000, 192000};
+    for (int rate : kRates) {
+        const ResumeOutcome o = runResume(rate, 7, 400);
+        const int64_t leadFrames = (int64_t)rate * 50 / 1000;
+        printf("A3 %6d Hz, resume after a pause, 7 ms between the first URBs and the next buffer: fake DAC dry after the resume %d x (max %.1f ms), "
+               "OUTPUT_GAP lines=%zu, RING_EMPTY=%d, silence before the audio %lld frames (%.1f ms; fed %lld), audible stream %s\n",
+               rate, o.gapsAfterResume, o.maxGapAfterResumeUs / 1000.0, o.modelLines, o.ringEmptyLogs, (long long)o.silenceBeforeAudio,
+               o.silenceBeforeAudio * 1000.0 / rate, (long long)o.fedSilenceFrames, o.audibleEqual ? "EQUAL to the designed one" : "DIFFERENT");
+        CHECK(o.gapsAfterResume == 0, "%d Hz: a resume with a 7 ms stall left the DAC dry %d times (max %.1f ms)", rate, o.gapsAfterResume,
+              o.maxGapAfterResumeUs / 1000.0);
+        CHECK(o.modelLines == 0, "%d Hz: the resume reported %zu OUTPUT_GAP lines", rate, o.modelLines);
+        CHECK(o.ringEmptyLogs == 0, "%d Hz: the resume reported %d RING_EMPTY lines", rate, o.ringEmptyLogs);
+        CHECK(o.audibleEqual, "%d Hz: the audio after the resume is not the designed one (fade-in of the kept block, then the next buffer)", rate);
+        // the latency the priming adds to a resume: the plan's resume lead, to the silence chunk (the fade's own near-zero first frames may count too)
+        CHECK(o.silenceBeforeAudio >= leadFrames - 1 && o.silenceBeforeAudio <= leadFrames + rate / 1000 + 4,
+              "%d Hz: %lld frames of silence before the audio, the resume lead is %lld", rate, (long long)o.silenceBeforeAudio, (long long)leadFrames);
+        CHECK(o.fedSilenceFrames >= leadFrames && o.fedSilenceFrames <= leadFrames + rate / 1000 + 2, "%d Hz: the resume fed %lld frames of silence, the lead is %lld",
+              rate, (long long)o.fedSilenceFrames, (long long)leadFrames);
+    }
+}
+
+
+// ── B47-A5: a locked-up DAC, detected and brought back ─────────────────────────────────────────────────────────────────────────────
+//
+// The fake DAC locks after a real underrun (feedback +4.99 %, completions ~30 ms late) and gets out of it only on a SETINTERFACE cycle (variant 1), only on a bus reset
+// (variant 2), or never (variant 3). The writer here does what UsbStreamingThread does (a pause-style fade of the continuation, the native half before the interface
+// restart, the restart, the native half after it, the resume), in the same order and through the same entry points; whether to run a step is the native policy's
+// answer (`usbDacLockState`), the one the Kotlin writer asks. Times are the virtual clock's.
+
+struct LockRun {
+    bool locked = false;                 // the fake DAC locked up
+    int64_t lockToDetectMs = -1;         // from the underrun to the writer's first look that says "locked"
+    int64_t lockToStepEndMs = -1;        // ... to the end of the first step
+    int64_t lockToUnlockedMs = -1;       // ... to the fake DAC being out of it
+    int stepsRun = 0;
+    int step1 = 0, step2 = 0, gaveUp = 0;
+    int setInterfaceCalls = 0, resetCalls = 0;
+    int64_t stepsMs = 0;                 // wall (virtual) time the steps took, writer side
+    bool bytesExact = false;
+    bool positionContinuous = false;
+    int64_t silenceFrames = 0;
+    size_t daclockedLines = 0, recoveryLines = 0;
+    std::vector<std::string> recoveryText;
+};
+
+std::vector<std::string> g_logLinesSeen;
+
+void runOneStep(Writer &w, const Pcm &src, int &next, int step, int block, const std::function<void()> &afterRestart = nullptr) {
+    // performPause: the fade of the continuation behind the ring, then the writer idles (announced)
+    if (w.beginPause()) {
+        while (w.fadingOut() && next + block <= src.frames()) {
+            w.write(src, next, block);
+            next += block;
+        }
+        if (w.fadingOut()) w.endFadeOut();
+    }
+    w.markIdle();
+    const int64_t startUs = nowUs();
+    CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDacRecoveryBegin(nullptr, nullptr, w.usb) == JNI_TRUE, "the recovery's first half did not empty the ring");
+    // UsbAudioDevice.setAltSetting(0), then the format's alt again (the same SETINTERFACE the sink makes)
+    usbdevfs_setinterface si = {};
+    si.interface = 1;
+    si.altsetting = 0;
+    ioctl(kFakeFd, USBDEVFS_SETINTERFACE, &si);
+    if (step == 2) {
+        Java_com_decent_usbaudio_UsbAudioStream_nativeUsbResetForRebind(nullptr, nullptr, kFakeFd);
+        int interfaceNumber = 1;
+        ioctl(kFakeFd, USBDEVFS_CLAIMINTERFACE, &interfaceNumber);
+    }
+    si.altsetting = 1;
+    ioctl(kFakeFd, USBDEVFS_SETINTERFACE, &si);
+    CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDacRecoveryEnd(nullptr, nullptr, w.usb) == JNI_TRUE, "the recovery's second half did not re-arm the stream");
+    Java_com_decent_usbaudio_UsbAudioStream_nativeNoteDacRecovery(nullptr, nullptr, w.usb, step, 0, (nowUs() - startUs) / 1000);
+    if (afterRestart) afterRestart();   // B48-fix1: a test's moment "the interface has restarted" (the start of the guard and of the stall after the first URB)
+    w.resume();   // the kept block of the fade, faded in, after the priming silence
+}
+
+LockRun runLockedDac(int rate, int lockMode, int playMs) {
+    constexpr int kBlock = 2048;
+    const int frames = (int)((int64_t)rate * (playMs + 3000) / 1000 / kBlock) * kBlock;
+    const Pcm src = makeNoise(frames, 24, 0xa5000000u + (uint32_t)rate + (uint32_t)lockMode);
+    Writer w(rate);
+    g_usb.lockMode = lockMode;
+    g_usb.feedbackFpmf = rate / 8000.0;   // a DAC that answers its nominal (the fake's default is a 96 kHz answer, outside +-5 % at every other rate)
+    usbDacRecoveryForgetEpisodes();
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    LockRun out;
+    int next = 0;
+    int64_t silenceAtStart = w.stat(5);
+    const int64_t startUs = nowUs();
+    bool underrunDone = false;
+    int64_t detectedAtUs = -1, firstStepEndUs = -1;
+    int64_t stepMs = 0;
+    for (; next + kBlock <= frames && (nowUs() - startUs) / 1000 < playMs;) {
+        const int64_t sinceMs = (nowUs() - startUs) / 1000;
+        if (!underrunDone && sinceMs >= 1500) {
+            underrunDone = true;
+            {
+                std::lock_guard<std::mutex> lock(g_usb.mu);
+                g_usb.lockArmed = true;
+            }
+            sleepMs(w.ctx->plan.ringUrbs + 25);   // the writer is not running for longer than the ring holds: a real underrun of ~25 ms
+        }
+        w.write(src, next, kBlock);
+        next += kBlock;
+        int64_t state[USB_DAC_STATE_COUNT];
+        usbDacLockState(w.ctx, state);
+        if (state[0] != 0 && detectedAtUs < 0) detectedAtUs = nowUs();
+        const int step = (int)state[5];
+        if (step == USB_DAC_STEP_INTERFACE || step == USB_DAC_STEP_BUS_RESET) {
+            const int64_t t0 = nowUs();
+            runOneStep(w, src, next, step, kBlock);
+            stepMs += (nowUs() - t0) / 1000;
+            out.stepsRun++;
+            if (step == 1) out.step1++; else out.step2++;
+            if (firstStepEndUs < 0) firstStepEndUs = nowUs();
+        } else if (step == USB_DAC_STEP_GIVE_UP) {
+            out.gaveUp++;
+        }
+    }
+    const std::vector<uint8_t> wire = w.finish();
+    sleepMs(300);
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        out.locked = g_usb.lockedAtUs > 0;
+        if (g_usb.lockedAtUs > 0) {
+            if (detectedAtUs >= 0) out.lockToDetectMs = (detectedAtUs - g_usb.lockedAtUs) / 1000;
+            if (firstStepEndUs >= 0) out.lockToStepEndMs = (firstStepEndUs - g_usb.lockedAtUs) / 1000;
+            if (g_usb.unlockedAtUs > 0) out.lockToUnlockedMs = (g_usb.unlockedAtUs - g_usb.lockedAtUs) / 1000;
+        }
+        out.setInterfaceCalls = g_usb.setInterfaceCalls;
+        out.resetCalls = g_usb.resetCalls;
+    }
+    out.stepsMs = stepMs;
+    out.silenceFrames = w.stat(5) - silenceAtStart;
+    out.positionContinuous = w.ctx->framesWritten == next;   // every frame of the source counted once: Media3's position (a function of the count) never jumps or repeats
+    // The audible stream is the source in order: with the zero frames (the pause-style fades' silence and the resume's priming) taken out, every source frame follows the
+    // one before it. Compared as: the wire's non-zero frames == the source's non-zero frames, minus the ramps (checked as a subsequence by value).
+    const std::vector<uint8_t> want = toUsb32(src);
+    size_t wi = 0;
+    bool inOrder = true;
+    int64_t unmatched = 0;
+    const size_t fb = 8;
+    // walk the wire: each non-zero wire frame is either an unmodified source frame, or part of a ramp (modified); count the unmodified ones and require that they appear in source order
+    size_t sourceAt = 0;
+    int64_t unmodified = 0;
+    for (size_t at = 0; at + fb <= wire.size(); at += fb) {
+        bool zero = true;
+        for (size_t i = 0; i < fb; i++) zero = zero && wire[at + i] == 0;
+        if (zero) continue;
+        // find this frame in the source at or after `sourceAt` (within a window: ramps and priming keep it close)
+        bool found = false;
+        for (size_t probe = sourceAt; probe < sourceAt + 20000 * fb && probe + fb <= want.size(); probe += fb) {
+            if (memcmp(&want[probe], &wire[at], fb) == 0) {
+                sourceAt = probe + fb;
+                found = true;
+                unmodified++;
+                break;
+            }
+        }
+        if (!found) unmatched++;   // a ramp frame (fade out or in): modified by design
+    }
+    (void)wi;
+    (void)inOrder;
+    out.bytesExact = unmatched <= 2 * (int64_t)(w.ctx->plan.fadeOutFrames + w.ctx->plan.fadeInFrames) * (out.stepsRun + 1) && unmodified > 0;
+    return out;
+}
+
+void testLockedDacRecovery() {
+    usbSetPollWait(true);
+    static const int kRates[] = {44100, 96000};
+    struct Variant { int mode; const char *name; };
+    static const Variant kVariants[] = {{1, "recovers on SETINTERFACE"}, {2, "recovers only on a bus reset"}, {3, "never recovers"}};
+    for (int rate : kRates) {
+        for (const Variant &v : kVariants) {
+            const LockRun r = runLockedDac(rate, v.mode, 22000);
+            printf("A5 %6d Hz, DAC %-30s: locked=%d, detected %lld ms after the underrun, first step ended %lld ms after it, DAC out of it %lld ms after it; steps run %d (1:%d 2:%d), "
+                   "gave up %d, SETINTERFACE x%d, bus reset x%d, writer spent %lld ms in steps, silence %lld frames, frames counted once %s, audible stream %s\n",
+                   rate, v.name, r.locked ? 1 : 0, (long long)r.lockToDetectMs, (long long)r.lockToStepEndMs, (long long)r.lockToUnlockedMs, r.stepsRun, r.step1, r.step2,
+                   r.gaveUp, r.setInterfaceCalls, r.resetCalls, (long long)r.stepsMs, (long long)r.silenceFrames, r.positionContinuous ? "yes" : "NO", r.bytesExact ? "in order" : "BROKEN");
+            CHECK(r.locked, "%d Hz %s: the fake DAC did not lock up", rate, v.name);
+            CHECK(r.positionContinuous, "%d Hz %s: the frame count (Media3's position) is not the frames of the source", rate, v.name);
+            CHECK(r.bytesExact, "%d Hz %s: the audible stream is not the source in order", rate, v.name);
+            // detected in a second and a half of rail plus a block, and the first step done a few hundred ms later: "a second or two", not minutes
+            CHECK(r.lockToDetectMs >= USB_DAC_LOCK_RAIL_MS - 100 && r.lockToDetectMs <= USB_DAC_LOCK_RAIL_MS + 700, "%d Hz %s: detected %lld ms after the underrun", rate, v.name,
+                  (long long)r.lockToDetectMs);
+            CHECK(r.lockToStepEndMs >= 0 && r.lockToStepEndMs <= 2800, "%d Hz %s: the first step ended %lld ms after the underrun", rate, v.name, (long long)r.lockToStepEndMs);
+            CHECK(r.step1 == 1, "%d Hz %s: step 1 ran %d times", rate, v.name, r.step1);
+            if (v.mode == 1) {
+                CHECK(r.stepsRun == 1 && r.step2 == 0 && r.gaveUp == 0 && r.resetCalls == 0, "%d Hz: a DAC that SETINTERFACE cures took %d steps (step 2 x%d, reset x%d, gave up %d)",
+                      rate, r.stepsRun, r.step2, r.resetCalls, r.gaveUp);
+                CHECK(r.lockToUnlockedMs >= 0 && r.lockToUnlockedMs <= 2800, "%d Hz: the DAC was out of it %lld ms after the underrun", rate, (long long)r.lockToUnlockedMs);
+            } else if (v.mode == 2) {
+                CHECK(r.step2 == 1 && r.stepsRun == 2 && r.gaveUp == 0 && r.resetCalls == 1, "%d Hz: a DAC that only a reset cures: step 2 x%d, steps %d, reset x%d, gave up %d", rate, r.step2,
+                      r.stepsRun, r.resetCalls, r.gaveUp);
+                CHECK(r.lockToUnlockedMs >= 0 && r.lockToUnlockedMs <= 5500, "%d Hz: out of it %lld ms after the underrun", rate, (long long)r.lockToUnlockedMs);
+            } else {
+                CHECK(r.step2 == 1 && r.stepsRun == 2 && r.gaveUp == 1 && r.resetCalls == 1, "%d Hz: a DAC that never recovers: step 2 x%d, steps %d, gave up %d, reset x%d", rate, r.step2,
+                      r.stepsRun, r.gaveUp, r.resetCalls);
+            }
+        }
+    }
+    // a healthy DAC that has the same underrun does nothing at all
+    {
+        const LockRun r = runLockedDac(44100, 0, 12000);
+        printf("A5 healthy DAC with the same underrun: locked=%d, steps run %d, SETINTERFACE x%d\n", r.locked ? 1 : 0, r.stepsRun, r.setInterfaceCalls);
+        CHECK(!r.locked && r.stepsRun == 0 && r.setInterfaceCalls == 0, "a healthy DAC was recovered (steps %d)", r.stepsRun);
+    }
+    // B48-fix2: every clean rail is detected, even if a wrong format caused it; recovery remains bounded.
+    {
+        Writer w(44100);
+        g_usb.lockMode = 1;
+        g_usb.feedbackFpmf = 12.0;   // 96 kHz's answer on a 44.1 kHz stream: +117 %
+        usbDacRecoveryForgetEpisodes();
+        int steps = 0;
+        for (int at = 0; at < 3 * 44100; at += 2048) {
+            const Pcm src = makeNoise(2048, 24, 0xa5ff0000u + (uint32_t)at);
+            w.write(src, 0, 2048);
+            int64_t state[USB_DAC_STATE_COUNT];
+            usbDacLockState(w.ctx, state);
+            if (state[0] != 0 || state[5] != 0) steps++;
+        }
+        printf("A5 a misparsed feedback (+117 %% for the whole stream): detections or steps %d\n", steps);
+        CHECK(steps > 0, "a clean feedback outside the window was invisible to the detector (%d)", steps);
+    }
+    // recovery off: the lock is detected and logged, nothing is done
+    {
+        usbSetDacRecoveryEnabled(false);
+        const LockRun r = runLockedDac(44100, 1, 9000);
+        usbSetDacRecoveryEnabled(true);
+        printf("A5 recovery switched off: locked=%d, detected %lld ms after the underrun, steps run %d\n", r.locked ? 1 : 0, (long long)r.lockToDetectMs, r.stepsRun);
+        CHECK(r.locked && r.stepsRun == 0 && r.setInterfaceCalls == 0, "recovery was off and %d steps ran", r.stepsRun);
+    }
+}
+
+// ── B46-C2: `auto-early` against the real writer ─────────────────────────────────────────────────────────────────────────────────
+
+struct EarlySim {
+    double excessFrames = 0.0;           // frames the packetizer scheduled above the nominal rate over the whole run
+    std::vector<uint8_t> packets;        // the frames of every packet, in order
+    std::vector<std::string> stuckLines;
+    std::vector<std::string> rejectedLines;
+};
+
+/** [seconds] of audio at [rate] with the DAC answering [plateau] from [fromMs] to [toMs] after the stream starts (nominal otherwise). */
+EarlySim runEarlySim(int policy, int rate, double plateau, int64_t fromMs, int64_t toMs, int seconds) {
+    simclock::VirtualTime virtualTime;
+    JNINativeInterface table = {};
+    table.GetArrayLength = fakeGetArrayLength;
+    table.GetByteArrayElements = fakeGetByteArrayElements;
+    table.ReleaseByteArrayElements = fakeReleaseByteArrayElements;
+    JNIEnv env;
+    env.functions = &table;
+    const double nominal = rate / 8000.0;
+    const Pcm tenth = makeNoise(rate / 10, 24, 0x46c20000u + (uint32_t)rate);
+    FakeArray chunk;
+    chunk.bytes = toPackedLe(tenth);
+    g_usb.reset(rate, 8);
+    usbSetFeedbackPolicy(policy);
+    const int64_t t0 = nowUs();
+    setFeedbackScript([=](int64_t atUs) {
+        FeedbackAnswer answer;
+        const int64_t ms = (atUs - t0) / 1000;
+        answer.fpmf = (ms >= fromMs && ms < toMs) ? plateau : nominal;
+        return answer;
+    });
+    const jlong usb = createStream(rate, 32);
+    streamBuffers(&env, usb, chunk, seconds * 10);
+    releaseStream(usb);
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);   // `auto` is the default of the process; a test leaves it as it found it
+    EarlySim out;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        out.packets = g_usb.packetFrames;
+    }
+    double frames = 0.0;
+    for (uint8_t n : out.packets) frames += n;
+    out.excessFrames = frames - nominal * (double)out.packets.size();
+    out.stuckLines = feedbackGlitchLines("FEEDBACK_STUCK");
+    out.rejectedLines = feedbackGlitchLines("FEEDBACK_REJECTED");
+    return out;
+}
+
+void testAutoEarly() {
+    // the replayed plateaus (policy-window-results.jsonl): they begin 0.2 s after the stream starts and stay
+    struct Plateau { const char *name; int rate; double fpmf; };
+    const Plateau stuck[] = {{"Shakira, Ciega Sordomuda", 44100, 5.55749512}, {"Gustavo Cerati, Crimen", 48000, 6.04992676}};
+    for (const Plateau &p : stuck) {
+        const EarlySim autoRun = runEarlySim(USB_FEEDBACK_AUTO, p.rate, p.fpmf, 200, 100000000, 12);
+        const EarlySim earlyRun = runEarlySim(USB_FEEDBACK_AUTO_EARLY, p.rate, p.fpmf, 200, 100000000, 12);
+        double autoHeld = 0, earlyHeld = 0;
+        CHECK(autoRun.stuckLines.size() == 1 && earlyRun.stuckLines.size() == 1, "%s: %zu / %zu FEEDBACK_STUCK lines", p.name, autoRun.stuckLines.size(),
+              earlyRun.stuckLines.size());
+        if (autoRun.stuckLines.size() == 1 && earlyRun.stuckLines.size() == 1) {
+            autoHeld = fieldOf(autoRun.stuckLines[0], "held=");
+            earlyHeld = fieldOf(earlyRun.stuckLines[0], "held=");
+            CHECK(autoRun.stuckLines[0].find("policy=auto ") != std::string::npos, "auto's line lacks policy=auto: %s", autoRun.stuckLines[0].c_str());
+            CHECK(earlyRun.stuckLines[0].find("policy=auto-early") != std::string::npos, "auto-early's line lacks its policy: %s", earlyRun.stuckLines[0].c_str());
+            CHECK(autoHeld >= 5000 && autoHeld < 5000 + USB_FEEDBACK_GAP_MS, "auto: stuck at held=%.0f ms", autoHeld);
+            CHECK(earlyHeld >= USB_FEEDBACK_EARLY_STUCK_MS && earlyHeld < USB_FEEDBACK_EARLY_STUCK_MS + USB_FEEDBACK_GAP_MS, "auto-early: stuck at held=%.0f ms", earlyHeld);
+        }
+        printf("auto-early, real writer, %s (%d Hz, plateau %.8f from 0.2 s): auto held %.0f ms -> %.0f frames above nominal; auto-early held %.0f ms -> %.0f frames "
+               "(%.0f %%)\n", p.name, p.rate, p.fpmf, autoHeld, autoRun.excessFrames, earlyHeld, earlyRun.excessFrames,
+               autoRun.excessFrames > 0 ? 100.0 * earlyRun.excessFrames / autoRun.excessFrames : 0.0);
+        CHECK(earlyRun.excessFrames < autoRun.excessFrames * 0.85 && earlyRun.excessFrames > 0, "%s: auto-early scheduled %.0f frames above nominal, auto %.0f",
+              p.name, earlyRun.excessFrames, autoRun.excessFrames);
+        // a packet is never outside what nominal and the DAC's reading make of it (6 or 7 at 48 kHz, 5 or 6 at 44.1)
+        const int lowest = (int)floor(p.rate / 8000.0);
+        for (uint8_t n : earlyRun.packets) {
+            if (n != lowest && n != lowest + 1) { CHECK(false, "%s: a packet of %d frames", p.name, n); break; }
+        }
+    }
+    {   // the legitimate start transient, +1 % for 3 s (5.5674 at 44.1 kHz, 10:54:02-04): followed all the way by both, packet for packet
+        const EarlySim autoRun = runEarlySim(USB_FEEDBACK_AUTO, 44100, 5.5674, 200, 3200, 8);
+        const EarlySim earlyRun = runEarlySim(USB_FEEDBACK_AUTO_EARLY, 44100, 5.5674, 200, 3200, 8);
+        printf("auto-early, real writer, start transient +1 %% for 3 s: %.0f frames above nominal in both; auto-early stuck lines: %zu\n", earlyRun.excessFrames,
+               earlyRun.stuckLines.size());
+        CHECK(autoRun.stuckLines.empty() && earlyRun.stuckLines.empty(), "the 3 s transient was called stuck");
+        CHECK(autoRun.packets == earlyRun.packets, "the transient is followed differently by auto-early (%zu vs %zu packets)", autoRun.packets.size(), earlyRun.packets.size());
+        CHECK(earlyRun.excessFrames > 1000, "the transient was not followed: %.0f frames above nominal", earlyRun.excessFrames);
+    }
+    {   // a healthy DAC: its nominal with a +0.27 % blip now and then. Never held, and identical to auto.
+        simclock::VirtualTime virtualTime;
+        JNINativeInterface table = {};
+        table.GetArrayLength = fakeGetArrayLength;
+        table.GetByteArrayElements = fakeGetByteArrayElements;
+        table.ReleaseByteArrayElements = fakeReleaseByteArrayElements;
+        JNIEnv env;
+        env.functions = &table;
+        std::vector<uint8_t> sequences[2];
+        size_t stuckLines = 0;
+        for (int i = 0; i < 2; i++) {
+            const Pcm tenth = makeNoise(4800, 24, 0x46c2beefu);
+            FakeArray chunk;
+            chunk.bytes = toPackedLe(tenth);
+            g_usb.reset(48000, 8);
+            setFeedback(6.0, 80, 6.0149);
+            usbSetFeedbackPolicy(i == 0 ? USB_FEEDBACK_AUTO : USB_FEEDBACK_AUTO_EARLY);
+            const jlong usb = createStream(48000, 32);
+            streamBuffers(&env, usb, chunk, 120);
+            releaseStream(usb);
+            usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+            {
+                std::lock_guard<std::mutex> lock(g_usb.mu);
+                sequences[i] = g_usb.packetFrames;
+            }
+            stuckLines += feedbackGlitchLines("FEEDBACK_STUCK").size();
+        }
+        CHECK(stuckLines == 0, "a healthy DAC was held (%zu FEEDBACK_STUCK lines)", stuckLines);
+        CHECK(sequences[0] == sequences[1], "a healthy DAC is treated differently by auto-early");
+        printf("auto-early, real writer, healthy DAC with blips for 12 s: never held, %zu packets identical to auto\n", sequences[0].size());
+    }
+    {   // American Money, +4.99 %: refused from its first reading as today, by both, packet for packet
+        // B48-fix1: with the start guard on, even that first block goes out at nominal (testFeedbackStartGuard checks it); this is the policy's own behaviour, so the guard is off for it.
+        setStartGuard(false);
+        const EarlySim autoRun = runEarlySim(USB_FEEDBACK_AUTO, 44100, 5.7875, 0, 100000000, 6);
+        const EarlySim earlyRun = runEarlySim(USB_FEEDBACK_AUTO_EARLY, 44100, 5.7875, 0, 100000000, 6);
+        setStartGuard(true);
+        CHECK(autoRun.packets == earlyRun.packets, "American Money is treated differently by auto-early");
+        // Only the first block is above nominal (at most the ring's worth, 128 ms x 4.99 % = 281 frames; it was 100 ms and 220 frames when the ring was 80 ms):
+        // the stream's start reading is in the window and is what the first block is planned with, the writer fills the ring with it before it reaps the
+        // first continuous reading, and from that reading on the absurd value is refused. The same for auto, packet for packet.
+        CHECK(earlyRun.excessFrames > 0 && earlyRun.excessFrames < 0.0499 * 44.1 * (USB_TRANSPORT_RING_URBS + 1) * 1.01,
+              "American Money: %.0f frames above nominal, more than the first block's worth", earlyRun.excessFrames);
+        printf("auto-early, real writer, American Money (+4.99 %%): refused by both from the first continuous reading, %.0f frames above nominal (the first block), "
+               "packet for packet as auto\n", earlyRun.excessFrames);
+    }
+    {   // the policy is process-wide and opt-in: the process starts in auto, and an unknown id changes nothing
+        usbSetFeedbackPolicy(77);
+        CHECK(usbFeedbackPolicy() == USB_FEEDBACK_AUTO, "policy after an unknown id: %d", usbFeedbackPolicy());
+        usbSetFeedbackPolicy(USB_FEEDBACK_AUTO_EARLY);
+        CHECK(usbFeedbackPolicy() == USB_FEEDBACK_AUTO_EARLY, "auto-early did not take");
+        usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    }
+}
+
+
+// ── B48-fix1: every start of audio primes the ring, and the first 500 ms after the DAC (re)starts go out at nominal ─────────────────────────────────────────────
+//
+// What the device log of 2026-10-30 00:36-00:43 showed: every new stream's first URB went out alone and the second 3-11 ms later (`OUTPUT_GAP dry=10 ms inFlight=1`, `RING_EMPTY`), because the
+// writer's scheduling line (six /proc reads) and the CPU baseline were taken between the two. The simulation cannot see that cost by itself (the host's /proc reads are wall time, the clock
+// is virtual), so these tests charge it where the native code does it (`procOpenCostUs`: 1.5 ms per /proc open, the device's order) and also stall the writer 10 ms right after the first URB.
+
+bool g_guardWasOnAtProcessStart = false;   // read in main() before any test touches the switch
+
+struct StartRun {
+    int gaps = 0;
+    int64_t maxGapUs = 0;
+    int ringEmpty = 0;
+    size_t modelLines = 0;
+    int64_t primedFrames = 0;            // the stream's own count of the silence the first write fed
+    int64_t expectedPrime = 0;           // what the plan says it is
+    int64_t rawLeadingSilence = 0;       // zero frames on the wire before the first sample
+    bool audibleEqual = false;
+    int writerLines = 0;
+    int writerLineAtUrb = -1;            // audio URBs sent when the `Writer thread:` line was written
+    bool primeLogged = false;
+    bool startGuardLogged = false;
+};
+
+/** A stream's first start, the writer stalled 10 ms right after its first URB and every /proc read costing the device's order of time. */
+StartRun runFirstStart(int rate) {
+    constexpr int kBlock = 2048;
+    const Pcm src = makeNoise(8 * kBlock, 24, 0xb4810000u + (uint32_t)rate);
+    Writer w(rate);
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        g_usb.procOpenCostUs = 1500;
+        g_usb.stallAfterFirstUrbUs = 10000;
+    }
+    for (int at = 0; at + kBlock <= src.frames(); at += kBlock) w.write(src, at, kBlock);
+    const std::vector<uint8_t> wire = w.finish();
+    sleepMs(300);
+    StartRun out;
+    out.primedFrames = w.startSilenceFrames;
+    out.expectedPrime = silenceToReach(w.ctx->plan.resumeLeadFrames, w.ctx->plan.silenceChunkFrames, 0);
+    out.audibleEqual = wire == toUsb32(src);
+    std::lock_guard<std::mutex> lock(g_usb.mu);
+    out.gaps = g_usb.gaps;
+    out.maxGapUs = g_usb.maxGapUs;
+    out.ringEmpty = g_usb.ringEmptyLogs;
+    out.modelLines = g_usb.outputGapLines.size();
+    size_t zeroBytes = 0;
+    while (zeroBytes < g_usb.capture.size() && g_usb.capture[zeroBytes] == 0) zeroBytes++;
+    out.rawLeadingSilence = (int64_t)(zeroBytes / (size_t)g_usb.bytesPerFrame);
+    for (const std::string &l : g_usb.schedulingLines) {
+        if (l.find("Writer thread:") != std::string::npos) out.writerLines++;
+    }
+    if (!g_usb.writerLineAtUrb.empty()) out.writerLineAtUrb = g_usb.writerLineAtUrb.front();
+    for (const std::string &l : g_usb.startLines) {
+        if (l.find("Prime:") != std::string::npos && l.find("(stream)") != std::string::npos) out.primeLogged = true;
+        if (l.find("Start: feedback start guard=") != std::string::npos) out.startGuardLogged = true;
+    }
+    return out;
+}
+
+/** A recovery's resume (step 1 or 2): the ring was drained, the interface restarted, and the writer stalls 10 ms right after the first URB of the restart. */
+StartRun runRecoveryResume(int rate, int step) {
+    constexpr int kBlock = 2048;
+    const int frames = (int)((int64_t)rate * 3200 / 1000 / kBlock) * kBlock;   // long enough for the CPU baseline to be due again (2 s)
+    const Pcm src = makeNoise(frames, 24, 0xb4820000u + (uint32_t)rate + (uint32_t)step);
+    Writer w(rate);
+    g_usb.feedbackFpmf = rate / 8000.0;
+    const int64_t startUs = nowUs();
+    int next = 0;
+    while (nowUs() - startUs < 2400 * 1000 && next + kBlock <= frames - 8 * kBlock) {
+        w.write(src, next, kBlock);
+        next += kBlock;
+    }
+    size_t gapsBefore;
+    {
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        gapsBefore = g_usb.gapList.size();
+        g_usb.procOpenCostUs = 1500;
+    }
+    const int64_t silenceBefore = w.stat(5);
+    runOneStep(w, src, next, step, kBlock, [&] {
+        // the CPU baseline is due again 2 s after the last one: the restart's first URB meets it (a recovery that takes a moment longer, as the HONOR's did)
+        const int64_t dueAtUs = g_lastProcStatOpenUs.load() + 2050 * 1000;
+        if (g_lastProcStatOpenUs.load() > 0 && nowUs() < dueAtUs) sleepMs((dueAtUs - nowUs()) / 1000 + 1);
+        std::lock_guard<std::mutex> lock(g_usb.mu);
+        g_usb.stallAfterFirstUrbUs = 10000;
+        g_usb.urbsSinceStart = 0;   // the restart's first audible URB is the one the stall follows
+        g_usb.audibleSinceStart = false;
+    });
+    w.write(src, next, kBlock);
+    sleepMs(400);
+    StartRun out;
+    out.primedFrames = w.resumeSilenceFrames;
+    out.expectedPrime = silenceToReach(w.ctx->plan.resumeLeadFrames, w.ctx->plan.silenceChunkFrames, 0);
+    (void)silenceBefore;
+    std::lock_guard<std::mutex> lock(g_usb.mu);
+    // the pause's own idle (the ring played out by design while the interface restarted) is the one gap that is the recovery's, at the first URB of the restart
+    out.gaps = (int)g_usb.gapList.size() - (int)gapsBefore - 1;
+    for (size_t i = gapsBefore + 1; i < g_usb.gapList.size(); i++) out.maxGapUs = std::max(out.maxGapUs, g_usb.gapList[i]);
+    out.ringEmpty = g_usb.ringEmptyLogs;
+    out.modelLines = g_usb.outputGapLines.size();
+    for (const std::string &l : g_usb.startLines) {
+        if (l.find("Prime:") != std::string::npos && l.find("(recovery)") != std::string::npos) out.primeLogged = true;
+        if (l.find("Start: feedback start guard=") != std::string::npos && l.find("(recovery)") != std::string::npos) out.startGuardLogged = true;
+    }
+    return out;
+}
+
+void testEveryStartPrimesTheRing() {
+    // a stream's first start, then a skip to a new stream at another rate, twice (44.1 -> 96 -> 192 kHz): each a new native stream, as the sink rebuilds one
+    for (int rate : {44100, 96000, 192000}) {
+        const StartRun r = runFirstStart(rate);
+        printf("B48-1 %6d Hz, new stream, writer stalled 10 ms after its first URB, /proc reads 1.5 ms each: fake DAC dry %d x (max %.1f ms), OUTPUT_GAP=%zu, RING_EMPTY=%d, "
+               "priming %lld frames (the plan's %lld; %.1f ms), %lld zero frames before the first sample, Writer thread line x%d after %d URBs, audible %s\n",
+               rate, r.gaps, r.maxGapUs / 1000.0, r.modelLines, r.ringEmpty, (long long)r.primedFrames, (long long)r.expectedPrime, r.primedFrames * 1000.0 / rate,
+               (long long)r.rawLeadingSilence, r.writerLines, r.writerLineAtUrb, r.audibleEqual ? "EQUAL to the source" : "DIFFERENT");
+        CHECK(r.gaps == 0, "%d Hz: a new stream left the DAC dry %d times (max %.1f ms)", rate, r.gaps, r.maxGapUs / 1000.0);
+        CHECK(r.ringEmpty == 0 && r.modelLines == 0, "%d Hz: a new stream reported %d RING_EMPTY and %zu OUTPUT_GAP lines", rate, r.ringEmpty, r.modelLines);
+        CHECK(r.primedFrames == r.expectedPrime && r.expectedPrime > 0, "%d Hz: the start primed %lld frames of silence, the plan's amount is %lld", rate, (long long)r.primedFrames,
+              (long long)r.expectedPrime);
+        CHECK(r.rawLeadingSilence == r.primedFrames, "%d Hz: %lld zero frames on the wire before the first sample, the priming fed %lld", rate, (long long)r.rawLeadingSilence,
+              (long long)r.primedFrames);
+        CHECK(r.audibleEqual, "%d Hz: the audible samples after the priming are not the source", rate);
+        CHECK(r.writerLines == 1, "%d Hz: %d `Writer thread:` lines for one writer thread", rate, r.writerLines);
+        CHECK(r.writerLineAtUrb == 0, "%d Hz: the `Writer thread:` line was written after %d URBs had gone out (it must come before the first)", rate, r.writerLineAtUrb);
+        CHECK(r.primeLogged && r.startGuardLogged, "%d Hz: the start did not log its priming and its guard", rate);
+    }
+    // a skip on the cached stream: the ring is held at the silence lead until the new audio arrives, the writer stalled 10 ms on it
+    for (int rate : {44100, 96000, 192000}) {
+        const SkipOutcome o = runSkip(rate, 10, 85);
+        CHECK(o.realGaps == 0 && o.modelLines == 0, "%d Hz: a skip on the cached stream left the DAC dry %d x (%zu OUTPUT_GAP)", rate, o.realGaps, o.modelLines);
+    }
+    // a recovery's resume, step 1 (SETINTERFACE) and step 2 (bus reset first)
+    for (int rate : {44100, 96000}) {
+        for (int step : {1, 2}) {
+            const StartRun r = runRecoveryResume(rate, step);
+            printf("B48-1 %6d Hz, recovery step %d resume, writer stalled 10 ms after the restart's first URB: fake DAC dry after the restart %d x (max %.1f ms), OUTPUT_GAP=%zu, "
+                   "RING_EMPTY=%d, priming %lld frames (the plan's %lld)\n",
+                   rate, step, r.gaps, r.maxGapUs / 1000.0, r.modelLines, r.ringEmpty, (long long)r.primedFrames, (long long)r.expectedPrime);
+            CHECK(r.gaps == 0, "%d Hz step %d: the recovery's resume left the DAC dry %d times (max %.1f ms)", rate, step, r.gaps, r.maxGapUs / 1000.0);
+            CHECK(r.ringEmpty == 0 && r.modelLines == 0, "%d Hz step %d: the resume reported %d RING_EMPTY and %zu OUTPUT_GAP lines", rate, step, r.ringEmpty, r.modelLines);
+            CHECK(r.primedFrames == r.expectedPrime && r.expectedPrime > 0, "%d Hz step %d: the resume primed %lld frames, the plan's amount is %lld", rate, step,
+                  (long long)r.primedFrames, (long long)r.expectedPrime);
+            CHECK(r.primeLogged && r.startGuardLogged, "%d Hz step %d: the recovery's restart did not log its priming and its guard", rate, step);
+        }
+    }
+}
+
+// ── the start guard ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+struct GuardRun {
+    std::vector<SubmittedUrb> urbs;
+    std::vector<uint8_t> packets;
+    int64_t firstUrbUs = 0;
+    int64_t t0 = 0;
+    std::vector<std::string> rejected;
+    std::vector<std::string> stuck;
+    std::vector<std::string> startLines;
+    int64_t restartUs = 0;
+};
+
+/** Frames above the nominal rate that the URBs submitted in [fromMs, toMs) after [originUs] carried: the packets' frames minus nominal x packets. */
+double excessIn(const GuardRun &run, int64_t originUs, int64_t fromMs, int64_t toMs, double nominal) {
+    double frames = 0.0;
+    double packets = 0.0;
+    for (const SubmittedUrb &u : run.urbs) {
+        const int64_t ms = (u.atUs - originUs) / 1000;
+        if (ms < fromMs || ms >= toMs) continue;
+        frames += u.frames;
+        packets += u.packets;
+    }
+    return frames - nominal * packets;
+}
+
+/** The Melody's start (the 2026-10-30 log, at 44.1 and 48 kHz): nominal, then the feedback climbs to +2.08 % by 170 ms, stays a moment and goes back. [startUs] is when the interface (re)started. */
+double melodyRampAt(int64_t msSinceStart, double nominal) {
+    if (msSinceStart < 30 || msSinceStart >= 230) return nominal;
+    if (msSinceStart >= 170) return nominal * 1.0208;
+    return nominal * (1.0 + 0.0208 * (double)(msSinceStart - 30) / 140.0);
+}
+
+double melodyStartRamp(int64_t atUs, int64_t startUs, double nominal) {
+    return startUs > 0 ? melodyRampAt((atUs - startUs) / 1000, nominal) : nominal;
+}
+
+/** [seconds] of audio from a fresh stream, the DAC's feedback given by [script] (a function of the time in ms since the stream was created). */
+GuardRun runGuard(int policy, int rate, bool guardOn, int seconds, const std::function<double(int64_t, double)> &script) {
+    simclock::VirtualTime virtualTime;
+    JNINativeInterface table = {};
+    table.GetArrayLength = fakeGetArrayLength;
+    table.GetByteArrayElements = fakeGetByteArrayElements;
+    table.ReleaseByteArrayElements = fakeReleaseByteArrayElements;
+    JNIEnv env;
+    env.functions = &table;
+    const double nominal = rate / 8000.0;
+    const Pcm tenth = makeNoise(rate / 10, 24, 0xb4830000u + (uint32_t)rate);
+    FakeArray chunk;
+    chunk.bytes = toPackedLe(tenth);
+    g_usb.reset(rate, 8);
+    usbSetFeedbackPolicy(policy);
+    setStartGuard(guardOn);
+    GuardRun run;
+    run.t0 = nowUs();
+    const int64_t t0 = run.t0;
+    setFeedbackScript([=](int64_t atUs) {
+        FeedbackAnswer answer;
+        answer.fpmf = script((atUs - t0) / 1000, nominal);
+        return answer;
+    });
+    const jlong usb = createStream(rate, 32);
+    streamBuffers(&env, usb, chunk, seconds * 10);
+    releaseStream(usb);
+    setFeedbackScript(nullptr);
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    setStartGuard(true);
+    std::lock_guard<std::mutex> lock(g_usb.mu);
+    run.urbs = g_usb.submitted;
+    run.packets = g_usb.packetFrames;
+    run.firstUrbUs = run.urbs.empty() ? t0 : run.urbs.front().atUs;
+    run.startLines = g_usb.startLines;
+    return run;
+}
+
+void testFeedbackStartGuard() {
+    // (a) the Melody's start ramp, at 44.1 and 48 kHz: with the guard nothing goes out above nominal for 500 ms, with it off the ramp is followed until the refusal (HEAD's behaviour)
+    for (int rate : {44100, 48000}) {
+        const double nominal = rate / 8000.0;
+        auto ramp = [](int64_t ms, double nom) { return melodyRampAt(ms, nom); };
+        const GuardRun on = runGuard(USB_FEEDBACK_AUTO, rate, true, 3, ramp);
+        const std::vector<std::string> rejectedOn = feedbackGlitchLines("FEEDBACK_REJECTED");
+        const GuardRun off = runGuard(USB_FEEDBACK_AUTO, rate, false, 3, ramp);
+        const double excessOn = excessIn(on, on.firstUrbUs, 0, 500, nominal);
+        const double excessOff = excessIn(off, off.firstUrbUs, 0, 500, nominal);
+        printf("B48-3 %5d Hz, the Melody's start ramp (+2.08 %% at 170 ms): frames above nominal in the first 500 ms: guard on %.1f, guard off %.1f; FEEDBACK_REJECTED lines with the guard: %zu\n", rate,
+               excessOn, excessOff, rejectedOn.size());
+        CHECK(excessOn <= 1.01 && excessOn >= -1.01, "%d Hz: %.1f frames above nominal in the first 500 ms with the start guard on", rate, excessOn);
+        CHECK(excessOff > 5.0, "%d Hz: with the guard off the ramp was not followed (%.1f frames): the comparison is void", rate, excessOff);
+        // the readings kept feeding the watch: the +2.08 % is refused, with the ramp's length, as it is without the guard
+        CHECK(!rejectedOn.empty() && rejectedOn.front().find("ramp=") != std::string::npos, "%d Hz: the refusal of the ramp is gone from the log with the guard on", rate);
+        // after the guard nothing is held back and the ramp is long over: both go out at nominal
+        CHECK(std::fabs(excessIn(on, on.firstUrbUs, 500, 3000, nominal)) <= 1.5 && std::fabs(excessIn(off, off.firstUrbUs, 500, 3000, nominal)) <= 1.5,
+              "%d Hz: frames above nominal after the guard", rate);
+    }
+    // (b) a healthy DAC that answers its nominal: the guard changes nothing. At 48 kHz nominal (6 frames per microframe) is exact in the feedback's 16.16 format, so the packets are
+    // identical byte for byte. At 44.1 kHz the DAC's answer (5.512496) is not the nominal (5.5125): what the guard sends for 500 ms is a hair different from what `auto` sends, and the
+    // packetizer's carry stays a fraction of a frame apart for the rest of the stream (some 5/6 positions shift). The two never differ by more than one frame in total.
+    {
+        auto nominalOnly = [](int64_t, double nom) { return nom; };
+        const GuardRun on48 = runGuard(USB_FEEDBACK_AUTO, 48000, true, 3, nominalOnly);
+        const GuardRun off48 = runGuard(USB_FEEDBACK_AUTO, 48000, false, 3, nominalOnly);
+        CHECK(!on48.packets.empty() && on48.packets == off48.packets, "a healthy 48 kHz DAC is treated differently with the start guard (%zu / %zu packets)", on48.packets.size(), off48.packets.size());
+        const GuardRun on = runGuard(USB_FEEDBACK_AUTO, 44100, true, 3, nominalOnly);
+        const GuardRun off = runGuard(USB_FEEDBACK_AUTO, 44100, false, 3, nominalOnly);
+        int64_t cumulativeOn = 0;
+        int64_t cumulativeOff = 0;
+        int64_t widest = 0;
+        size_t differing = 0;
+        const size_t common = std::min(on.packets.size(), off.packets.size());
+        for (size_t i = 0; i < common; i++) {
+            cumulativeOn += on.packets[i];
+            cumulativeOff += off.packets[i];
+            widest = std::max<int64_t>(widest, std::llabs(cumulativeOn - cumulativeOff));
+            differing += on.packets[i] != off.packets[i];
+        }
+        CHECK(on.packets.size() == off.packets.size() && widest <= 1, "a healthy 44.1 kHz DAC: the totals of the two runs are %lld frames apart at the widest (%zu / %zu packets)", (long long)widest,
+              on.packets.size(), off.packets.size());
+        printf("B48-3 healthy DAC at nominal: 48 kHz %zu packets identical with the guard on and off; 44.1 kHz %zu packets, %zu positions shift, never more than %lld frame apart in total\n",
+               on48.packets.size(), common, differing, (long long)widest);
+    }
+    // (c) a crystal that is really 0.2 % off from the start, and a real +0.8 % plateau (Crimen) from 0.2 s: the guard only delays them, to 500 ms
+    {
+        struct Case { const char *name; int rate; double ppm; int64_t from; };
+        for (const Case &c : {Case{"crystal +0.2 %", 44100, 0.002, 0}, Case{"Gustavo Cerati, Crimen +0.832 %", 48000, 0.00832, 200}}) {
+            const double nominal = c.rate / 8000.0;
+            auto plateau = [&](int64_t ms, double nom) { return ms >= c.from ? nom * (1.0 + c.ppm) : nom; };
+            const GuardRun on = runGuard(USB_FEEDBACK_AUTO, c.rate, true, 4, plateau);
+            const size_t stuckOn = feedbackGlitchLines("FEEDBACK_STUCK").size();
+            const GuardRun off = runGuard(USB_FEEDBACK_AUTO, c.rate, false, 4, plateau);
+            const size_t stuckOff = feedbackGlitchLines("FEEDBACK_STUCK").size();
+            const double inGuardOn = excessIn(on, on.firstUrbUs, 0, 500, nominal);
+            const double inGuardOff = excessIn(off, off.firstUrbUs, 0, 500, nominal);
+            const double afterOn = excessIn(on, on.firstUrbUs, 600, 3000, nominal);
+            const double afterOff = excessIn(off, off.firstUrbUs, 600, 3000, nominal);
+            printf("B48-3 %s: frames above nominal in 0-500 ms: guard on %.1f, off %.1f; in 600-3000 ms: on %.1f, off %.1f; FEEDBACK_STUCK on/off %zu/%zu\n", c.name, inGuardOn, inGuardOff,
+                   afterOn, afterOff, stuckOn, stuckOff);
+            CHECK(std::fabs(inGuardOn) <= 1.01, "%s: %.1f frames above nominal inside the guard", c.name, inGuardOn);
+            CHECK(inGuardOff > 5.0, "%s: without the guard the plateau was not followed in the first 500 ms (%.1f): the comparison is void", c.name, inGuardOff);
+            CHECK(std::fabs(afterOn - afterOff) <= std::max(2.5, afterOff * 0.01) && afterOn > 20.0, "%s: after the guard it is followed as auto does (%.1f vs %.1f frames above nominal)", c.name,
+                  afterOn, afterOff);
+            CHECK(stuckOn == stuckOff, "%s: the stuck watch saw different readings with the guard (%zu / %zu lines)", c.name, stuckOn, stuckOff);
+        }
+    }
+    // (d) `follow` is the diagnostic policy and never obeys the guard
+    {
+        auto ramp = [](int64_t ms, double nom) { return melodyRampAt(ms, nom); };
+        const GuardRun follow = runGuard(USB_FEEDBACK_FOLLOW, 44100, true, 2, ramp);
+        const double excess = excessIn(follow, follow.firstUrbUs, 0, 500, 44100 / 8000.0);
+        CHECK(excess > 5.0, "follow obeyed the start guard (%.1f frames above nominal in the first 500 ms)", excess);
+    }
+    // (e) the guard is on in a process that never touched the switch, the plan names it, and the start says so (and says `off` when it is off)
+    {
+        CHECK(g_guardWasOnAtProcessStart == startGuardDefaultIsOn(), "the start guard is not on by default (%d)", g_guardWasOnAtProcessStart);
+        auto nominalOnly = [](int64_t, double nom) { return nom; };
+        const GuardRun on = runGuard(USB_FEEDBACK_AUTO, 44100, true, 1, nominalOnly);
+        const GuardRun off = runGuard(USB_FEEDBACK_AUTO, 44100, false, 1, nominalOnly);
+        auto hasLine = [](const GuardRun &r, const char *text) {
+            for (const std::string &l : r.startLines) if (l.find(text) != std::string::npos) return true;
+            return false;
+        };
+#ifndef B48FIX1_BEFORE
+        CHECK(hasLine(on, "Start: feedback start guard=500 ms"), "no `Start: feedback start guard=500 ms` line with the guard on");
+        CHECK(hasLine(off, "Start: feedback start guard=off"), "no `Start: feedback start guard=off` line with the guard off");
+        Writer w(44100);
+        CHECK(w.ctx->plan.feedbackStartGuardMs == USB_TRANSPORT_FEEDBACK_START_GUARD_MS && USB_TRANSPORT_FEEDBACK_START_GUARD_MS == 500, "the plan's guard is %d ms", w.ctx->plan.feedbackStartGuardMs);
+#else
+        (void)hasLine; (void)on; (void)off;
+        CHECK(false, "HEAD has no start guard to announce");
+#endif
+    }
+    // (f) a rail that begins inside the guard still makes the B47 lock detector fire: the readings keep feeding it, only what is sent is held
+    {
+        simclock::VirtualTime virtualTime;
+        Writer w(44100);
+        g_usb.feedbackFpmf = 44100 / 8000.0;
+        usbDacRecoveryForgetEpisodes();
+        usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+        setStartGuard(true);
+        const int64_t t0 = nowUs();
+        setFeedbackScript([=](int64_t atUs) {
+            FeedbackAnswer answer;
+            answer.fpmf = (atUs - t0) / 1000 >= 100 ? 5.7875 : 5.5125;   // +4.99 % from 100 ms, inside the guard
+            return answer;
+        });
+        const Pcm src = makeNoise(44100 * 3, 24, 0xb4840000u);
+        bool locked = false;
+        for (int at = 0; at + 2048 <= src.frames() && nowUs() - t0 < 2800 * 1000; at += 2048) {
+            w.write(src, at, 2048);
+            int64_t state[USB_DAC_STATE_COUNT];
+            usbDacLockState(w.ctx, state);
+            if (state[0] != 0) locked = true;
+        }
+        setFeedbackScript(nullptr);
+        GuardRun run;
+        {
+            std::lock_guard<std::mutex> lock(g_usb.mu);
+            run.urbs = g_usb.submitted;
+        }
+        const double excess = excessIn(run, run.urbs.front().atUs, 0, 500, 44100 / 8000.0);
+        CHECK(locked, "the lock detector did not fire on a +4.99 %% rail that began inside the start guard");
+        CHECK(std::fabs(excess) <= 1.01, "%.1f frames above nominal during the guard on a +4.99 %% rail", excess);
+        printf("B48-3 a +4.99 %% rail from 100 ms (inside the guard): lock detected %s, %.1f frames above nominal in the first 500 ms\n", locked ? "yes" : "NO", excess);
+    }
+    // (g) a recovery's restart gets a fresh guard, and a skip on the cached stream gets none. Each is run with the guard on and with it off: the off run proves the scenario has something to hold.
+    auto framesAboveNominalAfter = [](bool recovery, bool guardOn) {
+        simclock::VirtualTime virtualTime;
+        const int rate = 44100;
+        const double nominal = rate / 8000.0;
+        Writer w(rate);
+        g_usb.feedbackFpmf = nominal;
+        usbDacRecoveryForgetEpisodes();
+        usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+        setStartGuard(guardOn);
+        auto restartUs = std::make_shared<int64_t>(0);
+        setFeedbackScript([=](int64_t atUs) {
+            FeedbackAnswer answer;
+            const int64_t sinceMs = (atUs - *restartUs) / 1000;
+            if (*restartUs <= 0) answer.fpmf = nominal;
+            else if (recovery) answer.fpmf = melodyRampAt(sinceMs, nominal);           // the Melody's servo ramp after the interface restarts
+            else answer.fpmf = sinceMs >= 30 ? nominal * 1.01 : nominal;               // a DAC that really is 1 % off, after a skip
+            return answer;
+        });
+        constexpr int kBlock = 2048;
+        const Pcm src = makeNoise(rate * 5, 24, 0xb4850000u);
+        int next = 0;
+        const int64_t t0 = nowUs();
+        while (nowUs() - t0 < 1500 * 1000) {   // the stream's own first guard is over
+            w.write(src, next, kBlock);
+            next += kBlock;
+        }
+        int64_t restartAt = 0;
+        if (recovery) {
+            runOneStep(w, src, next, 1, kBlock, [&] {
+                restartAt = nowUs();
+                *restartUs = restartAt;
+            });
+        } else {
+            restartAt = nowUs();
+            *restartUs = restartAt;
+            w.beginSeek();   // a skip on the cached stream: the DAC is not restarted
+        }
+        for (int i = 0; i < 40 && next + kBlock <= src.frames(); i++) {
+            w.write(src, next, kBlock);
+            next += kBlock;
+        }
+        setFeedbackScript(nullptr);
+        setStartGuard(true);
+        GuardRun run;
+        {
+            std::lock_guard<std::mutex> lock(g_usb.mu);
+            run.urbs = g_usb.submitted;
+        }
+        return excessIn(run, restartAt, 0, 500, nominal);
+    };
+    const double recoveryHeld = framesAboveNominalAfter(true, true);
+    const double recoveryFollowed = framesAboveNominalAfter(true, false);
+    const double skipGuardOn = framesAboveNominalAfter(false, true);
+    const double skipGuardOff = framesAboveNominalAfter(false, false);
+    printf("B48-3 a recovery's restart (step 1): frames above nominal in the 500 ms after it: guard on %.1f, off %.1f\n", recoveryHeld, recoveryFollowed);
+    printf("B48-3 a skip on the cached stream (a DAC 1 %% off from 30 ms): frames above nominal in the 500 ms after it: guard on %.1f, off %.1f\n", skipGuardOn, skipGuardOff);
+    CHECK(recoveryFollowed > 5.0, "a recovery's restart: the control run without the guard did not follow the ramp (%.1f frames): the comparison is void", recoveryFollowed);
+    CHECK(std::fabs(recoveryHeld) <= 1.5, "a recovery's restart: %.1f frames above nominal in the 500 ms after it (the restart owes a fresh guard)", recoveryHeld);
+    CHECK(skipGuardOn > 5.0 && std::fabs(skipGuardOn - skipGuardOff) <= 1.5,
+          "a skip on the cached stream was held at nominal (%.1f frames above, %.1f without the guard): the DAC did not restart, it gets no guard", skipGuardOn, skipGuardOff);
+}
+
+// B48-fix2: only numeric train evidence; the live feedback beyond the window was not logged.
+void testTrainFeedback() {
+    for (int rate : {44100, 48000}) {
+        for (int cure : {0, 1, 2, 3}) {
+            simclock::VirtualTime virtualTime;
+            Writer w(rate, true);
+            const double nominal = rate / 8000.0;
+            const Pcm src = makeNoise(rate * 52, 24, 0x48200000u + rate);
+            const int64_t t0 = nowUs();
+            const int railMs = rate == 44100 ? 300 : 2200;
+            int restarts = 0;
+            int64_t restartUs = 0;
+            usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+            usbDacRecoveryForgetEpisodes();
+            usbSetDacRecoveryEnabled(cure != 0);
+            setFeedbackScript([&](int64_t atUs) {
+                FeedbackAnswer a;
+                const int64_t ms = (atUs - t0) / 1000;
+                if (restarts > 0) {
+                    const int64_t age = (atUs - restartUs) / 1000;
+                    a.fpmf = age < 900 ? melodyRampAt(age, nominal) :
+                        ((cure == 1 || (cure == 2 && restarts >= 2)) ? nominal : nominal * 0.94);
+                } else if (ms >= railMs) {
+                    a.fpmf = nominal * ((rate == 44100 && ms < railMs + 40000) ? 1.06 : 0.94);
+                    if (rate == 44100 && ms >= railMs + 41000) a.fpmf = nominal;
+                } else if (rate == 44100) {
+                    a.fpmf = ms < 200 ? melodyRampAt(ms, nominal) : nominal * 1.028;
+                } else {
+                    a.fpmf = ms < 2000 ? nominal : nominal * 0.98;
+                }
+                return a;
+            });
+            g_usb.trainLines.clear();
+            int next = 0;
+            int steps[4] = {};
+            int64_t detectedMs = -1;
+            const int durationMs = cure == 0 ? 43000 : 13000;
+            while (next + 128 <= src.frames() && nowUs() - t0 < durationMs * 1000LL) {
+                w.write(src, next, 128);
+                next += 128;
+                int64_t state[USB_DAC_STATE_COUNT];
+                usbDacLockState(w.ctx, state);
+                if (state[0] && detectedMs < 0) detectedMs = (nowUs() - t0) / 1000 - railMs;
+                const int step = (int)state[5];
+                if (step >= 1 && step <= 3) steps[step]++;
+                if (cure != 0 && (step == 1 || step == 2)) {
+                    runOneStep(w, src, next, step, 128, [&] {
+                        restarts++;
+                        restartUs = nowUs();
+                    });
+                }
+            }
+            CHECK(detectedMs >= USB_DAC_LOCK_RAIL_MS && detectedMs <= USB_DAC_LOCK_RAIL_MS + 8,
+                  "%d Hz replay cure=%d detected after %lld ms", rate, cure, (long long)detectedMs);
+            CHECK(steps[1] == (cure != 0 ? 1 : 0), "%d Hz replay step 1 decision missing or recovery disabled", rate);
+            if (cure > 0) {
+                CHECK(steps[2] == (cure >= 2 ? 1 : 0) && steps[3] == (cure == 3 ? 1 : 0),
+                      "replay escalation cure=%d step2=%d gaveUp=%d", cure, steps[2], steps[3]);
+                bool ok = false;
+                for (const auto &entry : g_usb.trainLines) {
+                    if (entry.second.find("result=ok") != std::string::npos) ok = true;
+                }
+                CHECK(ok == (cure != 3), "replay verdict cure=%d ok=%d", cure, ok);
+            }
+            bool window = false, live = false, back = false, periodic = false;
+            int64_t outsideUs = -1;
+            int64_t lockUs = -1;
+            bool staleAccepted = false;
+            bool rawMatches = false;
+            for (const auto &entry : g_usb.trainLines) {
+                const std::string &line = entry.second;
+                const size_t ageAt = line.find("acceptedAge=");
+                if (ageAt != std::string::npos && atoll(line.c_str() + ageAt + 12) >= 1000) staleAccepted = true;
+                if (line.find("FEEDBACK_OUT_OF_WINDOW fpmf=") != std::string::npos && outsideUs < 0) {
+                    unsigned bytes[4] = {};
+                    double logged = 0;
+                    const size_t rawAt = line.find("raw=");
+                    if (rawAt != std::string::npos && sscanf(line.c_str() + rawAt, "raw=%X %X %X %X", &bytes[0], &bytes[1], &bytes[2], &bytes[3]) == 4 &&
+                        sscanf(line.c_str(), "FEEDBACK_OUT_OF_WINDOW fpmf=%lf", &logged) == 1) {
+                        const uint32_t raw = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
+                        rawMatches = std::fabs(raw / 65536.0 - logged) <= 0.000051;
+                    }
+                    const size_t streamAt = line.find("streamAge=");
+                    CHECK(streamAt != std::string::npos && atoll(line.c_str() + streamAt + 10) == entry.first / 1000 - (t0 / 1000 - 2),
+                          "streamAge did not start at the data SETINTERFACE before the initial feedback read");
+                }
+                if (outsideUs < 0 && line.find("FEEDBACK_OUT_OF_WINDOW fpmf=") != std::string::npos) outsideUs = entry.first;
+                if (line.find("DAC_LOCKED") != std::string::npos) {
+                    if (lockUs < 0) lockUs = entry.first;
+                    CHECK(line.find("why=rail") != std::string::npos, "rail announced without why=rail or announced again as stuck");
+                }
+                if (line.find("FEEDBACK_OUT_OF_WINDOW") != std::string::npos) {
+                    window = line.find("raw=") != std::string::npos && line.find("streamAge=") != std::string::npos;
+                    back = back || line.find("back after") != std::string::npos;
+                }
+                live = live || (line.find("live=") != std::string::npos && line.find("acceptedAge=") != std::string::npos);
+                periodic = periodic || line.find("Feedback #") != std::string::npos;
+            }
+            CHECK(outsideUs >= 0 && lockUs / 1000 - outsideUs / 1000 == USB_DAC_LOCK_RAIL_MS, "DAC_LOCKED was not logged at exactly 1500ms after rail: outside=%lld lock=%lld delta=%lld", (long long)outsideUs, (long long)lockUs, (long long)(lockUs / 1000 - outsideUs / 1000));
+            CHECK((cure != 0 || staleAccepted) && rawMatches, "missing a stale accepted age or received raw bytes");
+            CHECK(window && live && periodic, "replay missing out-of-window/raw/streamAge/live/acceptedAge/periodic evidence");
+            if (cure == 0 && rate == 44100) CHECK(back, "no back-after transition");
+            printf("B48-fix2 train rate=%d cure=%d rail=+/-6%% DAC_LOCKED=%lldms steps=%d/%d/%d logs=%zu\n",
+                   rate, cure, (long long)detectedMs, steps[1], steps[2], steps[3], g_usb.trainLines.size());
+            setFeedbackScript(nullptr);
+            usbSetDacRecoveryEnabled(true);
+        }
+    }
+    for (double multiple : {0.0, 2.0, 10000.0}) {
+        simclock::VirtualTime virtualTime;
+        Writer w(48000);
+        usbDacRecoveryForgetEpisodes();
+        g_usb.feedbackFpmf = 6.0 * multiple;
+        const Pcm src = makeNoise(48000 * 3, 24, 0x482ffff0u);
+        for (int at = 0; at + 128 <= src.frames(); at += 128) w.write(src, at, 128);
+        int64_t state[USB_DAC_STATE_COUNT];
+        usbDacLockState(w.ctx, state);
+        CHECK(state[0] == 1 && state[5] == 1, "extreme x%.0f did not detect and request recovery", multiple);
+        CHECK(std::isfinite(w.ctx->calibratedFpmf) && std::fabs(w.ctx->calibratedFpmf - 6.0) < 0.0001,
+              "extreme x%.0f reached follower", multiple);
+        printf("B48-fix2 extreme x%.0f locked=%lld step=%lld follower=%.4f\n", multiple, (long long)state[0], (long long)state[5], w.ctx->calibratedFpmf);
+    }
+    // Exact Q16.16 boundaries at 40 kHz: the existing follower window is strict at both ends.
+    for (double boundary : {4.75, 5.25}) {
+        Writer w(40000, true);
+        usbSetFeedbackPolicy(USB_FEEDBACK_FOLLOW);
+        g_usb.feedbackFpmf = boundary;
+        const Pcm src = makeNoise(40000, 24, 0x482eeee0u);
+        for (int at = 0; at + 128 <= src.frames(); at += 128) w.write(src, at, 128);
+        CHECK(w.ctx->readingFpmf == 5.0 && w.ctx->calibratedFpmf == 5.0, "exact window boundary %.2f entered the follower", boundary);
+        usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    }
+    const GuardRun ramp = runGuard(USB_FEEDBACK_AUTO, 44100, false, 4,
+        [](int64_t ms, double nominal) { return melodyRampAt(ms - 1200, nominal); });
+    (void)ramp;
+    bool locked = false;
+    for (const auto &entry : g_usb.trainLines) locked = locked || entry.second.find("DAC_LOCKED") != std::string::npos;
+    CHECK(!locked, "settling mid-song +2.08%% ramp caused a lock-up");
+    // A brief excursion must not permanently hide a long rail that starts inside the log limiter's second.
+    runGuard(USB_FEEDBACK_AUTO, 48000, false, 4, [](int64_t ms, double nominal) {
+        return ((ms >= 100 && ms < 150) || (ms >= 200 && ms < 2000)) ? nominal * 1.06 : nominal;
+    });
+    int leaves = 0;
+    bool delayed = false;
+    for (const auto &entry : g_usb.trainLines) {
+        if (entry.second.find("FEEDBACK_OUT_OF_WINDOW fpmf=") == std::string::npos) continue;
+        leaves++;
+        const size_t sinceAt = entry.second.find("since=");
+        delayed = delayed || (sinceAt != std::string::npos && atoll(entry.second.c_str() + sinceAt + 6) >= 800);
+    }
+    CHECK(leaves == 2 && delayed, "rate limiting hid a persistent rail after a brief excursion");
+
+}
+
+void testStartGuardDefaultOff() {
+    CHECK(!g_guardWasOnAtProcessStart, "start guard must be off in a fresh process");
+    setStartGuard(g_guardWasOnAtProcessStart);
+    Writer w(44100, true);
+    bool saysOff = false;
+    for (const auto &line : g_usb.startLines) saysOff = saysOff || line.find("Start: feedback start guard=off") != std::string::npos;
+    CHECK(saysOff, "default start did not log guard=off");
+}
+
+
+// B48-fix4: numeric feedback replay through the real JNI writer, usbfs and virtual clock.
+void testStuckDacRecovery() {
+    constexpr int kRate = 48000;
+    constexpr int kBlock = 128;
+    constexpr int kWrongRateMs = 40;
+    constexpr int kRampMs = 900;
+    constexpr int kHealthyPlateauMs = 3000;
+    constexpr int kPauseAtMs = 4500;
+    constexpr int kResumeAtMs = 6500;
+    constexpr int kReplayMs = 38000;   // past cooldown, so give-up must remain latched
+    constexpr int kNominalMs = 180000;
+    constexpr double kNominal = 6.0;
+    constexpr double kPreviousRate = 5.51245;
+    constexpr double kFrozen = 6.03992;
+    constexpr double kHealthyPlateau = kNominal * 1.01;
+    struct Case { const char *name; int cure; bool pause; int policy; };
+    const Case cases[] = {
+        {"restart cures frozen feedback", 1, false, USB_FEEDBACK_AUTO},
+        {"bus reset cures renewed freeze", 2, false, USB_FEEDBACK_AUTO},
+        {"both restarts freeze again", 3, false, USB_FEEDBACK_AUTO},
+        {"freeze during pause", 1, true, USB_FEEDBACK_AUTO},
+        {"opt-in keeps its existing hold", 1, false, USB_FEEDBACK_AUTO_EARLY},
+        {"recovery disabled", 0, false, USB_FEEDBACK_AUTO},
+    };
+    for (const Case &c : cases) {
+        usbSetFeedbackPolicy(c.policy);
+        usbSetDacRecoveryEnabled(c.cure != 0);
+        usbDacRecoveryForgetEpisodes();
+        Writer w(kRate, true);
+        const Pcm src = makeNoise(kRate * (kReplayMs / 1000 + 3), 24, 0x48400001u);
+        const int64_t t0 = nowUs();
+        int restarts = 0;
+        int64_t restartUs = 0;
+        int64_t doneUs = 0;
+        bool paused = false, resumed = false;
+        int next = 0;
+        int steps[4] = {};
+        int64_t decisionUs = -1;
+        setFeedbackScript([&](int64_t atUs) {
+            FeedbackAnswer a;
+            if (restarts > 0) {
+                const int64_t age = (atUs - restartUs) / 1000;
+                a.fpmf = age < kRampMs ? melodyRampAt(age, kNominal) :
+                    ((c.cure == 1 || (c.cure == 2 && restarts >= 2)) ? kNominal : kFrozen);
+            } else {
+                a.fpmf = (atUs - t0) / 1000 < kWrongRateMs ? kPreviousRate : kFrozen;
+            }
+            return a;
+        });
+        g_usb.trainLines.clear();
+        while (next + kBlock <= src.frames() && nowUs() - t0 < kReplayMs * 1000LL) {
+            if (c.pause && !paused && (nowUs() - t0) / 1000 >= kPauseAtMs) {
+                CHECK(w.beginPause(), "stuck pause did not start");
+                while (w.fadingOut()) { w.write(src, next, kBlock); next += kBlock; }
+                paused = true;
+            }
+            if (paused && !resumed) {
+                // The real Kotlin writer never asks dacLockState here. The existing keep-alive reaps
+                // readings, so stuck can begin while paused, without a device restart.
+                if ((nowUs() - t0) / 1000 < kResumeAtMs) { w.feedSilence(); continue; }
+                CHECK(w.ctx->feedbackWatch.stuck, "pause replay never reached stuck");
+                CHECK(g_usb.setInterfaceCalls == 0 && g_usb.resetCalls == 0, "recovery ran during pause");
+                w.resume();
+                resumed = true;
+            }
+            w.write(src, next, kBlock);
+            next += kBlock;
+            int64_t state[USB_DAC_STATE_COUNT];
+            usbDacLockState(w.ctx, state);
+            const int step = (int)state[5];
+            if (step >= USB_DAC_STEP_INTERFACE && step <= USB_DAC_STEP_GIVE_UP) steps[step]++;
+            if (step == USB_DAC_STEP_INTERFACE || step == USB_DAC_STEP_BUS_RESET) {
+                if (decisionUs < 0) decisionUs = nowUs();
+                runOneStep(w, src, next, step, kBlock, [&] {
+                    restarts++;
+                    restartUs = nowUs();
+                });
+                doneUs = nowUs();
+            }
+            // The four-second verdict cannot announce success while a renewed five-second
+            // frozen run is still awaiting classification (including the usual start ramp).
+            if (c.cure >= 2 && restarts > 0 && (c.cure == 3 || restarts == 1)) {
+                CHECK(w.ctx->dacPolicy.awaitingStep != 0 || w.ctx->feedbackWatch.stuck,
+                      "%s reported ok before renewed freeze reached its hold", c.name);
+            }
+        }
+        const int expectedFirst = c.cure == 0 ? 0 : 1;
+        CHECK(steps[1] == expectedFirst && steps[2] == (c.cure >= 2 ? 1 : 0) && steps[3] == (c.cure == 3 ? 1 : 0),
+              "%s steps=%d/%d/%d", c.name, steps[1], steps[2], steps[3]);
+        const int64_t hold = usbFeedbackStuckHoldMs(c.policy, usbFeedbackPpm(kFrozen, kNominal));
+        int stuckLocks = 0, railLocks = 0, okCount = 0;
+        int64_t firstLockUs = -1;
+        for (const auto &entry : g_usb.trainLines) {
+            const std::string &line = entry.second;
+            if (line.find("DAC_LOCKED") != std::string::npos) {
+                if (firstLockUs < 0) firstLockUs = entry.first;
+                stuckLocks += line.find("why=stuck") != std::string::npos;
+                railLocks += line.find("why=rail") != std::string::npos;
+                CHECK(line.find("heldMs=" + std::to_string(hold)) != std::string::npos,
+                      "stuck recovery line lacks the existing hold: %s", line.c_str());
+                CHECK(line.find("feedback=6.0399") != std::string::npos && line.find("+6653 ppm") != std::string::npos,
+                      "stuck recovery line lacks the reading and ppm: %s", line.c_str());
+            }
+            if (line.find("result=ok") != std::string::npos) {
+                okCount++;
+                CHECK(doneUs > 0 && entry.first - doneUs >= USB_DAC_RECOVERY_VERIFY_MS * 1000LL,
+                      "ok before the verify window");
+            }
+            if (line.find("DAC_LOCKED") != std::string::npos || line.find("DAC_RECOVERY") != std::string::npos ||
+                line.find("FEEDBACK_OUT_OF_WINDOW") != std::string::npos) {
+                printf("B48-fix4 %s t=%lldms %s\n", c.name, (long long)((entry.first - t0) / 1000), line.c_str());
+            }
+        }
+        CHECK(stuckLocks == (c.cure >= 2 ? (c.cure == 3 ? 3 : 2) : 1) && railLocks == 0,
+              "%s watches stuck=%d rail=%d", c.name, stuckLocks, railLocks);
+        CHECK(firstLockUs / 1000 - t0 / 1000 >= hold, "lock before its hold");
+        if (!c.pause && c.cure != 0) {
+            CHECK(decisionUs - firstLockUs >= 0 && decisionUs - firstLockUs < kBlock * 1000000LL / kRate + 3000,
+                  "step 1 did not follow stuck at its hold");
+        }
+        if (c.pause) CHECK(decisionUs - t0 >= kResumeAtMs * 1000LL, "paused recovery before resume");
+        CHECK(okCount == (c.cure == 1 || c.cure == 2 ? 1 : 0), "%s ok count=%d", c.name, okCount);
+        const auto stuckLines = feedbackGlitchLines("FEEDBACK_STUCK");
+        CHECK(!stuckLines.empty(), "%s missing stuck line", c.name);
+        for (const std::string &line : stuckLines) printf("B48-fix4 %s %s\n", c.name, line.c_str());
+        char report[32768];
+        usbSecondSummaries(kReplayMs, report, sizeof(report));
+        if (c.cure != 0) {
+            CHECK(strstr(report, "dac-locked stuck") != nullptr && strstr(report, "dac-recovery step 1 ran") != nullptr,
+                  "%s Mark noise report lacks stuck recovery events", c.name);
+        }
+        const std::string streamTag = "stream=" + std::to_string(w.ctx->streamSeq) + " ";
+        const std::string dump(report);
+        for (size_t begin = 0, end; begin < dump.size(); begin = end + 1) {
+            end = dump.find('\n', begin);
+            if (end == std::string::npos) end = dump.size();
+            const std::string line = dump.substr(begin, end - begin);
+            if (line.find(streamTag) != std::string::npos && (line.find("stuck-begin") != std::string::npos ||
+                line.find("dac-locked") != std::string::npos || line.find("dac-recovery") != std::string::npos)) {
+                printf("B48-fix4 report %s\n", line.c_str());
+            }
+        }
+        printf("B48-fix4 %s hold=%lldms firstLock=%lldms firstStep=%lldms steps=%d/%d/%d ok=%d\n", c.name,
+               (long long)hold, (long long)((firstLockUs - t0) / 1000), (long long)(decisionUs < 0 ? -1 : (decisionUs - t0) / 1000), steps[1], steps[2], steps[3], okCount);
+        setFeedbackScript(nullptr);
+    }
+    usbSetDacRecoveryEnabled(true);
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    // A recovered, dithering clock can close its episode. Short blips must not keep it open
+    // forever, or a later fault would incorrectly jump straight to step 2.
+    {
+        constexpr int kSecondFaultMs = USB_DAC_RECOVERY_COOLDOWN_MS + USB_FEEDBACK_STUCK_MIN_MS;
+        constexpr int kDitherPeriodMs = 50;
+        constexpr double kBlip = kNominal * 1.0025;
+        Writer w(kRate, true);
+        usbDacRecoveryForgetEpisodes();
+        const int64_t t0 = nowUs();
+        const Pcm src = makeNoise(kRate * (kSecondFaultMs / 1000 + 10), 24, 0x48400003u);
+        int next = 0, restarts = 0;
+        setFeedbackScript([&](int64_t atUs) {
+            FeedbackAnswer a;
+            const int64_t ms = (atUs - t0) / 1000;
+            a.fpmf = restarts == 0 || ms >= kSecondFaultMs ? kFrozen :
+                (ms % kDitherPeriodMs == 0 ? kBlip : kNominal);
+            return a;
+        });
+        while (next + kBlock <= src.frames() && nowUs() - t0 < (kSecondFaultMs + USB_FEEDBACK_STUCK_MIN_MS + 1000) * 1000LL) {
+            w.write(src, next, kBlock); next += kBlock;
+            int64_t state[USB_DAC_STATE_COUNT];
+            usbDacLockState(w.ctx, state);
+            if (state[5] == USB_DAC_STEP_INTERFACE || state[5] == USB_DAC_STEP_BUS_RESET) {
+                CHECK(state[5] == USB_DAC_STEP_INTERFACE, "healthy dither failed to close the prior episode");
+                runOneStep(w, src, next, (int)state[5], kBlock, [&] { restarts++; });
+            }
+        }
+        CHECK(restarts == 2, "later frozen episode did not get step 1 after cooldown");
+        printf("B48-fix4 healthy dither closes the episode and later freeze gets step 1 again restarts=%d\n", restarts);
+        setFeedbackScript(nullptr);
+    }
+    // Healthy controls keep polling the policy for minutes at nominal, or across a 3 s start plateau.
+    for (bool plateau : {true, false}) {
+        usbDacRecoveryForgetEpisodes();
+        Writer w(kRate, true);
+        const Pcm block = makeNoise(kBlock, 24, 0x48400002u);
+        const int64_t t0 = nowUs();
+        setFeedbackScript([=](int64_t atUs) {
+            FeedbackAnswer a;
+            a.fpmf = plateau && (atUs - t0) / 1000 < kHealthyPlateauMs ? kHealthyPlateau : kNominal;
+            return a;
+        });
+        while (nowUs() - t0 < (plateau ? kReplayMs : kNominalMs) * 1000LL) {
+            w.write(block, 0, kBlock);
+            int64_t state[USB_DAC_STATE_COUNT];
+            usbDacLockState(w.ctx, state);
+            CHECK(state[0] == 0 && state[5] == USB_DAC_STEP_NONE && !w.ctx->feedbackWatch.stuck,
+                  "healthy %s requested recovery", plateau ? "3 s plateau" : "nominal");
+        }
+        CHECK(feedbackGlitchLines("FEEDBACK_STUCK").empty(), "healthy feedback called stuck");
+        CHECK(g_usb.setInterfaceCalls == 0 && g_usb.resetCalls == 0, "healthy feedback restarted");
+        printf("B48-fix4 healthy %s duration=%lldms no stuck and no recovery\n", plateau ? "+1 percent plateau 3000ms" : "nominal", (long long)((nowUs() - t0) / 1000));
+        setFeedbackScript(nullptr);
+    }
+}
+
 int main(int argc, char **argv) {
     const int policyAtStart = usbFeedbackPolicy();                  // before any test has set one
+#ifndef B48FIX1_BEFORE
+    g_guardWasOnAtProcessStart = usbFeedbackStartGuardEnabled();    // B48-fix1: before any test has touched the switch
+#endif
     const std::string only = argc > 1 ? argv[1] : "";
-    const int rate96 = 96000, rate441 = 44100;
-    TempDir dir;
     Pcm a = makeNoise(kFrames96, 24, 0x1234abcdu), b = makeNoise(kFrames96, 24, 0x9e3779b9u);
     Pcm c = makeNoise(kFrames441, 16, 0x0badf00du);
-    if (!writeFlac(dir.path + "/a.flac", a, rate96, 8192) || !writeFlac(dir.path + "/b.flac", b, rate96, 8192) ||
-        !writeFlac(dir.path + "/c.flac", c, rate441, 4608)) {
-        fprintf(stderr, "could not write the test FLACs\n");
-        return 2;
-    }
-    if (only.empty() || only == "join") testSameRateJoinIsBitExact(a, b, dir.path);
-    if (only.empty() || only == "pause") testPauseStillFades(a, b, dir.path);
-    if (only.empty() || only == "rate") testRateChangeJoin(a, c, dir.path);
+    if (only.empty() || only == "pristine") testPristineFormats();
     if (only.empty() || only == "pipeline") testPipelineEndOfStreamPlaysOut(a, c);
     if (only.empty() || only == "gesture") testPipelineGestures(a, b);
     if (only.empty() || only == "wait") {
-        testWaitModes(dir.path);
-        testSilentPollDoesNotStarve(dir.path);
+        testWaitModes(a);
+        testSilentPollDoesNotStarve(a);
         testWaitTimeouts();
     }
     if (only.empty() || only == "feedback") {
@@ -2682,6 +4526,24 @@ int main(int argc, char **argv) {
     if (only.empty() || only == "feedback" || only == "evidence") testFeedbackEvidenceInTheDump();
     if (only.empty() || only == "output-gap") testOutputGap();
     if (only.empty() || only == "summaries") testStreamSecondSummaries();
+    if (only.empty() || only == "transport") testTransportAssumptions();
+    if (only.empty() || only == "skip") testSkipSilenceFeed();
+    if (only.empty() || only == "recovery") testWriterRecovery();
+    if (only.empty() || only == "lead" || only == "cpu") testWhoHadTheCpu();
+    if (only.empty() || only == "lead") {
+        testLeadSurvivesTheWorstStall();
+        testLeadLatencyOfGestures();
+    }
+    if (only.empty() || only == "resume") testResumePrimesTheRing();
+    if (only.empty() || only == "dac-lock") testLockedDacRecovery();
+    if (only.empty() || only == "auto-early") testAutoEarly();
+    if (only.empty() || only == "startprime") testEveryStartPrimesTheRing();
+    if (only.empty() || only == "startguard") testFeedbackStartGuard();
+    if (only.empty() || only == "train") testTrainFeedback();
+    if (only.empty() || only == "stuck-recovery") testStuckDacRecovery();
+    if (only.empty() || only == "pause-keepalive") testPauseKeepalive();
+    if (only.empty() || only == "pause-seek-keepalive") testPauseSeekKeepalive();
+    if (only.empty() || only == "guard-default") testStartGuardDefaultOff();
     if (g_failures) {
         printf("natural join simulation: %d FAILURE(S)\n", g_failures);
         return 1;

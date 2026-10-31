@@ -123,6 +123,7 @@ struct Feed {
     int64_t now;
     int stuckEvents, unstuckEvents;
     int implausibleStarts;           // streaks of implausible readings (B12a-2)
+    int policy = USB_FEEDBACK_AUTO;  // what the watch is asked under (B46-C2: `auto` unless a test says `auto-early`)
     UsbFeedbackEvent stuck, unstuck, implausible;
     explicit Feed(double nominalFpmf)
         : nominal(nominalFpmf), now(0), stuckEvents(0), unstuckEvents(0), implausibleStarts(0) {
@@ -133,7 +134,7 @@ struct Feed {
     }
     void reading(uint32_t raw) {
         UsbFeedbackEvent ev;
-        usbFeedbackWatchObserve(&w, raw, nominal, now, &ev);
+        usbFeedbackWatchObservePolicy(&w, raw, nominal, now, policy, &ev);
         if (ev.kind == USB_FEEDBACK_EVENT_STUCK) { stuckEvents++; stuck = ev; }
         if (ev.kind == USB_FEEDBACK_EVENT_UNSTUCK) { unstuckEvents++; unstuck = ev; }
         if (ev.implausibleStarted) { implausibleStarts++; implausible = ev; }
@@ -663,7 +664,7 @@ static void expectPolicySwitchDoesNotJump() {
 
 /** Every kind has a name and a log window; the two new ones log at the usual once a second. */
 static void expectNewKindsAreRegistered() {
-    assert(USB_GLITCH_KIND_COUNT == 10);
+    assert(USB_GLITCH_KIND_COUNT == 13);
     assert(USB_GLITCH_FEEDBACK_STUCK == 6 && USB_GLITCH_FEEDBACK_UNSTUCK == 7);
     assert(usbGlitchLogIntervalMs(USB_GLITCH_FEEDBACK_STUCK) == 1000);
     assert(usbGlitchLogIntervalMs(USB_GLITCH_FEEDBACK_UNSTUCK) == 1000);
@@ -728,7 +729,7 @@ struct GapRun {
     void submit(bool announcedIdle = false) {
         UsbOutputGap g;
         memset(&g, 0, sizeof(g));
-        if (usbOutputGapSubmit(&w, announcedIdle, now, kUrbUs, &g)) {
+        if (usbOutputGapSubmit(&w, announcedIdle, now, kUrbUs, 0, &g)) {
             if (found++ == 0) first = g;
         }
     }
@@ -859,6 +860,191 @@ static void expectAnAnnouncedIdleIsNotAGap() {
     assert(r.found == 1);
 }
 
+/**
+ * B46-B1: an announced idle restarts the model from what the ring still holds, not from nothing. The first silence URB after a
+ * pause's fade-out is such an idle while the ring holds ~40-76 ms more; restarted from zero, the model took any stall of 2 ms or more
+ * for a dry bus (`lead=1 ms dry=gap-1`), seven times in the owner's session of 2026-10-29.
+ */
+static void expectAnAnnouncedIdleKeepsTheRingsRealLead() {
+    const int64_t kRingLeadUs = 40000;   // what the ring still holds when the silence begins
+    // (a) restarted from what the ring holds: a writer stalled 30 ms is not a gap, one stalled 45 ms is a gap of 5 ms
+    {
+        GapRun r;
+        r.fill();
+        r.steady(30);
+        UsbOutputGap g;
+        memset(&g, 0, sizeof(g));
+        assert(!usbOutputGapSubmit(&r.w, true, r.now, kUrbUs, kRingLeadUs, &g));   // the announced idle itself is never a gap
+        r.now += 30000;
+        assert(!usbOutputGapSubmit(&r.w, false, r.now, kUrbUs, 0, &g));             // 30 ms later: 11 ms of lead left
+        // the bus plays out 40 ms (the ring) + 1 ms (the first URB) + 1 ms (the second) from the idle; 55 ms later it is 85 ms in
+        r.now += 55000;
+        assert(usbOutputGapSubmit(&r.w, false, r.now, kUrbUs, 0, &g));
+        assert(g.leadUs == 12000 && g.dryUs == 43000 && g.gapUs == 55000);          // the lead it ran out of is the ring's, not 1 ms
+    }
+    // (b) the same stall against a model restarted from zero (what HEAD did) is reported as dry from the first millisecond
+    {
+        GapRun r;
+        r.fill();
+        r.steady(30);
+        UsbOutputGap g;
+        memset(&g, 0, sizeof(g));
+        assert(!usbOutputGapSubmit(&r.w, true, r.now, kUrbUs, 0, &g));
+        r.now += 30000;
+        assert(usbOutputGapSubmit(&r.w, false, r.now, kUrbUs, 0, &g));
+        assert(g.leadUs == kUrbUs && g.dryUs == 30000 - kUrbUs);                    // lead=1 ms dry=29 ms
+    }
+    // (c) a 30 ms stall against the ring's real 40 ms: nothing to report
+    {
+        GapRun r;
+        r.fill();
+        r.steady(30);
+        UsbOutputGap g;
+        memset(&g, 0, sizeof(g));
+        assert(!usbOutputGapSubmit(&r.w, true, r.now, kUrbUs, kRingLeadUs, &g));
+        r.now += 30000;
+        assert(!usbOutputGapSubmit(&r.w, false, r.now, kUrbUs, 0, &g));
+    }
+    // (d) a start has nothing queued: queuedLeadUs 0 and a negative value restart exactly as before
+    {
+        GapRun r;
+        UsbOutputGap g;
+        memset(&g, 0, sizeof(g));
+        assert(!usbOutputGapSubmit(&r.w, true, 1000, kUrbUs, -5, &g));
+        assert(r.w.playoutEndUs == 1000 + kUrbUs);
+    }
+}
+
+// ── B46-C: `auto-early` ────────────────────────────────────────────────────────────────────────────
+
+static void expectAutoEarlyIsAnOptInPolicyNextToAuto() {
+    assert(USB_FEEDBACK_AUTO == 3 && USB_FEEDBACK_AUTO_EARLY == 4 && USB_FEEDBACK_POLICY_COUNT == 5);
+    assert(strcmp(usbFeedbackPolicyName(USB_FEEDBACK_AUTO), "auto") == 0);
+    assert(strcmp(usbFeedbackPolicyName(USB_FEEDBACK_AUTO_EARLY), "auto-early") == 0);
+    assert(usbFeedbackPolicyRefuses(USB_FEEDBACK_AUTO) && usbFeedbackPolicyRefuses(USB_FEEDBACK_AUTO_EARLY));
+    assert(!usbFeedbackPolicyRefuses(USB_FEEDBACK_FOLLOW) && !usbFeedbackPolicyRefuses(USB_FEEDBACK_NOMINAL) && !usbFeedbackPolicyRefuses(USB_FEEDBACK_CLAMP));
+    // `auto` is exactly what it was: 5 s whatever the offset. Only `auto-early` and only from 0.5 % up is quicker.
+    static const double kOffsets[] = {-20000.0, -8000.0, -600.0, 600.0, 4999.0, 8000.0, 20000.0};
+    for (double ppm : kOffsets) {
+        assert(usbFeedbackStuckHoldMs(USB_FEEDBACK_AUTO, ppm) == USB_FEEDBACK_STUCK_MIN_MS);
+        assert(usbFeedbackStuckHoldMs(USB_FEEDBACK_FOLLOW, ppm) == USB_FEEDBACK_STUCK_MIN_MS);
+        const bool big = ppm >= USB_FEEDBACK_EARLY_MIN_PPM || ppm <= -USB_FEEDBACK_EARLY_MIN_PPM;
+        assert(usbFeedbackStuckHoldMs(USB_FEEDBACK_AUTO_EARLY, ppm) == (big ? USB_FEEDBACK_EARLY_STUCK_MS : USB_FEEDBACK_STUCK_MIN_MS));
+    }
+    // 500 ms of margin over the longest legitimate transient on record (3.0 s), and under `auto`'s 5 s
+    assert(USB_FEEDBACK_EARLY_STUCK_MS >= 3000 + 500 && USB_FEEDBACK_EARLY_STUCK_MS < USB_FEEDBACK_STUCK_MIN_MS);
+}
+
+/** One scenario run under both policies, in lockstep, one reading a millisecond; returns the frames above nominal each sent. */
+struct EarlyRun {
+    double autoExcess = 0.0, earlyExcess = 0.0;       // (sent - nominal) frames per microframe, summed over the milliseconds; x 8 microframes = frames above nominal
+    int64_t autoStuckAtMs = -1, earlyStuckAtMs = -1;  // when each called the plateau stuck (-1: never)
+    bool earlyNeverFartherFromNominal = true;         // at every millisecond, auto-early's rate is nominal-ward of auto's or equal
+    bool earlyWithinWindow = true;                    // and always inside the +-5 % window
+};
+
+static EarlyRun runBoth(double nominal, double plateauFpmf, int64_t plateauFromMs, int64_t plateauToMs, int64_t totalMs) {
+    Feed a(nominal), e(nominal);
+    e.policy = USB_FEEDBACK_AUTO_EARLY;
+    EarlyRun r;
+    for (int64_t t = 0; t < totalMs; t++) {
+        const uint32_t raw = rawOf(t >= plateauFromMs && t < plateauToMs ? plateauFpmf : nominal);
+        a.reading(raw);
+        e.reading(raw);
+        a.now++;
+        e.now++;
+        if (r.autoStuckAtMs < 0 && a.w.stuck) r.autoStuckAtMs = t;
+        if (r.earlyStuckAtMs < 0 && e.w.stuck) r.earlyStuckAtMs = t;
+        // What each sends for the next block: the last reading (followFpmf) through the policy, as the writer asks it.
+        const double followed = raw / 65536.0;
+        const double sentAuto = usbFeedbackPolicyFpmf(USB_FEEDBACK_AUTO, followed, nominal, &a.w);
+        const double sentEarly = usbFeedbackPolicyFpmf(USB_FEEDBACK_AUTO_EARLY, followed, nominal, &e.w);
+        r.autoExcess += sentAuto - nominal;
+        r.earlyExcess += sentEarly - nominal;
+        if (fabs(sentEarly - nominal) > fabs(sentAuto - nominal) + 1e-12) r.earlyNeverFartherFromNominal = false;
+        if (fabs(sentEarly / nominal - 1.0) > 0.05 + 1e-12) r.earlyWithinWindow = false;
+    }
+    return r;
+}
+
+static void expectAutoEarlyLetsGoSoonerAndKeepsFollowingATransient() {
+    // frames above nominal per millisecond = (fpmf - nominal) x 8 microframes; the sum over the run is the surplus the packetizer was handed
+    const double kMicroframesPerMs = 8.0;
+    struct Case { const char *name; double nominal; double plateau; };
+    // The replayed plateaus of analysis/audio-investigation-2026-10-25/code-study/policy-window-results.jsonl
+    const Case shakira = {"Shakira 44.1 kHz", 44100 / 8000.0, 5.55749512};
+    const Case crimen = {"Crimen 48 kHz", 48000 / 8000.0, 6.04992676};
+    const Case replayed[] = {shakira, crimen};
+    for (const Case &c : replayed) {
+        // the plateau begins 0.2 s after the stream starts (the four plateaus on record: 0.16-0.21 s), and stays
+        const EarlyRun r = runBoth(c.nominal, c.plateau, 200, 1000000, 10000);
+        const double autoFrames = r.autoExcess * kMicroframesPerMs, earlyFrames = r.earlyExcess * kMicroframesPerMs;
+        printf("auto-early %-18s plateau %.8f: auto stuck at %lld ms (%.0f frames above nominal), auto-early at %lld ms (%.0f frames)\n", c.name, c.plateau,
+               (long long)r.autoStuckAtMs, autoFrames, (long long)r.earlyStuckAtMs, earlyFrames);
+        assert(r.autoStuckAtMs == 200 + USB_FEEDBACK_STUCK_MIN_MS);              // the run is 5 s old: the reading before the 5001st is the 5000th
+        assert(r.earlyStuckAtMs == 200 + USB_FEEDBACK_EARLY_STUCK_MS);
+        assert(r.earlyNeverFartherFromNominal && r.earlyWithinWindow);
+        assert(earlyFrames < autoFrames * 0.75 && earlyFrames > autoFrames * 0.60);   // 3.5 s of the 5: a good deal less
+    }
+    {   // the legitimate +1 % start transient of 2026-10-06 (5.5674, +0.996 %): 3 s, then nominal. Followed all the way, by both.
+        const double nominal = 44100 / 8000.0;
+        const EarlyRun r = runBoth(nominal, 5.5674, 200, 3200, 10000);
+        assert(r.autoStuckAtMs < 0 && r.earlyStuckAtMs < 0);
+        assert(r.earlyExcess == r.autoExcess);                                  // the same surplus, to the bit: not one reading was refused
+        assert(fabs(r.earlyExcess * kMicroframesPerMs - 3000 * (5.5674 - nominal) * kMicroframesPerMs) < 1.0);   // all of it followed: ~1 317 frames
+    }
+    {   // up to the margin: a transient of 3.4 s is still followed, one of 3.6 s is called stuck at 3.5 s
+        const double nominal = 6.0;
+        EarlyRun shortRun = runBoth(nominal, 6.06, 200, 3600, 10000);          // 3.4 s
+        assert(shortRun.earlyStuckAtMs < 0 && shortRun.earlyExcess == shortRun.autoExcess);
+        EarlyRun longRun = runBoth(nominal, 6.06, 200, 3800, 10000);           // 3.6 s
+        assert(longRun.earlyStuckAtMs == 200 + USB_FEEDBACK_EARLY_STUCK_MS && longRun.autoStuckAtMs < 0);
+        assert(longRun.earlyExcess < longRun.autoExcess);
+    }
+    {   // a small plateau (+0.165 %, Hollywood 48 kHz, 6.0099) is below the early threshold: judged exactly as auto judges it, at 5 s
+        const EarlyRun r = runBoth(6.0, 6.0099, 200, 1000000, 10000);
+        assert(r.autoStuckAtMs == 200 + USB_FEEDBACK_STUCK_MIN_MS && r.earlyStuckAtMs == r.autoStuckAtMs && r.earlyExcess == r.autoExcess);
+    }
+    {   // Miko's +407 ppm (96 kHz, 12.00488281) is below the stuck threshold for both: followed, never stuck
+        const EarlyRun r = runBoth(12.0, 12.00488281, 200, 1000000, 10000);
+        assert(r.autoStuckAtMs < 0 && r.earlyStuckAtMs < 0 && r.earlyExcess == r.autoExcess);
+    }
+    {   // American Money, +4.99 % (5.7875 at 44.1 kHz): inside the window but absurd; refused from the first reading by both, as today
+        const double nominal = 44100 / 8000.0;
+        Feed e(nominal), a(nominal);
+        e.policy = USB_FEEDBACK_AUTO_EARLY;
+        e.reading(rawOf(5.7875));
+        a.reading(rawOf(5.7875));
+        assert(e.implausibleStarts == 1 && a.implausibleStarts == 1 && e.w.implausible && a.w.implausible);
+        assert(usbFeedbackPolicyFpmf(USB_FEEDBACK_AUTO_EARLY, 5.7875, nominal, &e.w) == usbFeedbackPolicyFpmf(USB_FEEDBACK_AUTO, 5.7875, nominal, &a.w));
+        assert(usbFeedbackPolicyFpmf(USB_FEEDBACK_AUTO_EARLY, 5.7875, nominal, &e.w) == nominal);
+    }
+}
+
+static void expectAutoEarlyNeverHoldsAHealthyDac() {
+    // A healthy DAC: its nominal, the +0.27 % blip (one reading, ~1 in 50), now and then the +0.54 % one, for a minute.
+    const double nominal = 6.0;
+    Feed a(nominal), e(nominal);
+    e.policy = USB_FEEDBACK_AUTO_EARLY;
+    for (int64_t t = 0; t < 60000; t++) {
+        double fpmf = nominal;
+        if (t % 50 == 7) fpmf = nominal * 1.0027;
+        if (t % 997 == 3) fpmf = nominal * 1.0054;
+        a.reading(rawOf(fpmf));
+        e.reading(rawOf(fpmf));
+        a.now++;
+        e.now++;
+        assert(!e.w.stuck && !e.w.implausible);
+        assert(usbFeedbackPolicyFpmf(USB_FEEDBACK_AUTO_EARLY, fpmf, nominal, &e.w) == fpmf);   // followed, every one of them
+    }
+    assert(e.stuckEvents == 0 && e.implausibleStarts == 0 && a.stuckEvents == 0);
+    // Several seconds of one value AT nominal is healthy too (12.0000 for 152 s at 96 kHz in the log)
+    Feed n(12.0);
+    n.policy = USB_FEEDBACK_AUTO_EARLY;
+    n.run(rawOf(12.0), 20000);
+    assert(n.stuckEvents == 0);
+}
+
 static void expectTheGapSaysWhereTheTimeWent() {
     UsbOutputGap g;
     memset(&g, 0, sizeof(g));
@@ -966,7 +1152,244 @@ static void expectTheDeltaSaysSleptFromRunnable() {
     assert(!usbSchedDelta(&b, &asleep, 500000).valid);              // a clock that went back
 }
 
+// ── B47-A4: a refusal falls back to what the DAC said BEFORE the excursion ───────────────────────────────────────────────────────────
+//
+// 2026-10-29 17:32:33.841 and 17:35:25.833: `FEEDBACK_REJECTED ... kept=5.6224 sending=5.5974` and `kept=5.4025 sending=5.4125`, read as a fallback taken from
+// the excursion's own first readings (+1.5 %, -1.8 %). They are not: `kept` is the last reading the follower took and `sending` is what the packetizer was given
+// BEFORE the refusal (the ramp it had been following); the fallback is what `healthyOrNominal` makes of the average, and it is within 500 ppm of nominal by its gate.
+// What was real is that a run inside the healthy band (up to +-0.5 %) was folded into that average the moment it ended, the excursion's first readings among
+// them: a slow onset (300 ms at +0.3 % before the ramp) moved the fallback from +68 ppm to ~+200 ppm. Folds now wait USB_FEEDBACK_HEALTHY_SETTLE_MS and a refusal
+// drops those that have not settled.
+
+/** A healthy DAC for [ms]: nominal, a +0.27 % blip of one reading every 40 (the Melody's dither). */
+static void healthyFor(Feed &f, int64_t ms) {
+    for (int64_t i = 0; i < ms; i++) {
+        f.reading(rawOf(i % 40 == 39 ? f.nominal * 1.0027 : f.nominal));
+        f.now += 1;
+    }
+}
+
+/** What `auto` sends right now (the follower is the last reading, as it is when nothing is refused). */
+static double sentNow(const Feed &f, double followFpmf) {
+    return usbFeedbackPolicyFpmf(USB_FEEDBACK_AUTO, followFpmf, f.nominal, &f.w);
+}
+
+/** The settled history of the excursion run is up to ~0.5 s of healthy readings longer than the reference's: a few ppm apart, against ~150 ppm of contamination. */
+static const double kSettledPpm = 8.0;
+
+static void expectARefusalFallsBackToBeforeTheExcursion() {
+    const double nominal = 44100.0 / 8000.0;
+    // Reference: the same healthy stretch, then an absurd reading at once: the fallback from a clean history.
+    Feed clean(nominal);
+    healthyFor(clean, 12000);
+    clean.reading(rawOf(nominal * 1.0208));
+    assert(clean.w.implausible);
+    const double reference = sentNow(clean, nominal * 1.0208);
+    const double referencePpm = usbFeedbackPpm(reference, nominal);
+    printf("A4 reference: the fallback of a clean 12 s history is %.4f fpmf (%+.0f ppm from nominal)\n", reference, referencePpm);
+
+    // (1) a slow onset: 300 ms at +0.30 % (inside the healthy band, so each run is folded when it ends), then the ramp, then the rail.
+    {
+        Feed f(nominal);
+        healthyFor(f, 12000);
+        f.run(rawOf(nominal * 1.0030), 300);
+        f.run(rawOf(nominal * 1.0100), 60);
+        f.run(rawOf(nominal * 1.0190), 60);
+        f.reading(rawOf(nominal * 1.0208));
+        f.now += 1;
+        assert(f.w.implausible && f.implausible.implausibleWhy == USB_FEEDBACK_IMPLAUSIBLE_ABSURD);
+        const double after = sentNow(f, nominal * 1.0208);
+        printf("A4 slow onset (300 ms at +0.30 %% then +1.0, +1.9, +2.08 %%): after the refusal auto sends %.6f (%+.0f ppm); the clean history gives %.6f (%+.0f ppm)\n",
+               after, usbFeedbackPpm(after, nominal), reference, referencePpm);
+        assert(fabs(usbFeedbackPpm(after, nominal) - referencePpm) < kSettledPpm);    // the pre-excursion value (to the settled window)
+        assert(fabs(usbFeedbackPpm(after, nominal)) <= fabs(referencePpm) + kSettledPpm);   // never further from nominal than it
+        f.run(rawOf(nominal * 1.0499), 3000);                                         // the rail: nothing changes
+        assert(fabs(usbFeedbackPpm(sentNow(f, nominal * 1.0499), nominal) - referencePpm) < kSettledPpm);
+    }
+    // (2) the shape of the log: nominal, a ramp of five readings, the +4.99 % rail; and the mirror, -5 %.
+    for (int sign = 1; sign >= -1; sign -= 2) {
+        Feed f(nominal);
+        healthyFor(f, 12000);
+        static const double kRamp[] = {0.0027, 0.0090, 0.0145, 0.0190};   // %: the readings the line showed (+0.27, +1.45, +1.9) and between
+        double lastSent = nominal;
+        double framesAbove = 0.0;
+        int64_t rampStartMs = f.now;
+        for (double step : kRamp) {
+            const double fpmf = nominal * (1.0 + sign * step);
+            for (int i = 0; i < 70; i++) {
+                f.reading(rawOf(fpmf));
+                lastSent = sentNow(f, fpmf);
+                framesAbove += 8.0 * (lastSent - nominal);   // 8 microframes a ms, each (sent - nominal) frames over (an upper bound: the writer reads the rate per block)
+                f.now += 1;
+            }
+        }
+        const int64_t beforeRefusalMs = f.now - rampStartMs;
+        const double sentJustBefore = lastSent;
+        f.reading(rawOf(nominal * (1.0 + sign * 0.0208)));
+        f.now += 1;
+        assert(f.w.implausible);
+        const double after = sentNow(f, nominal * (1.0 + sign * 0.0208));
+        printf("A4 %s ramp: followed for %lld ms (up to %+.2f %%), frames scheduled above nominal while following %+.0f; after the refusal auto sends %+.0f ppm "
+               "(the clean history: %+.0f ppm); the line's ramp=%lldms\n",
+               sign > 0 ? "+" : "-", (long long)beforeRefusalMs, usbFeedbackPpm(sentJustBefore, nominal) / 1e4, framesAbove,
+               usbFeedbackPpm(after, nominal), referencePpm, (long long)f.implausible.implausibleRampMs);
+        assert(fabs(usbFeedbackPpm(after, nominal) - referencePpm) < kSettledPpm);
+        assert(fabs(usbFeedbackPpm(after, nominal)) <= fabs(referencePpm) + kSettledPpm);
+        f.run(rawOf(nominal * (1.0 + sign * 0.0499)), 3000);
+        assert(fabs(usbFeedbackPpm(sentNow(f, nominal * (1.0 + sign * 0.0499)), nominal) - referencePpm) < kSettledPpm);
+        assert(f.implausible.implausibleRampMs > 0);   // the line can say how long the feedback had been out of the band
+    }
+    // (3) a healthy DAC never refuses, so the settle changes nothing for it: what `auto` sends is the follower, reading for reading
+    {
+        Feed f(nominal);
+        for (int64_t i = 0; i < 30000; i++) {
+            const double fpmf = i % 40 == 39 ? nominal * 1.0027 : nominal;
+            f.reading(rawOf(fpmf));
+            assert(!f.w.implausible && !f.w.stuck);
+            assert(sentNow(f, fpmf) == fpmf);
+            f.now += 1;
+        }
+    }
+    // (4) the fresh folds are bounded and settle: 100 short runs inside one second never overflow the table
+    {
+        Feed f(nominal);
+        for (int64_t i = 0; i < 4000; i++) {
+            f.reading(rawOf(i % 2 ? nominal : nominal * 1.0010));   // a new run every reading
+            f.now += 1;
+            assert(f.w.freshCount <= USB_FEEDBACK_FRESH_CAPACITY);
+        }
+        f.idle(3000);
+        f.reading(rawOf(nominal));
+        assert(f.w.freshCount <= 1);   // everything older than the settle time is in the average
+    }
+}
+
+// ── B47-A5: the lock-up detector ───────────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// It must fire on 2026-10-29's rail (and on 2026-10-25's), after USB_DAC_LOCK_RAIL_MS, and on nothing a healthy Melody does.
+
+struct LockFeed {
+    UsbDacLockWatch w;
+    double nominal;
+    int64_t now = 0;
+    int fires = 0;
+    int64_t firedAtMs = -1;
+    UsbDacLockEvent last;
+    explicit LockFeed(double nominalFpmf) : nominal(nominalFpmf) {
+        usbDacLockReset(&w);
+        memset(&last, 0, sizeof(last));
+    }
+    void reading(double fpmf) {
+        UsbDacLockEvent ev;
+        if (usbDacLockObserve(&w, usbFeedbackPpm(fpmf, nominal), now, &ev)) {
+            fires++;
+            firedAtMs = now;
+            last = ev;
+        }
+    }
+    void run(double fpmf, int64_t ms) {
+        for (int64_t i = 0; i < ms; i++) { reading(fpmf); now += 1; }
+    }
+};
+
+static void expectTheLockDetectorFiresOnARailAndOnNothingElse() {
+    const double n441 = 44100.0 / 8000.0;
+    // the rail of 17:32:34: 5.7875 (+4.99 %), constant; fires once, 1500 ms in, with the numbers the line needs
+    {
+        LockFeed f(n441);
+        f.run(n441, 5000);                          // a healthy start
+        const int64_t railFrom = f.now;
+        f.run(5.7875, USB_DAC_LOCK_RAIL_MS);        // 1 500 readings, the last one 1 499 ms after the first: not yet
+        assert(f.fires == 0);
+        f.run(5.7875, 1);
+        assert(f.fires == 1 && f.firedAtMs - railFrom == USB_DAC_LOCK_RAIL_MS);
+        assert(f.last.railedMs == USB_DAC_LOCK_RAIL_MS && f.last.readings == USB_DAC_LOCK_RAIL_MS + 1 && f.last.ppm > 49000.0);
+        usbDacLockLateReap(&f.w);
+        usbDacLockLateReap(&f.w);
+        f.run(5.7875, 180000);                      // three more minutes of the rail: still one fire
+        assert(f.fires == 1 && f.w.locked && f.w.lateReaps == 2);
+        // the flip to -5 % (5.2374) is the same run
+        f.run(5.2374, 5000);
+        assert(f.fires == 1 && f.w.locked);
+        assert(usbDacLockRailedMs(&f.w, f.now) > 180000);
+        // a reading that is a clock's again ends it, and a new rail fires again
+        f.reading(n441);
+        f.now += 1;
+        assert(!f.w.locked && !f.w.inRun && usbDacLockRailedMs(&f.w, f.now) == 0);
+        f.run(5.7875, 2000);
+        assert(f.fires == 2);
+    }
+    {   // the mirror alone, and the 10-25 pair of values: 5.6274 / 5.7875 then 5.3975 / 5.2374 (the first two are not rails, the others are)
+        LockFeed f(n441);
+        f.run(5.6274, 5000);                        // +2.09 %: refused by `auto`, but not a rail
+        assert(f.fires == 0);
+        f.run(5.2374, 1600);
+        assert(f.fires == 1 && f.last.ppm < -49000.0);
+    }
+    // never on the healthy Melody's shapes
+    {   LockFeed f(n441); f.run(n441, 2000); f.run(5.5674, 3000); f.run(n441, 2000); assert(f.fires == 0); }          // 10-06: +0.996 % for 3 s
+    {   LockFeed f(48000.0 / 8000.0); f.run(6.0499, 9000); assert(f.fires == 0); }                                     // Crimen: +0.832 % for 9 s
+    {   LockFeed f(n441); f.run(5.5575, 416000); assert(f.fires == 0); }                                               // Ciega, Sordomuda: +0.816 % for 416 s
+    {   LockFeed f(96000.0 / 8000.0); f.run(12.0 * (1.0 + 407e-6), 600000); assert(f.fires == 0); }                    // Miko: +407 ppm
+    {   // one-reading blips, the largest seen (+1.904 %, +1.45 %) among the usual +0.27 %, a hundred a second, for a minute
+        LockFeed f(n441);
+        for (int64_t i = 0; i < 60000; i++) {
+            const double fpmf = i % 25 == 0 ? n441 * 1.0190 : i % 10 == 0 ? n441 * 1.0145 : i % 3 == 0 ? n441 * 1.0027 : n441;
+            f.reading(fpmf);
+            f.now += 1;
+        }
+        assert(f.fires == 0);
+    }
+    {   // even a rail of one reading in ten, or a run of 1 400 ms, is not a lock-up
+        LockFeed f(n441);
+        for (int64_t i = 0; i < 20000; i++) { f.reading(i % 10 == 0 ? 5.7875 : n441); f.now += 1; }
+        assert(f.fires == 0);
+        f.run(5.7875, 1400);
+        f.reading(n441);
+        f.now += 1;
+        f.run(5.7875, 1400);
+        assert(f.fires == 0);                       // each run is under the time, and a clock's reading between them ends the first
+    }
+    {   // a pause between two readings (no one reaps the endpoint) starts the count over
+        LockFeed f(n441);
+        f.run(5.7875, 1000);
+        f.now += 1000;                               // 1 s without readings
+        f.run(5.7875, 1000);
+        assert(f.fires == 0);
+        f.run(5.7875, 600);
+        assert(f.fires == 1);
+    }
+    {   // late completions only count inside a run
+        LockFeed f(n441);
+        usbDacLockLateReap(&f.w);
+        assert(f.w.lateReaps == 0);
+        f.run(5.7875, 10);
+        usbDacLockLateReap(&f.w);
+        assert(f.w.lateReaps == 1);
+    }
+    printf("A5 detector: fires %d ms into a rail beyond +-%.1f %% (+4.99 %% and -5 %% alike), once per run; silent on the 10-06 +1 %% / 3 s plateau, Crimen +0.83 %%, "
+           "Ciega +0.82 %% for 416 s, Miko +407 ppm, one-reading blips up to +1.9 %%, runs of 1 400 ms, and a pause in the readings\n",
+           USB_DAC_LOCK_RAIL_MS, USB_DAC_LOCK_RAIL_PPM / 1e4);
+}
+
+/** B47-A1: only a writer that sat 20 ms or more in the run queue earns the extra line. */
+static void expectTheCpuLineIsForARealStall() {
+    UsbSchedDelta d = {true, 0, 82000, 94000};   // 2026-10-29 17:32:33: runq=82 ms cpu=0 ms over=94 ms
+    assert(usbGapWantsCpuLine(&d));
+    d.runqUs = USB_GAP_CPU_MIN_RUNQ_US;
+    assert(usbGapWantsCpuLine(&d));
+    d.runqUs = USB_GAP_CPU_MIN_RUNQ_US - 1;
+    assert(!usbGapWantsCpuLine(&d));
+    d.runqUs = 12000;                            // the session's worst ordinary stall
+    assert(!usbGapWantsCpuLine(&d));
+    d.valid = false;
+    d.runqUs = 82000;
+    assert(!usbGapWantsCpuLine(&d));             // no counters, no claim
+    assert(usbGlitchLogIntervalMs(USB_GLITCH_OUTPUT_GAP_CPU) == 1000);   // rate limited like the others
+}
+
 int main() {
+    expectTheCpuLineIsForARealStall();
     expectSchedstatIsParsedStrictly();
     expectTheBaselineIsRefreshedAtMostEveryTenMilliseconds();
     expectTheDeltaSaysSleptFromRunnable();
@@ -981,6 +1404,10 @@ int main() {
     expectShortHolesWithReplenishmentAreQuiet();
     expectTheLeadIsTheLimit();
     expectAnAnnouncedIdleIsNotAGap();
+    expectAnAnnouncedIdleKeepsTheRingsRealLead();
+    expectAutoEarlyIsAnOptInPolicyNextToAuto();
+    expectAutoEarlyLetsGoSoonerAndKeepsFollowingATransient();
+    expectAutoEarlyNeverHoldsAHealthyDac();
     expectTheGapSaysWhereTheTimeWent();
     expectOutputGapsAreRateLimitedLikeTheOthers();
     expectStuckEpisodesFromTheDeviceFire();
@@ -997,6 +1424,8 @@ int main() {
     expectPlausibleReadingsAreStillFollowed();
     expectImplausibleStretchesAreNotTaughtToTheAverage();
     expectAutoKeepsUpAfterStart();
+    expectARefusalFallsBackToBeforeTheExcursion();
+    expectTheLockDetectorFiresOnARailAndOnNothingElse();
     printf("usb glitch tests: PASS\n");
     return 0;
 }

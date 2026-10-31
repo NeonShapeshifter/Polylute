@@ -159,15 +159,15 @@ class B43Fix1DeletedDownloadsTest {
         }
     }
     private fun about(language: String) = """{"text":"Description","title":"Album","language":"$language","pageUrl":"https://en.wikipedia.org/wiki/Album"}"""
-    private fun downloads(info: MusicInfoRepository, lyrics: LyricsRepositoryImpl, songs: List<Song>): OfflineDownloads {
+    private fun downloads(info: MusicInfoRepository, lyrics: LyricsRepositoryImpl, songs: List<Song>): LegacyOfflineDownloads {
         val music = mockk<MusicRepository>(relaxed = true)
         coEvery { music.getAllSongsOnce() } returns songs
         every { music.getSongsByIds(any()) } answers { flowOf(songs.filter { it.id in firstArg<List<String>>() }) }
         mockkObject(WorkManager.Companion)
         every { WorkManager.getInstance(any<Context>()) } returns mockk(relaxed = true)
-        return OfflineDownloads(context(), music, scope(), mockk<LedgerProvider>(relaxed = true), info, lyrics)
+        return LegacyOfflineDownloads(context(), music, scope(), mockk<LedgerProvider>(relaxed = true), info, lyrics)
     }
-    private suspend fun runJob(downloads: OfflineDownloads, info: MusicInfoRepository, lyrics: LyricsRepositoryImpl, songs: List<Song>) {
+    private suspend fun runJob(downloads: LegacyOfflineDownloads, info: MusicInfoRepository, lyrics: LyricsRepositoryImpl, songs: List<Song>) {
         val id = downloads.state.value!!.id
         val params = mockk<WorkerParameters>(relaxed = true) {
             every { inputData } returns workDataOf("batch" to id)
@@ -175,7 +175,7 @@ class B43Fix1DeletedDownloadsTest {
         }
         val music = mockk<MusicRepository>(relaxed = true)
         every { music.getSongsByIds(any()) } answers { flowOf(songs.filter { it.id in firstArg<List<String>>() }) }
-        OfflineDownloadWorker(context(), params, downloads, music, lyrics, info, dao).doWork()
+        LegacyOfflineDownloadWorker(context(), params, downloads, music, lyrics, info, dao).doWork()
     }
     private suspend fun settle() {
         withTimeout(20_000) {

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0
+
+The 1.2 release is about USB DACs: Purity is steadier, and Polylute now notices when a DAC gets stuck and brings it back by itself.
+
+- **USB DAC stability.** Purity has one playback path: the old second FLAC player is gone. The USB output keeps a deeper buffer, measured in time, and loading a big queue (shuffle all on thousands of songs) no longer starves it. Every start of audio (a new song, a change of sample rate, a resume) begins with a short, exact cushion of silence, so the DAC is never fed an empty first moment. During a short pause or a skip, Polylute keeps the DAC fed with silence for up to two seconds instead of letting it run dry.
+- **A DAC that gets stuck comes back on its own.** Some DACs (the Snowsky Melody among them) can lock their clock feedback far off, or freeze it on one value, which you hear as a "shh". Polylute now watches every feedback reading, including the absurd ones, and when the feedback is locked or frozen it restarts the DAC's audio interface: a short fade, a gap, and the song carries on at the same position, at the same volume. If that is not enough it tries a bus reset once, then stops trying. Recovery, sample-rate changes, hand-back and unplug never touch the DAC at the same time.
+- **Bit-perfect is unchanged.** All of this changes only how many samples go in each USB packet, never their values. The silence before audio and during pauses is not counted as music, so the position never jumps.
+- **"Mark noise now"** (Maintenance) keeps the last 30 seconds of what the DAC reported and what Polylute sent, with every rejected reading and recovery step, even when Android's own log has dropped them. Attach it to a bug report.
+- **Music info.** The downloader is one screen: Find → Choose → Download, no default selections, a saved catalog that opens immediately, artist/album search and one resumable queue. Saved items can be selected and deleted there. Existing downloads stay; unfinished 1.1.1 jobs are discarded so you can choose again. Artist lists no longer fetch every missing photo: photos load for the song playing or the artist page you open.
+- **Genres.** Pick, change or remove your own image for a genre; it shows in the genre list, the grid and the genre page, and stays in your backup. Without an image, a genre shows its initial again.
+- **Shuffle.** Album, artist and genre Shuffle randomize whole blocks while keeping each page's song order. Shared songs play once by default; a Behaviour switch can repeat them in every artist or genre block. Repeat is on the left and Shuffle on the right in the player and the DAP lock screen.
+- **Player.** Bookmark and heart sit on the title row; a long title scrolls, and the artist · album line uses the space it has, with a link to the album. An Appearance switch hides the bookmark. Covers span the screen without lyrics and grow to the space left with lyrics. After a skip from the notification, lock screen or media keys, the cover follows the song.
+- **Library and lyrics.** Songs and albums appear right after you add your first folders, without restarting. New installations prefer local lyrics and scan `.lrc` files automatically; online lyrics stay off by default.
+- **Android 10.** Polylute installs and runs on Android 10, including legacy file access and removable storage. Because of this, Android 11 and later ask once more for music access after updating.
+- The package installer shows "Polylute" right after an update.
+
+### Known issues
+- On phones with aggressive battery managers (HONOR, Huawei, Xiaomi and similar), Polylute used as a normal app (not DAP mode) can be frozen when the screen turns off, which stops USB playback. Until a fix lands, exclude Polylute from battery optimisation (on HONOR: Battery → App launch → Polylute → manage manually, allow running in background).
+
 ## 1.1.1
 
 - **Library stability.** Large or corrupt lyrics no longer break a whole-library read. Invalid text is removed from the database without changing music files or local lyrics files.

@@ -36,7 +36,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.stats.ListeningClock
@@ -450,5 +449,3 @@ internal fun ValueLine(label: String, value: String, modifier: Modifier = Modifi
         com.lostf1sh.pixelplayeross.ui.ds.DapValue(text = value)
     }
 }
-
-internal val StatsGroupGap: Dp = DapSpacing.SectionGap

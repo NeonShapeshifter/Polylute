@@ -10,7 +10,6 @@ import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqPreGainSenseSwitch
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqWriteSwitch
 import com.lostf1sh.pixelplayeross.data.dac.fiio.PreGainSense
-import com.lostf1sh.pixelplayeross.data.service.player.NativeEngineDebugSwitch
 import com.lostf1sh.pixelplayeross.data.service.player.RateSwitchPrerollSetting
 import com.lostf1sh.pixelplayeross.presentation.settings.MaintenanceToolsPolicy
 import java.io.File
@@ -30,7 +29,7 @@ import org.robolectric.annotation.Config
  * - the debug source set's classes (the `SET_*` receiver, the capture and the DAC EQ commands, the button-sheet activity) are not in the release;
  * - B39-S2: the one exception is the noise mark ("Marcar ruido ahora"), which is in the main source set and in every build;
  * - the test crash row is not offered, and the persisted
- *   debug switches (the DAC EQ write override, the forced native engine, the rate-switch preroll, the pre-gain sense) ignore what is stored
+ *   debug switches (the DAC EQ write override, the rate-switch preroll, the pre-gain sense) ignore what is stored
  *   in their files and refuse to be set.
  *
  * What the release *artifact* contains is a separate check, `tools/release-surface/check_release_surface.py`, run on the built bundle.
@@ -45,7 +44,6 @@ class ReleaseSurfaceTest {
     private val switches = listOf(
         DacEqWriteSwitch::class.java,
         DacEqPreGainSenseSwitch::class.java,
-        NativeEngineDebugSwitch::class.java,
         RateSwitchPrerollSetting::class.java,
     )
 
@@ -64,7 +62,7 @@ class ReleaseSurfaceTest {
     @After
     fun clean() {
         forgetSingletons()
-        for (name in listOf(DacEqWriteSwitch.PREFERENCES, NativeEngineDebugSwitch.PREFERENCES, RateSwitchPrerollSetting.PREFERENCES)) {
+        for (name in listOf(DacEqWriteSwitch.PREFERENCES, RateSwitchPrerollSetting.PREFERENCES)) {
             prefs(name).edit().clear().commit()
         }
     }
@@ -119,16 +117,6 @@ class ReleaseSurfaceTest {
     }
 
     @Test
-    fun `a stored forced native engine is the plan B of a debug build and never of another`() {
-        prefs(NativeEngineDebugSwitch.PREFERENCES).edit().putBoolean(NativeEngineDebugSwitch.KEY, true).commit()
-
-        val switch = NativeEngineDebugSwitch.shared(context)
-        assertThat(switch.isForced()).isEqualTo(debugBuild)
-        switch.set(true)
-        assertThat(switch.isForced()).isEqualTo(debugBuild)
-    }
-
-    @Test
     fun `a stored rate-switch preroll is applied in a debug build and reads zero in another`() {
         prefs(RateSwitchPrerollSetting.PREFERENCES).edit().putInt(RateSwitchPrerollSetting.KEY, 500).commit()
 
@@ -161,7 +149,7 @@ class ReleaseSurfaceTest {
     }
 
     @Test
-    fun `the name comes from one string that only the debug source set overrides, and no language outranks it`() {
+    fun `the in app name keeps its localized fallback and the installer uses a resource label`() {
         fun appName(file: File) = Regex("""<string name="app_name"[^>]*>([^<]*)</string>""").find(file.readText())?.groupValues?.get(1)
         assertThat(appName(File(app, "main/res/values/strings.xml"))).isEqualTo("Polylute")
         assertThat(appName(File(app, "debug/res/values/strings.xml"))).isEqualTo("Polylute Debug")
@@ -173,7 +161,9 @@ class ReleaseSurfaceTest {
                 }
             }
         }
+        // B48-4: the application and the launcher entries name the app by the resource (the debug source set overrides its value), not by a literal
         assertThat(File(app, "main/AndroidManifest.xml").readText()).contains("android:label=\"@string/app_name\"")
+        assertThat(File(app, "main/AndroidManifest.xml").readText()).doesNotContain("appLabel")
         assertThat(File(app, "release/AndroidManifest.xml").takeIf { it.isFile }?.readText().orEmpty()).doesNotContain("Polylute Debug")
     }
 

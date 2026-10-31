@@ -46,7 +46,7 @@ class UsbClaimReleaseBoundaryTest {
 
     @Test
     fun `releasing to Android frees both interfaces and re-binds the kernel driver before closing`() {
-        val release = body(driver, "fun releaseToAndroid(")
+        val release = body(driver, "fun handBackToAndroid(")
         assertThat(release).contains("claimedControlInterface")
         assertThat(release).contains("nativeReattachKernelDriver")
         assertThat(release.indexOf("releaseInterface")).isLessThan(release.indexOf("nativeReattachKernelDriver"))

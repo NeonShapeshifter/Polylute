@@ -32,6 +32,12 @@ import android.util.Log
  * @param channelCount     Number of channels (1=mono, 2=stereo)
  * @param bitDepth         Bits per sample (16, 24, or 32)
  * @param maxPacketSize    Max packet size from endpoint descriptor
+ * @param endpointInterval Data endpoint `bInterval` from its descriptor (0: not reported)
+ * @param feedbackPacketBytes Feedback endpoint packet size, 4 for Q16.16 (0: none or not reported)
+ *
+ * The native side plans the stream's transport from these (B46: ring, slots, thresholds, silence, fades) and refuses, by
+ * returning no handle, the formats it has always refused (a packet that does not fit [maxPacketSize], a container that is not a
+ * sample size). A device whose timing it does not drive yet is planned as high speed and logged (`TRANSPORT_ASSUMPTION`).
  */
 class UsbAudioStream(
         fd: Int,
@@ -41,22 +47,20 @@ class UsbAudioStream(
         sampleRate: Int,
         channelCount: Int,
         bitDepth: Int,
-        maxPacketSize: Int
+        maxPacketSize: Int,
+        endpointInterval: Int,
+        feedbackPacketBytes: Int,
 ) {
 
-    /** Native UsbAudioContext pointer. Exposed for NativeAudioEngine which
-     *  shares the same USB context for direct submitPcmToUrbs calls.
-     *  Volatile, and cleared by [release] under [handleLock], which the reads made from other
-     *  threads (diagnostics, liveness) also hold (AUD-015). */
+    /** Writer context; reads and release are serialized by [handleLock]. */
     @Volatile
-    var nativeHandle: Long = 0L
-        private set
+    private var nativeHandle: Long = 0L
     private val handleLock = Any()
 
     init {
         nativeHandle = nativeUsbAudioCreate(
                 fd, interfaceId, endpointOut, endpointFeedback,
-                sampleRate, channelCount, bitDepth, maxPacketSize
+                sampleRate, channelCount, bitDepth, maxPacketSize, endpointInterval, feedbackPacketBytes
         )
         if (nativeHandle == 0L) {
             Log.e(TAG, "nativeUsbAudioCreate returned 0 — check logcat for native errors")
@@ -66,6 +70,15 @@ class UsbAudioStream(
     /** True when the native context was created successfully. */
     val isReady: Boolean
         get() = nativeHandle != 0L
+
+    /**
+     * The plan the native stream runs with (B46): its ring, thresholds and queue limits, as it computed them at creation, and, when
+     * [prerollMs] is positive, the pre-roll of that length a rate change owes. Null once the stream is released. The Kotlin side
+     * reads its numbers here, never from a constant of its own.
+     */
+    fun transportPlan(prerollMs: Int = 0): UsbTransportPlan? = synchronized(handleLock) {
+        if (nativeHandle != 0L) UsbTransportPlan(nativeGetTransportPlan(nativeHandle, prerollMs)) else null
+    }
 
     /** True when the stream is actively running (after start, before stop/error). */
     val isAlive: Boolean
@@ -213,7 +226,7 @@ class UsbAudioStream(
 
     // ── The pipeline's pause / seek / skip barrier (B9) ─────────────────────────────────────────
     //
-    // What the native engine does at a gesture, for the ExoPlayer pipeline's writer: the ring is never
+    // The ExoPlayer pipeline writer's gesture barrier: the ring is never
     // cut. What is in it plays out, the real continuation (the next buffer the writer has) is ramped to
     // zero over 8 ms behind it, the DAC is fed silence until the first buffer of the new position, and
     // that buffer fades in over 15 ms. The ramps are `pcmApplyGainRamp`, the lengths the engine's.
@@ -296,6 +309,30 @@ class UsbAudioStream(
         return nativePipelineFeedSilence(nativeHandle)
     }
 
+    // ── A locked-up DAC (B47-A5) ───────────────────────────────────────────────────────────────
+    //
+    // Writer thread only, like the barrier above. [dacLockState] is where the native policy looks: call it when the stream is playing and neither paused nor in a seek.
+    // A step is [dacRecoveryBegin] (the faded tail plays out, the ring is drained with the seek barrier's own drain), the interface work (UsbAudioDevice), then
+    // [dacRecoveryEnd] (the feedback tracking is armed as a start arms it, the frame count and the gesture state are kept) and [resumeAfterPause].
+
+    /** The detector's state and the step to take now. */
+    fun dacLockState(): DacLockState {
+        if (nativeHandle == 0L) return DacLockState.NONE
+        return DacLockState.of(nativeDacLockState(nativeHandle))
+    }
+
+    /** The first half of a recovery step: the ring is empty and nothing is in flight when it returns true. */
+    fun dacRecoveryBegin(): Boolean = nativeHandle != 0L && nativeDacRecoveryBegin(nativeHandle)
+
+    /** The second half: the stream is armed again. False when the stream is not running. */
+    fun dacRecoveryEnd(): Boolean = nativeHandle != 0L && nativeDacRecoveryEnd(nativeHandle)
+
+    /** A step ended: [ran] false when its platform work failed. Logs `DAC_RECOVERY step=N result=ran|failed` and starts the verdict clock. */
+    fun noteDacRecovery(step: Int, ran: Boolean, elapsedMs: Long) {
+        if (nativeHandle == 0L) return
+        nativeNoteDacRecovery(nativeHandle, step, if (ran) 0 else 1, elapsedMs)
+    }
+
     /**
      * `[hasAudio, endsInFade, fadingOut, pendingFrames, fadeInRemaining, silenceFramesFed, pauseFades,
      * seekFades, fadeOutsCompleted]`, for the diagnostics.
@@ -346,8 +383,10 @@ class UsbAudioStream(
 
     private external fun nativeUsbAudioCreate(
             fd: Int, interfaceId: Int, endpointOut: Int, endpointFeedback: Int,
-            sampleRate: Int, channelCount: Int, bitDepth: Int, maxPacketSize: Int
+            sampleRate: Int, channelCount: Int, bitDepth: Int, maxPacketSize: Int,
+            endpointInterval: Int, feedbackPacketBytes: Int
     ): Long
+    private external fun nativeGetTransportPlan(handle: Long, prerollMs: Int): LongArray
 
     private external fun nativeUsbAudioSetAltSetting(handle: Long, altSetting: Int): Boolean
     private external fun nativeUsbAudioSetSampleRate(handle: Long, sampleRateHz: Int, clockSourceId: Int): Boolean
@@ -375,6 +414,10 @@ class UsbAudioStream(
     private external fun nativePipelineResume(handle: Long)
     private external fun nativePipelineFeedSilence(handle: Long): Boolean
     private external fun nativePipelineStats(handle: Long): LongArray
+    private external fun nativeDacLockState(handle: Long): LongArray
+    private external fun nativeDacRecoveryBegin(handle: Long): Boolean
+    private external fun nativeDacRecoveryEnd(handle: Long): Boolean
+    private external fun nativeNoteDacRecovery(handle: Long, step: Int, result: Int, elapsedMs: Long)
 
     companion object {
         private const val TAG = "UsbAudioStream"
@@ -420,6 +463,10 @@ class UsbAudioStream(
         @JvmStatic
         external fun nativeUsbResetForRebind(fd: Int): Int
 
+        /** Successful data SETINTERFACE, recorded before the PLL wait and before a native stream exists. */
+        @JvmStatic
+        external fun nativeNoteDataAltSet(fd: Int)
+
         /**
          * B27-A5 (review N-07): the stream's last [windowMs] in one-second summaries, as text: a line with the stream's facts, then
          * one line per second that streamed (feedback readings' min / max / mean, how many were off nominal or refused, the ISO
@@ -427,6 +474,26 @@ class UsbAudioStream(
          */
         @JvmStatic
         external fun nativeGetSecondSummaries(windowMs: Long): String
+
+        /** B47-A5: automatic recovery of a locked-up DAC on (the default, debug and release) or off. Process-only, never persisted (SET_DAC_RECOVERY in the debug bridge). */
+        @JvmStatic
+        external fun nativeSetDacRecoveryEnabled(enabled: Boolean)
+
+        /** B48-fix1: the feedback start guard (nominal-rate packets for the plan's first 500 ms after the interface starts) on or off (the default, debug and release). Process-only (SET_FEEDBACK_START_GUARD in the debug bridge). */
+        @JvmStatic
+        external fun nativeSetFeedbackStartGuardEnabled(enabled: Boolean)
+
+        /** B48-fix1: whether the feedback start guard is on in this process. */
+        @JvmStatic
+        external fun nativeFeedbackStartGuardEnabled(): Boolean
+
+        /** B47-A5: asks the writer for recovery step 1 or 2 at its next look, whatever the detector says (RECOVER_DAC_NOW in the debug bridge). Any other value clears it. */
+        @JvmStatic
+        external fun nativeRequestDacRecovery(step: Int)
+
+        /** B47-A5: process totals: `[enabled, locks, step 1 runs, step 1 ok, step 2 runs, step 2 ok, gave up, ms of the last step]`. */
+        @JvmStatic
+        external fun nativeGetDacRecoveryStats(): LongArray
 
         /**
          * B10-2: what the output does with the feedback, a [FeedbackPolicy] id. Process-only, never persisted; an

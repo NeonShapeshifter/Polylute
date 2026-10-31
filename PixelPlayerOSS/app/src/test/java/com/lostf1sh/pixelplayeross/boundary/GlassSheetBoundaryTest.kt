@@ -107,6 +107,7 @@ class GlassSheetBoundaryTest {
 
     /** Full-screen windows that carry the glass: their file puts a copy of it behind the page. */
     private val carryingTheGlass = mapOf(
+        "presentation/components/MusicInfoDownloadsScreen.kt" to 1,
         "presentation/components/FileExplorerBottomSheet.kt" to 1,
         "presentation/components/UnifiedPlayerOverlaysLayer.kt" to 1,
         "presentation/components/player/TrackDetailsHost.kt" to 1,
@@ -122,7 +123,6 @@ class GlassSheetBoundaryTest {
     private val leftOut = mapOf(
         "presentation/components/EditSongSheet.kt" to 2,               // the tag editor, and the cover cropper inside it (a tool over a picture)
         "presentation/components/EditMultipleSongsSheet.kt" to 1,      // the batch tag editor
-        "presentation/components/ReorderPresetsSheet.kt" to 1,         // manage the equalizer presets
         "presentation/screens/CreatePlaylistScreen.kt" to 2,           // create and edit a playlist
         "presentation/components/BackupModuleSelectionDialog.kt" to 1, // choose what a restore brings back
         "presentation/settings/BackupDialogs.kt" to 2,                 // the backup's export and import pages

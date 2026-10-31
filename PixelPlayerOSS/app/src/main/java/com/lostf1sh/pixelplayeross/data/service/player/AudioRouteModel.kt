@@ -3,7 +3,7 @@ package com.lostf1sh.pixelplayeross.data.service.player
 import com.decent.usbaudio.media3.BitPerfectTruth
 import com.decent.usbaudio.media3.DirectSignalMode
 
-/** The two playback backends PixelPlayer can actually own. */
+/** The two playback backends Polylute can actually own. */
 enum class AudioBackend { ANDROID_AUDIO, USB_DIRECT }
 
 /**

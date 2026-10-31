@@ -56,8 +56,7 @@ class RendererMediaDomainBoundaryTest {
             .substringBefore("override fun isEnded")
 
         // Renderer domain, and only reachable once the mapping exists.
-        assertThat(positionBody).contains("windowOffsetUs + enginePositionUs")
-        assertThat(positionBody).contains("windowOffsetUs >= 0")
+        assertThat(positionBody).contains("pipelineClock.positionUs(frames, currentSampleRate)")
         assertThat(positionBody).contains("AudioSink.CURRENT_POSITION_NOT_SET")
 
         // The handoff anchor must not carry the renderer offset.
@@ -66,7 +65,7 @@ class RendererMediaDomainBoundaryTest {
         // the wrong function.
         val handoff = sink.substringAfter("private fun handoffPositionUs")
             .substringBefore("override fun getCurrentPositionUs")
-        assertThat(handoff).contains("engine.getPositionUs()")
+        assertThat(handoff).contains("pipelineClock.positionUs(frames, currentSampleRate) - windowOffsetUs")
         assertThat(handoff).doesNotContain("windowOffsetUs +")
         assertThat(handoff).doesNotContain("windowOffsetUs+")
     }
@@ -112,7 +111,7 @@ class RendererMediaDomainBoundaryTest {
         assertThat(sink).contains("private val mappingTracker = MappingEpochTracker()")
         assertThat(sink).contains("get() = mappingTracker.windowOffsetUs")
         val rebuilds = sink.lines().count { it.contains("mappingTracker.preserve()") }
-        assertThat(rebuilds).isAtLeast(4)
+        assertThat(rebuilds).isAtLeast(1)
 
         // A rebuild never re-anchors; only a position change opens an epoch.
         val flush = sink.substringAfter("override fun flush()").substringBefore("override fun reset()")

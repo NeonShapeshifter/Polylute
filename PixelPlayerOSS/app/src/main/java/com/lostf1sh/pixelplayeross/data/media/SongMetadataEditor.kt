@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.media
 
+import android.app.RecoverableSecurityException
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
@@ -226,7 +227,6 @@ class SongMetadataEditor(
         )
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
     suspend fun editSongMetadata(
         songId: Long,
         newTitle: String,
@@ -463,6 +463,14 @@ class SongMetadataEditor(
 
             Timber.tag(TAG).d("METADATA_EDIT: Successfully updated metadata for songId: $songId")
             SongMetadataEditResult(success = true, updatedAlbumArtUri = storedCoverArtUri)
+        } catch (e: RecoverableSecurityException) {
+            SongMetadataEditResult(
+                success = false,
+                updatedAlbumArtUri = null,
+                error = MetadataEditError.NO_WRITE_PERMISSION,
+                errorMessage = e.localizedMessage,
+                permissionIntentSender = e.userAction.actionIntent.intentSender,
+            )
         } catch (e: SecurityException) {
             Timber.e(e, "Security exception editing metadata for songId: $songId")
             SongMetadataEditResult(
@@ -1050,7 +1058,6 @@ class SongMetadataEditor(
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
     private fun updateMediaStoreMetadata(
         songId: Long,
         title: String,
@@ -1068,11 +1075,13 @@ class SongMetadataEditor(
                 put(MediaStore.Audio.Media.TITLE, title)
                 put(MediaStore.Audio.Media.ARTIST, artist)
                 put(MediaStore.Audio.Media.ALBUM, album)
-                put(MediaStore.Audio.Media.GENRE, genre)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    put(MediaStore.Audio.Media.GENRE, genre)
+                }
                 val encodedTrack = ((discNumber ?: 0) * 1000) + trackNumber
                 put(MediaStore.Audio.Media.TRACK, encodedTrack)
                 put(MediaStore.Audio.Media.DATE_MODIFIED, System.currentTimeMillis() / 1000)
-                if (!albumArtist.isNullOrBlank()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !albumArtist.isNullOrBlank()) {
                     put(MediaStore.Audio.Media.ALBUM_ARTIST, albumArtist)
                 }
             }
@@ -1084,6 +1093,7 @@ class SongMetadataEditor(
             success
 
         } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && e is RecoverableSecurityException) throw e
             Timber.e(e, "Failed to update MediaStore for songId: $songId")
             false
         }
@@ -1299,7 +1309,8 @@ data class SongMetadataEditResult(
     val success: Boolean,
     val updatedAlbumArtUri: String?,
     val error: MetadataEditError? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val permissionIntentSender: android.content.IntentSender? = null,
 )
 
 data class CoverArtUpdate(

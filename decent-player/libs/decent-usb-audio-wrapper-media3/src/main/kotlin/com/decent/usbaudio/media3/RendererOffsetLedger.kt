@@ -11,7 +11,7 @@ package com.decent.usbaudio.media3
  * B7-fix derived the next item's offset as "previous offset + length", so an error in one item's
  * offset (a stale latch, a seek past the end, a watchdog correction) was carried into the next —
  * measured, a track that had just started at +167 s / +204 s, which Media3 ended or sought. Here the
- * offset of the item the engine plays is Media3's own: the sequence is followed as reported, and the
+ * offset of the playing item is Media3's own: the sequence is followed as reported, and the
  * playing item is found by counting Media3's transitions, never by adding lengths.
  *
  * Reports arrive on the playback thread, transitions on the application thread.

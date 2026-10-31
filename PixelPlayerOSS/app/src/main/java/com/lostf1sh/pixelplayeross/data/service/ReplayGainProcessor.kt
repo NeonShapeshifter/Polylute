@@ -36,7 +36,7 @@ class ReplayGainProcessor(
     private val currentSessionMediaItem: () -> MediaItem?,
 ) {
     companion object {
-        private const val TAG = "MusicService_PixelPlayer"
+        private const val TAG = "PolyluteMusicService"
 
         /** Below this, a contributor is treated as unity — it is not doing anything audible. */
         internal const val UNITY_EPSILON = 0.0001f

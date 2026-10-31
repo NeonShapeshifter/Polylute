@@ -2,13 +2,10 @@ package com.lostf1sh.pixelplayeross.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.ExperimentalTextApi
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextGeometricTransform
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.lostf1sh.pixelplayeross.R
 
@@ -52,34 +49,6 @@ val MontserratFamily = FontFamily(
     ),
 )
 
-val ExpTitleTypography = Typography(
-    displayLarge = TextStyle(
-        fontFamily = MontserratFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 60.sp,
-        textGeometricTransform = TextGeometricTransform(scaleX = 1.5f),
-        letterSpacing = (-0.02).em,
-        lineHeight = 0.95.em,
-        platformStyle = PlatformTextStyle(includeFontPadding = false)
-    ),
-    displayMedium = TextStyle(
-        fontFamily = MontserratFamily,
-        fontWeight = FontWeight.Normal,
-        fontSize = 50.sp,
-        letterSpacing = (-0.02).em,
-        lineHeight = 0.95.em,
-        platformStyle = PlatformTextStyle(includeFontPadding = false)
-    ),
-    titleMedium = TextStyle(
-        fontFamily = MontserratFamily,
-        fontWeight = FontWeight.Bold,
-        fontSize = 32.sp,
-        textGeometricTransform = TextGeometricTransform(scaleX = 1.3f),
-        letterSpacing = (-0.02).em,
-        lineHeight = 0.95.em,
-        platformStyle = PlatformTextStyle(includeFontPadding = false)
-    )
-)
 
 private const val RoundedSansFlexRond = 100f
 

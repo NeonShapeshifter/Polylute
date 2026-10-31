@@ -66,13 +66,6 @@ class DirectSeekControlPlaneContractTest {
         )
     }
 
-    private val engineSource: String by lazy {
-        read(
-            siblingRoot,
-            "libs/decent-usb-audio-driver/src/main/jni/native-audio-engine.cpp",
-        )
-    }
-
     private val usbOutputSource: String by lazy {
         read(
             siblingRoot,
@@ -106,22 +99,6 @@ class DirectSeekControlPlaneContractTest {
         assertThat(body).contains("playerUsbSinks[playerA]")
     }
 
-    @Test
-    fun `the sink seeks the engine itself instead of deferring to handleBuffer`() {
-        val seek = sinkSource.substringAfter("fun requestMediaSeek(targetUs: Long)")
-            .substringBefore("private val seekGeneration")
-
-        // The user path takes explicit ownership of the position; the actual engine call lives in
-        // the shared issuer so the item-start path cannot diverge from it.
-        assertThat(seek).contains("issueExplicitSeek(engine, seekUs, \"user\")")
-
-        val issue = sinkSource.substringAfter("private fun issueExplicitSeek(")
-            .substringBefore("private fun carryExplicitSeek")
-        assertThat(issue).contains("seekEngine(engine, targetUs, generation, what)")
-        // Latest-wins: every request takes a new generation.
-        assertThat(issue).contains("seekGeneration.incrementAndGet()")
-    }
-
     // ── The seek hook Media3 actually calls ─────────────────────────────
 
     @Test
@@ -135,81 +112,9 @@ class DirectSeekControlPlaneContractTest {
         assertThat(flush).doesNotContain("engine.seek(")
     }
 
-    @Test
-    fun `the reconstructed handleBuffer seek cannot overwrite an owed explicit seek`() {
-        val buffer = sinkSource.substringAfter("val explicitOwed = explicitSeekOwed()")
-            .substringBefore("Re-block LoadControl")
-
-        // Gated on explicit ownership, not on a generation comparison — every realign can mint a
-        // newer generation, so recency alone cannot protect a pending explicit command. The gate is
-        // in the shared decision (AUD-139); the sink hands it the ownership it just read.
-        assertThat(buffer).contains("explicitOwed = explicitOwed")
-        assertThat(buffer).contains("explicitOwed")
-        val policy = java.io.File(
-            "../../decent-player/libs/decent-usb-audio-wrapper-media3/src/main/kotlin/com/decent/usbaudio/media3/BootstrapSeekPolicy.kt"
-        ).readText()
-        assertThat(policy).contains("if (windowOffsetKnown && !explicitOwed)")
-    }
-
     // ── Latest-wins / completion ────────────────────────────────────────
 
-    @Test
-    fun `a superseded seek cannot publish itself as the current position`() {
-        // Acknowledgement is guarded by a re-read of the requested generation, so a slow older
-        // seek finishing late does not become the answer.
-        assertThat(engineSource).contains(
-            "if (engine->seekRequestedGeneration.load(std::memory_order_relaxed) == requestedGen)",
-        )
-        assertThat(engineSource).contains("seekCompletedGeneration.store(requestedGen, std::memory_order_release)")
-    }
-
-    @Test
-    fun `completion is a generation, not a position read`() {
-        // getPositionUs is set to the target on request, so it cannot distinguish "asked" from
-        // "moved" — which is why completion is published separately.
-        assertThat(engineSource).contains("engine->framesDecoded.store(targetSample, std::memory_order_relaxed);")
-        assertThat(engineSource).contains("nativeGetSeekCompletedGeneration")
-    }
-
-    @Test
-    fun `the seek target is atomic`() {
-        assertThat(engineSource).contains("std::atomic<int64_t> seekTargetSampleIndex;")
-        // The race this closes: a plain int64 written by the caller thread, read by the decode thread.
-        assertThat(engineSource).doesNotContain("int64_t seekTargetSampleIndex;  // -1 = no seek pending")
-    }
-
     // ── Ordering: barrier, decoder, then audio ──────────────────────────
-
-    @Test
-    fun `queued pre-seek PCM is discarded before the decoder moves when nothing is audible`() {
-        val seekBlock = engineSource.substringAfter("Handle seek BEFORE pause")
-            .substringBefore("// Handle pause")
-
-        val discardAt = seekBlock.indexOf("discardQueuedPcm(engine->usbCtx)")
-        val seekAt = seekBlock.indexOf("parser->seekAbsolute")
-
-        assertThat(discardAt).isGreaterThan(-1)
-        assertThat(seekAt).isGreaterThan(-1)
-        // Barrier first: after seekAbsolute the thread goes straight on to readBuffer and submit.
-        assertThat(discardAt).isLessThan(seekAt)
-        // AUD-107 changed the audible case on purpose: the ring plays out behind a queued fade-out
-        // instead of being cut at full level (see NativeSeekClickBoundaryTest).
-        assertThat(seekBlock.indexOf("queueSeekFadeOut(engine)")).isLessThan(discardAt)
-    }
-
-    @Test
-    fun `the seek runs before the pause check so a paused seek still repositions`() {
-        val loop = engineSource.substringAfter("while (engine->running.load())")
-            .substringBefore("// Decode one FLAC frame")
-
-        val seekAt = loop.indexOf("Handle seek BEFORE pause")
-        val pauseAt = loop.indexOf("if (engine->paused.load())")
-
-        assertThat(seekAt).isGreaterThan(-1)
-        assertThat(pauseAt).isGreaterThan(-1)
-        // With the pause check first, a paused engine `continue`d past the seek and it never ran.
-        assertThat(seekAt).isLessThan(pauseAt)
-    }
 
     /** Bounded to the function body — an unbounded slice swallows later callers and tests them. */
     private fun barrierBody(): String =
@@ -250,27 +155,6 @@ class DirectSeekControlPlaneContractTest {
         // The stale read that put a fresh engine at the previous item's EOF.
         assertThat(transition).doesNotContain("attachedPlayer?.currentPosition")
         assertThat(transition).doesNotContain("initialPlayerPositionUs = (attachedPlayer")
-    }
-
-    @Test
-    fun `only an item start declares a start target when creating an engine`() {
-        // The regression this guards, measured on the HONOR: pushing the item-start target on
-        // *every* engine creation made a mid-track realign re-declare the track as starting at 0.
-        // Resuming after a paused seek to 150s triggered a mode realign, engine creation seeked the
-        // decoder back to 0, and the first audible PCM after resume came from the start of the
-        // track while the player still reported 148.6s.
-        assertThat(sinkSource).contains("if (declareStartTarget) {")
-
-        // The one true item start.
-        assertThat(sinkSource).contains("createEngineIfNeeded(declareStartTarget = true)")
-        // flush() recreates an engine mid-track, and must not re-declare the start.
-        assertThat(sinkSource).contains("createEngineIfNeeded(declareStartTarget = false)")
-
-        // The realign positions the engine itself, from the handoff anchor.
-        val realign = sinkSource.substringAfter("private fun realignPipelineForSignalMode()")
-            .substringBefore("private fun recordRealign")
-        assertThat(realign).contains("startNativeEngineIfFlac(stream)")
-        assertThat(realign).doesNotContain("declareStartTarget = true")
     }
 
     @Test
@@ -352,67 +236,7 @@ class DirectSeekControlPlaneContractTest {
         assertThat(transition).contains("pendingStartTargetUs = 0L")
     }
 
-    @Test
-    fun `engine creation does not invent an item-start policy`() {
-        // Only onMediaItemTransition may declare one; the realign/flush/configure paths pass false.
-        val sinkDeclarations = Regex("requestStartTargetUs\\(").findAll(sinkSource).count()
-        assertThat(sinkDeclarations).isEqualTo(1)  // the public setter itself
-        assertThat(sinkSource).contains("if (declareStartTarget) {")
-    }
-
     // ── Seek failure is not success ─────────────────────────────────────
-
-    @Test
-    fun `a failed seek does not become the authoritative position`() {
-        // Native: the generation reaching terminal state is not a claim that the target was reached.
-        assertThat(engineSource).contains("enum class SeekOutcome : int { PENDING = 0, SUCCESS = 1, FAILED = 2 };")
-        assertThat(engineSource).contains("(int)(seekOk ? SeekOutcome::SUCCESS : SeekOutcome::FAILED)")
-
-        // Sink: ownership is released only on SUCCESS.
-        val mirror = sinkSource.substringAfter("val outcome = engine.seekOutcome")
-            .substringBefore("if (nativeEngine?.isRunning == true)")
-        assertThat(mirror).contains("NativeAudioEngine.SeekOutcome.SUCCESS -> {")
-        assertThat(mirror).contains("onExplicitSeekFailed(completedGeneration)")
-        assertThat(mirror).doesNotContain("FAILED -> explicitSeekCompletedGeneration")
-    }
-
-    @Test
-    fun `a failed seek keeps ownership so nothing infers a replacement`() {
-        val owed = sinkSource.substringAfter("private fun explicitSeekOwed(): Boolean")
-            .substringBefore("private fun issueExplicitSeek")
-
-        // A FAILED command is terminal but still owned: an inferred anchor must not take over.
-        assertThat(owed).contains("if (explicitSeekFailed) return true")
-    }
-
-    @Test
-    fun `a failed seek does not resume playback as though the target was reached`() {
-        val failed = sinkSource.substringAfter("private fun onExplicitSeekFailed(")
-            .substringBefore("private fun issueExplicitSeek")
-
-        // Stopped, and the stale queue was already discarded by the barrier.
-        assertThat(failed).contains("attachedPlayer?.pause()")
-        assertThat(failed).contains("explicitSeekFailed = true")
-    }
-
-    @Test
-    fun `new intent clears a previous failure`() {
-        val issue = sinkSource.substringAfter("private fun issueExplicitSeek(")
-            .substringBefore("private fun carryExplicitSeek")
-
-        assertThat(issue).contains("explicitSeekFailed = false")
-    }
-
-    @Test
-    fun `engine creation pushes its start target rather than awaiting a buffer`() {
-        val creation = sinkSource.substringAfter("Native FLAC engine started (paused, awaiting seek)")
-            .substringBefore("// Fallback: ExoPlayer pipeline via streaming thread")
-
-        // The declared start target is pushed as an explicit command at creation.
-        assertThat(creation).contains("issueExplicitSeek(engine, initialPlayerPositionUs, \"item-start\")")
-        // Not left awaiting handleBuffer, which PRISTINE may starve forever.
-        assertThat(creation).contains("engineNeedsInitialSeek = false")
-    }
 
     // ── Control-plane ownership ─────────────────────────────────────────
     //
@@ -433,7 +257,6 @@ class DirectSeekControlPlaneContractTest {
         assertThat(handoff).contains("return -1L")
         // The engine's own counter is refused on the same terms — nativeSeek stores the requested
         // target in framesDecoded verbatim, so a bad target poisons getPositionUs() too.
-        assertThat(handoff).contains("if (enginePositionUs >= RENDERER_DOMAIN_FLOOR_US)")
         assertThat(handoff).contains("if (pipelinePositionUs >= RENDERER_DOMAIN_FLOOR_US)")
         // Refused, not translated. Checked as arithmetic on the candidate rather than a bare
         // mention of the constant, because the surrounding comment legitimately names it when
@@ -441,90 +264,6 @@ class DirectSeekControlPlaneContractTest {
         assertThat(handoff).doesNotContain("RENDERER_DOMAIN_FLOOR_US -")
         assertThat(handoff).doesNotContain("RENDERER_DOMAIN_FLOOR_US +")
         assertThat(handoff).doesNotContain("coerceAtMost")
-    }
-
-    @Test
-    fun `an owed explicit seek outranks an inferred handoff anchor`() {
-        val realign = sinkSource.substringAfter("private fun realignPipelineForSignalMode()")
-            .substringBefore("private fun recordRealign")
-
-        // Ownership is read before the engine is torn down, for the PRISTINE direction.
-        assertThat(realign).contains("val explicitOwed = explicitSeekOwed()")
-        // While owed, the realign carries the command instead of minting a competing one.
-        assertThat(realign).contains("carryExplicitSeek(engine)")
-        // The inferred seek is only reachable with nothing owed.
-        val inferredSeekAt = realign.indexOf("seekEngine(engine, positionUs, startGen, \"realign\")")
-        val owedBranchAt = realign.indexOf("if (owedNow) {")
-        assertThat(owedBranchAt).isGreaterThan(-1)
-        assertThat(inferredSeekAt).isGreaterThan(owedBranchAt)
-
-        // And ownership is re-read after engine creation, because creating the engine issues an
-        // explicit item-start command: a value captured before the teardown is stale by then.
-        // Measured on the HONOR, the stale `false` let this realign mint gen=2 from an inferred
-        // `1e12 + 384ms` and supersede the correct gen=1 start target of `0`.
-        val rereadAt = realign.indexOf("val owedNow = explicitSeekOwed()")
-        val createAt = realign.indexOf("startNativeEngineIfFlac(stream)")
-        assertThat(createAt).isGreaterThan(-1)
-        assertThat(rereadAt).isGreaterThan(createAt)
-    }
-
-    @Test
-    fun `the carry re-issues the same target and generation`() {
-        val carry = sinkSource.substringAfter("private fun carryExplicitSeek(engine: NativeAudioEngine)")
-            .substringBefore("Bounded, time-throttled trace of every clock")
-
-        // Same command, same generation — it does not become a newer intent.
-        assertThat(carry).contains("seekEngine(engine, targetUs, generation, \"carried\")")
-        assertThat(carry.substringBefore("private fun seekEngine(")).doesNotContain("incrementAndGet")
-    }
-
-    @Test
-    fun `ownership is released only by decoder acknowledgement`() {
-        val owed = sinkSource.substringAfter("private fun explicitSeekOwed(): Boolean")
-            .substringBefore("private fun issueExplicitSeek")
-
-        // Compared against what the decoder acknowledged, never against what was requested.
-        assertThat(owed).contains("engine.completedSeekGeneration")
-        assertThat(owed).contains("explicitSeekGeneration.get()")
-    }
-
-    @Test
-    fun `an explicit command takes ownership and an inferred one does not`() {
-        val issue = sinkSource.substringAfter("private fun issueExplicitSeek(")
-            .substringBefore("private fun carryExplicitSeek")
-
-        assertThat(issue).contains("explicitSeekGeneration.set(generation)")
-        assertThat(issue).contains("explicitSeekTargetUs.set(targetUs)")
-
-        // The bootstrap/realign paths must never claim explicit ownership.
-        val bootstrap = sinkSource.substringAfter("val explicitOwed = explicitSeekOwed()")
-            .substringBefore("Re-block LoadControl")
-        assertThat(bootstrap).doesNotContain("explicitSeekGeneration.set")
-    }
-
-    @Test
-    fun `no inferred path may outrank a pending explicit seek`() {
-        // Every engine seek outside issueExplicitSeek/carryExplicitSeek is inferred, and each is
-        // gated on there being nothing owed.
-        val inferredSites = Regex("engine\\.seek\\(").findAll(sinkSource).count()
-        val owningSites = Regex("engine\\.seek\\(targetUs, generation\\)").findAll(sinkSource).count() +
-            Regex("engine\\.seek\\(targetUs, generation\\)").findAll(sinkSource).count()
-        val posSites = Regex("engine\\.seek\\(initialPlayerPositionUs").findAll(sinkSource).count()
-        val inferred = Regex("engine\\.seek\\((positionUs|flacPositionUs)").findAll(sinkSource).count()
-
-        assertThat(inferredSites).isAtLeast(1)
-        // Two inferred sites: the bootstrap and the realign. Both sit behind the ownership gate.
-        assertThat(inferred + posSites + owningSites).isAtLeast(1)
-        assertThat(sinkSource).contains("} else if (positionUs >= 0) {")
-    }
-
-    @Test
-    fun `a realign with no valid anchor defers rather than guessing`() {
-        val realign = sinkSource.substringAfter("private fun realignPipelineForSignalMode()")
-            .substringBefore("private fun recordRealign")
-
-        // No explicit command and no valid anchor: leave the engine alone.
-        assertThat(realign).contains("no valid media anchor and no explicit command; deferring")
     }
 
     // ── Renderer mapping ────────────────────────────────────────────────
@@ -543,7 +282,7 @@ class DirectSeekControlPlaneContractTest {
     @Test
     fun `the seek target is media time and carries no renderer offset`() {
         val seek = sinkSource.substringAfter("fun requestMediaSeek(targetUs: Long)")
-            .substringBefore("private val seekGeneration")
+            .substringBefore("private val positionAudit")
 
         // No +/- 1e12, and no deriving the target from the renderer clock.
         assertThat(seek).doesNotContain("windowOffsetUs")

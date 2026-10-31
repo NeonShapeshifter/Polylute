@@ -19,14 +19,6 @@ val NoOpHapticFeedback: HapticFeedback = object : HapticFeedback {
     override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) = Unit
 }
 
-fun View.performAppHapticFeedback(
-    appHapticsConfig: AppHapticsConfig,
-    feedbackConstant: Int,
-    flags: Int = 0
-): Boolean {
-    if (!appHapticsConfig.enabled) return false
-    return performHapticFeedback(feedbackConstant, flags)
-}
 
 fun performAppCompatHapticFeedback(
     view: View,

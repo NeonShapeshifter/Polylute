@@ -1,6 +1,8 @@
 package com.lostf1sh.pixelplayeross.data.usb
 
 import androidx.media3.common.C
+import com.decent.usbaudio.UsbTransportPlan
+import com.decent.usbaudio.UsbTransportPlanner
 import com.decent.usbaudio.media3.PipelinePositionClock
 import com.decent.usbaudio.media3.RateSwitchPreroll
 import com.decent.usbaudio.media3.UsbStreamingThread
@@ -18,6 +20,15 @@ import org.junit.jupiter.api.Test
  *   written, whatever part of the silence had already gone out when the first buffer arrived.
  */
 class RateSwitchPrerollTest {
+
+    /**
+     * B46-A3: the pre-roll's frames and blocks are the transport plan's. Any endpoint that carries the format will do: the
+     * pre-roll does not depend on it. 3072 bytes is the widest high-speed packet; 4-byte slots, stereo, with a feedback endpoint.
+     */
+    private fun plan(rateHz: Int, prerollMs: Int): UsbTransportPlan = UsbTransportPlanner.plan(
+        sampleRateHz = rateHz, channels = 2, containerBytes = 4, sourceBits = null, maxPacketBytes = 3072, bInterval = 1,
+        hasFeedback = true, feedbackBytes = 4, prerollMs = prerollMs,
+    )
 
     // ── when ────────────────────────────────────────────────────────────────────────────────────
 
@@ -68,15 +79,17 @@ class RateSwitchPrerollTest {
     @Test
     fun `the silence is exactly the requested time at the stream's rate, in whole buffers`() {
         for (rate in listOf(44_100, 48_000, 96_000, 192_000)) for (ms in listOf(250, 500, 1000)) {
-            val frames = RateSwitchPreroll.frames(ms, rate)
+            val plan = plan(rate, ms)
+            val frames = plan.prerollFrames
             assertThat(frames).isEqualTo(rate.toLong() * ms / 1000L)
-            val chunks = RateSwitchPreroll.chunks(frames)
+            val chunks = plan.prerollBlocks()
             assertThat(chunks.sumOf { it.toLong() }).isEqualTo(frames)
-            assertThat(chunks.all { it in 1..RateSwitchPreroll.CHUNK_FRAMES }).isTrue()
+            assertThat(chunks.all { it in 1..plan.prerollBlockFrames }).isTrue()
+            assertThat(plan.prerollBlockFrames).isEqualTo(8192)   // as the sink has always queued it
             assertThat(chunks.size).isAtMost(24)             // within the sink's queue and its backpressure
         }
-        assertThat(RateSwitchPreroll.frames(0, 44_100)).isEqualTo(0L)
-        assertThat(RateSwitchPreroll.chunks(0L)).isEmpty()
+        assertThat(plan(44_100, 0).prerollFrames).isEqualTo(0L)
+        assertThat(plan(44_100, 0).prerollBlocks()).isEmpty()
     }
 
     // ── the item's frames are complete ──────────────────────────────────────────────────────────
@@ -108,12 +121,13 @@ class RateSwitchPrerollTest {
             val thread = UsbStreamingThread(writer, initiallyPaused = false, channelCount = channels).also { it.start() }
             try {
                 val rate = 48_000
-                val silenceFrames = RateSwitchPreroll.enqueue(thread, ms, rate, channels)
+                val preroll = plan(rate, ms)
+                val silenceFrames = RateSwitchPreroll.enqueue(thread, preroll, channels)
                 assertThat(silenceFrames).isEqualTo(rate.toLong() * ms / 1000L)
                 // the item's buffers, each tagged so its place in the stream is readable
                 val item = (1..6).map { tag -> ByteArray(bytesPerBuffer) { tag.toByte() } }
                 item.forEach { thread.enqueueRaw(it, encoding) }
-                val silenceBuffers = RateSwitchPreroll.chunks(silenceFrames).size
+                val silenceBuffers = preroll.prerollBlocks().size
                 waitUntil { writer.writes.size == silenceBuffers + item.size }
 
                 val writes = writer.writes.toList()
@@ -139,7 +153,7 @@ class RateSwitchPrerollTest {
         val writer = RecordingWriter()
         val thread = UsbStreamingThread(writer, initiallyPaused = false, channelCount = channels).also { it.start() }
         try {
-            assertThat(RateSwitchPreroll.enqueue(thread, 0, 48_000, channels)).isEqualTo(0L)
+            assertThat(RateSwitchPreroll.enqueue(thread, plan(48_000, 0), channels)).isEqualTo(0L)
             val item = (1..3).map { tag -> ByteArray(bytesPerBuffer) { tag.toByte() } }
             item.forEach { thread.enqueueRaw(it, encoding) }
             waitUntil { writer.writes.size == 3 }
@@ -161,7 +175,7 @@ class RateSwitchPrerollTest {
         val rate = 48_000
         val presentationUs = 1_000_000_000_000L          // the renderer's domain
         for (ms in listOf(250, 500, 1000)) {
-            val silence = RateSwitchPreroll.frames(ms, rate)
+            val silence = plan(rate, ms).prerollFrames
             for (alreadyWritten in listOf(0L, silence / 3, silence / 2, silence)) {
                 val clock = PipelinePositionClock()
                 val framesWrittenAtAccept = 12_345L + alreadyWritten     // the stream's cumulative count

@@ -6,6 +6,66 @@ import androidx.media3.common.Player
 import com.lostf1sh.pixelplayeross.data.service.player.QueueLoadSkipHold
 import com.lostf1sh.pixelplayeross.data.service.player.hasQueueNeighbour
 import com.lostf1sh.pixelplayeross.utils.PlayOrder
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
+import java.util.concurrent.Executors
+
+/**
+ * B47-A1: the rest of a big queue (4,938 `MediaItem`s, ~0.3 ms each, a `Bundle` of 13 extras per item, ~1.4 s of continuous work in the owner's 2026-10-29 log) used to be built
+ * in ONE block on a pool thread: a burst of allocation that started two concurrent GCs of 456 and 492 ms (`Background concurrent mark compact GC ... total 456.226ms`) in the
+ * second the USB writer was runnable and not running for 82 ms. Nothing proves the build was the thread that kept the writer off the CPU (a CPU not given to a nice -19 thread
+ * is something an app cannot see; usb-cpu-watch.h says what it can), but it is the one avoidable burst of the load, so it is spread out:
+ *  - slices of [QUEUE_BUILD_SLICE_ITEMS] items (about 75 ms of work), so the allocation arrives in pieces the collector can keep up with and a cancelled load stops at the next slice;
+ *  - after each slice but the last the builder pauses for half the time the slice took ([slicePauseMs]): it uses two thirds of one core instead of all of it;
+ *  - on a thread of its own at background priority, not on the shared pool the UI's own work also uses.
+ * What the queue holds and its order are exactly what they were: the slices are consecutive ranges of the same range, concatenated.
+ */
+internal const val QUEUE_BUILD_SLICE_ITEMS = 256
+
+/** The pause after a slice that took [workedNanos]: half of it, at least 1 ms and at most 100 ms. */
+internal fun slicePauseMs(workedNanos: Long): Long = (workedNanos / 2_000_000L).coerceIn(1L, 100L)
+
+/** The thread the rest of a queue is built on: one, at background priority (nice 10), never the pool the UI shares. */
+internal object QueueBuildDispatcher {
+    val dispatcher: CoroutineDispatcher by lazy {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread({
+                try {
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                } catch (_: RuntimeException) {
+                    // refused: the thread keeps the priority it has
+                }
+                runnable.run()
+            }, "QueueBuild").apply { isDaemon = true }
+        }.asCoroutineDispatcher()
+    }
+}
+
+/**
+ * Builds the items of [range] in consecutive slices of [sliceSize], in order, pausing between them ([pauseAfter] gets the nanoseconds the slice took). The result is exactly
+ * what building the whole range in one call gives. Suspends between slices, so a cancelled caller stops there.
+ */
+internal suspend fun <T> buildInSlices(
+    range: IntRange,
+    sliceSize: Int = QUEUE_BUILD_SLICE_ITEMS,
+    nowNanos: () -> Long = System::nanoTime,
+    pauseAfter: suspend (workedNanos: Long) -> Unit = { worked -> delay(slicePauseMs(worked)) },
+    build: (IntRange) -> List<T>,
+): List<T> {
+    if (range.isEmpty()) return emptyList()
+    val built = ArrayList<T>(range.last - range.first + 1)
+    var from = range.first
+    while (from <= range.last) {
+        val to = minOf(from.toLong() + sliceSize - 1, range.last.toLong()).toInt()
+        val startedAt = nowNanos()
+        built += build(from..to)
+        val worked = nowNanos() - startedAt
+        from = to + 1
+        if (from <= range.last) pauseAfter(worked)   // none after the last: what comes next is the attach, on the main thread
+    }
+    return built
+}
 
 /**
  * What a tap on a library row may skip, decided from ids (B13-4).

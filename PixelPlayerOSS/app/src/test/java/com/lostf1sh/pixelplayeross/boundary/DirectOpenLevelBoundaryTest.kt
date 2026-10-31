@@ -46,7 +46,7 @@ class DirectOpenLevelBoundaryTest {
 
     @Test
     fun `a level that cannot be read or restored refuses Direct`() {
-        assertThat(body(sink, "private fun configureUsbBitPerfect(")).contains("OpenLevelCheck.UNVERIFIED")
+        assertThat(body(sink, "private fun configureUsbBitPerfect(") + body(sink, "private fun rebuildUsbStream(")).contains("OpenLevelCheck.UNVERIFIED")
     }
 
     @Test

@@ -1,4 +1,4 @@
-// Host stub of Android's liblog for tools/natural-join-test.cpp: the native engine and the USB output
+// Host stub of Android's liblog for tools/natural-join-test.cpp: the USB writer
 // log through __android_log_print; the test defines it (silent unless SIM_LOG is set).
 #pragma once
 #include <stdarg.h>

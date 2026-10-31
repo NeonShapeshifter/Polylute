@@ -10,7 +10,7 @@ data class Song(
     /** The current MediaStore locator. Changes when Android renumbers; not an identity. */
     val id: String,
     /**
-     * The durable, PixelPlayer-owned identity. Stable across renumbers and restarts.
+     * The durable, Polylute-owned identity. Stable across renumbers and restarts.
      *
      * Empty for songs that are not library items — an external URI handed to the player, or a row
      * that predates the bootstrap migration and has not been rescanned yet.

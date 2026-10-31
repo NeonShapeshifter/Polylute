@@ -63,7 +63,7 @@ class WaveScrollBoundaryTest {
     }
 
     @Test
-    fun `the player surfaces carry no endless animation of their own`() {
+    fun `the player surfaces carry no unguarded endless animation of their own`() {
         val surfaces = listOf(
             "presentation/components/player/FullPlayerContent.kt",
             "presentation/components/player/FullPlayerScreen.kt",
@@ -85,7 +85,17 @@ class WaveScrollBoundaryTest {
             val text = source(path)
             assertThat(text).doesNotContain("rememberInfiniteTransition")
             assertThat(text).doesNotContain("infiniteRepeatable")
-            assertThat(text).doesNotContain("iterations = Int.MAX_VALUE")
+            if (path == "presentation/components/player/PlayerTrackInfoSurface.kt") {
+                // B44-fix1 explicitly asks for overflow marquees, gated by visibility and system motion.
+                assertThat(text).contains("metadataVisible && !com.lostf1sh.pixelplayeross.ui.ds.rememberDapReducedMotion()")
+                assertThat(text).contains("lifecycle.isAtLeast(Lifecycle.State.RESUMED)")
+                assertThat(text).contains("isVisible && env.allowRealtimeUpdates")
+                assertThat(text).contains("env.currentSheetState == PlayerSheetState.EXPANDED")
+                assertThat(text).contains(".then(if (scrolling) Modifier.basicMarquee(")
+                assertThat(source("presentation/components/player/FullPlayerScreen.kt")).contains("isVisible = pages.isOnPlayer")
+            } else {
+                assertThat(text).doesNotContain("iterations = Int.MAX_VALUE")
+            }
         }
     }
 
@@ -95,7 +105,6 @@ class WaveScrollBoundaryTest {
         // bubbles). A new entry here needs a reason: an endless animation holds the window at refresh rate.
         val allowed = setOf(
             "presentation/components/LyricsSheet.kt",
-            "presentation/components/subcomps/SineWaveLine.kt",
             "ui/ds/DapControls.kt",
             "utils/LyricsUtils.kt",
         )

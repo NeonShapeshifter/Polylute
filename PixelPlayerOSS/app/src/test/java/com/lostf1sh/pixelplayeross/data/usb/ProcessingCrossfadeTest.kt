@@ -44,20 +44,6 @@ class ProcessingCrossfadeTest {
     // ── the policy ──────────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `a mode change keeps the pipeline only when the pipeline produces before and after`() {
-        val keep = PipelineThread.RealignAction.KEEP_PIPELINE
-        val move = PipelineThread.RealignAction.MOVE_PRODUCER
-        // The debug switch on (or a file the engine does not play): no engine now, none wanted, a thread running.
-        assertThat(PipelineThread.realignFor(engineExists = false, threadRunning = true, wantsEngine = false)).isEqualTo(keep)
-        // An engine plays it now (PRISTINE FLAC, switch off), or is about to take over: producers really change.
-        assertThat(PipelineThread.realignFor(engineExists = true, threadRunning = false, wantsEngine = false)).isEqualTo(move)
-        assertThat(PipelineThread.realignFor(engineExists = false, threadRunning = true, wantsEngine = true)).isEqualTo(move)
-        // No pipeline is running: there is no queue to keep.
-        assertThat(PipelineThread.realignFor(engineExists = false, threadRunning = false, wantsEngine = false)).isEqualTo(move)
-        assertThat(PipelineThread.realignFor(engineExists = true, threadRunning = true, wantsEngine = false)).isEqualTo(move)
-    }
-
-    @Test
     fun `the crossfade is 20 ms of the stream's rate`() {
         assertThat(PipelineThread.PROCESSING_CROSSFADE_MS).isEqualTo(20)
         assertThat(PipelineThread.crossfadeFrames(48_000)).isEqualTo(960)

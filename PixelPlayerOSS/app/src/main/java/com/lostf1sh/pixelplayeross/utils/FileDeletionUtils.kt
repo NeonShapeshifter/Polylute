@@ -1,4 +1,5 @@
 package com.lostf1sh.pixelplayeross.utils
+import android.app.RecoverableSecurityException
 import android.content.Context
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -24,6 +25,8 @@ object FileDeletionUtils {
                     deleteFileLegacy(context, filePath)
                 }
             }
+        } catch (e: RecoverableSecurityException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -72,23 +75,21 @@ object FileDeletionUtils {
      * Android 10 (API 29) deletion - Scoped Storage
      */
     @RequiresApi(Build.VERSION_CODES.Q)
-    private suspend fun deleteFileAndroid10(context: Context, filePath: String): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val file = File(filePath)
-                if (!file.exists()) return@withContext true
-
-                val uri = MediaStorePermissionHelper.getMediaStoreUri(context, filePath)
-                return@withContext if (uri != null) {
-                    val rowsDeleted = context.contentResolver.delete(uri, null, null)
-                    rowsDeleted > 0
-                } else {
-                    file.delete()
+    private suspend fun deleteFileAndroid10(context: Context, filePath: String): Boolean = withContext(Dispatchers.IO) {
+        val file = File(filePath)
+        if (!file.exists()) return@withContext true
+        if (file.delete()) {
+            // Legacy storage allows the file operation. MediaStore is bookkeeping after it.
+            runCatching {
+                MediaStorePermissionHelper.getMediaStoreUri(context, filePath)?.let { uri ->
+                    context.contentResolver.delete(uri, null, null)
                 }
-            } catch (e: Exception) {
-                false
             }
+            return@withContext true
         }
+        val uri = MediaStorePermissionHelper.getMediaStoreUri(context, filePath) ?: return@withContext false
+        // A RecoverableSecurityException reaches the caller with its system consent action.
+        context.contentResolver.delete(uri, null, null) > 0
     }
 
     /**

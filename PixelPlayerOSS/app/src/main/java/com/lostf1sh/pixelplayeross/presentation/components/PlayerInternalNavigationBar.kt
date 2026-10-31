@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 
 internal val NavBarContentHeight = 58.dp
 internal val NavBarCompactContentHeight = 52.dp
-internal val NavBarContentHeightFullWidth = NavBarContentHeight
+
 
 internal val MaxNavigationBarBottomInset = 96.dp
 

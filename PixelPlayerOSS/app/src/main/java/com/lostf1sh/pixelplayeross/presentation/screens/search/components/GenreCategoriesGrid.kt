@@ -1,206 +1,100 @@
 package com.lostf1sh.pixelplayeross.presentation.screens.search.components
 
-import com.lostf1sh.pixelplayeross.utils.currentLocale
-import androidx.annotation.OptIn
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ViewList
-import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.ExperimentalTextApi
-import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.media3.common.util.UnstableApi
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.size.Size
+import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Genre
 import com.lostf1sh.pixelplayeross.presentation.components.MiniPlayerHeight
-import com.lostf1sh.pixelplayeross.presentation.components.SmartImage
 import com.lostf1sh.pixelplayeross.presentation.components.getNavigationBarHeight
 import com.lostf1sh.pixelplayeross.presentation.components.resolveNavBarOccupiedHeight
-import com.lostf1sh.pixelplayeross.presentation.utils.GenreIconProvider
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
-import com.lostf1sh.pixelplayeross.ui.theme.LocalPixelPlayerDarkTheme
-import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import com.lostf1sh.pixelplayeross.ui.ds.DapIcon
-import com.lostf1sh.pixelplayeross.ui.ds.DapIconKind
-import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
-import com.lostf1sh.pixelplayeross.ui.ds.Dap
-import com.lostf1sh.pixelplayeross.ui.ds.DapRadius
-import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
-import com.lostf1sh.pixelplayeross.ui.ds.DapType
-import com.lostf1sh.pixelplayeross.R
+import com.lostf1sh.pixelplayeross.ui.ds.*
+import com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr
 import kotlinx.collections.immutable.ImmutableList
-import androidx.compose.ui.text.style.TextAlign
-import java.util.Locale
 
-@OptIn(UnstableApi::class)
 @Composable
 fun GenreCategoriesGrid(
     genres: ImmutableList<Genre>,
     onGenreClick: (Genre) -> Unit,
     playerViewModel: PlayerViewModel,
     modifier: Modifier = Modifier,
-    bottomContentPadding: androidx.compose.ui.unit.Dp? = null
+    bottomContentPadding: androidx.compose.ui.unit.Dp? = null,
 ) {
-    if (genres.isEmpty()) {
-        Box(
-            modifier = modifier.fillMaxSize().padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = stringResource(R.string.no_genres_available),
-                style = DapType.Body,
-                color = Dap.tertiaryText,
-                textAlign = TextAlign.Center,
-            )
-        }
-        return
+    val isGrid by playerViewModel.isGenreGridView.collectAsStateWithLifecycle()
+    val compact by playerViewModel.navBarCompactMode.collectAsStateWithLifecycle()
+    val icons by playerViewModel.customGenreIcons.collectAsStateWithLifecycle(initialValue = emptyMap())
+    val padding = PaddingValues(top = 8.dp, bottom = bottomContentPadding ?: (28.dp + resolveNavBarOccupiedHeight(getNavigationBarHeight(), compact) + MiniPlayerHeight))
+    val content = modifier.fillMaxSize().padding(horizontal = DapSpacing.Gutter)
+    val header: @Composable () -> Unit = {
+        GenreListHeader(playerViewModel::toggleGenreViewMode, playerViewModel::shuffleRandomGenre)
     }
-
-    val systemNavBarHeight = getNavigationBarHeight()
-    val customGenreIcons = playerViewModel.customGenreIcons.collectAsStateWithLifecycle(
-        initialValue = emptyMap(),
-        context = kotlin.coroutines.EmptyCoroutineContext
-    ).value
-
-    val isGridView by playerViewModel.isGenreGridView.collectAsStateWithLifecycle()
-    val navBarCompactMode by playerViewModel.navBarCompactMode.collectAsStateWithLifecycle()
-
-    LazyVerticalGrid(
-        columns = if (isGridView) GridCells.Fixed(2) else GridCells.Fixed(1),
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 18.dp)
-            .clip(RoundedCornerShape(DapRadius.Surface)),
-        contentPadding = PaddingValues(
-            top = 8.dp,
-            bottom = bottomContentPadding ?: (28.dp + resolveNavBarOccupiedHeight(systemNavBarHeight, navBarCompactMode) + MiniPlayerHeight)
-        ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            androidx.compose.foundation.layout.Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = 0.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // A mono tracked section header, not an oversized Material page title. This read
-                // as the screen's own title competing with the search field above it.
-                Text(
-                    text = stringResource(R.string.browse_by_genre).uppercase(currentLocale()),
-                    style = DapType.SectionHeader,
-                    color = Dap.tertiaryText,
-                )
-
-                // A quiet glyph action. The filled circle and its animated corner radius were
-                // the last Material control on this screen.
-                Box(
-                    modifier = Modifier
-                        .size(DapSizes.MinTouchTarget)
-                        .clip(RoundedCornerShape(DapRadius.Surface))
-                        .clickable(
-                            onClickLabel = stringResource(R.string.cd_toggle_grid_list),
-                            onClick = { playerViewModel.toggleGenreViewMode() }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    DapIcon(
-                        kind = DapIconKind.List,
-                        tint = Dap.tertiaryText,
-                        size = 18.dp
-                    )
-                }
-            }
+    if (genres.isEmpty()) {
+        Box(content, contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.no_genres_available), style = DapType.Body, color = Dap.tertiaryText)
         }
-        items(genres, key = { it.id }) { genre ->
-            GenreCard(
-                genre = genre,
-                customIcons = customGenreIcons,
-                onClick = { onGenreClick(genre) },
-                isGridView = isGridView
-            )
+    } else if (isGrid) {
+        LazyVerticalGrid(GridCells.Fixed(2), content, contentPadding = padding,
+            verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            item(span = { GridItemSpan(maxLineSpan) }) { header() }
+            items(genres, key = { it.id }) { genre -> GenreTile(genre, icons[genre.id]) { onGenreClick(genre) } }
+        }
+    } else {
+        LazyColumn(content, contentPadding = padding, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            item { header() }
+            items(genres, key = { it.id }) { genre -> GenreListRow(genre, icons[genre.id]) { onGenreClick(genre) } }
         }
     }
 }
 
 @Composable
-private fun GenreCard(
-    genre: Genre,
-    customIcons: Map<String, Int>,
-    onClick: () -> Unit,
-    isGridView: Boolean
-) {
-    // A genre is a way into the library, not a category with its own colour. One placeholder
-    // ground, one name, one glyph. No per-genre palette, no per-genre typography.
-    val imageRes = remember(genre.id, customIcons) {
-        customIcons[genre.id] ?: getGenreImageResource(genre.id)
+private fun GenreListHeader(onToggle: () -> Unit, onShuffle: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.browse_by_genre), Modifier.weight(1f), style = DapType.SectionHeader, color = Dap.tertiaryText)
+        DapIconButton(DapIconKind.Shuffle, stringResource(R.string.shuffle_all_genres), onShuffle)
+        DapIconButton(DapIconKind.List, stringResource(R.string.cd_toggle_grid_list), onToggle)
     }
-    Column(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (isGridView) Modifier.aspectRatio(1f)
-                    else Modifier.height(64.dp)
-                )
-                .clip(RoundedCornerShape(DapRadius.Surface))
-                .background(Dap.surfaceRaised)
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(imageRes),
-                contentDescription = null,
-                colorFilter = ColorFilter.tint(Dap.disabledText),
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(28.dp)
-            )
-        }
-        Spacer(Modifier.height(DapSpacing.Sm))
-        Text(
-            text = genre.name,
-            style = DapType.Note.copy(fontWeight = FontWeight.Medium),
-            color = Dap.primaryText,
-        )
+}
+
+@Composable
+internal fun GenreListRow(genre: Genre, icon: Int?, onClick: () -> Unit) {
+    DapMediaRow(
+        title = genre.name,
+        subtitle = pluralStringResource(R.plurals.genre_count_songs, genre.songCount, genre.songCount),
+        modifier = Modifier.clip(RoundedCornerShape(DapRadius.Surface)).background(frostedPanelOr(Dap.surfaceRaised)),
+        // B48-2: the genre's own image, else its custom icon, else its letter (not the music-note placeholder)
+        leading = {
+            GenreArt(genre, icon, Modifier.genreRowThumb().background(Dap.panelRaised), DapType.Row, Size(96, 96))
+        },
+        divider = false,
+        onClick = onClick,
+        minHeight = DapHeights.MediaRowTall,
+    )
+}
+
+@Composable
+private fun GenreTile(genre: Genre, icon: Int?, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(DapRadius.Surface))
+        .background(frostedPanelOr(Dap.surfaceRaised)).clickable(onClick = onClick).padding(8.dp)) {
+        // B48-2: the genre's own image cropped like an album tile, else its custom icon, else its letter
+        GenreArt(genre, icon, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(DapRadius.Surface)), DapType.Heading, Size(360, 360))
+        Spacer(Modifier.height(8.dp))
+        Text(genre.name, style = DapType.Row, color = Dap.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(pluralStringResource(R.plurals.genre_count_songs, genre.songCount, genre.songCount), style = DapType.Caption, color = Dap.secondaryText)
     }
 }

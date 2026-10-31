@@ -117,7 +117,8 @@ class B23WiringBoundaryTest {
         assertThat(loop).contains("const int64_t reapStartUs = monotonicUs();")
         assertThat(loop).contains("usbOutputGapAddReap(&ctx->outputGap, monotonicUs() - reapStartUs);")
         // the ring is as deep as it was
-        assertThat(text(jni, "usb-audio-output.h")).contains("#define USB_AUDIO_NUM_URBS 80")
+        assertThat(text(jni, "usb-pcm-packetizer.h")).contains("#define USB_TRANSPORT_RING_URBS 128")   // B46-A1: the ring is the plan's, one definition
+        assertThat(text(jni, "usb-audio-output.h")).contains("#define USB_AUDIO_NUM_URBS USB_TRANSPORT_RING_URBS")
     }
 
     // ── P3 ───────────────────────────────────────────────────────────────────────────────────────

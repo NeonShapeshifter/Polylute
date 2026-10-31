@@ -179,7 +179,9 @@ class VolumeHudController(
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             x = (EDGE_MARGIN.value * density).toInt()
             y = -(ABOVE_CENTRE.value * density).toInt()
-            setFitInsetsTypes(0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                setFitInsetsTypes(0)
+            }
         }
 
         val composeView = ComposeView(activity).apply {

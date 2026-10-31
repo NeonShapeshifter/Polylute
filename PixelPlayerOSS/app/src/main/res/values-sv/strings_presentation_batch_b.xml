@@ -20,8 +20,6 @@
     <string name="presentation_batch_b_export_playlist">Exportera spellista</string>
     <string name="presentation_batch_b_delete_playlist_confirm_title">Ta bort spellistan?</string>
     <string name="presentation_batch_b_delete_playlist_confirm_body">Är du säker på att du vill ta bort den här spellistan?</string>
-    <string name="presentation_batch_b_rename_playlist_dialog_title">Byt namn på spellista</string>
-    <string name="presentation_batch_b_new_name">Nytt namn</string>
     <string name="presentation_batch_b_quick_fill_select_songs">Välj låtar</string>
     <string name="presentation_batch_b_quick_fill_choose_genre">Välj genre</string>
     <string name="presentation_batch_b_search_songs_label">Sök låtar</string>
@@ -42,9 +40,5 @@
     <string name="presentation_batch_b_queue_recently_played">Nyligen spelade</string>
     <string name="presentation_batch_b_date_today">Idag</string>
     <string name="presentation_batch_b_date_yesterday">Igår</string>
-    <string name="presentation_batch_b_navbar_adjust_title">Justera hörnradie</string>
-    <string name="presentation_batch_b_navbar_adjust_subtitle">Anpassa navigeringsfältets hörn efter enhetens fysiska hörn för ett sömlöst utseende.</string>
-    <string name="presentation_batch_b_corner_radius_label">Hörnradie</string>
-    <string name="presentation_batch_b_corner_dp_format">%1$d dp</string>
     <string name="presentation_batch_b_genre_shuffle_label">Blanda %1$s</string>
 </resources>

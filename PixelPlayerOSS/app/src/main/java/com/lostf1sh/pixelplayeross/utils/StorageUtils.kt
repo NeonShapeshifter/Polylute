@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.utils
 
 import android.content.Context
+import android.os.Build
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
@@ -45,7 +46,7 @@ object StorageUtils {
         for (volume in storageVolumes) {
             if (volume.state != Environment.MEDIA_MOUNTED) continue
 
-            val path = getVolumePath(volume) ?: continue
+            val path = getVolumePath(context, storageManager, volume) ?: continue
 
             val storageType = determineStorageType(volume)
             val displayName = when (storageType) {
@@ -73,18 +74,19 @@ object StorageUtils {
     /**
      * Get the file path for a StorageVolume
      */
-    private fun getVolumePath(volume: StorageVolume): File? {
-        return try {
-            volume.directory
-        } catch (e: Exception) {
-            try {
-                val getPath = volume.javaClass.getMethod("getPath")
-                val path = getPath.invoke(volume) as? String
-                path?.let { File(it) }
-            } catch (e: Exception) {
-                null
-            }
+    private fun getVolumePath(context: Context, manager: StorageManager, volume: StorageVolume): File? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return volume.directory
+        if (volume.isPrimary) return Environment.getExternalStorageDirectory()
+        // API 29 has no public volume-directory getter. Match the public app directory to
+        // its volume, then remove only the documented Android/data/<package>/files suffix.
+        for (directory in context.getExternalFilesDirs(null).filterNotNull()) {
+            val mounted = manager.getStorageVolume(directory) ?: continue
+            if (mounted.uuid != volume.uuid || mounted.isPrimary != volume.isPrimary) continue
+            val suffix = "/Android/data/${context.packageName}/files"
+            val path = directory.absolutePath
+            if (path.endsWith(suffix)) return File(path.removeSuffix(suffix))
         }
+        return null
     }
 
     /**

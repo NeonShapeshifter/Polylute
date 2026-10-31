@@ -1,5 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.musicinfo
 
+import com.lostf1sh.pixelplayeross.data.offline.InfoKind
+
 import android.content.Context
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
@@ -65,6 +67,22 @@ class MusicInfoRepository @Inject constructor(
         val tag = AppLocaleManager.currentLanguageTag(context)
         val language = tag.ifBlank { context.resources.configuration.locales[0].language }.lowercase().take(3)
         return listOf(language.takeIf { it.length in 2..3 } ?: "en", "en").distinct()
+    }
+
+    private val startupRepairGate = kotlinx.coroutines.sync.Mutex()
+
+    suspend fun repairAtStartupOnce() = withContext(Dispatchers.IO) {
+        startupRepairGate.lock()
+        try {
+            val marker = File(context.filesDir, "music-info-missing-b44.done")
+            if (!marker.exists()) {
+                cache.dropMissingMarks()
+                marker.writeText("done")
+            }
+            repairBrokenImagesOnce()
+        } finally {
+            startupRepairGate.unlock()
+        }
     }
 
     private val imageRepairGate = kotlinx.coroutines.sync.Mutex()
@@ -178,6 +196,35 @@ class MusicInfoRepository @Inject constructor(
     }
 
     // ── what the listener controls ───────────────────────────────────────────────────────────────
+
+    suspend fun updateDiscoveredPhoto(name: String) = withContext(Dispatchers.IO) {
+        service.cachedArtistPhoto(name)?.let { photo ->
+            musicDao.getArtistIdByNormalizedName(name)?.let { musicDao.updateArtistImageUrl(it, photo.path) }
+        }
+    }
+
+    suspend fun deleteDiscovered(kind: InfoKind, name: String, artist: String, songId: String) = withContext(Dispatchers.IO) {
+        when (kind) {
+            InfoKind.PHOTO -> {
+                val key = MusicInfoService.photoKey(name)
+                deleteAsset("info|ARTIST_PHOTO|$key", cache.get(MusicInfoCache.Kind.ARTIST_PHOTO, key)?.file?.absolutePath)
+            }
+            InfoKind.BIO -> deleteAbout(AboutKind.ARTIST, name, null)
+            InfoKind.COVER -> {
+                for (credit in setOf(artist, MusicBrainzClient.firstCreditedArtist(artist))) {
+                    deleteAsset("info|COVER|${MusicInfoService.coverKey(name, credit)}", null)
+                }
+                songId.toLongOrNull()?.let { downloadedCoverArrived(it) }
+            }
+            InfoKind.DESCRIPTION -> {
+                for (credit in setOf(artist, MusicBrainzClient.firstCreditedArtist(artist))) {
+                    deleteAbout(AboutKind.ALBUM, name, credit)
+                }
+            }
+            InfoKind.LYRICS -> Unit
+        }
+        _coverVersion.update { it + 1 }
+    }
 
     suspend fun deleteJobDownloads(owner: String) = withContext(Dispatchers.IO) {
         assets.release(owner, "info|").forEach { deleteAsset(it.id, it.file) }

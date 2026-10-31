@@ -3,17 +3,7 @@ package com.decent.usbaudio.media3
 /**
  * Serializes signal-mode transitions and reconciles them to the latest desired mode.
  *
- * ## Why this exists
- *
- * A signal-mode change cannot be discovered by the sink's PCM path. While `NativeAudioEngine` owns
- * a local FLAC it writes to USB from its own thread, and `NativeEngineAwareLoadControl` — correctly
- * — stops ExoPlayer from loading anything, so `handleBuffer` may never be called again for the life
- * of the track. A transition that waits for a PCM callback to notice it therefore never happens on
- * exactly the tracks that need it, while the route above it reports that it did.
- *
- * So the change is *pushed* from the owner of the desired state, and this class is the boundary it
- * crosses. It does not poll, it does not weaken the load control, and it does not ask the player
- * for permission.
+ * Requests are pushed so mode changes are applied even while the player is paused.
  *
  * ## Reconciliation rather than a queue
  *

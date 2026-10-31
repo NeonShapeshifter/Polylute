@@ -109,8 +109,8 @@ interface DirectSignalSource {
     // AUD-139: there is no host position here on purpose. It was a main-thread cache refreshed only
     // when somebody read it, and a read returned the position of another track from 16 minutes
     // earlier (B7-fix4, `ANCHOR origin=flush-host-position anchor=240020ms`). The sink anchors on what
-    // it knows itself — the engine's position, the pipeline's frames, Media3's own stream offset —
-    // and the engine moves only on an explicit seek.
+    // it knows itself — the pipeline's frames and Media3's own stream offset.
+    // Media3 owns all playback-position changes.
 
     /**
      * The user's own digital gain, as a contributor — **not** the composed value.
@@ -138,20 +138,6 @@ interface DirectSignalSource {
      * return the mirror.
      */
     fun handoffContext(): String? = null
-
-    /**
-     * DEBUG ONLY — plan B, off by default (B12a). The ExoPlayer pipeline (`enqueueRaw`) is the PRISTINE
-     * producer for every format, FLAC included; only when this is true may a PRISTINE local FLAC get
-     * the native engine, which is a second player and a second clock and is retired in B12b.
-     *
-     * It moves the producer and nothing else. [mode] still says PRISTINE, no [stage] is asked for,
-     * and the sink reads it only where it decides whether an engine may exist — at engine creation
-     * and at a signal-mode realign — so flipping it applies from the next such point (the next
-     * track), not to an engine that is already playing. A host that says nothing about it (the
-     * default) never has an engine. Implementations must be safe to call from the audio thread and
-     * must not do I/O.
-     */
-    fun debugForceNativeEngine(): Boolean = false
 
     /**
      * DEBUG ONLY — B12a-4, default 0. Milliseconds of silence queued ahead of an item's first frame after a stream

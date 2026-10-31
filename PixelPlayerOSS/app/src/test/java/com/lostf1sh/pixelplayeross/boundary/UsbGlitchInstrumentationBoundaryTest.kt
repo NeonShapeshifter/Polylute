@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test
 class UsbGlitchInstrumentationBoundaryTest {
     private val jni = File("../../decent-player/libs/decent-usb-audio-driver/src/main/jni")
     private val output = File(jni, "usb-audio-output.cpp").readText().replace("\r\n", "\n")
-    private val engine = File(jni, "native-audio-engine.cpp").readText().replace("\r\n", "\n")
 
     private fun body(source: String, signature: String): String {
         val start = source.indexOf(signature)
@@ -22,12 +21,12 @@ class UsbGlitchInstrumentationBoundaryTest {
 
     @Test
     fun `feedback is applied through the shared rule and deviations are reported`() {
-        val feedback = body(output, "static void handleFeedbackCompletion(")
+        val handler = body(output, "static void handleFeedbackCompletion(")
+        assertThat(handler).contains("observeCleanFeedback(ctx, feedbackData(ctx), true)")
+        val feedback = body(output, "static void observeCleanFeedback(")
         assertThat(feedback).contains("usbFeedbackApply(")
         assertThat(feedback).contains("USB_GLITCH_FEEDBACK_DEVIATION")
-        // a reading the window refuses is still reported — through the shared helper since B12a-2 (see below)
-        assertThat(feedback).contains("usbFeedbackWatchOutOfWindow(")
-        assertThat(feedback).contains("announceImplausible(")
+        assertThat(feedback).contains("watchFeedbackReading(ctx, raw, nominal)")
         assertThat(body(output, "static void announceImplausible(")).contains("USB_GLITCH_FEEDBACK_REJECTED")
         assertThat(feedback).doesNotContain("nominal * 1.01")
     }
@@ -47,21 +46,24 @@ class UsbGlitchInstrumentationBoundaryTest {
      * tools/natural-join-test.cpp (the whole output against a fake usbfs).
      */
     @Test
-    fun `every applied feedback reading feeds the stuck detector and the audio path logs nothing per reading`() {
+    fun `every clean feedback reading feeds the stuck detector and the audio path logs nothing per reading`() {
         val handler = body(output, "static void handleFeedbackCompletion(")
-        assertThat(handler).contains("watchFeedbackReading(ctx, raw, nominal)")
-        // only an applied reading counts: the call sits inside the branch that applied it ...
-        assertThat(handler.indexOf("watchFeedbackReading(")).isGreaterThan(handler.indexOf("if (applied == newFpmf) {"))
-        // ... and since B41-fix1 (A1b) the reading is judged BEFORE the follower takes it, so that `auto` can keep a refused one out of it
-        assertThat(handler.indexOf("ctx->calibratedFpmf = newFpmf;")).isGreaterThan(handler.indexOf("watchFeedbackReading("))
-        assertThat(handler).contains("if (!(ctx->refusing && usbFeedbackPolicy() == USB_FEEDBACK_AUTO)) ctx->calibratedFpmf = newFpmf;")
-        // ... and a refused reading (beyond +-5 %) goes to the watch's own entry point instead (B12a-2)
-        assertThat(handler.indexOf("watchFeedbackReading(")).isLessThan(handler.indexOf("usbFeedbackWatchOutOfWindow("))
-        assertThat(handler).contains("announceImplausible(ev, nominal, ctx->sampleRate, ctx->calibratedFpmf)")
+        assertThat(handler).contains("observeCleanFeedback(ctx, feedbackData(ctx), true)")
+        val clean = body(output, "static void observeCleanFeedback(")
+        // Every observer is before the branch that protects the follower's window.
+        for (observer in listOf("watchFeedbackReading(ctx, raw, nominal)", "usbSecondRingFeedback(")) {
+            assertThat(clean.indexOf(observer)).isAtLeast(0)
+            assertThat(clean.indexOf(observer)).isLessThan(clean.indexOf("if (!outside) {"))
+        }
+        assertThat(clean).contains("usbFeedbackApply(ctx->calibratedFpmf, fpmf, nominal)")
+        assertThat(clean).contains("if (!(ctx->refusing && usbFeedbackPolicyRefuses(usbFeedbackPolicy()))) ctx->calibratedFpmf = applied;")
+        // The one-shot is observed too, while its startup calibration keeps the existing sending policy.
+        assertThat(body(output, "static double readFeedback(")).contains("observeCleanFeedback(ctx, fb, false)")
+        assertThat(body(output, "static double policyFpmfNow(")).contains("ctx->continuousFeedbackSeen ? &ctx->feedbackWatch : nullptr")
 
         // ~1000 readings a second: the per-reading helper allocates and logs nothing; only the event helper logs
         val perReading = body(output, "static void watchFeedbackReading(")
-        assertThat(perReading).contains("usbFeedbackWatchObserve(")
+        assertThat(perReading).contains("usbFeedbackWatchObservePolicy(")
         for (forbidden in listOf("reportUsbGlitch", "LOGI", "LOGW", "malloc", "new ", "std::string", "snprintf")) {
             assertThat(perReading).doesNotContain(forbidden)
         }
@@ -90,9 +92,13 @@ class UsbGlitchInstrumentationBoundaryTest {
         assertThat(residual).contains("effectiveFpmf(ctx),")
         assertThat(residual).doesNotContain("ctx->calibratedFpmf,")
         // the policy changes only the increment per microframe: nothing in it touches the accumulator
+        // B48-fix1: the policy's answer is `policyFpmfNow` (the start guard may hold it at nominal there), and `effectiveFpmf` records what it returned
         val effective = body(output, "static double effectiveFpmf(")
-        assertThat(effective).contains("usbFeedbackPolicyFpmf(")
+        assertThat(effective).contains("policyFpmfNow(ctx)")
         assertThat(effective).doesNotContain("frameAccumulator")
+        val policyNow = body(output, "static double policyFpmfNow(")
+        assertThat(policyNow).contains("usbFeedbackPolicyFpmf(")
+        assertThat(policyNow).doesNotContain("frameAccumulator")
         // never persisted, and a new process starts in auto (B12a-2), in debug and in release alike
         assertThat(output).contains("static std::atomic<int> g_feedbackPolicy{USB_FEEDBACK_AUTO};")
         assertThat(output).doesNotContain("g_feedbackPolicy{USB_FEEDBACK_FOLLOW}")
@@ -100,11 +106,4 @@ class UsbGlitchInstrumentationBoundaryTest {
         assertThat(output).contains("Java_com_decent_usbaudio_UsbAudioStream_nativeGetFeedbackStats(")
     }
 
-    @Test
-    fun `slow file reads are reported and the log uses its own tag`() {
-        val readAt = engine.substring(engine.indexOf("ssize_t readAt("), engine.indexOf("off64_t getLength()"))
-        assertThat(readAt).contains("USB_GLITCH_READ_SLOW")
-        assertThat(output).contains("\"USB_GLITCH\"")
-        assertThat(File(jni, "CMakeLists.txt").readText()).contains("usb-glitch.cpp")
-    }
 }

@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="cd_confirm_add_songs">Añadir canciones seleccionadas</string>
     <string name="cd_import_m3u_playlist">Importar lista M3U</string>
     <string name="cd_locate_current_song">Localizar canción actual</string>
-    <string name="cd_no_songs_in_library">No se encontraron canciones</string>
     <string name="cd_sort_options">Opciones de ordenación</string>
     <string name="lib_empty_albums_all_subtitle">Los álbumes aparecerán aquí en cuanto tu biblioteca tenga canciones agrupadas.</string>
     <string name="lib_empty_albums_all_title">No hay álbumes disponibles</string>
@@ -30,8 +28,6 @@
     <string name="library_error_loading_artists">Error al cargar artistas</string>
     <string name="library_error_body">No se pudo cargar tu biblioteca. Inténtalo de nuevo.</string>
     <string name="library_error_loading_songs">Error al cargar canciones</string>
-    <string name="library_no_songs_in_library_message">No se encontraron canciones en tu biblioteca.</string>
-    <string name="library_no_songs_rescan_hint">Prueba a volver a escanear en los ajustes si tienes música en tu dispositivo.</string>
     <string name="library_retry">Reintentar</string>
     <string name="library_storage_filter_all_songs">Todas las canciones</string>
     <string name="library_storage_filter_offline">Local</string>
@@ -40,8 +36,6 @@
     <string name="library_tab_folders">Carpetas</string>
     <string name="library_tab_genres">Géneros</string>
     <string name="library_tab_collections">Colecciones</string>
-    <string name="lib_empty_generic_title">Aún no hay nada</string>
-    <string name="lib_empty_generic_subtitle">Cuando tu biblioteca tenga algo que mostrar, aparecerá aquí.</string>
     <string name="lib_empty_genres_title">Aún no hay géneros</string>
     <string name="lib_empty_genres_subtitle">Los géneros aparecen cuando se indexan canciones con etiquetas de género.</string>
     <string name="lib_empty_collections_title">Sin colecciones</string>

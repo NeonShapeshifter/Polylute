@@ -71,11 +71,7 @@
                   B12a plan B: the ExoPlayer pipeline is the PRISTINE producer by default; this brings the native
                   FLAC engine back (extra: enabled = true or false). Persisted, off by default, debug builds only.
                 -->
-                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_FORCE_NATIVE_ENGINE" />
-                <action android:name="com.lostf1sh.pixelplayeross.debug.REPORT_FORCE_NATIVE_ENGINE" />
                 <!-- Retired by B12a (nothing left to force): handled as a logged warning so an old script is not silent. -->
-                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_PRISTINE_EXOPLAYER_PIPELINE" />
-                <action android:name="com.lostf1sh.pixelplayeross.debug.REPORT_PRISTINE_EXOPLAYER_PIPELINE" />
                 <!-- AUD-145: how the USB writer waits for a URB completion (extra: mode = poll or sleep). -->
                 <action android:name="com.lostf1sh.pixelplayeross.debug.SET_USB_WAIT_MODE" />
                 <!--
@@ -90,6 +86,21 @@
                   Maintenance: data/diagnostics/NoiseMark); only this broadcast, to run it from a shell, is debug.
                 -->
                 <action android:name="com.lostf1sh.pixelplayeross.debug.MARK_NOISE" />
+                <!--
+                  B47-A5: automatic recovery of a locked-up DAC (the feedback railed beyond +-4.5 % for 1.5 s): extra enabled = true or false. Process-only, not persisted; on by default
+                  in debug and release. The release build has neither this nor the next action.
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_DAC_RECOVERY" />
+                <!--
+                  B47-A5: runs recovery step 1 (restart the streaming interface) or 2 (bus reset, claims again) at the writer's next look (extra: step = 1 or 2), to test each by hand
+                  on the real DAC when it is locked up. Not while paused or in a seek.
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.RECOVER_DAC_NOW" />
+                <!--
+                  B48-fix1: the feedback start guard (the first 500 ms after the streaming interface starts go out at the nominal rate whatever the feedback reads): extra enabled = true
+                  or false. Process-only, not persisted; on by default in debug and release. The release build does not have this action.
+                -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.SET_FEEDBACK_START_GUARD" />
                 <!--
                   B12a-3 (F-10): the silent track that makes Android see USB Direct playing (extra: enabled = true or
                   false). Process-only override, not persisted; on by default. Applies from the next play/pause.

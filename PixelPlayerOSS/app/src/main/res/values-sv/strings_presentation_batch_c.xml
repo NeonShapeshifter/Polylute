@@ -7,8 +7,6 @@
     <string name="library_tab_folders">Mappar</string>
     <string name="library_tab_genres">Genrer</string>
     <string name="library_tab_collections">Samlingar</string>
-    <string name="lib_empty_generic_title">Inget här ännu</string>
-    <string name="lib_empty_generic_subtitle">När ditt bibliotek har något att visa dyker det upp här.</string>
     <string name="lib_empty_genres_title">Inga genrer ännu</string>
     <string name="lib_empty_genres_subtitle">Genrer visas när låtar med genretaggar har indexerats.</string>
     <string name="lib_empty_collections_title">Inga samlingar</string>
@@ -19,9 +17,6 @@
     <string name="library_error_loading_albums">Det gick inte att läsa in album</string>
     <string name="library_error_loading_artists">Det gick inte att läsa in artister</string>
     <string name="library_retry">Försök igen</string>
-    <string name="library_no_songs_in_library_message">Inga låtar hittades i ditt bibliotek.</string>
-    <string name="library_no_songs_rescan_hint">Har du musik på enheten kan du prova att söka igenom biblioteket på nytt i inställningarna.</string>
-    <string name="cd_no_songs_in_library">Inga låtar hittades</string>
     <string name="library_action_new">Ny spellista</string>
     <string name="cd_import_m3u_playlist">Importera M3U-spellista</string>
     <string name="cd_locate_current_song">Hitta aktuell låt</string>
@@ -31,7 +26,6 @@
     <string name="lyrics_synced_badge">SYNKAD</string>
     <string name="song_field_artist_optional">Artist (valfritt)</string>
     <string name="song_picker_title">Lägg till låtar</string>
-    <string name="cd_confirm_add_songs">Lägg till valda låtar</string>
     <string name="song_picker_action_add">Lägg till</string>
     <string name="song_picker_search_label">Sök eller filtrera låtar…</string>
     <string name="song_picker_filter_favorites">Gillade</string>

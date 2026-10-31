@@ -72,7 +72,9 @@ enum UsbPolicyEventKind {
     USB_POLICY_IDLE = 6,          /* the writer announced it would idle (a pause, a seek while paused) */
     USB_POLICY_SEEK = 7,          /* a seek began */
     USB_POLICY_RESUME = 8,        /* a resume */
-    USB_POLICY_EVENT_KIND_COUNT = 9,
+    USB_POLICY_DAC_LOCKED = 9,    /* B47-A5 / B48-fix4: the rail or stuck watch fired; what says which */
+    USB_POLICY_DAC_RECOVERY = 10, /* B47-A5: a recovery step ran (what = "step1 ok", "step2 failed", "gave-up", ...) */
+    USB_POLICY_EVENT_KIND_COUNT = 11,
 };
 
 typedef struct {

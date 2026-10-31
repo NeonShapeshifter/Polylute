@@ -22,12 +22,19 @@ object FeedbackPolicy {
      */
     const val AUTO = 3
 
+    /**
+     * B46-C2, opt-in, never the default: [AUTO], but a plateau of 0.5 % or more is called stuck after 3.5 s instead of 5 s. It can only
+     * stop following a reading sooner than [AUTO] would, never follow one [AUTO] would refuse. Only the debug bridge selects it.
+     */
+    const val AUTO_EARLY = 4
+
     /** The id for a `--es mode` value, or null for anything that is not a policy (so a typo changes nothing). */
     fun parse(name: String?): Int? = when (name) {
         "follow" -> FOLLOW
         "nominal" -> NOMINAL
         "clamp" -> CLAMP
         "auto" -> AUTO
+        "auto-early" -> AUTO_EARLY
         else -> null
     }
 
@@ -36,6 +43,7 @@ object FeedbackPolicy {
         NOMINAL.toLong() -> "nominal"
         CLAMP.toLong() -> "clamp"
         AUTO.toLong() -> "auto"
+        AUTO_EARLY.toLong() -> "auto-early"
         else -> "?"
     }
 

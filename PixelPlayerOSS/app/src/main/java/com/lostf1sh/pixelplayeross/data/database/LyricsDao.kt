@@ -40,6 +40,10 @@ interface LyricsDao {
     @Query("SELECT songId FROM lyrics WHERE songId IN (:songIds) AND content != ''")
     suspend fun getSongIdsWithLyrics(songIds: List<Long>): List<Long>
 
+    /** Only identities, never lyric payloads or a query per song. */
+    @Query("SELECT library_item_id FROM lyrics WHERE source = 'remote' AND library_item_id != '' AND trim(content) != '' AND length(content) <= 50000 AND length(CAST(content AS BLOB)) <= 200000 AND instr(content, char(0)) = 0")
+    suspend fun downloadedLyricsIdentities(): List<String>
+
     // --- Identity-authoritative lyrics -----------------------------------------------------------
     //
     // The locator above is now a *resolution input*, not the owner. A user's lyrics are a statement

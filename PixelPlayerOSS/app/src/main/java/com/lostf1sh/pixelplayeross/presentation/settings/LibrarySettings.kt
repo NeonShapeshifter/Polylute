@@ -131,7 +131,7 @@ interface LibrarySettingsActions {
 @Composable
 fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsActions) {
     var showOfflineDownloads by remember { mutableStateOf(false) }
-    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.OfflineDownloadsDialog(null, { showOfflineDownloads = false })
+    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.MusicInfoDownloadsScreen(null, { showOfflineDownloads = false })
     val context = LocalContext.current
     val resources = LocalResources.current
     var refreshRequested by remember { mutableStateOf(false) }
@@ -298,7 +298,7 @@ fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsA
         )
 
         SettingsItem(
-            title = stringResource(R.string.offline_download_title),
+            title = stringResource(R.string.info_internet_title),
             leadingIcon = { Icon(Icons.Outlined.Description, null, tint = MaterialTheme.colorScheme.secondary) },
             subtitle = stringResource(R.string.offline_download_all),
             onClick = { showOfflineDownloads = true },

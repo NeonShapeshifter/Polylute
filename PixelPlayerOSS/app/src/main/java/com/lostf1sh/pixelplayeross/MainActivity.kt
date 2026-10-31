@@ -121,7 +121,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.lostf1sh.pixelplayeross.data.preferences.AppThemeMode
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_DAP_LOCK_SCREEN_ENABLED
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
@@ -479,13 +479,13 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
             isBenchmark = isBenchmarkMode,
             rebuildRequested = intent.getBooleanExtra("benchmark_rebuild_database", false),
         )
-        Timber.tag("PixelPlayerBenchmark").i(
+        Timber.tag("PolyluteBenchmark").i(
             "onCreate benchmark=$isBenchmarkMode rebuildDatabase=$shouldBenchmarkRebuildDatabase"
         )
         if (shouldBenchmarkRebuildDatabase) {
             lifecycleScope.launch {
                 userPreferencesRepository.setInitialSetupDone(true)
-                Timber.tag("PixelPlayerBenchmark").i("Enqueueing benchmark database rebuild")
+                Timber.tag("PolyluteBenchmark").i("Enqueueing benchmark database rebuild")
                 syncManager.rebuildDatabase()
                 delay(1_500L)
                 playerViewModel.prepareBenchmarkPlayerFromLibrary()
@@ -533,8 +533,14 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                 Manifest.permission.READ_EXTERNAL_STORAGE
             }
             @OptIn(ExperimentalPermissionsApi::class)
-            val mediaPermissionState = rememberPermissionState(mediaPermission)
-            val mediaPermissionGranted = mediaPermissionState.status.isGranted
+            val mediaPermissionState = rememberMultiplePermissionsState(
+                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
+                    listOf(mediaPermission, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                } else {
+                    listOf(mediaPermission)
+                }
+            )
+            val mediaPermissionGranted = mediaPermissionState.permissions.first { it.permission == mediaPermission }.status.isGranted
             val launchDecision = remember(
                 isSetupComplete,
                 mediaPermissionGranted,
@@ -661,6 +667,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         ) {
                             androidx.compose.runtime.CompositionLocalProvider(
                                 com.lostf1sh.pixelplayeross.presentation.screens.LocalFindFolders provides mainViewModel::findFolders,
+                                LocalMusicAccessGranted provides mediaPermissionGranted,
                             ) {
                                 // B42-fix1: what inside the app holds the screen on (the lyrics toggle) must not while the lock screen is what
                                 // the listener sees.
@@ -707,7 +714,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         )
                         if (!mediaPermissionGranted && !isBenchmarkMode) {
                             MusicAccessPrompt(
-                                onAllow = mediaPermissionState::launchPermissionRequest,
+                                onAllow = mediaPermissionState::launchMultiplePermissionRequest,
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
                                     .padding(horizontal = 16.dp, vertical = 72.dp),
@@ -1618,38 +1625,6 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
         intent.data = null
         intent.clipData = null
         intent.removeExtra(android.content.Intent.EXTRA_STREAM)
-    }
-
-    @Composable
-    private fun MusicAccessPrompt(
-        onAllow: () -> Unit,
-        modifier: Modifier = Modifier,
-    ) {
-        Surface(
-            modifier = modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 3.dp,
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.music_access_prompt_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.music_access_prompt_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(12.dp))
-                FilledTonalButton(onClick = onAllow) {
-                    Text(stringResource(R.string.music_access_prompt_action))
-                }
-            }
-        }
     }
 
     @androidx.annotation.OptIn(UnstableApi::class)

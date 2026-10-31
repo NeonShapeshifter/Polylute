@@ -626,6 +626,29 @@ class LyricsRepositoryImpl @Inject constructor(
         }.onFailure { Timber.tag(TAG).w(it, "Unable to cache local lyrics for ${song.title}") }
     }
 
+    override suspend fun hasLocalLyrics(song: Song): Boolean = withContext(Dispatchers.IO) {
+        loadEmbeddedLyricsFromMetadata(song) != null || findLocalLyricsFile(song) != null
+    }
+
+    override suspend fun discoverLyrics(song: Song): String? = withContext(Dispatchers.IO) {
+        // Bypass session answer caches: a later Find explicitly retries failed and expired rows.
+        val answers = searchLrcLib(song)
+        val best = rankRemoteLyricsMatches(song, answers.responses, RemoteLyricsMatchMode.AUTOMATIC).firstOrNull()?.response
+        val raw = best?.syncedLyrics?.takeIf(String::isNotBlank) ?: best?.plainLyrics
+        if (raw == null && !answers.conclusive) com.lostf1sh.pixelplayeross.data.network.noteLookupFailure()
+        raw?.takeIf { com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.rejection(it) == null }
+    }
+
+    override suspend fun saveDiscoveredLyrics(song: Song, raw: String): Boolean = withContext(Dispatchers.IO) {
+        if (com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.rejection(raw) != null) return@withContext false
+        val parsed = parseForSong(song, raw).copy(areFromRemote = true)
+        if (!parsed.isValid()) return@withContext false
+        if (!persistRemoteLyrics(song, raw, parsed)) return@withContext false
+        saveLocalLyricsJson(song, parsed)
+        noteDownloadedLyrics(song, knownRemote = true)
+        true
+    }
+
     override suspend fun prepareForOffline(song: Song): Lyrics? = withContext(Dispatchers.IO) {
         // Explicit selections clear their marks in OfflineDownloads.start. Library jobs use this
         // same resolver without clearing anything; local lyrics remain available in either case.

@@ -45,7 +45,6 @@ import com.lostf1sh.pixelplayeross.data.worker.SyncManager
 import com.lostf1sh.pixelplayeross.data.worker.SyncProgress
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -56,7 +55,6 @@ import timber.log.Timber
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.preferences.NavBarStyle
 import com.lostf1sh.pixelplayeross.data.preferences.LaunchTab
-import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.utils.AppLocaleManager
 import com.lostf1sh.pixelplayeross.data.service.player.DualPlayerEngine
 import com.lostf1sh.pixelplayeross.data.diagnostics.DeviceDiagnosticSnapshot
@@ -94,8 +92,8 @@ data class SettingsUiState(
      * so the switch cannot render a value the store does not hold.
      */
     val backNavigationMode: BackNavigationMode = BackNavigationMode.DEFAULT,
-    val lyricsSourcePreference: LyricsSourcePreference = LyricsSourcePreference.EMBEDDED_FIRST,
-    val autoScanLrcFiles: Boolean = false,
+    val lyricsSourcePreference: LyricsSourcePreference = LyricsSourcePreference.LOCAL_FIRST,
+    val autoScanLrcFiles: Boolean = true,
     val externalLyricsEnabled: Boolean = false,
     /** B40-F4: the three music-info switches (off by default), the limit of what is kept, and how much is kept now. */
     val musicInfoCoversEnabled: Boolean = false,
@@ -106,6 +104,8 @@ data class SettingsUiState(
     val blockedDirectories: Set<String> = emptySet(),
     val appRebrandDialogShown: Boolean = false,
     val fullPlayerLoadingTweaks: FullPlayerLoadingTweaks = FullPlayerLoadingTweaks(),
+    val showBookmarkButton: Boolean = true,
+    val repeatSharedSongsInShuffle: Boolean = false,
     val showPlayerFileInfo: Boolean = true,
     /** Curated DAP accent. Defaults to the appearance every existing install already has. */
     val accent: DapAccent = DapAccent.DEFAULT,
@@ -151,19 +151,6 @@ data class FailedSongInfo(
     val artist: String
 )
 
-data class LyricsRefreshProgress(
-    val totalSongs: Int = 0,
-    val currentCount: Int = 0,
-    val savedCount: Int = 0,
-    val notFoundCount: Int = 0,
-    val skippedCount: Int = 0,
-    val isComplete: Boolean = false,
-    val failedSongs: List<FailedSongInfo> = emptyList()
-) {
-    val hasProgress: Boolean get() = totalSongs > 0
-    val progress: Float get() = if (totalSongs > 0) currentCount.toFloat() / totalSongs else 0f
-    val hasFailedSongs: Boolean get() = failedSongs.isNotEmpty()
-}
 
 private sealed interface SettingsUiUpdate {
     data class Group1(
@@ -397,6 +384,16 @@ class SettingsViewModel @Inject constructor(
             )
         }
 
+        viewModelScope.launch {
+            userPreferencesRepository.repeatSharedSongsInShuffleFlow.collect { repeat ->
+                _uiState.update { it.copy(repeatSharedSongsInShuffle = repeat) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.showBookmarkButtonFlow.collect { show ->
+                _uiState.update { it.copy(showBookmarkButton = show) }
+            }
+        }
         viewModelScope.launch {
             combine<Any?, SettingsUiUpdate.Group1>(
                 userPreferencesRepository.appRebrandDialogShownFlow,
@@ -894,6 +891,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setRepeatSharedSongsInShuffle(repeat: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setRepeatSharedSongsInShuffle(repeat) }
+    }
+
+    fun setShowBookmarkButton(show: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setShowBookmarkButton(show) }
+    }
+
     fun setShowPlayerFileInfo(show: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.setShowPlayerFileInfo(show)
@@ -1018,16 +1023,6 @@ class SettingsViewModel @Inject constructor(
     }
 
 
-
-
-
-
-
-
-
-
-
-
     fun setUseAnimatedLyrics(enabled: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.setUseAnimatedLyrics(enabled)
@@ -1052,8 +1047,6 @@ class SettingsViewModel @Inject constructor(
             syncManager.forceRefresh()
         }
     }
-
-
 
 
     /**

@@ -22,15 +22,10 @@ class PipelineClockWiringBoundaryTest {
     }
 
     @Test
-    fun `stale buffers are dropped before the start is latched`() {
-        val latch = sink.substringAfter("// After a PRISTINE → PROCESSED realign the renderer resumes")
+    fun `the first pipeline buffer latches the cumulative frame baseline`() {
+        val latch = sink.substringAfter("if (usbStartMediaTimeNeedsInit) {")
         assertThat(latch).isNotEqualTo(sink)
         assertThat(latch.indexOf("pipelineClock.accept(")).isLessThan(latch.indexOf("usbStartMediaTimeUs = maxOf(0L, presentationTimeUs)"))
-    }
-
-    @Test
-    fun `the PRISTINE to PROCESSED realign arms the clock with its anchor`() {
-        assertThat(sink).contains("pipelineClock.arm(if (reanchorUs >= 0 && windowOffsetUs >= 0) windowOffsetUs + reanchorUs else -1L)")
     }
 
     @Test
@@ -43,4 +38,16 @@ class PipelineClockWiringBoundaryTest {
             assertThat(next == "pipelineClock.disarm()" || next.startsWith("// Armed with the anchor below")).isTrue()
         }
     }
+    @Test
+    fun `each Media3 item transition rearms the period without replacing its writer`() {
+        val transition = sink.substringAfter("override fun onMediaItemTransition(")
+            .substringBefore("private fun resolveTrackPath(")
+        assertThat(transition).contains("playbackHandler?.post { armPipelinePeriod() }")
+        val rearm = sink.substringAfter("private fun armPipelinePeriod() {").substringBefore("\n    }")
+        assertThat(rearm).contains("usbStartMediaTimeNeedsInit = true")
+        assertThat(rearm).contains("pipelineClock.disarm()")
+        assertThat(rearm).doesNotContain("usbStreamingThread")
+        assertThat(rearm).doesNotContain("flush()")
+    }
+
 }

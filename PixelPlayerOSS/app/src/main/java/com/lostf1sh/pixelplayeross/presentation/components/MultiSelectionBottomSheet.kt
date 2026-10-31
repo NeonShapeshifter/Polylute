@@ -106,7 +106,7 @@ fun MultiSelectionBottomSheet(
     onBatchEdit: () -> Unit
 ) {
     var showOfflineDownloads by remember { mutableStateOf(false) }
-    if (showOfflineDownloads) OfflineDownloadsDialog(selectedSongs.map { it.id }, { showOfflineDownloads = false })
+    if (showOfflineDownloads) MusicInfoDownloadsScreen(selectedSongs.map { it.id }, { showOfflineDownloads = false })
     val context = LocalContext.current
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
 

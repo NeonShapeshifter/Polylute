@@ -55,7 +55,7 @@ class OfflineDownloadWorkerTest {
     } }.associateBy { it.id }
     private val lyrics = mockk<LyricsRepository>(relaxed = true).also { coEvery { it.prepareForOffline(any()) } returns mockk<Lyrics>() }
     private val service = mockk<MusicInfoService>(relaxed = true)
-    private val downloads = mockk<OfflineDownloads>(relaxed = true).also { d ->
+    private val downloads = mockk<LegacyOfflineDownloads>(relaxed = true).also { d ->
         every { d.load("job") } answers { store.read()?.takeIf { it.id == "job" && it.active } }
         every { d.update("job", any()) } answers { store.update("job", secondArg()); }
         every { d.record("job", any(), any()) } answers { store.result("job", secondArg(), thirdArg()) != null }
@@ -65,7 +65,7 @@ class OfflineDownloadWorkerTest {
         store.start(OfflineBatch("job", selected.map { it.id }, kinds, targets = OfflinePlan.build(selected, kinds)), true)
     }
     @After fun cleanup() { unmockkObject(AlbumArtUtils); dir.deleteRecursively() }
-    private fun worker(): OfflineDownloadWorker {
+    private fun worker(): LegacyOfflineDownloadWorker {
         val params = mockk<WorkerParameters>(relaxed = true) {
             every { inputData } returns workDataOf("batch" to "job")
             every { id } returns UUID.randomUUID()
@@ -74,7 +74,7 @@ class OfflineDownloadWorkerTest {
             every { getSongsByIds(any()) } answers { flowOf(firstArg<List<String>>().mapNotNull { songs[it] }) }
         }
         val info = mockk<MusicInfoRepository> { every { this@mockk.service } returns this@OfflineDownloadWorkerTest.service }
-        return OfflineDownloadWorker(ApplicationProvider.getApplicationContext<Context>(), params, downloads, music, lyrics, info, mockk<MusicDao>(relaxed = true))
+        return LegacyOfflineDownloadWorker(ApplicationProvider.getApplicationContext<Context>(), params, downloads, music, lyrics, info, mockk<MusicDao>(relaxed = true))
     }
     @Test fun `a large selection is sliced and keeps completed targets for the next worker`() = runBlocking {
         plan()

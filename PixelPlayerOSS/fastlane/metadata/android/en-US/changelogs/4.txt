@@ -1,0 +1,8 @@
+Polylute 1.2.0-beta.1.
+
+* Android 10 support, including SD card folders and music access.
+* Library fills after adding your first folders, without restarting.
+* Artist photos load for the music you open or play.
+* Music info uses Find, Choose and Download. Reopening an unchanged catalog skips the refresh work.
+* Pick your own genre images; backups keep them.
+* Updated player layout, source shuffle and compact genre rows.

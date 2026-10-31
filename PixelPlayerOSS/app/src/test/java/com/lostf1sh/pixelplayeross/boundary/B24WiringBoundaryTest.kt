@@ -94,8 +94,12 @@ class B24WiringBoundaryTest {
 
     @Test
     fun `an album and an artist are shuffled and played in the order their page lists them`() {
-        assertThat(body(viewModel, "fun shuffleRandomAlbum(")).contains("SourceOrder.albumPage(")
-        assertThat(body(viewModel, "fun shuffleRandomArtist(")).contains("SourceOrder.artistPage(")
+        val blocks = code(text(main, "presentation/viewmodel/BlockShuffle.kt"))
+        assertThat(blocks).contains("SourceOrder.albumPage(")
+        assertThat(blocks).contains("SourceOrder.artistPage(")
+        assertThat(blocks).contains("SourceOrder.genrePage(")
+        assertThat(body(viewModel, "private fun shuffleSourceBlocks(")).contains("blockQueue(")
+        assertThat(body(viewModel, "private fun shuffleSourceBlocks(")).contains("shuffle = false")
         assertThat(body(viewModel, "fun playAlbum(")).contains("SourceOrder.albumPage(")
         assertThat(body(viewModel, "fun playArtist(")).contains("SourceOrder.artistPage(")
         // the pages themselves use the same definitions
@@ -195,7 +199,8 @@ class B24WiringBoundaryTest {
         assertThat(output.split("close(ctx->schedstatFd)").size - 1).isEqualTo(2)   // when another thread takes over, and at destroy
         assertThat(text(jni, "usb-glitch.h")).contains("#define USB_SCHED_BASELINE_EVERY_US 10000")
         // nothing about what is sent changed: the ring is as deep as it was
-        assertThat(text(jni, "usb-audio-output.h")).contains("#define USB_AUDIO_NUM_URBS 80")
+        assertThat(text(jni, "usb-pcm-packetizer.h")).contains("#define USB_TRANSPORT_RING_URBS 128")   // B46-A1: the ring is the plan's, one definition
+        assertThat(text(jni, "usb-audio-output.h")).contains("#define USB_AUDIO_NUM_URBS USB_TRANSPORT_RING_URBS")
     }
 
     @Test

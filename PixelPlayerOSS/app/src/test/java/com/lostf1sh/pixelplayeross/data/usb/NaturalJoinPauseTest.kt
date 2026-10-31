@@ -110,15 +110,6 @@ class NaturalJoinPauseTest {
     // ── B9-1: the pipeline's thread fades at a pause now, so the same hold covers its join ───────
 
     @Test
-    fun `a join is marked for the pipeline's thread only when no engine marks it and the thread is the producer`() {
-        assertThat(NaturalJoinPause.marksPipelineJoin(engineExists = false, threadRunning = true)).isTrue()
-        assertThat(NaturalJoinPause.marksPipelineJoin(engineExists = true, threadRunning = false)).isFalse()
-        assertThat(NaturalJoinPause.marksPipelineJoin(engineExists = false, threadRunning = false)).isFalse()
-        // The engine's own join keeps being marked by the engine's hand-over (UsbAudioSink), not by this.
-        assertThat(NaturalJoinPause.marksPipelineJoin(engineExists = true, threadRunning = true)).isFalse()
-    }
-
-    @Test
     fun `the rebuffer stop right after a pipeline join is held while the user plays, and a pause by the user is not`() {
         // Media3's own advance, then a stop 35 ms later with the user still playing (the B1-native log's shape).
         assertThat(NaturalJoinPause.onMedia3Stop(userWantsPlayback = true, msSinceNaturalJoin = 35)).isEqualTo(Action.HOLD)
@@ -129,4 +120,19 @@ class NaturalJoinPauseTest {
             .isEqualTo(Action.PAUSE_NOW)
         assertThat(NaturalJoinPause.onMedia3Stop(userWantsPlayback = true, msSinceNaturalJoin = -1)).isEqualTo(Action.PAUSE_NOW)
     }
+    @Test
+    fun `rearming for a gapless item keeps renderer time while the old tail is queued`() {
+        val rate = 96_000
+        val rendererStartUs = 1_000_000_000_000L
+        val clock = PipelinePositionClock()
+        clock.accept(rendererStartUs, 0L)
+        val submitted = rate * 5L
+        val queuedTail = rate * 2L
+        val before = clock.positionUs(submitted, rate)
+        clock.disarm()
+        clock.accept(rendererStartUs + 7_000_000L, submitted, 2_000_000L)
+        assertThat(clock.positionUs(submitted, rate)).isEqualTo(before)
+        assertThat(clock.positionUs(submitted + queuedTail, rate)).isEqualTo(rendererStartUs + 7_000_000L)
+    }
+
 }

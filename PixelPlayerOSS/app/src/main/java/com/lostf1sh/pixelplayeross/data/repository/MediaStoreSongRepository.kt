@@ -431,6 +431,16 @@ class MediaStoreSongRepository @Inject constructor(
      * Computes allowed parent directories by filtering out blocked directories.
      * Returns Pair(allowedDirs, applyFilter).
      */
+    private fun observeAllowedDirs(
+        allowedDirs: Set<String>,
+        blockedDirs: Set<String>,
+    ): Flow<Pair<List<String>, Boolean>> = DirectoryFilterUtils.observeAllowedParentDirs(
+        allowedDirs,
+        blockedDirs,
+        { musicDao.getDistinctParentDirectoriesFlow() },
+        ::normalizePath,
+    )
+
     private suspend fun computeAllowedDirs(
         allowedDirs: Set<String>,
         blockedDirs: Set<String>
@@ -457,22 +467,18 @@ class MediaStoreSongRepository @Inject constructor(
         ) { allowedDirs, blockedDirs ->
             allowedDirs to blockedDirs
         }.flatMapLatest { (allowedDirs, blockedDirs) ->
-            kotlinx.coroutines.flow.flow {
-                val (allowedParentDirs, applyDirectoryFilter) =
-                    computeAllowedDirs(allowedDirs, blockedDirs)
-                emit(
-                    androidx.paging.Pager(
-                        config = defaultPagingConfig,
-                        pagingSourceFactory = {
-                            musicDao.getSongsPaginated(
-                                allowedParentDirs = allowedParentDirs,
-                                applyDirectoryFilter = applyDirectoryFilter,
-                                sortOrder = sortOption.storageKey,
-                                filterMode = storageFilter.value
-                            )
-                        }
-                    ).flow
-                )
+            observeAllowedDirs(allowedDirs, blockedDirs).map { (allowedParentDirs, applyDirectoryFilter) ->
+                androidx.paging.Pager(
+                    config = defaultPagingConfig,
+                    pagingSourceFactory = {
+                        musicDao.getSongsPaginated(
+                            allowedParentDirs = allowedParentDirs,
+                            applyDirectoryFilter = applyDirectoryFilter,
+                            sortOrder = sortOption.storageKey,
+                            filterMode = storageFilter.value
+                        )
+                    }
+                ).flow
             }.flatMapLatest { it }
         }.map { pagingData ->
             pagingData.map { entity -> entity.toSong() }
@@ -490,22 +496,18 @@ class MediaStoreSongRepository @Inject constructor(
         ) { allowedDirs, blockedDirs ->
             allowedDirs to blockedDirs
         }.flatMapLatest { (allowedDirs, blockedDirs) ->
-            kotlinx.coroutines.flow.flow {
-                val (allowedParentDirs, applyDirectoryFilter) =
-                    computeAllowedDirs(allowedDirs, blockedDirs)
-                emit(
-                    androidx.paging.Pager(
-                        config = defaultPagingConfig,
-                        pagingSourceFactory = {
-                            musicDao.getFavoriteSongsPaginated(
-                                allowedParentDirs = allowedParentDirs,
-                                applyDirectoryFilter = applyDirectoryFilter,
-                                sortOrder = sortOption.storageKey,
-                                filterMode = storageFilter.value
-                            )
-                        }
-                    ).flow
-                )
+            observeAllowedDirs(allowedDirs, blockedDirs).map { (allowedParentDirs, applyDirectoryFilter) ->
+                androidx.paging.Pager(
+                    config = defaultPagingConfig,
+                    pagingSourceFactory = {
+                        musicDao.getFavoriteSongsPaginated(
+                            allowedParentDirs = allowedParentDirs,
+                            applyDirectoryFilter = applyDirectoryFilter,
+                            sortOrder = sortOption.storageKey,
+                            filterMode = storageFilter.value
+                        )
+                    }
+                ).flow
             }.flatMapLatest { it }
         }.map { pagingData ->
             pagingData.map { entity -> entity.toSong().copy(isFavorite = true) }
@@ -537,11 +539,7 @@ class MediaStoreSongRepository @Inject constructor(
         ) { allowedDirs, blockedDirs ->
             allowedDirs to blockedDirs
         }.flatMapLatest { (allowedDirs, blockedDirs) ->
-            kotlinx.coroutines.flow.flow {
-                val (allowedParentDirs, applyDirectoryFilter) =
-                    computeAllowedDirs(allowedDirs, blockedDirs)
-                emit(Pair(allowedParentDirs, applyDirectoryFilter))
-            }.flatMapLatest { (allowedDirs, applyFilter) ->
+            observeAllowedDirs(allowedDirs, blockedDirs).flatMapLatest { (allowedDirs, applyFilter) ->
                 musicDao.getFavoriteSongCount(
                     allowedParentDirs = allowedDirs,
                     applyDirectoryFilter = applyFilter,

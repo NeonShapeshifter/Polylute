@@ -50,7 +50,7 @@ import java.nio.ByteOrder
  *
  * When the EQ is off, or on with every band at exactly 0 dB, [GraphicEqSettings.isBypass] is set
  * and the processor performs a verbatim byte copy of the input buffer. No sample is interpreted,
- * converted or scaled, no coefficient is consulted and no filter memory is touched, so "PixelPlayer
+ * converted or scaled, no coefficient is consulted and no filter memory is touched, so "Polylute
  * EQ DSP introduces no PCM modification when bypassed" holds by construction rather than by
  * argument.
  *

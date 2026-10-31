@@ -121,7 +121,7 @@ fun AlbumDetailScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val about by viewModel.about.collectAsStateWithLifecycle()
     var showOfflineDownloads by remember { mutableStateOf(false) }
-    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.OfflineDownloadsDialog(
+    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.MusicInfoDownloadsScreen(
         uiState.songs.map { it.id }, onDismiss = { showOfflineDownloads = false })
     val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
     val playbackStates = rememberLibraryPlaybackStates(playerViewModel)

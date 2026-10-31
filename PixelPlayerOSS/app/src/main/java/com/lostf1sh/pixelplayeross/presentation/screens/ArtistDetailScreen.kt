@@ -130,8 +130,8 @@ fun ArtistDetailScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val about by viewModel.about.collectAsStateWithLifecycle()
     var showOfflineDownloads by remember { mutableStateOf(false) }
-    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.OfflineDownloadsDialog(
-        uiState.songs.map { it.id }, onDismiss = { showOfflineDownloads = false })
+    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.MusicInfoDownloadsScreen(
+        uiState.songs.map { it.id }, onDismiss = { showOfflineDownloads = false }, artistFilter = uiState.artist?.name)
     val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
 
     var isTransitionFinished by remember { mutableStateOf(false) }

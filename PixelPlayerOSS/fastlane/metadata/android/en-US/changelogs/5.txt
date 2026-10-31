@@ -1,0 +1,5 @@
+Polylute 1.2.0.
+
+* Steadier USB DAC playback in Purity: a deeper buffer, a short cushion of silence at every start, and the DAC kept fed through skips and short pauses.
+* A DAC that gets stuck (a locked or frozen clock, heard as a "shh") is restarted automatically and the song carries on. Bit-perfect is unchanged.
+* Android 10 support, Find/Choose/Download music info, your own genre images, block shuffle and an updated player.

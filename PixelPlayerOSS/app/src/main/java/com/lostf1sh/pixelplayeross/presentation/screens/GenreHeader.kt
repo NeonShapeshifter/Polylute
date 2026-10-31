@@ -19,14 +19,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.size.Size
 import com.lostf1sh.pixelplayeross.presentation.components.BackRowHeight
-import com.lostf1sh.pixelplayeross.presentation.components.SmartImage
+import com.lostf1sh.pixelplayeross.presentation.screens.search.components.GENRE_ART_LETTER_TAG
+import com.lostf1sh.pixelplayeross.presentation.screens.search.components.GenreImageLayer
+import com.lostf1sh.pixelplayeross.presentation.screens.search.components.genreLetter
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapCollectionActions
 import com.lostf1sh.pixelplayeross.ui.ds.DapHeroTopScrim
@@ -57,7 +59,7 @@ internal fun GenreHeader(
     onShuffle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val hasCover = counts != null && !coverUri.isNullOrBlank()
+    val hasCover = !coverUri.isNullOrBlank()
     val background = Dap.fadeEdge
     val density = LocalDensity.current
     val widthPx = LocalWindowInfo.current.containerSize.width
@@ -76,15 +78,12 @@ internal fun GenreHeader(
             .clipToBounds(),
     ) {
         if (hasCover) {
-            SmartImage(
-                model = coverUri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                targetSize = requestSize,
-                allowHardware = true,
-                crossfadeDurationMillis = 0,
-                modifier = Modifier.fillMaxSize(),
-            )
+            // B48-2: the genre's letter is the ground and the cover is drawn over it once it has loaded, so a cover that is still loading or whose file is gone
+            // leaves the letter, not SmartImage's music-note placeholder (which at this size was a huge cropped note).
+            Box(Modifier.fillMaxSize().background(Dap.panelRaised), contentAlignment = Alignment.Center) {
+                Text(genreLetter(title), Modifier.testTag(GENRE_ART_LETTER_TAG), style = DapType.Display, color = Dap.disabledText)
+            }
+            GenreImageLayer(coverUri.orEmpty(), Modifier.fillMaxSize(), requestSize, allowHardware = true)
             Box(Modifier.fillMaxSize().background(fade))
             DapHeroTopScrim(Modifier.align(Alignment.TopCenter))
         }

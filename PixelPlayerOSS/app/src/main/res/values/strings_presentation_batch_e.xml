@@ -11,7 +11,6 @@
     <string name="presentation_batch_e_clear_queue_dialog_title">Clear queue</string>
     <string name="presentation_batch_e_clear_queue_dialog_message">Are you sure you want to clear all songs from the queue except the current one?</string>
     <string name="presentation_batch_e_queue_subtitle_empty">Queue is empty for now.</string>
-    <string name="presentation_batch_e_queue_source_fallback">Queue</string>
     <string name="presentation_batch_e_cd_toggle_shuffle">Toggle shuffle</string>
     <string name="presentation_batch_e_cd_toggle_repeat">Toggle repeat</string>
     <string name="presentation_batch_e_cd_sleep_timer">Sleep timer</string>
@@ -52,12 +51,5 @@
         <item quantity="other">%d songs matched</item>
     </plurals>
 
-    <string name="presentation_batch_e_reset_presets_title">Reset presets</string>
-    <string name="presentation_batch_e_reset_presets_message">This will restore the default preset order and visibility. Continue?</string>
-    <string name="presentation_batch_e_manage_presets_title">Manage presets</string>
-    <string name="presentation_batch_e_presets_drag_hint">Drag to reorder • Tap the eye to show or hide</string>
-    <string name="presentation_batch_e_cd_reset_presets_default">Reset to default</string>
-    <string name="presentation_batch_e_cd_visible">Visible</string>
-    <string name="presentation_batch_e_cd_hidden">Hidden</string>
 
 </resources>

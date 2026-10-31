@@ -23,7 +23,6 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -73,6 +72,12 @@ class CarouselState(
 
     suspend fun scrollToItem(item: Int) = pagerState.scrollToPage(item, 0f)
 
+    /**
+     * B48-fix1: the carousel is at rest on [item]: that page and no offset. The page alone is not enough. A scroll that was cancelled after the middle (the effect that carried the
+     * cover was restarted half way) leaves `currentPage` on its target with the offset where it stopped: a cover that is on the right page and not on the page.
+     */
+    fun isAtRestOn(item: Int): Boolean = pagerState.currentPage == item && abs(pagerState.currentPageOffsetFraction) <= AT_REST_OFFSET_EPSILON
+
     @Suppress("UNUSED_PARAMETER")
     suspend fun animateScrollToItem(item: Int, animationSpec: AnimationSpec<Float> = spring()) {
         if ((item == pagerState.currentPage && pagerState.currentPageOffsetFraction == 0f) || pagerState.pageCount == 0) return
@@ -81,6 +86,9 @@ class CarouselState(
     }
 
     companion object {
+        /** A fraction of a page (about 0.7 px at the player's cover) under which a pager that has stopped counts as being on its page. */
+        const val AT_REST_OFFSET_EPSILON = 0.001f
+
         val Saver: Saver<CarouselState, *> =
             listSaver(
                 save = {
@@ -368,27 +376,6 @@ private class CarouselItemScopeImpl(private val itemInfo: CarouselItemDrawInfo) 
     }
 }
 
-@Composable
-private fun rememberRoundedClipShape(
-    itemInfo: CarouselItemDrawInfoImpl,
-    itemCornerRadius: Dp
-): Shape {
-    val density = LocalDensity.current
-    return remember(itemInfo, itemCornerRadius, density) {
-        object : Shape {
-            override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-                val eps = 0.75f
-                val r = with(density) { itemCornerRadius.toPx() } + eps
-                val rect = itemInfo.maskRect
-                val rr = androidx.compose.ui.geometry.RoundRect(
-                    rect.left - eps, rect.top - eps, rect.right + eps, rect.bottom + eps,
-                    CornerRadius(r, r)
-                )
-                return Outline.Rounded(rr)
-            }
-        }
-    }
-}
 
 @ExperimentalMaterial3Api
 sealed interface CarouselItemDrawInfo {
@@ -1012,7 +999,6 @@ class CarouselPagerState(
             )
     }
 }
-
 
 
 @Composable

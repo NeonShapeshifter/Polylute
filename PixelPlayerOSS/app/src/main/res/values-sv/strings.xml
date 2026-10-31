@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name_change_title">Appens namn har ändrats</string>
-    <string name="do_not_show_again">Visa inte igen</string>
     <string name="dismiss">Avfärda</string>
-    <string name="all_files_access_title">Särskild behörighet krävs</string>
-    <string name="grant_permission_button">Ge behörighet</string>
     <string name="error">Fel</string>
     <string name="ok">OK</string>
     <string name="cancel">Avbryt</string>
@@ -28,7 +24,6 @@
     <string name="lyrics_server_error">Serverfel (kod %d). Försök igen senare.</string>
     <string name="lyrics_remote_disabled">Låttexter online är inaktiverade i inställningarna.</string>
     <string name="found_n_matches_format">Hittade %d träff(ar)</string>
-    <string name="searched_for_x_format">Sökte efter \"%s\"</string>
     <string name="searching_lyrics">Söker efter låttext…</string>
     <string name="lyrics_already_available">Låttext finns redan. Hämtning online hoppades över.</string>
     <string name="lyrics_embedded_already_available">Inbäddad låttext hittades redan. Hämtning online hoppades över.</string>
@@ -74,9 +69,6 @@
     <string name="shortcut_shuffle_short">Blanda</string>
     <string name="shortcut_shuffle_long">Blanda alla låtar</string>
     <string name="shortcut_playlist_short">Spellista</string>
-    <string name="tile_shuffle_all">Blanda alla</string>
-    <string name="tile_last_playlist">Senaste spellista</string>
-    <string name="tile_last_playlist_unavailable">Ingen spellista att öppna</string>
     <string name="invalid_album_id">Ogiltigt album-ID</string>
     <string name="album_id_not_found">Album-ID hittades inte</string>
     <string name="error_loading_album">Fel vid inläsning av albumdata: %s</string>
@@ -102,9 +94,6 @@
     <string name="backup_progress_starting_task">Startar återställningsuppgiften.</string>
     <string name="backup_progress_preparing_backup">Förbereder säkerhetskopia</string>
     <string name="backup_progress_starting_backup_task">Startar säkerhetskopieringsuppgiften.</string>
-    <string name="restore_completed_success">Säkerhetskopian återställdes</string>
-    <string name="restore_completed_partial_issues">Återställningen slutfördes med några olösta problem.</string>
-    <string name="restore_could_not_complete">Återställningen kunde inte slutföras: %1$s</string>
     <string name="restore_failed_format">Återställningen misslyckades: %1$s</string>
     <string name="data_exported_successfully">Data exporterades</string>
     <string name="export_failed_format">Exporten misslyckades: %1$s</string>
@@ -132,7 +121,6 @@
     <string name="player_no_songs_were_in_favorites">Inga låtar fanns i favoriter</string>
     <string name="player_creating_zip">Skapar ZIP-fil…</string>
     <string name="player_share_zip_failed_format">Det gick inte att dela: %1$s</string>
-    <string name="player_cannot_delete_currently_playing">Det går inte att ta bort låten som spelas</string>
     <string name="player_batch_delete_files_deleted_skipped_format">%1$d filer borttagna (%2$d hoppades över – spelas)</string>
     <string name="player_batch_delete_partial_format">%1$d av %2$d filer borttagna</string>
     <string name="player_delete_files_failed">Det gick inte att ta bort filerna</string>
@@ -158,15 +146,6 @@
     <string name="sleep_timer_label_previous_track">Föregående spår</string>
     <string name="sleep_timer_label_current_track">Aktuellt spår</string>
     <string name="sleep_timer_ui_title">Insomningstimer</string>
-    <string name="sleep_timer_ui_slider_label_timer">Timer</string>
-    <string name="sleep_timer_ui_end_of_current_track">Slutet av aktuellt spår</string>
-    <string name="sleep_timer_ui_custom_time">Egen tid</string>
-    <string name="sleep_timer_ui_cancel_timer">Avbryt timern</string>
-    <string name="sleep_timer_ui_set_custom_duration">Ange egen längd</string>
-    <string name="sleep_timer_ui_play_count_label">Antal uppspelningar: %1$s</string>
-    <string name="sleep_timer_ui_play_count_one_time">1 gång</string>
-    <string name="cd_switch_on">Slå på</string>
-    <string name="ui_format_percent_d">%1$d%%</string>
     <string name="backup_manifest_schema_v">v%1$d</string>
     <string name="backup_manifest_device_line">%1$s %2$s</string>
     <string name="batch_edit_toolbar_title">Redigera %d låtar</string>
@@ -201,22 +180,14 @@
     <string name="musicbrainz_choose_match">Välj en MusicBrainz-träff</string>
     <string name="musicbrainz_no_results">Inga lämpliga inspelningar hittades.</string>
     <string name="musicbrainz_match_score">Träffsäkerhet: %1$d%%</string>
-    <string name="musicbrainz_applied">MusicBrainz-identifierare sparades. Saknat år och platshållarnamn kompletterades.</string>
-    <string name="usb_diag_section">USB-ljuddiagnostik</string>
     <string name="usb_diag_audio_output">Ljudutgång</string>
     <string name="usb_diag_output_android">Android-ljud</string>
     <string name="usb_diag_output_direct">USB Direct</string>
     <string name="usb_diag_dac">USB-DAC</string>
-    <string name="usb_diag_permission">USB-behörighet</string>
-    <string name="usb_diag_source">Källa</string>
-    <string name="usb_diag_dac_rates">Samplingsfrekvenser som DAC:en stöder</string>
     <string name="usb_diag_direct_state">Direct-vägens tillstånd</string>
     <string name="usb_diag_route_transition">Övergång av ljudväg</string>
     <string name="usb_diag_route_reason">Orsak till valet</string>
     <string name="usb_diag_none">Ingen</string>
-    <string name="usb_diag_unknown">Okänd</string>
-    <string name="usb_diag_not_applicable">Ej tillämpligt</string>
-    <string name="usb_diag_permission_granted">Beviljad</string>
     <string name="usb_diag_permission_required">Krävs</string>
     <string name="usb_diag_state_inactive">Inaktiv</string>
     <string name="usb_diag_state_ready">Redo</string>
@@ -457,7 +428,39 @@
     <string name="music_info_prepare">Förbered för offline…</string>
     <string name="music_info_refresh">Uppdatera information</string>
     <string name="music_info_delete">Radera nedladdad information</string>
-    <string name="offline_download_delete_job">Radera det som den här nedladdningen lade till</string>
-    <string name="offline_download_job">Låtar: %1$d · %2$d / %3$d</string>
-    <string name="offline_download_queued_job">I kö efter den aktuella nedladdningen</string>
+    <string name="info_internet_title">Musikinfo från internet</string>
+    <string name="info_find_title">1. Hitta det som finns</string>
+    <string name="info_find">Hitta</string>
+    <string name="info_find_note">Kontrollerar bara tillgänglighet. Inget sparas förrän du väljer det.</string>
+    <string name="info_search">Sök artist eller album</string>
+    <string name="info_bios">Biografier</string>
+    <plurals name="info_selected">
+        <item quantity="one">%1$d vald</item>
+        <item quantity="other">%1$d valda</item>
+    </plurals>
+    <string name="info_download_selected">Hämta valda</string>
+    <string name="info_delete_selected">Radera valda</string>
+    <string name="info_reported_size">Storlek enligt källorna: %1$s</string>
+    <plurals name="info_could_not_check">
+        <item quantity="one">Kunde inte kontrollera %1$d objekt. Hitta försöker igen.</item>
+        <item quantity="other">Kunde inte kontrollera %1$d objekt. Hitta försöker igen.</item>
+    </plurals>
+    <string name="info_saved">✓ Sparat</string>
+    <string name="info_missing">— Saknas</string>
+    <string name="info_local">Finns redan i dina musikfiler</string>
+    <string name="info_failed_check">Kunde inte kontrollera</string>
+    <string name="info_available">Tillgängligt</string>
+    <string name="info_unchecked">Inte kontrollerat än</string>
+    <string name="info_select_all">Välj alla av en typ</string>
+    <string name="shuffle_all_albums">Blanda album</string>
+    <string name="shuffle_all_artists">Blanda artister</string>
+    <string name="shuffle_all_genres">Blanda genrer</string>
+    <string name="show_bookmark_button">Visa bokmärkesknapp</string>
+    <string name="show_bookmark_button_note">Visa bokmärkesknappen bredvid låttiteln.</string>
+    <string name="setcat_repeat_shared_shuffle_title">Upprepa delade låtar vid blandning</string>
+    <string name="setcat_repeat_shared_shuffle_desc">Vid blandning av artister och genrer spelas låtar som tillhör flera artister eller genrer i var och en av dem.</string>
+    <string name="info_checked_result">Kontrollerat %1$d av %2$d</string>
+    <string name="genre_change_image">Byt bild</string>
+    <string name="genre_remove_image">Ta bort bild</string>
+    <string name="genre_image_change_failed">Det gick inte att uppdatera bilden.</string>
 </resources>

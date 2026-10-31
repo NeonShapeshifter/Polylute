@@ -98,13 +98,13 @@ open class PlayerControlsPlacementTest {
         assertThat(bottom(title)).isLessThan(top(bar))
         assertThat(controlsTop).isGreaterThan(bottom(bar))
 
-        // The spare height is under the controls: at least 100 dp of it (it was about the 24 dp spacer).
+        // B44 artwork uses the available square; the folded queue still has its full reserved space below the controls.
         val spaceBelow = screenHeight - controlsBottom
-        assertThat(spaceBelow).isAtLeast(100f)
+        assertThat(spaceBelow).isAtLeast((QueuePeekHeight + QueuePeekBottomGap).value)
 
-        // ...and not between the header and the cover: the title starts within one cover (the width less its two 24 dp margins)
+        // ...and not between the header and the cover: the title starts within one cover (the full screen width)
         // plus its margins of the header, i.e. nothing floats above the block.
-        val coverSide = screenWidth - 48f
+        val coverSide = screenWidth
         val lyricsHeight = compose.onNodeWithTag(PLAYER_LYRICS_LINES_TAG).fetchSemanticsNode().boundsInRoot.height / density
         assertThat(top(title) - headerBottom).isAtMost(coverSide + lyricsHeight + 48f)
     }

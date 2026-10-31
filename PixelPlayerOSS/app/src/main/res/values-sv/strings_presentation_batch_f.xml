@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="presentation_batch_f_cd_selected">Vald</string>
-    <string name="presentation_batch_f_refresh_library_title">Uppdatera biblioteket</string>
-    <string name="presentation_batch_f_refresh_library_subtitle">Sök igenom hela biblioteket efter nya och ändrade filer.</string>
     <string name="presentation_batch_f_full_rescan">Fullständig ny genomsökning</string>
     <string name="presentation_batch_f_rebuild_database">Bygg om databasen</string>
     <string name="presentation_batch_f_sync_phase_preparing">Förbereder synkronisering</string>
@@ -12,17 +10,10 @@
     <string name="presentation_batch_f_sync_phase_scanning_lrc">Söker igenom låttextfiler</string>
     <string name="presentation_batch_f_sync_phase_cleaning_cache">Rensar cacheminnet för albumomslag</string>
     <string name="presentation_batch_f_sync_phase_completing">Slutför synkroniseringen</string>
-    <string name="presentation_batch_f_sync_progress_detailed">%1$s • %2$d%% (%3$d/%4$d)</string>
-    <string name="presentation_batch_f_sync_progress_indeterminate">%1$s…</string>
-    <string name="presentation_batch_f_refresh_lyrics_title">Uppdatera låttexter</string>
-    <string name="presentation_batch_f_refresh_lyrics_subtitle">Hämta låttexter automatiskt för alla låtar via lrclib.</string>
-    <string name="presentation_batch_f_cd_refresh_lyrics">Uppdatera låttexter</string>
-    <string name="presentation_batch_f_refresh_lyrics_processing">Bearbetar %1$d av %2$d låtar</string>
     <string name="presentation_batch_f_save">Spara</string>
     <string name="presentation_batch_f_new_smart_playlist">Ny smart spellista</string>
     <string name="presentation_batch_f_new_playlist">Ny spellista</string>
     <string name="presentation_batch_f_add_songs">Lägg till låtar</string>
-    <string name="presentation_batch_f_cd_back_or_cancel">Tillbaka eller avbryt</string>
     <string name="presentation_batch_f_next">Nästa</string>
     <string name="presentation_batch_f_create">Skapa</string>
     <string name="presentation_batch_f_edit_playlist">Redigera spellista</string>

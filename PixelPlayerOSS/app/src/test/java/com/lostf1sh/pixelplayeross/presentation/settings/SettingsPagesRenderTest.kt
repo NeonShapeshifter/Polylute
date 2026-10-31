@@ -95,6 +95,7 @@ class SettingsPagesRenderTest {
     // ── Behavior ─────────────────────────────────────────────────────────────────────────────────────
 
     private class BehaviorRecorder : BehaviorSettingsActions {
+        override fun onRepeatSharedSongsInShuffleChange(value: Boolean) { calls += "sharedShuffle:$value" }
         val calls = mutableListOf<String>()
         override fun onBackNavigationModeChange(value: BackNavigationMode) { calls += "back:${value.id}" }
         override fun onKeepPlayingInBackgroundChange(value: Boolean) { calls += "keepPlaying:$value" }
@@ -118,13 +119,13 @@ class SettingsPagesRenderTest {
         compose.onAllNodesWithText(s(R.string.setcat_random_mode_title)).assertCountEquals(0)
         compose.onAllNodesWithText(s(R.string.audio_persistent_mix_title)).assertCountEquals(0)
 
-        // B41: "DAP lock screen" is Appearance's now. Five switches, in page order; each one reaches its own action with the value it was
+        // B41: "DAP lock screen" is Appearance's now. Six switches, in page order; each one reaches its own action with the value it was
         // switched to.
         compose.onAllNodesWithText(s(R.string.setcat_dap_lock_screen_title)).assertCountEquals(0)
         val switches = compose.onAllNodes(isToggleable())
-        switches.assertCountEquals(5)
-        for (i in 0 until 5) switches[i].performScrollTo().performClick()
-        assertEquals(5, actions.calls.size)
+        switches.assertCountEquals(6)
+        for (i in 0 until 6) switches[i].performScrollTo().performClick()
+        assertEquals(6, actions.calls.size)
         assertTrue(actions.calls.toString(), actions.calls.containsAll(listOf("queueHistory:true", "haptics:false")))
     }
 
@@ -156,7 +157,7 @@ class SettingsPagesRenderTest {
         switches.assertCountEquals(2)
         switches[0].performScrollTo().performClick()
         switches[1].performScrollTo().performClick()
-        assertEquals(listOf("external:true", "autoScan:true"), actions.calls)
+        assertEquals(listOf("external:true", "autoScan:false"), actions.calls)
     }
 
     // ── Library ──────────────────────────────────────────────────────────────────────────────────────
@@ -211,7 +212,7 @@ class SettingsPagesRenderTest {
         assertShows(
             R.string.setcat_music_info, R.string.setcat_music_info_note, R.string.setcat_music_info_covers_title,
             R.string.setcat_music_info_photos_title, R.string.setcat_music_info_descriptions_title,
-            R.string.offline_download_title, R.string.setcat_music_info_delete_title,
+            R.string.info_internet_title, R.string.setcat_music_info_delete_title,
         )
         // the three switches are the page's only toggles, in the order they are drawn
         val toggles = compose.onAllNodes(isToggleable())
@@ -229,6 +230,7 @@ class SettingsPagesRenderTest {
         override fun onAppColorSourceChange(value: String) { calls += "appColors:$value" }
         override fun onCoverThemeChoiceChange(value: String) { calls += "coverTheme:$value" }
         override fun onPlayerThemePreferenceChange(value: String) { calls += "playerTheme:$value" }
+        override fun onShowBookmarkButtonChange(value: Boolean) { calls += "bookmark:$value" }
         override fun onShowPlayerFileInfoChange(value: Boolean) { calls += "fileInfo:$value" }
         override fun onAlbumArtQualityChange(value: AlbumArtQuality) { calls += "artQuality:$value" }
         override fun onLaunchTabChange(value: String) { calls += "launchTab:$value" }
@@ -260,8 +262,8 @@ class SettingsPagesRenderTest {
         )
         compose.onAllNodesWithText(s(R.string.setcat_album_art_palette_title)).assertCountEquals(0)
         compose.onAllNodesWithText(s(R.string.setcat_player_theme_label)).assertCountEquals(0)
-        // the file-info switch is the first switch of the Player section
-        compose.onAllNodes(isToggleable())[0].performScrollTo().performClick()
+        // Bookmark is followed by file info in the Player section.
+        compose.onAllNodes(isToggleable())[1].performScrollTo().performClick()
         assertEquals(listOf("fileInfo:false"), actions.calls)
     }
 
@@ -305,10 +307,10 @@ class SettingsPagesRenderTest {
         assertEquals(true, state.coverGlassMoving)
         assertEquals(true, state.lyricsUnderCover)
         setPage { AppearanceSettingsScreen(state, actions) }
-        // the Player section's switches, in page order: file info, Moving background, Lyrics under the cover
+        // Player switches: bookmark, file info, Moving background, Lyrics under the cover
         val switches = compose.onAllNodes(isToggleable())
-        switches[1].performScrollTo().assertIsOn().performClick()
         switches[2].performScrollTo().assertIsOn().performClick()
+        switches[3].performScrollTo().assertIsOn().performClick()
         assertEquals(listOf("moving:false", "lyricsUnderCover:false"), actions.calls)
     }
 
@@ -334,8 +336,8 @@ class SettingsPagesRenderTest {
         setPage { AppearanceSettingsScreen(state, actions) }
         // in page order: file info and Lyrics under the cover (Player), then the Lyrics section, then the Lock screen's
         val switches = compose.onAllNodes(isToggleable())
-        switches.assertCountEquals(8)
-        for (i in 2..7) switches[i].performScrollTo().performClick()
+        switches.assertCountEquals(9)
+        for (i in 3..8) switches[i].performScrollTo().performClick()
         assertEquals(
             listOf("immersive:true", "translation:false", "romanization:false", "animated:true", "blur:true", "lockScreen:true"),
             actions.calls,

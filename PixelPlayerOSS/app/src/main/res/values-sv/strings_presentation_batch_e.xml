@@ -11,7 +11,6 @@
     <string name="presentation_batch_e_clear_queue_dialog_title">Rensa kön</string>
     <string name="presentation_batch_e_clear_queue_dialog_message">Är du säker på att du vill rensa alla låtar från kön utom den som spelas nu?</string>
     <string name="presentation_batch_e_queue_subtitle_empty">Kön är tom för tillfället.</string>
-    <string name="presentation_batch_e_queue_source_fallback">Kö</string>
     <string name="presentation_batch_e_cd_toggle_shuffle">Slå på/av blandning</string>
     <string name="presentation_batch_e_cd_toggle_repeat">Slå på/av upprepning</string>
     <string name="presentation_batch_e_cd_sleep_timer">Insomningstimer</string>
@@ -48,11 +47,4 @@
         <item quantity="one">%d låt matchade</item>
         <item quantity="other">%d låtar matchade</item>
     </plurals>
-    <string name="presentation_batch_e_reset_presets_title">Återställ förinställningar</string>
-    <string name="presentation_batch_e_reset_presets_message">Det här återställer standardordningen och synligheten för förinställningarna. Fortsätta?</string>
-    <string name="presentation_batch_e_manage_presets_title">Hantera förinställningar</string>
-    <string name="presentation_batch_e_presets_drag_hint">Dra för att ändra ordning • Tryck på ögat för att visa eller dölja</string>
-    <string name="presentation_batch_e_cd_reset_presets_default">Återställ till standard</string>
-    <string name="presentation_batch_e_cd_visible">Synlig</string>
-    <string name="presentation_batch_e_cd_hidden">Dold</string>
 </resources>

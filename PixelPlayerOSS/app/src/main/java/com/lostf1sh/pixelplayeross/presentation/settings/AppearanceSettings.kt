@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.presentation.settings
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lock
@@ -71,6 +72,7 @@ data class AppearanceSettingsState(
     val coverGlassMoving: Boolean = true,
     /** B41 (Player): two lines of synced lyrics under the cover. */
     val lyricsUnderCover: Boolean = true,
+    val showBookmarkButton: Boolean = true,
     // B41 (Lyrics): the whole reading and effects part of what Settings, Lyrics used to hold; the same preferences.
     val immersiveLyricsEnabled: Boolean = false,
     val immersiveLyricsTimeout: Long = 4000L,
@@ -99,6 +101,7 @@ data class AppearanceSettingsState(
             libraryNavigationMode = ui.libraryNavigationMode,
             coverGlassMoving = ui.coverGlassMoving,
             lyricsUnderCover = ui.lyricsUnderCover,
+            showBookmarkButton = ui.showBookmarkButton,
             immersiveLyricsEnabled = ui.immersiveLyricsEnabled,
             immersiveLyricsTimeout = ui.immersiveLyricsTimeout,
             lyricsAlignment = ui.lyricsAlignment,
@@ -121,6 +124,7 @@ interface AppearanceSettingsActions {
     /** B41-fix1 (B1): light, dark or system while the cover decides the colours ([CoverThemeChoice]); the explicit theme is left as it was. */
     fun onCoverThemeChoiceChange(value: String)
     fun onPlayerThemePreferenceChange(value: String)
+    fun onShowBookmarkButtonChange(value: Boolean)
     fun onShowPlayerFileInfoChange(value: Boolean)
     fun onAlbumArtQualityChange(value: AlbumArtQuality)
     fun onLaunchTabChange(value: String)
@@ -218,6 +222,13 @@ fun AppearanceSettingsScreen(state: AppearanceSettingsState, actions: Appearance
     // B41: the Player section: the player's own colours and file line, and the two things that dress it (the glass that moves behind it
     // and the lyrics under its cover).
     SettingsSubsection(title = stringResource(R.string.setcat_now_playing)) {
+        SwitchSettingItem(
+            title = stringResource(R.string.show_bookmark_button),
+            subtitle = stringResource(R.string.show_bookmark_button_note),
+            checked = state.showBookmarkButton,
+            onCheckedChange = actions::onShowBookmarkButtonChange,
+            leadingIcon = { Icon(Icons.Outlined.BookmarkBorder, null, tint = MaterialTheme.colorScheme.secondary) },
+        )
         SwitchSettingItem(
             title = stringResource(R.string.setcat_show_player_file_info_title),
             subtitle = stringResource(R.string.setcat_show_player_file_info_subtitle),

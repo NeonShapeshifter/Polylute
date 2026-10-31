@@ -62,26 +62,6 @@ class PipelineThreadTransitionTest {
 
     // ── the decision ────────────────────────────────────────────────────────────────────────────
 
-    @Test
-    fun `an engine is wanted only when it is allowed and the file is a local FLAC`() {
-        assertThat(PipelineThread.wantsEngine(true, "/music/a.flac")).isTrue()
-        assertThat(PipelineThread.wantsEngine(true, "/music/A.FLAC")).isTrue()
-        // PROCESSED, or the bit-perfect debug switch: the signal mode or the switch refuse the engine.
-        assertThat(PipelineThread.wantsEngine(false, "/music/a.flac")).isFalse()
-        assertThat(PipelineThread.wantsEngine(true, "/music/a.m4a")).isFalse()
-        assertThat(PipelineThread.wantsEngine(true, null)).isFalse()
-    }
-
-    @Test
-    fun `what a producer decision does to the thread`() {
-        // The pipeline stays the producer: a running thread is left alone, a missing one is started.
-        assertThat(PipelineThread.actionFor(wantsEngine = false, threadRunning = true)).isEqualTo(PipelineThread.Action.KEEP)
-        assertThat(PipelineThread.actionFor(wantsEngine = false, threadRunning = false)).isEqualTo(PipelineThread.Action.START)
-        // An engine takes over: the thread goes, whether or not there is one.
-        assertThat(PipelineThread.actionFor(wantsEngine = true, threadRunning = true)).isEqualTo(PipelineThread.Action.REPLACE_BY_ENGINE)
-        assertThat(PipelineThread.actionFor(wantsEngine = true, threadRunning = false)).isEqualTo(PipelineThread.Action.REPLACE_BY_ENGINE)
-    }
-
     // ── (a) a transition at the same format, no engine ──────────────────────────────────────────
 
     @Test
@@ -125,26 +105,6 @@ class PipelineThreadTransitionTest {
     }
 
     // ── (b) an engine takes over ─────────────────────────────────────────────────────────────────
-
-    @Test
-    fun `with an engine allowed the thread is replaced and what it held goes with it, as before`() {
-        val writer = FakeWriter()
-        writer.gate = CountDownLatch(1)
-        val thread = newThread(writer)
-        repeat(6) { thread.enqueueRaw(buffer(it + 1), encoding) }
-        waitUntil { thread.queueSize() == 5 }
-
-        val stopper = Thread { Thread.sleep(50); writer.gate.countDown() }   // the in-flight write ends
-        stopper.start()
-        val after = PipelineThread.replaceByEngine(thread)
-        stopper.join()
-
-        assertThat(after).isNull()
-        assertThat(thread.queueSize()).isEqualTo(0)
-        // Only the buffer the DAC already had: the queued five were obsolete (the engine plays the item).
-        assertThat(writer.written).hasSize(1)
-        assertThat(PipelineThread.replaceByEngine(null)).isNull()
-    }
 
     // ── (c) a format change plays the tail out first ─────────────────────────────────────────────
 

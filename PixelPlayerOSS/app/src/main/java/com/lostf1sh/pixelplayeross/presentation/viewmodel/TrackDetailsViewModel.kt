@@ -317,7 +317,7 @@ data class MusicBrainzIds(
 }
 
 /**
- * Backs the Track Details sibling view: "what is this file?" and "how is PixelPlayer playing it
+ * Backs the Track Details sibling view: "what is this file?" and "how is Polylute playing it
  * right now?".
  *
  * Everything here is read-only observation. Opening the view never seeks, never starts or stops

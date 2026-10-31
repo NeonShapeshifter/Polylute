@@ -54,6 +54,7 @@ internal class AppearanceSettingsActionsImpl(
     // B41-fix1 (B1): light, dark or system while the cover decides the colours; the explicit theme is not written.
     override fun onCoverThemeChoiceChange(value: String) = vm.setCoverThemeChoice(value)
     override fun onPlayerThemePreferenceChange(value: String) = vm.setPlayerThemePreference(value)
+    override fun onShowBookmarkButtonChange(value: Boolean) = vm.setShowBookmarkButton(value)
     override fun onShowPlayerFileInfoChange(value: Boolean) = vm.setShowPlayerFileInfo(value)
     override fun onAlbumArtQualityChange(value: AlbumArtQuality) = vm.setAlbumArtQuality(value)
     override fun onLaunchTabChange(value: String) = vm.setLaunchTab(value)
@@ -89,6 +90,7 @@ internal class AppearanceSettingsActionsImpl(
 }
 
 internal class BehaviorSettingsActionsImpl(private val vm: SettingsViewModel) : BehaviorSettingsActions {
+    override fun onRepeatSharedSongsInShuffleChange(value: Boolean) = vm.setRepeatSharedSongsInShuffle(value)
     override fun onBackNavigationModeChange(value: BackNavigationMode) = vm.setBackNavigationMode(value)
     override fun onKeepPlayingInBackgroundChange(value: Boolean) = vm.setKeepPlayingInBackground(value)
     override fun onResumeOnHeadsetReconnectChange(value: Boolean) = vm.setResumeOnHeadsetReconnect(value)

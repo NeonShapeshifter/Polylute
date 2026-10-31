@@ -394,7 +394,3 @@ class SnapperFlingBehavior internal constructor(
         return 0f
     }
 }
-
-private object SnapperLog {
-    inline fun d(message: () -> String) { }
-}

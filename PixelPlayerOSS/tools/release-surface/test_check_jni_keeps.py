@@ -7,7 +7,6 @@ import zipfile
 
 import check_jni_keeps as jni
 
-
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 # a dex file small enough to write by hand: strings, types, protos, fields, methods and class definitions, nothing else
 # ---------------------------------------------------------------------------------------------------------------------------------------------
@@ -20,7 +19,6 @@ def uleb(n):
         out.append(b | (0x80 if n else 0))
         if not n:
             return bytes(out)
-
 
 class DexBuilder:
     """`cls("a/B", methods=[("name", "(I)V")], fields=[("f", "I")], superclass="java/lang/Object")` and then `build()`."""
@@ -120,7 +118,6 @@ class DexBuilder:
         struct.pack_into("<I", header, 0x64, class_defs_off)
         return bytes(header) + bytes(body) + bytes(data)
 
-
 def archive(dex_files):
     handle, path = tempfile.mkstemp(suffix=".aab")
     os.close(handle)
@@ -129,13 +126,11 @@ def archive(dex_files):
             z.writestr("base/dex/classes%s.dex" % ("" if i == 0 else i + 1), data)
     return path
 
-
 FLAC = "androidx/media3/decoder/flac/FlacDecoderJni"
 PICTURE = "androidx/media3/extractor/metadata/flac/PictureFrame"
 METADATA = "androidx/media3/extractor/FlacStreamMetadata"
 PICTURE_SIG = "(ILjava/lang/String;Ljava/lang/String;IIII[B)V"
 METADATA_SIG = "(IIIIIIIJLjava/util/ArrayList;Ljava/util/ArrayList;)V"
-
 
 def release(extra_methods=(), renamed_read=False, drop=()):
     """The classes native code looks for, as R8 leaves them when it keeps their names (or, with [renamed_read], when it does not)."""
@@ -148,7 +143,6 @@ def release(extra_methods=(), renamed_read=False, drop=()):
     if METADATA not in drop:
         b.cls(METADATA, methods=[("<init>", METADATA_SIG)])
     return b.build()
-
 
 FLAC_SOURCE = r'''
 #define DECODER_FUNC(RETURN_TYPE, NAME, ...)                              \
@@ -208,13 +202,11 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudio_1Write(JNIEnv *, jobject,
 // Java_com_decent_usbaudio_Commented_nativeNothing is in a comment
 '''
 
-
 def source_file(text):
     handle, path = tempfile.mkstemp(suffix=".cc")
     os.close(handle)
     pathlib.Path(path).write_text(text, encoding="utf-8")
     return path
-
 
 class ReadingNativeSources(unittest.TestCase):
     def setUp(self):
@@ -276,9 +268,20 @@ class ReadingNativeSources(unittest.TestCase):
             lookups += l
             exports += e
         self.assertIn(("method", FLAC, "read", "(Ljava/nio/ByteBuffer;)I"), {(l.kind, l.cls, l.name, l.sig) for l in lookups})
-        self.assertGreater(len(exports), 50)
+        # B46-A3: the transport plan's facade adds 4 exports (UsbTransportPlanner: nativePlan, nativeFieldCount, nativeReasonName,
+        # nativeDefaultQueueFrames) and the stream one (UsbAudioStream.nativeGetTransportPlan): 53 -> 58
+        # B47-A5: the locked-up DAC's recovery adds 7 to UsbAudioStream (nativeDacLockState, nativeDacRecoveryBegin, nativeDacRecoveryEnd,
+        # nativeNoteDacRecovery, nativeSetDacRecoveryEnabled, nativeRequestDacRecovery, nativeGetDacRecoveryStats): 58 -> 65
+        # B48-fix1: the feedback start guard's switch and its reading (nativeSetFeedbackStartGuardEnabled, nativeFeedbackStartGuardEnabled): 65 -> 67
+        # B48-fix2: nativeNoteDataAltSet records the actual successful data SETINTERFACE: 67 -> 68
+        self.assertEqual(len(exports), 68)
+        self.assertEqual(
+            {owner: sum(e.cls == owner for e in exports) for owner in {e.cls for e in exports}},
+            {"com/decent/usbaudio/UsbAudioStream": 50, "com/decent/usbaudio/UsbTransportPlanner": 4,
+             "androidx/media3/decoder/flac/FlacDecoderJni": 14},
+        )
         self.assertIn(("com/decent/usbaudio/UsbAudioStream", "nativeGetSecondSummaries"), {(e.cls, e.method) for e in exports})
-
+        self.assertIn(("com/decent/usbaudio/UsbTransportPlanner", "nativePlan"), {(e.cls, e.method) for e in exports})
 
 class ReadingADex(unittest.TestCase):
     def test_classes_methods_fields_and_superclasses_come_back_as_they_went_in(self):
@@ -296,7 +299,6 @@ class ReadingADex(unittest.TestCase):
         self.assertTrue(index.has_method("a/Child", "hello", "()V"))
         self.assertFalse(index.has_method("a/Base", "run", "(I[Ljava/lang/String;)Z"))
 
-
 MAPPING_KEPT = """\
 androidx.media3.decoder.flac.FlacDecoderJni -> androidx.media3.decoder.flac.FlacDecoderJni:
 # {"id":"sourceFile","fileName":"FlacDecoderJni.java"}
@@ -313,7 +315,6 @@ MAPPING_RENAMED_CLASS = MAPPING_KEPT.replace(
     "androidx.media3.extractor.metadata.flac.PictureFrame -> androidx.media3.extractor.metadata.flac.PictureFrame:",
     "androidx.media3.extractor.metadata.flac.PictureFrame -> p1.a:",
 )
-
 
 class TheCheck(unittest.TestCase):
     def setUp(self):
@@ -398,7 +399,6 @@ class TheCheck(unittest.TestCase):
         lookups, exports = self.sources(FLAC_SOURCE)
         self.assertEqual(jni.check(lookups, exports, self.index(first, second), None), [])
 
-
 class TheCommandLine(unittest.TestCase):
     def setUp(self):
         self.paths = []
@@ -431,7 +431,6 @@ class TheCommandLine(unittest.TestCase):
 
     def test_no_jni_in_the_sources_is_two(self):
         self.assertEqual(self.run_main([release()], source_text="int main() { return 0; }"), 2)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -63,6 +63,7 @@ class ArtistPageNonBlockingTest {
         assertThat(gate.isCompleted).isFalse()
         gate.complete(null)
         runCurrent()
+        io.mockk.coVerify(exactly = 1) { images.getEffectiveArtistImageUrl(1L, "Artist 1") }
         assertThat(vm.uiState.value.isLoading).isFalse()
     }
     @Test fun `palette extraction never holds the page loading state`() = runTest {

@@ -234,8 +234,7 @@ internal object DirectPathCapture {
             add("SNAP|$label|format.transportChannels=${s.transportChannelCount}")
             add("SNAP|$label|format.dacBestDepth=${usb?.dacBestBitDepth}")
             add("SNAP|$label|pipeline.producer=${s.producer}")
-            // Plan B (the native engine), as of the sink's last producer decision. false is the B12a default: the
-            // ExoPlayer pipeline carries PRISTINE. A capture that says true was not measuring the default.
+            // Kept for readers of older captures; permanently false.
             add("SNAP|$label|pipeline.debugForcedNativeEngine=${DirectPathTelemetry.debugForcedNativeEngine}")
             // B12a-3 (F-10): the silent track that makes Android see Direct playing, and B12a-4: pre-rolls after a rate change.
             add("SNAP|$label|pipeline.presenceActive=${s.presenceActive}")
@@ -253,6 +252,7 @@ internal object DirectPathCapture {
             add("SNAP|$label|pipeline.joinPausesHeld=${s.naturalJoinPausesHeld}")
             add("SNAP|$label|pipeline.pauseFades=${s.pipelinePauseFades}")
             add("SNAP|$label|pipeline.seekFades=${s.pipelineSeekFades}")
+            add("SNAP|$label|pipeline.dacRecoveries=${s.dacRecoveries}")
             add("SNAP|$label|pipeline.realignsKept=${s.pipelineRealignsKept}")
             add("SNAP|$label|pipeline.stageConfigures=${s.stageConfigures}")
             add("SNAP|$label|pipeline.stageRefusals=${s.stageRefusals}")
@@ -290,6 +290,12 @@ internal object DirectPathCapture {
             add("SNAP|$label|perf.feedbackStuckLongestMs=${s.feedbackStuckLongestMs}")
             add("SNAP|$label|perf.feedbackStuckFpmf=${"%.4f".format(java.util.Locale.ROOT, s.feedbackStuckFpmf)}")
             add("SNAP|$label|perf.feedbackStuckPpm=${s.feedbackStuckPpm}")
+            // B46-A4: the transport plan of the stream in use; assumptions != 0 means the device's timing is not the one the output drives
+            add("SNAP|$label|perf.transportIntervalUs=${s.transportIntervalUs}")
+            add("SNAP|$label|perf.transportRingUrbs=${s.transportRingUrbs}")
+            add("SNAP|$label|perf.transportQueueSoftFrames=${s.transportQueueSoftFrames}")
+            add("SNAP|$label|perf.transportQueueHardFrames=${s.transportQueueHardFrames}")
+            add("SNAP|$label|perf.transportAssumptions=${s.transportAssumptions}")
             add("SNAP|$label|perf.feedbackReadings=${s.feedbackReadings}")
             add("SNAP|$label|perf.feedbackLastFpmf=${"%.4f".format(java.util.Locale.ROOT, s.feedbackLastFpmf)}")
             add("SNAP|$label|perf.feedbackSendingFpmf=${"%.4f".format(java.util.Locale.ROOT, s.feedbackSendingFpmf)}")

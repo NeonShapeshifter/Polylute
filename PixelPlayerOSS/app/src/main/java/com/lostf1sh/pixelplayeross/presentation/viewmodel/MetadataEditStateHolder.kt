@@ -34,7 +34,8 @@ class MetadataEditStateHolder @Inject constructor(
         val updatedAlbumArtUri: String? = null,
         val parsedLyrics: Lyrics? = null,
         val error: MetadataEditError? = null,
-        val errorMessage: String? = null
+        val errorMessage: String? = null,
+        val permissionIntentSender: android.content.IntentSender? = null,
     ) {
         /**
          * Returns a user-friendly error message based on the error type
@@ -179,14 +180,15 @@ class MetadataEditStateHolder @Inject constructor(
             MetadataEditResult(
                 success = false,
                 error = result.error,
-                errorMessage = result.errorMessage
+                errorMessage = result.errorMessage,
+                permissionIntentSender = result.permissionIntentSender,
             )
         }
     }
 
     suspend fun deleteSong(song: Song): Boolean = withContext(Dispatchers.IO) {
         val fileInfo = FileDeletionUtils.getFileInfo(song.path)
-        if (fileInfo.exists && fileInfo.canWrite) {
+        if (fileInfo.exists && (fileInfo.canWrite || android.os.Build.VERSION.SDK_INT == android.os.Build.VERSION_CODES.Q)) {
             val success = FileDeletionUtils.deleteFile(context, song.path)
             if (success) {
                 

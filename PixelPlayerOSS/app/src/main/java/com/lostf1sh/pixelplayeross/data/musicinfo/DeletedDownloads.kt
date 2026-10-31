@@ -29,6 +29,24 @@ class DeletedDownloads(private val file: File) {
     private var stamp: Stamp? = null
     private var entries: Set<String> = emptySet()
 
+    class Snapshot internal constructor(private val entries: Set<String>) {
+        fun contains(key: String): Boolean = encoded(key) in entries
+        fun fingerprint(): String = entries.sorted().joinToString("\n")
+    }
+
+    internal suspend fun revision(): Any? = lock.mutex.withLock {
+        try {
+            fingerprint()
+        } catch (_: Exception) {
+            // Force the normal read path, which reports and ignores unreadable marks.
+            Any()
+        }
+    }
+
+    suspend fun snapshot(): Snapshot = lock.mutex.withLock {
+        Snapshot(readLocked().toSet())
+    }
+
     suspend fun contains(key: String): Boolean = lock.mutex.withLock {
         encoded(key) in readLocked()
     }
@@ -120,15 +138,16 @@ class DeletedDownloads(private val file: File) {
         loaded = true
     }
 
-    private fun encoded(key: String): String {
-        val kind = key.substringBefore('|')
-        require(kind in KINDS)
-        val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
-        val hex = digest.joinToString("") { byte -> (byte.toInt() and 255).toString(16).padStart(2, '0') }
-        return "$kind:$hex"
-    }
-
     companion object {
+        private fun encoded(key: String): String {
+            val kind = key.substringBefore('|')
+            require(kind in KINDS)
+            val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
+            val hex = digest.joinToString("") { byte -> (byte.toInt() and 255).toString(16).padStart(2, '0') }
+            return "$kind:$hex"
+        }
+
+
         const val FILE_NAME = "deleted-downloads.txt"
         private const val HEADER = "POLYLUTE-DELETED-DOWNLOADS-1"
         private const val MAX_LINE_LENGTH = 80

@@ -124,6 +124,22 @@ class ArtistImageRepositoryTest {
         coVerify(exactly = 1) { musicDao.clearRemoteArtistImages() }
     }
 
+    @Test
+    fun `song artists and the viewed artist fetch only with photos enabled`() = runTest {
+        for (enabled in listOf(true, false)) {
+            val service = mockk<MusicInfoService>(relaxed = true)
+            val dao = mockk<MusicDao>(relaxed = true)
+            coEvery { service.cachedArtistPhoto(any()) } returns null
+            coEvery { service.fetchArtistPhoto(any()) } returns null
+            val repository = ArtistImageRepository(musicInfo(service), dao, userPreferencesRepository(enabled))
+            repository.prefetchArtistImages(listOf(1L to "First", 2L to "Guest"))
+            repository.getEffectiveArtistImageUrl(3L, "Viewed artist")
+            for (name in listOf("First", "Guest", "Viewed artist")) {
+                coVerify(exactly = if (enabled) 1 else 0) { service.fetchArtistPhoto(name) }
+            }
+        }
+    }
+
     private fun userPreferencesRepository(photos: Boolean = true): UserPreferencesRepository {
         return mockk {
             every { this@mockk.musicInfoArtistPhotosEnabledFlow } returns flowOf(photos)

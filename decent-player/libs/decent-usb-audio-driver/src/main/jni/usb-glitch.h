@@ -18,7 +18,10 @@ enum UsbGlitchKind {
     USB_GLITCH_FEEDBACK_UNSTUCK = 7, // B10: it moved again (or the stream ended): the episode's total
     USB_GLITCH_OUTPUT_GAP = 8,       // B23-P2: a submit gap longer than the lead the ring held: the model estimates the bus had nothing queued
     USB_GLITCH_FEEDBACK_INVALID = 9, // B41-fix1: a feedback transfer that was not a reading (an error status, or not the four bytes asked for)
-    USB_GLITCH_KIND_COUNT = 10,
+    USB_GLITCH_DAC_LOCKED = 10,      // B47-A5 / B48-fix4: the rail or stuck watch calls the DAC locked up
+    USB_GLITCH_DAC_RECOVERY = 11,    // B47-A5: one step of the recovery ran, and how it ended
+    USB_GLITCH_OUTPUT_GAP_CPU = 12,  // B47-A1: the extra line of an OUTPUT_GAP whose writer sat 20 ms or more in the run queue: who else had the CPU
+    USB_GLITCH_KIND_COUNT = 13,
 };
 
 typedef struct {
@@ -60,7 +63,7 @@ int64_t usbRingStarvedMs(int64_t lastSubmitMs, int64_t nowMs, bool playOutBefore
 //
 // This is a pure time model, no allocation and nothing but clock reads at the submit, so it can run on every URB:
 //  - what the ring holds is *wire time*: a URB of N packets occupies N microframes of the isochronous schedule
-//    (125 us each at high speed, the speed the output assumes everywhere: calibratedFpmf = rate / 8000), whatever the
+//    (125 us each at high speed, the speed the output assumes everywhere: the plan's serviceIntervalUs, usb-pcm-packetizer.h), whatever the
 //    audio rate. It does not drift with the DAC's clock, which is why it is not frames / rate.
 //  - `playoutEnd` is when everything submitted so far has gone out: each submit moves it forward by the URB's wire
 //    time, from `max(playoutEnd, now)`. Before a submit, `lead = playoutEnd - now`; at or below zero the bus had
@@ -124,8 +127,14 @@ void usbOutputGapAddBetweenCalls(UsbOutputGapWatch *w, int64_t betweenUs);
  * One data URB of [urbUs] wire time was submitted at [nowUs]. [announcedIdle]: the stream was idle on purpose
  * (`lastSubmitMs == 0`, a faded cut, a start), so there is no lead to run out. True when the lead had run out
  * (`playoutEnd <= now` at the submit) for at least USB_OUTPUT_GAP_MIN_DRY_US, with [*gap] filled; the model then restarts from this submit.
+ *
+ * B46-B1: an announced idle restarts the model from what the ring STILL HOLDS, [queuedLeadUs] (the wire time of the URBs submitted
+ * before this one that the DAC has not played; 0 for a start or a ring that played out). It used to restart from zero, and the first
+ * silence URB after a pause's fade-out (the ring then holds the fade and ~40-76 ms more) made the model think the bus had a lead of
+ * 1 ms: any stall of the writer of 2 ms or more was then reported as `OUTPUT_GAP lead=1 ms dry=gap-1`, seven times in the owner's
+ * B45 session, while the fake DAC of the simulation never found the bus dry for a stall under the silence lead.
  */
-bool usbOutputGapSubmit(UsbOutputGapWatch *w, bool announcedIdle, int64_t nowUs, int64_t urbUs, UsbOutputGap *gap);
+bool usbOutputGapSubmit(UsbOutputGapWatch *w, bool announcedIdle, int64_t nowUs, int64_t urbUs, int64_t queuedLeadUs, UsbOutputGap *gap);
 
 /** The bucket that holds most of the gap (ties go to the reap wait, then the Java side). */
 enum UsbOutputGapWhere usbOutputGapWhere(const UsbOutputGap *gap);
@@ -171,6 +180,13 @@ typedef struct {
 } UsbSchedDelta;
 
 UsbSchedDelta usbSchedDelta(const UsbSchedBaseline *baseline, const UsbSchedSample *now, int64_t nowUs);
+
+/**
+ * B47-A1: whether the gap's scheduler delta earns the extra OUTPUT_GAP_CPU line: the writer sat in the run queue for USB_GAP_CPU_MIN_RUNQ_US or more. The session of 2026-10-29
+ * had stalls of 3-12 ms that were ordinary jitter and one of 82 ms that was not.
+ */
+#define USB_GAP_CPU_MIN_RUNQ_US 20000
+bool usbGapWantsCpuLine(const UsbSchedDelta *delta);
 
 /** Log window per kind: REAP_SLOW is a 30 s summary (count held back), the rest once a second. */
 int64_t usbGlitchLogIntervalMs(enum UsbGlitchKind kind);
@@ -264,6 +280,15 @@ const char *usbFeedbackPacketName(int verdict);
 
 /** `auto`'s healthy average: an exponentially weighted mean over ~5 s of readings (5000 at ~1000/s). */
 #define USB_FEEDBACK_HEALTHY_TAU_READINGS 5000.0
+/**
+ * B47-A4: a run that ends is not part of the healthy average yet; it joins it USB_FEEDBACK_HEALTHY_SETTLE_MS later, if no refusal began meanwhile. On
+ * 2026-10-29 the Melody's excursions began with readings that were inside the healthy band (a few tenths of a percent, +1.5 % / -1.8 % in the line's
+ * `sending=`), and every one of them was folded into the average that `auto` falls back on the moment the refusal began: the fallback was taken from the
+ * excursion's own first readings. The ramps seen took 0.3-0.7 s from the first reading beyond +-0.5 % to the refusal; 2 s is three times the longest.
+ * A refusal that begins drops what has not settled, so the fallback is a value from before the excursion began, or nominal.
+ */
+#define USB_FEEDBACK_HEALTHY_SETTLE_MS 2000
+#define USB_FEEDBACK_FRESH_CAPACITY 48
 /** ... usable once it holds the equivalent of 1 s of readings; otherwise `auto` falls back to nominal. */
 #define USB_FEEDBACK_HEALTHY_MIN_WEIGHT 1000.0
 
@@ -304,7 +329,15 @@ typedef struct {
     enum UsbFeedbackImplausible implausibleWhy;
     double implausibleFpmf;
     double implausiblePpm;
+    int64_t implausibleRampMs;         // B47-A4: how long the readings had been beyond +-0.5 % when the refusal began (0 = not a ramp / unknown)
 } UsbFeedbackEvent;
+
+/** B47-A4: a run folded into the healthy average, waiting USB_FEEDBACK_HEALTHY_SETTLE_MS before it counts. */
+typedef struct {
+    int64_t endMs;
+    double fpmf;
+    int64_t count;
+} UsbFeedbackFold;
 
 /**
  * State of one stream's feedback: the current run of identical readings, whether it is an episode, and
@@ -318,9 +351,12 @@ typedef struct {
     int64_t runLastMs;
     int64_t runReadings;
     bool stuck;
-    // Exponentially weighted sums of the readings of runs that were NOT an episode.
+    // Exponentially weighted sums of the readings of runs that were NOT an episode and have settled (B47-A4: older than
+    // USB_FEEDBACK_HEALTHY_SETTLE_MS when the next reading arrives; `fresh` holds the younger ones, oldest first).
     double healthySum;
     double healthyWeight;
+    UsbFeedbackFold fresh[USB_FEEDBACK_FRESH_CAPACITY];
+    int freshCount;
     // B12a-2: the latest reading is not to be obeyed under `auto` (see USB_FEEDBACK_ABSURD_PPM) ...
     bool implausible;
     enum UsbFeedbackImplausible implausibleWhy;
@@ -341,8 +377,12 @@ void usbFeedbackWatchReset(UsbFeedbackWatch *w);
 void usbFeedbackWatchObserve(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, int64_t nowMs,
                              UsbFeedbackEvent *ev);
 
+/** The same, for a given feedback policy: `auto-early` calls a big plateau stuck sooner (usbFeedbackStuckHoldMs). The other policies are `auto`'s 5 s. */
+void usbFeedbackWatchObservePolicy(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, int64_t nowMs, int policy,
+                                   UsbFeedbackEvent *ev);
+
 /**
- * A reading outside +-5 % (usbFeedbackApply refused it): it never reaches [usbFeedbackWatchObserve], but under
+ * A reading outside +-5 % (usbFeedbackApply refused it): also observed by [usbFeedbackWatchObserve], and under
  * `auto` it makes what is sent the healthy average or nominal until an applied reading replaces it. [ev] says
  * whether it began a streak of implausible readings.
  */
@@ -353,6 +393,94 @@ void usbFeedbackWatchEnd(UsbFeedbackWatch *w, double nominalFpmf, UsbFeedbackEve
 
 /** Signed offset of [fpmf] from nominal, in parts per million. */
 double usbFeedbackPpm(double fpmf, double nominalFpmf);
+
+// ── A locked-up DAC (B47-A5) ────────────────────────────────────────────────────────────────────────
+//
+// 2026-10-29 17:32:34 the Melody's feedback went to 5.7875 (+4.99 %, the edge of the +-5 % window) and stayed there, constant, for 3 minutes, with the
+// oldest URB of a full ring taking 24-47 ms to complete (REAP_SLOW); the owner heard nothing until it flipped to -5 % at 17:35:25 and the noise began. `auto` refused
+// the reading the whole time (it sent ~nominal), which changed nothing. The same two rails, +4.99 % and then -5 %, are in the 2026-10-25 captures (16:59:14 and
+// 17:00:08, 16:06:38) and the same +20851 ppm refusal in the 2026-10-26 library-freeze capture, 19 s after a real OUTPUT_GAP of 46 ms.
+//
+// B48-fix2: those logged rails were the last in-window readings, not necessarily the DAC's live value. Every clean packet now feeds the detector, including
+// values beyond +-5 %. The follower still rejects them. A wrong format is visible in raw bytes and the bounded recovery escalates once, then gives up.
+//
+// What a healthy Melody shows (every log on record): its nominal with blips of a single reading up to +1.9 %, a plateau of +1.0 % for 3 s at a stream's
+// start, +0.8 % for minutes (Crimen, Ciega Sordomuda), +407 ppm (Miko). Nothing beyond +-2 % for more than a reading. So a feedback beyond +-4.5 % (2.4x the
+// worst healthy reading, 0.9 of the window) that keeps there for USB_DAC_LOCK_RAIL_MS is not a clock: the detector calls it locked up. It needs no audible symptom
+// and no late completion (those are counted and reported with the line, but the rail alone decides): the lock-up was silent for almost 3 minutes.
+#define USB_DAC_LOCK_RAIL_PPM 45000.0
+/** Long enough that no single reading or glitch can fire it (1 500 readings at ~1 000 a second), short enough that recovery starts in a second and a half. */
+#define USB_DAC_LOCK_RAIL_MS 1500
+/** No reading for this long (a pause) ends the run, like the feedback watch's own gap. */
+#define USB_DAC_LOCK_GAP_MS 500
+
+typedef struct {
+    bool inRun;            // the readings so far are all beyond the rail
+    int64_t startMs;       // the first of them
+    int64_t lastMs;
+    int64_t readings;
+    double ppm;            // the latest
+    int64_t lateReaps;     // REAP_SLOW events (> 20 ms) since the run began
+    bool locked;           // fired for this run
+} UsbDacLockWatch;
+
+typedef struct {
+    double ppm;
+    int64_t railedMs;
+    int64_t readings;
+    int64_t lateReaps;
+} UsbDacLockEvent;
+
+void usbDacLockReset(UsbDacLockWatch *w);
+/** One feedback reading, [ppm] from nominal, at [nowMs]. True exactly once per run, when it has been beyond the rail for USB_DAC_LOCK_RAIL_MS; [*ev] filled. */
+bool usbDacLockObserve(UsbDacLockWatch *w, double ppm, int64_t nowMs, UsbDacLockEvent *ev);
+/** A completion that took longer than usbReapIsSlow allows, while a run is open. */
+void usbDacLockLateReap(UsbDacLockWatch *w);
+/** How long the run has lasted at [nowMs], 0 outside one. */
+int64_t usbDacLockRailedMs(const UsbDacLockWatch *w, int64_t nowMs);
+
+// ── What to do about it: escalating steps, each bounded (B47-A5) ──────────────────────────────────
+//
+// Step 1 restarts the streaming interface (SETINTERFACE alt 0, then the format's alt again, the stream continues at the same position); step 2, only if the
+// rail or frozen feedback is back after step 1, resets the bus and claims the interfaces again (the B39/B40 path, the DAC's level restored by the rule of every open); then it gives up
+// for the episode: one line, and the feedback stays refused as it always was. Never a loop:
+//  - one attempt per step per episode. An episode ends when the detector has been quiet for USB_DAC_RECOVERY_EPISODE_END_MS after the last step (the recovery held);
+//  - a verdict on a step comes from both watches: a rail or frozen feedback is back (the next step is taken at once) or both stay quiet for
+//    USB_DAC_RECOVERY_VERIFY_MS (`ok`). A pending off-nominal run defers `ok` until it changes or reaches its watch's hold;
+//    in particular the 4 s verdict must not precede the stuck watch's 5 s classification. A settling start ramp is allowed to change and clear;
+//  - a new episode starts at most once per USB_DAC_RECOVERY_COOLDOWN_MS across the whole process: 30 s is long enough for a reset DAC to re-enumerate and settle
+//    (a few seconds) and for the verdict window to close with room to spare, and it caps a DAC that locks again right after every recovery at two attempts a minute.
+#define USB_DAC_RECOVERY_VERIFY_MS 4000
+#define USB_DAC_RECOVERY_EPISODE_END_MS 10000
+#define USB_DAC_RECOVERY_COOLDOWN_MS 30000
+
+enum {
+    USB_DAC_STEP_NONE = 0,
+    USB_DAC_STEP_INTERFACE = 1,   // step 1
+    USB_DAC_STEP_BUS_RESET = 2,   // step 2
+    USB_DAC_STEP_GIVE_UP = 3,
+};
+
+typedef struct {
+    int lastStep;             // the last step taken in this episode (0: none yet)
+    bool gaveUp;
+    int awaitingStep;         // a step whose verdict is owed (0: none)
+    int64_t awaitingSinceMs;  // when that step ended
+    int64_t quietSinceMs;     // since when the detector has been quiet (0: it is not)
+} UsbDacRecoveryPolicy;
+
+void usbDacRecoveryPolicyReset(UsbDacRecoveryPolicy *p);
+
+/**
+ * The writer looks (it is streaming, not paused, not in a seek): whether the detector says [locked], whether recovery is [enabled], and when the last episode began
+ * ([*lastEpisodeStartMs], process-wide, 0 = never). Returns the step to take now (USB_DAC_STEP_INTERFACE / BUS_RESET), USB_DAC_STEP_GIVE_UP once when the steps are
+ * used up, or NONE. [pending] means a rail or off-nominal identical run is still being classified: it defers success and episode closure, never starts a step.
+ * [*verdictStep] is the step an earlier call took whose verdict is now known (0 if none) and [*verdictOk] says which way it went.
+ */
+int usbDacRecoveryDecide(UsbDacRecoveryPolicy *p, bool locked, bool enabled, int64_t nowMs, int64_t *lastEpisodeStartMs, int *verdictStep, bool *verdictOk, bool pending = false);
+
+/** The step that was taken ended (its work done or failed) at [nowMs]: the verdict clock starts. */
+void usbDacRecoveryStepDone(UsbDacRecoveryPolicy *p, int step, int64_t nowMs);
 
 /**
  * What the host does with the DAC's feedback (SET_FEEDBACK_POLICY, process-only; not persisted).
@@ -365,8 +493,35 @@ enum UsbFeedbackPolicy {
     USB_FEEDBACK_NOMINAL = 1,  // ignore the feedback: packets at the nominal rate
     USB_FEEDBACK_CLAMP = 2,    // what the DAC asks, within +-USB_FEEDBACK_CLAMP_PPM of nominal
     USB_FEEDBACK_AUTO = 3,     // follow, except while the feedback is stuck or implausible: then the healthy average (B12a: the default)
-    USB_FEEDBACK_POLICY_COUNT = 4,
+    USB_FEEDBACK_AUTO_EARLY = 4,  // B46-C2: `auto`, but a big plateau is called stuck after USB_FEEDBACK_EARLY_STUCK_MS. Opt-in; never the default.
+    USB_FEEDBACK_POLICY_COUNT = 5,
 };
+
+// ── `auto-early` (B46-C) ───────────────────────────────────────────────────────────────────────────
+//
+// On Crimen and Ciega, Sordomuda (2026-10-25) the first reading was nominal, then the Melody's feedback sat at +0.82..+0.83 % and `auto` followed it
+// for the 5 s of USB_FEEDBACK_STUCK_MIN_MS before it called it stuck: ~1 800-2 000 frames (~41 ms) above nominal. What the Melody's readings
+// show, from every device log on record (B46 resultado, C1):
+//  - the +1 % start plateau of 2026-10-06 (10:54:02-04, 5.5674 = +0.996 %), the one `auto` was built to keep following, is as CONSTANT as the stuck
+//    ones: six samples of the same value and ~2 500 off-nominal readings in 3 s. A reading that repeats says nothing about which kind it is;
+//  - the five plateaus on record began 0.04-0.97 s after the stream's start, so when they begin does not tell them apart either;
+//  - what differs is only how long they lasted: the 10-06 one at least 3.0 s (the track was skipped at 3.7 s, so its end was never seen); the stuck ones 7.8 s
+//    (a pause ended it), 8.9 s (a pause), 9.1 s (the DAC went back to nominal on its own, 4 s after `auto` had stopped following it) and 416 s (the song ended).
+// So the readings hold no earlier signal. What the data allows is a shorter wait than 5 s that still clears the longest plateau known to be harmless
+// by 0.5 s: 3.5 s. It is a hypothesis to be heard, not a proven margin (nobody has seen a plateau of 3.0-5.0 s end by itself), which is why it is
+// opt-in. It applies only to a plateau of at least USB_FEEDBACK_EARLY_MIN_PPM (the `auto` SUSTAINED threshold, 0.5 %): a small plateau (+0.165 % was one of
+// the four) costs a few frames and is judged exactly as `auto` judges it. Nothing else differs: the same window, the same refusals, the same fallback; it
+// can only stop following a reading sooner, never follow one `auto` would not.
+#define USB_FEEDBACK_EARLY_STUCK_MS 3500
+#define USB_FEEDBACK_EARLY_MIN_PPM 5000.0
+
+/** True for the policies that stop obeying a stuck or implausible feedback (`auto` and `auto-early`). */
+static inline bool usbFeedbackPolicyRefuses(int policy) {
+    return policy == USB_FEEDBACK_AUTO || policy == USB_FEEDBACK_AUTO_EARLY;
+}
+
+/** How long an identical off-nominal reading must have held before it is called stuck, for [policy] and a plateau [ppm] from nominal. */
+int64_t usbFeedbackStuckHoldMs(int policy, double ppm);
 
 const char *usbFeedbackPolicyName(int policy);
 

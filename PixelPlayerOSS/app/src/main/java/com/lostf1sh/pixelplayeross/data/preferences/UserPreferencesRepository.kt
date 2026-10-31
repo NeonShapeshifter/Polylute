@@ -196,6 +196,8 @@ constructor(
     )
 
     private object PreferencesKeys {
+        val REPEAT_SHARED_SONGS_IN_SHUFFLE = booleanPreferencesKey("repeat_shared_songs_in_shuffle")
+        val SHOW_PLAYER_BOOKMARK_BUTTON = booleanPreferencesKey("show_player_bookmark_button")
         val APP_REBRAND_DIALOG_SHOWN = booleanPreferencesKey("app_rebrand_dialog_shown")
         val ALLOWED_DIRECTORIES = stringSetPreferencesKey("allowed_directories")
         val BLOCKED_DIRECTORIES = stringSetPreferencesKey("blocked_directories")
@@ -796,7 +798,7 @@ constructor(
 
     val lyricsSourcePreferenceFlow: Flow<LyricsSourcePreference> =
             dataStore.data.map { preferences ->
-                LyricsSourcePreference.fromName(preferences[PreferencesKeys.LYRICS_SOURCE_PREFERENCE])
+                preferences[PreferencesKeys.LYRICS_SOURCE_PREFERENCE]?.let(LyricsSourcePreference::fromName) ?: LyricsSourcePreference.LOCAL_FIRST
             }
 
     suspend fun setLyricsSourcePreference(preference: LyricsSourcePreference) {
@@ -853,7 +855,7 @@ constructor(
 
     val autoScanLrcFilesFlow: Flow<Boolean> =
             dataStore.data.map { preferences ->
-                preferences[PreferencesKeys.AUTO_SCAN_LRC_FILES] ?: false
+                preferences[PreferencesKeys.AUTO_SCAN_LRC_FILES] ?: true
             }
 
     suspend fun setAutoScanLrcFiles(enabled: Boolean) {
@@ -998,7 +1000,7 @@ constructor(
 
     val isGenreGridViewFlow: Flow<Boolean> =
         dataStore.data.map { preferences ->
-            preferences[PreferencesKeys.IS_GENRE_GRID_VIEW] ?: true
+            preferences[PreferencesKeys.IS_GENRE_GRID_VIEW] ?: false
         }
 
     suspend fun setGenreGridView(isGrid: Boolean) {
@@ -1169,6 +1171,26 @@ constructor(
     suspend fun setShowQueueHistory(show: Boolean) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_QUEUE_HISTORY] = show
+        }
+    }
+
+    val showBookmarkButtonFlow: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.SHOW_PLAYER_BOOKMARK_BUTTON] ?: true
+    }
+
+    suspend fun setShowBookmarkButton(show: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_PLAYER_BOOKMARK_BUTTON] = show
+        }
+    }
+
+    val repeatSharedSongsInShuffleFlow: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.REPEAT_SHARED_SONGS_IN_SHUFFLE] ?: false
+    }
+
+    suspend fun setRepeatSharedSongsInShuffle(repeat: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.REPEAT_SHARED_SONGS_IN_SHUFFLE] = repeat
         }
     }
 

@@ -48,7 +48,7 @@ keyPassword=<the same password>
 ./gradlew :app:bundleRelease       # app/build/outputs/bundle/release/app-release.aab
 ```
 
-The version is `APP_VERSION_NAME` / `APP_VERSION_CODE` in `gradle.properties` (1.1.0, code 2), or `-PAPP_VERSION_NAME=…` / `-PAPP_VERSION_CODE=…`
+The version is `APP_VERSION_NAME` / `APP_VERSION_CODE` in `gradle.properties` (1.2.0, code 5), or `-PAPP_VERSION_NAME=…` / `-PAPP_VERSION_CODE=…`
 on the command line. **The version code must go up with every build that anyone installs over another**; Android refuses an update that does not
 raise it.
 

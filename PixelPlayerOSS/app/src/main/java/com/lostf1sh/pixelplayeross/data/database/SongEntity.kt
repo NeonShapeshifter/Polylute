@@ -93,7 +93,7 @@ data class SongEntity(
     @ColumnInfo(name = "album_user_edited", defaultValue = "0") val albumUserEdited: Boolean = false,
     @ColumnInfo(name = "genre_user_edited", defaultValue = "0") val genreUserEdited: Boolean = false,
     /**
-     * The durable, PixelPlayer-owned identity for this library item.
+     * The durable, Polylute-owned identity for this library item.
      *
      * Opaque, generated once when the item is first seen, and **never recomputed from metadata**.
      * User state (engagement, and eventually anything else durable) keys off this and nothing else.
@@ -106,7 +106,7 @@ data class SongEntity(
     @ColumnInfo(name = "library_item_id", defaultValue = "''") val libraryItemId: String = "",
 
     /**
-     * PixelPlayer's matching evidence for this library item — see
+     * Polylute's matching evidence for this library item — see
      * [com.lostf1sh.pixelplayeross.data.identity.LibraryIdentity]. Never the identity itself.
      *
      * See [com.lostf1sh.pixelplayeross.data.identity.LibraryIdentity]. Empty until the first scan

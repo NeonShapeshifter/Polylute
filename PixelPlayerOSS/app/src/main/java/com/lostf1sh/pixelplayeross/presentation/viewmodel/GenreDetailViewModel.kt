@@ -31,22 +31,32 @@ data class GenreDetailUiState(
     val artists: List<GenreArtist> = emptyList(),
     val isLoadingGenreName: Boolean = false,
     val isLoadingSongs: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val imageError: Boolean = false,
 )
 
 @HiltViewModel
 class GenreDetailViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val savedStateHandle: SavedStateHandle,
-    private val dispatchers: DispatcherProvider
+    private val dispatchers: DispatcherProvider,
+    private val genreImages: com.lostf1sh.pixelplayeross.data.repository.GenreImageRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GenreDetailUiState())
     val uiState: StateFlow<GenreDetailUiState> = _uiState.asStateFlow()
 
+    private var customImagePath: String? = null
+
     init {
         savedStateHandle.get<String>("genreId")?.let { genreId ->
             val decodedGenreId = java.net.URLDecoder.decode(genreId, "UTF-8")
+            viewModelScope.launch {
+                genreImages.observe(decodedGenreId).collect { path ->
+                    customImagePath = path
+                    _uiState.update { it.copy(genre = it.genre?.copy(imagePath = path)) }
+                }
+            }
             loadGenreDetails(decodedGenreId)
         } ?: run {
             _uiState.update { it.copy(error = "Genre ID not found", isLoadingGenreName = false, isLoadingSongs = false) }
@@ -62,6 +72,30 @@ class GenreDetailViewModel @Inject constructor(
     fun reload() {
         savedStateHandle.get<String>("genreId")?.let { genreId ->
             loadGenreDetails(java.net.URLDecoder.decode(genreId, "UTF-8"))
+        }
+    }
+
+    fun setCustomImage(source: android.net.Uri) = changeImage { key ->
+        check(genreImages.setImage(key, source) != null) { "Could not copy genre image" }
+    }
+
+    fun removeCustomImage() = changeImage { key -> genreImages.removeImage(key) }
+
+    fun dismissImageError() {
+        _uiState.update { it.copy(imageError = false) }
+    }
+
+    private fun changeImage(action: suspend (String) -> Unit) {
+        val id = savedStateHandle.get<String>("genreId") ?: return
+        viewModelScope.launch {
+            try {
+                action(java.net.URLDecoder.decode(id, "UTF-8"))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                timber.log.Timber.w(error, "Could not update genre image")
+                _uiState.update { it.copy(imageError = true) }
+            }
         }
     }
 
@@ -83,7 +117,7 @@ class GenreDetailViewModel @Inject constructor(
                 }
 
                 if (initialGenre != null) {
-                    _uiState.update { it.copy(genre = initialGenre, isLoadingGenreName = false) }
+                    _uiState.update { it.copy(genre = initialGenre.copy(imagePath = customImagePath), isLoadingGenreName = false) }
                 }
 
                 val result = withContext(dispatchers.default) {
@@ -107,7 +141,7 @@ class GenreDetailViewModel @Inject constructor(
 
                 _uiState.update {
                     it.copy(
-                        genre = result.genre,
+                        genre = result.genre.copy(imagePath = customImagePath),
                         songs = result.songs,
                         albums = result.albums,
                         artists = result.artists,

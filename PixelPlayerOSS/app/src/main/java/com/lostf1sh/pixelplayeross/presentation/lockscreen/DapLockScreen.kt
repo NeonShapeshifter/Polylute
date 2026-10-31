@@ -614,13 +614,23 @@ private fun LockTransportRow(
     ) {
         // Shuffle and repeat are the same state button the player and the queue use: accent and a dot when on.
         DapStateIconButton(
-            contentDescription = stringResource(R.string.player_shuffle),
-            active = isShuffleEnabled,
-            onClick = onToggleShuffle,
-            stateDescription = stringResource(
-                if (isShuffleEnabled) R.string.lock_transport_state_on else R.string.lock_transport_state_off
-            ),
-        ) { tint -> DapIcon(kind = DapIconKind.Shuffle, tint = tint, size = 24.dp) }
+            contentDescription = stringResource(R.string.lock_transport_repeat),
+            active = repeatMode != Player.REPEAT_MODE_OFF,
+            onClick = onToggleRepeat,
+            stateDescription = when (repeatMode) {
+                Player.REPEAT_MODE_ONE -> stringResource(R.string.lock_transport_repeat_one)
+                Player.REPEAT_MODE_ALL -> stringResource(R.string.lock_transport_repeat_all)
+                else -> stringResource(R.string.lock_transport_state_off)
+            },
+        ) { tint ->
+            // Repeat-one is a different mode, not a differently tinted one — it is drawn as a
+            // different glyph so the state survives without colour.
+            DapIcon(
+                kind = if (repeatMode == Player.REPEAT_MODE_ONE) DapIconKind.RepeatOne else DapIconKind.Repeat,
+                tint = tint,
+                size = 24.dp,
+            )
+        }
         DapStateIconButton(
             contentDescription = stringResource(R.string.lock_transport_previous),
             active = false,
@@ -645,23 +655,13 @@ private fun LockTransportRow(
             onClick = onNext,
         ) { tint -> DapIcon(kind = DapIconKind.SkipNext, tint = tint, size = 28.dp) }
         DapStateIconButton(
-            contentDescription = stringResource(R.string.lock_transport_repeat),
-            active = repeatMode != Player.REPEAT_MODE_OFF,
-            onClick = onToggleRepeat,
-            stateDescription = when (repeatMode) {
-                Player.REPEAT_MODE_ONE -> stringResource(R.string.lock_transport_repeat_one)
-                Player.REPEAT_MODE_ALL -> stringResource(R.string.lock_transport_repeat_all)
-                else -> stringResource(R.string.lock_transport_state_off)
-            },
-        ) { tint ->
-            // Repeat-one is a different mode, not a differently tinted one — it is drawn as a
-            // different glyph so the state survives without colour.
-            DapIcon(
-                kind = if (repeatMode == Player.REPEAT_MODE_ONE) DapIconKind.RepeatOne else DapIconKind.Repeat,
-                tint = tint,
-                size = 24.dp,
-            )
-        }
+            contentDescription = stringResource(R.string.player_shuffle),
+            active = isShuffleEnabled,
+            onClick = onToggleShuffle,
+            stateDescription = stringResource(
+                if (isShuffleEnabled) R.string.lock_transport_state_on else R.string.lock_transport_state_off
+            ),
+        ) { tint -> DapIcon(kind = DapIconKind.Shuffle, tint = tint, size = 24.dp) }
     }
 }
 

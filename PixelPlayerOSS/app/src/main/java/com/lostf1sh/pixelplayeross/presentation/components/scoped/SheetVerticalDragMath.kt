@@ -1,7 +1,5 @@
 package com.lostf1sh.pixelplayeross.presentation.components.scoped
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.ui.util.lerp
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState
 import kotlin.math.abs
 
@@ -54,16 +52,4 @@ internal fun resolveVerticalSheetTargetState(
         else ->
             if (currentFraction > 0.5f) PlayerSheetState.EXPANDED else PlayerSheetState.COLLAPSED
     }
-}
-
-internal fun collapseSpringDampingForFraction(currentFraction: Float): Float {
-    return lerp(
-        start = Spring.DampingRatioNoBouncy,
-        stop = Spring.DampingRatioLowBouncy,
-        fraction = currentFraction
-    )
-}
-
-internal fun collapseInitialSquashForFraction(currentFraction: Float): Float {
-    return lerp(1.0f, 0.97f, currentFraction)
 }

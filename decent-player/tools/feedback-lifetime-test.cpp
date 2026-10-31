@@ -49,7 +49,7 @@
 
 extern "C" {
 JNIEXPORT jlong JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
-    JNIEnv *, jobject, jint, jint, jint, jint, jint, jint, jint, jint);
+    JNIEnv *, jobject, jint, jint, jint, jint, jint, jint, jint, jint, jint, jint);
 JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(JNIEnv *, jobject, jlong);
 JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStop(JNIEnv *, jobject, jlong);
 JNIEXPORT jint JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeDrainUrbs(JNIEnv *, jobject, jlong);
@@ -276,6 +276,9 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
     const int64_t now = nowUs();
     pthread_mutex_lock(&g_mu);
     switch (request) {
+        case USBDEVFS_GET_SPEED:
+            pthread_mutex_unlock(&g_mu);
+            return 3;  // high speed
         case USBDEVFS_SUBMITURB: {
             auto *u = static_cast<usbdevfs_urb *>(arg);
             if (heldOf(u) != nullptr) violation("SUBMITURB reused a kernel-owned URB %p", (void *)u);
@@ -445,7 +448,7 @@ void checkNoViolations(const char *scenario) {
 
 UsbAudioContext *createStream() {
     const jlong h = Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
-        nullptr, nullptr, kFakeFd, 1, kEndpointOut, kEndpointFeedback, kRate, 2, 32, 400);
+        nullptr, nullptr, kFakeFd, 1, kEndpointOut, kEndpointFeedback, kRate, 2, 32, 400, 1, 4);
     if (h == 0) {
         fprintf(stderr, "stream was not created\n");
         exit(2);

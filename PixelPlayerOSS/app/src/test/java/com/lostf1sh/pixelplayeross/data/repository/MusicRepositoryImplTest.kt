@@ -62,6 +62,8 @@ class MusicRepositoryImplTest {
         every { mockMusicDao.getDistinctParentDirectoriesFlow() } returns flowOf(
             listOf("/music/folder1", "/music/folder2")
         )
+        every { mockMusicDao.observeGenreImages() } returns flowOf(emptyList())
+        every { mockMusicDao.getGenreCounts(any(), any()) } returns flowOf(emptyList())
         every { mockMusicDao.getAllSongArtistCrossRefs() } returns flowOf(emptyList())
         every { mockMusicDao.getAllSongs(any(), any()) } answers {
             println("getAllSongs called with: ${args[0]}, ${args[1]}")
@@ -111,6 +113,26 @@ class MusicRepositoryImplTest {
     @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `opening an artist list never starts photo requests`() = runTest(testDispatcher) {
+        val artists = (1L..40L).map { ArtistEntity(it, "Artist $it", 1) }
+        every { mockMusicDao.getArtistsWithSongCountsFiltered(any(), any(), any()) } returns flowOf(artists)
+        assertEquals(40, musicRepository.getArtists().first().size)
+        // The repository's image work runs on IO, independently of the collector.
+        kotlinx.coroutines.withContext(Dispatchers.IO) { Thread.sleep(300) }
+        coVerify(exactly = 0) { mockArtistImageRepository.prefetchArtistImages(any()) }
+    }
+
+    @Test
+    fun `playing a song requests only its missing artists`() = runTest(testDispatcher) {
+        val artists = listOf(ArtistEntity(1, "First", 1), ArtistEntity(2, "Second", 1))
+        every { mockMusicDao.getArtistsForSong(7) } returns flowOf(artists)
+        assertEquals(2, musicRepository.getArtistsForSong(7).first().size)
+        coVerify(timeout = 2000, exactly = 1) {
+            mockArtistImageRepository.prefetchArtistImages(listOf(1L to "First", 2L to "Second"))
+        }
     }
 
     @Test

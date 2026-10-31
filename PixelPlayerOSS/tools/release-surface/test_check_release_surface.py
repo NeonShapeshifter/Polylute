@@ -218,3 +218,21 @@ class CheckAssets(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CheckReleaseAbis(unittest.TestCase):
+    def test_intel_native_libraries_are_rejected_in_release_apks_and_bundles(self):
+        for prefix in ("lib/", "base/lib/"):
+            path = archive({prefix + "arm64-v8a/libvalid.so": b"ELF", prefix + "x86_64/libdebug.so": b"ELF"})
+            try:
+                self.assertEqual(check.unexpected_native_abis(path), ["x86_64"])
+            finally:
+                os.unlink(path)
+
+    def test_arm_release_libraries_are_allowed(self):
+        path = archive({"base/lib/arm64-v8a/libone.so": b"ELF", "base/lib/armeabi-v7a/libtwo.so": b"ELF"})
+        try:
+            self.assertEqual(check.native_abis(path), ["arm64-v8a", "armeabi-v7a"])
+            self.assertEqual(check.unexpected_native_abis(path), [])
+        finally:
+            os.unlink(path)

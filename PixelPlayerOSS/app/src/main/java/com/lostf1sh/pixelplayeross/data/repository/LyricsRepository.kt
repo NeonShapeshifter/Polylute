@@ -5,6 +5,11 @@ import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.model.Song
 
 interface LyricsRepository {
+    /** Discovery reads local sources and remote answers without persisting them as lyrics. */
+    suspend fun hasLocalLyrics(song: Song): Boolean = false
+    suspend fun discoverLyrics(song: Song): String? = null
+    suspend fun saveDiscoveredLyrics(song: Song, raw: String): Boolean = false
+
     /**
      * Returns already-persisted lyrics without performing any network request.
      */

@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 /**
- * Direct-path PCM conversions, shared by the native FLAC engine and the raw/float write paths.
+ * Direct-path PCM conversions for the raw/float write paths.
  * Host-compilable on purpose (no JNI, no Android headers) so the gate script can test them.
  *
  * Containers are little-endian, 16/24/32 bits (2/3/4 bytes per sample). A 24-bit source is packed

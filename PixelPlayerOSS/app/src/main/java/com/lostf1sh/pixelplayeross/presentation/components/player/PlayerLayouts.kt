@@ -31,10 +31,10 @@ internal fun FullPlayerPortraitContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(paddingValues)
-            .padding(horizontal = 24.dp),
+            .padding(paddingValues),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // The artwork owns the full width. Text and controls keep the Library gutter.
         // Measure the text and actions first. Artwork takes what is left, up to its own size, including when the user
         // enlarges text; a fixed estimate clipped actions.
         //
@@ -48,16 +48,16 @@ internal fun FullPlayerPortraitContent(
             albumCoverSection(Modifier)
         }
         Spacer(Modifier.height(16.dp))
-        lyricsLinesSection()
+        Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) { lyricsLinesSection() }
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Box(Modifier.align(Alignment.Start)) { songMetadataSection() }
             playerProgressSection()
         }
         Spacer(Modifier.height(18.dp))
-        controlsSection()
+        Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) { controlsSection() }
         Spacer(Modifier.height(8.dp))
         // B33-U1: the room the queue sheet's folded state takes under the transport. The sheet draws itself there (it is not part of this
         // layout), so the layout only keeps clear of it: [QueuePeekHeight] and [QueuePeekBottomGap] are the numbers the sheet's folded

@@ -7,35 +7,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.LibraryAdd
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,25 +46,19 @@ import com.lostf1sh.pixelplayeross.presentation.components.ModalInputBridge
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.presentation.components.DapBackScaffold
 import com.lostf1sh.pixelplayeross.ui.ds.DapScreenTitle
-import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.lostf1sh.pixelplayeross.data.dac.collisionSafeKeys
 import com.lostf1sh.pixelplayeross.data.equalizer.EqualizerPreset
-import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqMode
-import com.lostf1sh.pixelplayeross.presentation.viewmodel.EqualizerUiState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.EqualizerViewModel
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapDestructiveAction
 import com.lostf1sh.pixelplayeross.ui.ds.DapEmptyState
-import com.lostf1sh.pixelplayeross.ui.ds.DapEqEditor
 import com.lostf1sh.pixelplayeross.ui.ds.DapGroup
 import com.lostf1sh.pixelplayeross.ui.ds.DapPrimaryButton
-import com.lostf1sh.pixelplayeross.ui.ds.DapScreen
 import com.lostf1sh.pixelplayeross.ui.ds.DapSectionHeader
-import com.lostf1sh.pixelplayeross.ui.ds.DapSegmentedControl
 import com.lostf1sh.pixelplayeross.ui.ds.DapNavRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapSliderRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapSwitchRow
@@ -93,9 +75,6 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.HeadphoneProfilesViewM
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.SafetyVolumeViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.safetyMaxOutputCompatible
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.safetyMaxOutputState
-import com.lostf1sh.pixelplayeross.presentation.viewmodel.EqualizerOutputState
-import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqState
-import com.lostf1sh.pixelplayeross.data.headphones.SafetyVolumeBackendKind
 import com.lostf1sh.pixelplayeross.data.volume.SafetyMaxCalibrationResult
 import androidx.annotation.StringRes
 import kotlin.math.roundToInt
@@ -583,20 +562,6 @@ internal enum class EqModeOption(val labelRes: Int) {
     Fifteen(R.string.headphone_eq_mode_15),
 }
 
-internal val EQ_MODE_OPTIONS = listOf(
-    EqModeOption.Off,
-    EqModeOption.Ten,
-    EqModeOption.Fifteen,
-)
-
-private fun currentEqMode(state: EqualizerUiState): EqModeOption = when {
-    !state.isEnabled -> EqModeOption.Off
-    state.mode == HeadphoneEqMode.GRAPHIC_15 -> EqModeOption.Fifteen
-    else -> EqModeOption.Ten
-}
-
-private fun formatGainDb(gain: Int): String =
-    if (gain > 0) "+$gain dB" else "$gain dB"
 
 /** The Safety Max route. B21: a host that joins the state and the actions for [SafetyMaxScreenContent]. */
 @Composable

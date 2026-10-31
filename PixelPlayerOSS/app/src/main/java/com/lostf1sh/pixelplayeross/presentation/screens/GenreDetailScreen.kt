@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.presentation.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,7 +89,17 @@ fun GenreDetailScreen(
     viewModel: GenreDetailViewModel = hiltViewModel(),
     playlistViewModel: PlaylistViewModel = hiltViewModel()
 ) {
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let(viewModel::setCustomImage) }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val imageContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(uiState.imageError) {
+        if (uiState.imageError) {
+            android.widget.Toast.makeText(imageContext, R.string.genre_image_change_failed, android.widget.Toast.LENGTH_SHORT).show()
+            viewModel.dismissImageError()
+        }
+    }
     // The id only: a position or a buffering flag in the player's state must not recompose the list.
     val currentSongId by remember(playerViewModel) {
         playerViewModel.stablePlayerState.map { it.currentSong?.id }.distinctUntilChanged()
@@ -142,6 +154,8 @@ fun GenreDetailScreen(
         onQuickFill = { showQuickFillDialog = true },
         onPlaySong = { song -> playerViewModel.showAndPlaySong(song, songs, genreDisplayName, source = source) },
         onMoreSong = { song -> showSongOptionsSheet = song },
+        onChangeImage = { imagePicker.launch("image/*") },
+        onRemoveImage = viewModel::removeCustomImage,
     )
 
     QuickFillDialog(
@@ -255,11 +269,13 @@ internal fun GenrePage(
     onQuickFill: () -> Unit,
     onPlaySong: (Song) -> Unit,
     onMoreSong: (Song) -> Unit,
+    onChangeImage: () -> Unit = {},
+    onRemoveImage: () -> Unit = {},
 ) {
     val playLabel = stringResource(R.string.presentation_batch_b_play_it)
     val shuffleLabel = stringResource(R.string.shortcut_shuffle_short)
     val showing = state.songs.isNotEmpty()
-    val coverUri = remember(state.albums) {
+    val coverUri = state.genre?.imagePath ?: remember(state.albums) {
         state.albums.filter { !it.artUri.isNullOrBlank() }.maxByOrNull { it.songCount }?.artUri
     }
     val listState = rememberLazyListState()
@@ -340,6 +356,28 @@ internal fun GenrePage(
                 .graphicsLayer { alpha = heroBarAlpha(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0, barPx) }
                 .background(Dap.bar)
         )
+        var imageMenu by remember { mutableStateOf(false) }
+        Box(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(horizontal = DapSpacing.Md, vertical = DapSpacing.Xs)) {
+            DapOverflowButton(onClick = { imageMenu = true })
+            androidx.compose.material3.DropdownMenu(expanded = imageMenu, onDismissRequest = { imageMenu = false }) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(R.string.genre_change_image)) },
+                    onClick = {
+                        imageMenu = false
+                        onChangeImage()
+                    },
+                )
+                if (state.genre?.imagePath != null) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.genre_remove_image)) },
+                        onClick = {
+                            imageMenu = false
+                            onRemoveImage()
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

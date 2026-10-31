@@ -27,20 +27,24 @@ class FeedbackPolicyBoundaryTest {
         assertThat(FeedbackPolicy.parse("nominal")).isEqualTo(FeedbackPolicy.NOMINAL)
         assertThat(FeedbackPolicy.parse("clamp")).isEqualTo(FeedbackPolicy.CLAMP)
         assertThat(FeedbackPolicy.parse("auto")).isEqualTo(FeedbackPolicy.AUTO)
+        assertThat(FeedbackPolicy.parse("auto-early")).isEqualTo(FeedbackPolicy.AUTO_EARLY)   // B46-C2, opt-in
         // a typo, a different case, a missing extra: null, which the receiver reads as "leave it as it is"
-        for (bad in listOf("Follow", "NOMINAL", "off", "", " clamp", null)) assertThat(FeedbackPolicy.parse(bad)).isNull()
+        for (bad in listOf("Follow", "NOMINAL", "off", "", " clamp", "auto_early", "Auto-Early", "early", null)) assertThat(FeedbackPolicy.parse(bad)).isNull()
     }
 
     @Test
     fun `the ids are the native enum`() {
-        // usb-glitch.h: USB_FEEDBACK_FOLLOW = 0, NOMINAL = 1, CLAMP = 2, AUTO = 3
-        assertThat(listOf(FeedbackPolicy.FOLLOW, FeedbackPolicy.NOMINAL, FeedbackPolicy.CLAMP, FeedbackPolicy.AUTO))
-            .containsExactly(0, 1, 2, 3).inOrder()
+        // usb-glitch.h: USB_FEEDBACK_FOLLOW = 0, NOMINAL = 1, CLAMP = 2, AUTO = 3, AUTO_EARLY = 4 (B46-C2)
+        assertThat(listOf(FeedbackPolicy.FOLLOW, FeedbackPolicy.NOMINAL, FeedbackPolicy.CLAMP, FeedbackPolicy.AUTO, FeedbackPolicy.AUTO_EARLY))
+            .containsExactly(0, 1, 2, 3, 4).inOrder()
         val header = File(appRoot, "../../decent-player/libs/decent-usb-audio-driver/src/main/jni/usb-glitch.h").readText()
-        for ((name, id) in listOf("FOLLOW" to 0, "NOMINAL" to 1, "CLAMP" to 2, "AUTO" to 3)) {
+        for ((name, id) in listOf("FOLLOW" to 0, "NOMINAL" to 1, "CLAMP" to 2, "AUTO" to 3, "AUTO_EARLY" to 4)) {
             assertThat(header).contains("USB_FEEDBACK_$name = $id,")
         }
-        for (id in 0L..3L) assertThat(FeedbackPolicy.parse(FeedbackPolicy.name(id))?.toLong()).isEqualTo(id)
+        for (id in 0L..4L) assertThat(FeedbackPolicy.parse(FeedbackPolicy.name(id))?.toLong()).isEqualTo(id)
+        // `auto` stays the default of the process, in debug and in release; auto-early is only ever selected by the bridge
+        val output = File(appRoot, "../../decent-player/libs/decent-usb-audio-driver/src/main/jni/usb-audio-output.cpp").readText()
+        assertThat(output).contains("static std::atomic<int> g_feedbackPolicy{USB_FEEDBACK_AUTO};")
         assertThat(FeedbackPolicy.name(9L)).isEqualTo("?")
         assertThat(FeedbackPolicy.name(null)).isEqualTo("?")
     }
@@ -101,13 +105,13 @@ class FeedbackPolicyBoundaryTest {
         // the mode is required: parse() is null for a missing or misspelled one, which logs and changes nothing
         assertThat(action).contains("FeedbackPolicy.parse(intent.getStringExtra(EXTRA_MODE))")
         assertThat(action).contains("if (mode == null)")
-        assertThat(action).contains("SET_FEEDBACK_POLICY needs --es mode follow|nominal|clamp|auto; unchanged")
+        assertThat(action).contains("SET_FEEDBACK_POLICY needs --es mode follow|nominal|clamp|auto|auto-early; unchanged")
         assertThat(action).contains("UsbAudioStream.nativeSetFeedbackPolicy(mode)")
         // process-only, like SET_USB_WAIT_MODE: no preferences, no switch object that persists
         for (persisted in listOf("SharedPreferences", "DataStore", "NativeEngineDebugSwitch", "PristinePipelineDebugSwitch", "putString", "putInt", ".edit")) {
             assertThat(action).doesNotContain(persisted)
         }
-        val report = receiver.substringAfter("private fun reportFeedbackPolicy").substringBefore("private fun fpmfText")
+        val report = receiver.substringAfter("internal object FeedbackPolicyReport").substringBefore("fun fpmfText")
         for (field in listOf("FEEDBACK_POLICY|mode=", "|stuck=", "|lastFpmf=", "|nominal=", "|sending=", "|rejected=", "|streaks=", "|lastRejected=", "|tag=")) {
             assertThat(report).contains(field)
         }

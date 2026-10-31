@@ -237,7 +237,7 @@ open class B33GenrePageTest {
         every { repository.getGenres() } returns flowOf(listOf(hipHop))
         every { repository.getMusicByGenre("Hip Hop") } returns flowOf(all.shuffled(java.util.Random(5)))
         val viewModel = GenreDetailViewModel(
-            repository, androidx.lifecycle.SavedStateHandle(mapOf("genreId" to "hip_hop")), TestDispatcherProvider(Dispatchers.Unconfined),
+            repository, androidx.lifecycle.SavedStateHandle(mapOf("genreId" to "hip_hop")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true),
         )
         val queued = mutableListOf<List<Song>>()
         val firstSongs = mutableListOf<Song>()
