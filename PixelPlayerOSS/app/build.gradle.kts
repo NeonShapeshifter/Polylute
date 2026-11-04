@@ -123,10 +123,10 @@ android {
         applicationId = "app.polylute"
         minSdk = 29
         targetSdk = 37
-        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.2.0, code 5) and
+        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.3.0, code 7) and
         // these are what is used when it holds none.
-        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 5
-        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.2.0"
+        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 7
+        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -271,6 +271,7 @@ dependencies {
     "baselineProfile"(project(":baselineprofile"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.documentfile)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.lifecycleprocess)

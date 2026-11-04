@@ -65,6 +65,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.preferences.sanitizeNavBarCornerRadius
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.PlayerAlbumNavigationEffect
+import com.lostf1sh.pixelplayeross.presentation.components.scoped.PlayerLocateNavigationEffect
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.PlayerArtistNavigationEffect
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.PlayerSheetPredictiveBackHandler
 import com.lostf1sh.pixelplayeross.presentation.components.scoped.QueueSheetRuntimeEffects
@@ -124,6 +125,9 @@ fun UnifiedPlayerSheetV2(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestContext by rememberUpdatedState(context)
+
+    val lyricsFolderRequested by playerViewModel.lyricsFolderRequest.collectAsStateWithLifecycle()
+    LyricsFolderPermission(lyricsFolderRequested, playerViewModel::onLyricsFolderResult)
 
     val writePermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
@@ -250,6 +254,12 @@ fun UnifiedPlayerSheetV2(
         playerViewModel = playerViewModel
     )
     PlayerAlbumNavigationEffect(
+        navController = navController,
+        sheetCollapsedTargetY = sheetCollapsedTargetY,
+        sheetMotionController = sheetMotionController,
+        playerViewModel = playerViewModel
+    )
+    PlayerLocateNavigationEffect(
         navController = navController,
         sheetCollapsedTargetY = sheetCollapsedTargetY,
         sheetMotionController = sheetMotionController,

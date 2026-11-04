@@ -9,6 +9,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.center
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -115,14 +118,18 @@ class LyricsImmersiveRenderTest {
     private val highlightCentre get() = 16f + (rootHeight - 16f - 48f) / 2f - 64f
 
     @Test
-    fun `the controls fold away after the timeout and the show controls button appears`() {
+    fun `the controls fold away after the timeout and a tap anywhere brings them back, with no button for it`() {
         show()
         assertThat(controlsShown()).isTrue()
         settle(3_500)
         assertThat(controlsShown()).isTrue()
         settle(1_000)
         assertThat(controlsShown()).isFalse()
-        compose.onNodeWithContentDescription("Show controls").assertIsDisplayed()
+        // B57 2.7 changes this on purpose: the accent button that brought the controls back is gone; a tap anywhere on the page does it
+        compose.onAllNodesWithContentDescription("Show controls").assertCountEquals(0)
+        compose.onRoot().performTouchInput { click(center) }
+        settle(300)
+        assertThat(controlsShown()).isTrue()
     }
 
     @Test

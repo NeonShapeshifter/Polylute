@@ -98,6 +98,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenu
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem
 import com.lostf1sh.pixelplayeross.ui.ds.DapOverflowButton
 import com.lostf1sh.pixelplayeross.ui.ds.DapCollectionActions
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
@@ -129,6 +131,7 @@ fun ArtistDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val about by viewModel.about.collectAsStateWithLifecycle()
+    com.lostf1sh.pixelplayeross.presentation.components.MusicInfoPageFeedback(infoActions, viewModel::downloadedInfoChanged)
     var showOfflineDownloads by remember { mutableStateOf(false) }
     if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.MusicInfoDownloadsScreen(
         uiState.songs.map { it.id }, onDismiss = { showOfflineDownloads = false }, artistFilter = uiState.artist?.name)
@@ -605,7 +608,7 @@ fun ArtistDetailScreen(
                     }
                     showSongInfoBottomSheet = false
                 },
-                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                     playerViewModel.editSongMetadata(
                         currentSong,
                         newTitle,
@@ -619,7 +622,8 @@ fun ArtistDetailScreen(
                         newDiscNumber,
                         replayGainTrackGainDb,
                         replayGainAlbumGainDb,
-                        coverArtUpdate
+                        coverArtUpdate,
+                        newDate = newDate
                     )
                 },
                 removeFromListTrigger = removeFromListTrigger
@@ -728,7 +732,7 @@ internal fun CollapsibleAlbumSectionHeader(
                 SmartImage(
                     model = section.albumArtUriString,
                     contentDescription = section.title,
-                    targetSize = SmartImageCompactListTargetSize,
+                    targetSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(DapSizes.ThumbFeature),
                     modifier = Modifier
                         .size(DapSizes.ThumbFeature)
                         .clip(RoundedCornerShape(DapRadius.Surface))
@@ -914,13 +918,13 @@ private fun SharedArtistTopBarProbe(
                         description = editImageCd
                     )
 
-                    DropdownMenu(
+                    DapMenu(
                         expanded = showImageMenu,
                         onDismissRequest = { showImageMenu = false }
                     ) {
                         infoMenuItems { showImageMenu = false }
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.presentation_batch_d_change_photo)) },
+                        DapMenuItem(
+                            text = stringResource(R.string.presentation_batch_d_change_photo),
                             leadingIcon = {
                                 Icon(Icons.Rounded.AddAPhoto, contentDescription = null)
                             },
@@ -930,8 +934,8 @@ private fun SharedArtistTopBarProbe(
                             }
                         )
                         if (hasCustomImage) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.presentation_batch_d_reset_to_default)) },
+                            DapMenuItem(
+                                text = stringResource(R.string.presentation_batch_d_reset_to_default),
                                 leadingIcon = {
                                     Icon(Icons.Rounded.Delete, contentDescription = null)
                                 },
@@ -1107,13 +1111,13 @@ private fun CustomCollapsingTopBar(
                                     onClick = { showImageMenu = true },
                                     description = editImageCd
                                 )
-                                DropdownMenu(
+                                DapMenu(
                                     expanded = showImageMenu,
                                     onDismissRequest = { showImageMenu = false }
                                 ) {
                                     infoMenuItems { showImageMenu = false }
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.presentation_batch_d_change_photo)) },
+                                    DapMenuItem(
+                                        text = stringResource(R.string.presentation_batch_d_change_photo),
                                         leadingIcon = {
                                             Icon(Icons.Rounded.AddAPhoto, contentDescription = null)
                                         },
@@ -1123,8 +1127,8 @@ private fun CustomCollapsingTopBar(
                                         }
                                     )
                                     if (hasCustomImage) {
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.presentation_batch_d_reset_to_default)) },
+                                        DapMenuItem(
+                                            text = stringResource(R.string.presentation_batch_d_reset_to_default),
                                             leadingIcon = {
                                                 Icon(Icons.Rounded.Delete, contentDescription = null)
                                             },

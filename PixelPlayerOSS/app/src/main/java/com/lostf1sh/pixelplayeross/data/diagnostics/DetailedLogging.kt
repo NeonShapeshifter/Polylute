@@ -60,7 +60,7 @@ object DetailedLogPolicy {
         // the volume, and its ceiling
         "SafetyVolume", "SafetyMaxNotice", "Polylute:override-confirm", "ScreenTimeout",
         // Dedicated mode, the lock screen, the system
-        "DapContainment", "DapPolicyRestore", "DapDeviceOwner", "DapLockScreen", "Maintenance", "SystemBars", "AppLanguage",
+        "DapContainment", "DapPolicyRestore", "DapDeviceOwner", "DapLockScreen", "DapDisplay", "Maintenance", "SystemBars", "AppLanguage",
         "MediaButtonReceiver",
         // timers
         "SleepTimerScheduler", "SleepTimerReceiver", "PlaybackTimerController",

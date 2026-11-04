@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0
+
+- **Animated covers.** The full player can loop a muted `cover.mp4`, `cover.webp` or `cover.gif` from an album folder, with a folder picker for access. Lists, the mini player and the lock screen keep the still cover.
+- **Lyrics.** Stamp line timings while listening, preview them and save synced lyrics. Choose lyrics over the cover, on their own page or off, with updated highlighting and player controls.
+- **Album editing.** Edit album and track information together, replace the cover, and review suggested changes from MusicBrainz before saving. Metadata editing and rescanning retain library identities.
+- **Library.** Search and browse composers, browse normalized genres, and use updated folder controls and scroll labels. Album details show more technical information.
+- **Home and appearance.** Recent artists, suggested albums and listening summaries, with revised menus, cover-colour backgrounds and optional background motion.
+- **Music info.** Clearer download selection and queue controls, shared-item indicators, and clearing the selection with Undo. Includes the download redesign, MusicBrainz tag matching and lyrics-saving improvements described in 1.2.1 below.
+- **DAP and USB.** Updated screen and lock-screen policies, plus earlier detection of frozen DAC feedback after a sample-rate change.
+
+## 1.2.1
+
+- **Music info.** Find, Choose and Download now show their steps, scope and reasons for waiting. The first completed search chooses available new items; choose by type or by artist and album. Pause stops downloads only. Cancel clears the global pending queue with Undo and keeps saved items. Finished downloads have an OK action.
+- **Delete with Undo.** Chosen downloads and page-menu deletes can be undone. Settings confirms before deleting all downloaded pictures, text and lyrics, while keeping your own files. About shows Read more, the source and licence, and selectable grouped credits.
+- **Exact matches.** Scanning reads MusicBrainz IDs from FLAC/Vorbis, ID3 and MP4 tags; lookups use them when present. Library identities stay unchanged.
+- **Folder covers and lyrics.** An unchanged library sync reads no settled folder-cover images. Artwork errors no longer fail the scan. Saving an old read-only lyrics file on Android 11 or later asks for write access before falling back to the app. Downloaded lyrics use the same SD-folder saving path.
+
 ## 1.2.0
 
 The 1.2 release is about USB DACs: Purity is steadier, and Polylute now notices when a DAC gets stuck and brings it back by itself.

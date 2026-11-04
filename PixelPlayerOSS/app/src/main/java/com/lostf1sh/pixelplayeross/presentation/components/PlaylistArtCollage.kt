@@ -59,6 +59,12 @@ fun PlaylistArtCollage(
             shape = RoundedCornerShape(0.dp),
             color = Color.Transparent
         ) {
+          // B57-fix1 3: each cover is requested at the size it is drawn at (the collage's own width times its share), not at a fixed 256 / 128
+          androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+            val whole = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(maxWidth)
+            val half = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(maxWidth / 2)
+            // three covers: each takes 2 / (2 + sqrt 3) of the width (see the layout below)
+            val third = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(maxWidth * (2f / (2f + sqrt(3f))))
             val imageModifier = Modifier
 
             when (songs.size) {
@@ -67,7 +73,7 @@ fun PlaylistArtCollage(
                         model = songs[0].albumArtUriString,
                         contentDescription = songs[0].title,
                         contentScale = ContentScale.Crop,
-                        targetSize = Size(256, 256),
+                        targetSize = whole,
                         modifier = imageModifier
                             .fillMaxSize()
                             .clip(CircleShape)
@@ -83,7 +89,7 @@ fun PlaylistArtCollage(
                             model = songs[0].albumArtUriString,
                             contentDescription = songs[0].title,
                             contentScale = ContentScale.Crop,
-                            targetSize = Size(128, 128),
+                            targetSize = half,
                             modifier = imageModifier
                                 .weight(1f)
                                 .aspectRatio(1f)
@@ -93,7 +99,7 @@ fun PlaylistArtCollage(
                             model = songs[1].albumArtUriString,
                             contentDescription = songs[1].title,
                             contentScale = ContentScale.Crop,
-                            targetSize = Size(128, 128),
+                            targetSize = half,
                             modifier = imageModifier
                                 .weight(1f)
                                 .aspectRatio(1f)
@@ -109,7 +115,7 @@ fun PlaylistArtCollage(
                                     model = song.albumArtUriString,
                                     contentDescription = song.title,
                                     contentScale = ContentScale.Crop,
-                                    targetSize = Size(128, 128),
+                                    targetSize = third,
                                     modifier = imageModifier.clip(CircleShape)
                                 )
                             }
@@ -168,7 +174,7 @@ fun PlaylistArtCollage(
                                 model = songs[0].albumArtUriString,
                                 contentDescription = songs[0].title,
                                 contentScale = ContentScale.Crop,
-                                targetSize = Size(128, 128),
+                                targetSize = half,
                                 modifier = imageModifier
                                     .weight(1f)
                                     .aspectRatio(1f)
@@ -178,7 +184,7 @@ fun PlaylistArtCollage(
                                 model = songs[1].albumArtUriString,
                                 contentDescription = songs[1].title,
                                 contentScale = ContentScale.Crop,
-                                targetSize = Size(128, 128),
+                                targetSize = half,
                                 modifier = imageModifier
                                     .weight(1f)
                                     .aspectRatio(1f)
@@ -193,7 +199,7 @@ fun PlaylistArtCollage(
                                 model = songs[2].albumArtUriString,
                                 contentDescription = songs[2].title,
                                 contentScale = ContentScale.Crop,
-                                targetSize = Size(128, 128),
+                                targetSize = half,
                                 modifier = imageModifier
                                     .weight(1f)
                                     .aspectRatio(1f)
@@ -203,7 +209,7 @@ fun PlaylistArtCollage(
                                 model = songs[3].albumArtUriString,
                                 contentDescription = songs[3].title,
                                 contentScale = ContentScale.Crop,
-                                targetSize = Size(128, 128),
+                                targetSize = half,
                                 modifier = imageModifier
                                     .weight(1f)
                                     .aspectRatio(1f)
@@ -213,6 +219,7 @@ fun PlaylistArtCollage(
                     }
                 }
             }
+          }
         }
     }
 }

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="song_field_date">År / datum</string>
+    <string name="batch_edit_saved_failed" tools:ignore="PluralsCandidate">%1$d sparade / %2$d misslyckades: %3$s</string>
+    <string name="edit_album_menu_item">Redigera albuminfo</string>
+    <string name="edit_album_title">Redigera album</string>
+    <string name="edit_album_section_album">Album</string>
+    <string name="edit_album_section_tracks">Spår</string>
+    <string name="edit_album_track_number_short">Nr</string>
+    <string name="edit_album_disc_number_short">Skiva</string>
+    <string name="edit_album_save">Spara album</string>
+    <string name="edit_album_saving_progress" tools:ignore="PluralsCandidate">Sparar %1$d av %2$d</string>
+    <string name="edit_album_cover">Omslag</string>
+    <string name="edit_album_cover_replace">Välj omslag</string>
+    <string name="edit_album_cover_remove">Ta bort omslag</string>
+    <string name="edit_album_cover_keep">Behåll omslag</string>
+    <string name="edit_album_fill">Fyll i från MusicBrainz</string>
+    <string name="edit_album_fill_searching">Söker på MusicBrainz…</string>
+    <string name="edit_album_fill_pick">Vilken utgåva är det här albumet?</string>
+    <string name="edit_album_fill_release_line" tools:ignore="PluralsCandidate">%1$s · %2$s · %3$d spår</string>
+    <string name="edit_album_fill_no_match">MusicBrainz har inget att ändra här.</string>
+    <string name="edit_album_fill_failed">Det gick inte att nå MusicBrainz. %1$s</string>
+    <string name="edit_album_fill_diff_hint">Kryssa i det du vill ta över. Inget skrivs förrän du sparar albumet.</string>
+    <string name="edit_album_fill_apply">Använd markerade</string>
+    <string name="edit_album_fill_check_all">Alla</string>
+    <string name="edit_album_fill_check_none">Inga</string>
+    <string name="edit_album_fill_close">Stäng</string>
+    <string name="edit_album_fill_change">%1$s → %2$s</string>
+</resources>

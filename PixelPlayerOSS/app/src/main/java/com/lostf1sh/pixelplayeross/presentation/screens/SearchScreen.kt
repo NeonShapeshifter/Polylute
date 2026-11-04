@@ -372,6 +372,7 @@ fun SearchScreen(
                             SearchFilterChip(SearchFilterType.SONGS, currentFilter, playerViewModel)
                             SearchFilterChip(SearchFilterType.ALBUMS, currentFilter, playerViewModel)
                             SearchFilterChip(SearchFilterType.ARTISTS, currentFilter, playerViewModel)
+                            SearchFilterChip(SearchFilterType.COMPOSERS, currentFilter, playerViewModel)
                             SearchFilterChip(SearchFilterType.PLAYLISTS, currentFilter, playerViewModel)
                         }
                         DapDivider()
@@ -525,7 +526,7 @@ fun SearchScreen(
                     }
                     showSongInfoBottomSheet = false
                 },
-                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                     playerViewModel.editSongMetadata(
                         currentSong,
                         newTitle,
@@ -539,7 +540,8 @@ fun SearchScreen(
                         newDiscNumber,
                         replayGainTrackGainDb,
                         replayGainAlbumGainDb,
-                        coverArtUpdate
+                        coverArtUpdate,
+                        newDate = newDate
                     )
                 },
             )
@@ -646,6 +648,7 @@ fun SearchResultsList(
                 is SearchResultItem.AlbumItem -> SearchFilterType.ALBUMS
                 is SearchResultItem.ArtistItem -> SearchFilterType.ARTISTS
                 is SearchResultItem.PlaylistItem -> SearchFilterType.PLAYLISTS
+                is SearchResultItem.ComposerItem -> SearchFilterType.COMPOSERS
             }
         }
     }
@@ -702,6 +705,7 @@ fun SearchResultsList(
                             SearchFilterType.ALBUMS -> stringResource(R.string.search_results_albums)
                             SearchFilterType.ARTISTS -> stringResource(R.string.search_results_artists)
                             SearchFilterType.PLAYLISTS -> stringResource(R.string.search_results_playlists)
+                            SearchFilterType.COMPOSERS -> stringResource(R.string.search_results_composers)
                             else -> stringResource(R.string.search_results_other)
                         },
                         count = itemsForSection.size
@@ -717,6 +721,7 @@ fun SearchResultsList(
                             is SearchResultItem.AlbumItem -> "album_${item.album.id}"
                             is SearchResultItem.ArtistItem -> "artist_${item.artist.id}"
                             is SearchResultItem.PlaylistItem -> "playlist_${item.playlist.id}_${index}"
+                            is SearchResultItem.ComposerItem -> "composer_${item.name}"
                         }
                     },
                     contentType = { index ->
@@ -725,6 +730,7 @@ fun SearchResultsList(
                             is SearchResultItem.AlbumItem -> "search_album"
                             is SearchResultItem.ArtistItem -> "search_artist"
                             is SearchResultItem.PlaylistItem -> "search_playlist"
+                            is SearchResultItem.ComposerItem -> "search_composer"
                         }
                     }
                 ) { index ->
@@ -794,6 +800,21 @@ fun SearchResultsList(
                                     artist = item.artist,
                                     onPlayClick = onPlayClick,
                                     onOpenClick = onOpenClick
+                                )
+                            }
+
+                            is SearchResultItem.ComposerItem -> {
+                                // B56-6: a composer opens a page with their songs; the queue follows that list. Not an artist: no Artists page, no Artists tab change.
+                                DapMediaRow(
+                                    title = item.name,
+                                    subtitle = formatSongCountLabel(item.songCount),
+                                    onClick = {
+                                        navController.navigateSafelyReplacing(
+                                            route = Screen.ComposerDetail.createRoute(item.name),
+                                            patternToPop = Screen.ComposerDetail.route
+                                        )
+                                        onItemSelected()
+                                    },
                                 )
                             }
 
@@ -991,6 +1012,7 @@ fun SearchFilterChip(
             SearchFilterType.ALBUMS -> R.string.search_filter_albums
             SearchFilterType.ARTISTS -> R.string.search_filter_artists
             SearchFilterType.PLAYLISTS -> R.string.search_filter_playlists
+            SearchFilterType.COMPOSERS -> R.string.search_filter_composers
         }
     ).uppercase(currentLocale())
 

@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.preferences
 
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -102,20 +103,20 @@ class B41PreferenceKeysTest {
             val store = PreferenceDataStoreFactory.create(scope = backgroundScope, produceFile = { dir.resolve("s.preferences_pb").toFile() })
             val user = UserPreferencesRepository(dataStore = store, json = Json)
             val theme = ThemePreferencesRepository(store)
-            // nothing stored: on, and the app's colours are the theme's, as every install has had them
-            assertEquals(true, user.lyricsUnderCoverFlow.first())
+            // nothing stored: on, and the app's colours are the theme's, as every install has had them (B56: the lyrics switch is the three-valued mode now, its default "over the cover")
+            assertEquals(LyricsMode.OVER_COVER, user.lyricsModeFlow.first())
             assertEquals(true, theme.coverGlassMovingFlow.first())
             assertEquals(AppColorSource.THEME, theme.appColorSourceFlow.first())
 
-            user.setLyricsUnderCover(false)
+            user.setLyricsMode(LyricsMode.FULL_PAGE)
             theme.setCoverGlassMoving(false)
             theme.setAppColorSource(AppColorSource.COVER_GLASS)
             val raw = store.data.first()
-            assertEquals(false, raw[booleanPreferencesKey("lyrics_under_cover_v1")])
+            assertEquals("full_page", raw[androidx.datastore.preferences.core.stringPreferencesKey("lyrics_mode_v1")])
             assertEquals(false, raw[booleanPreferencesKey("cover_glass_moving_v1")])
             // the third option is a new value of the key B40 already had, not a new key
             assertEquals("cover_glass", raw[keyAppColors])
-            assertEquals(false, user.lyricsUnderCoverFlow.first())
+            assertEquals(LyricsMode.FULL_PAGE, user.lyricsModeFlow.first())
             assertEquals(false, theme.coverGlassMovingFlow.first())
             assertEquals(AppColorSource.COVER_GLASS, theme.appColorSourceFlow.first())
         } finally {

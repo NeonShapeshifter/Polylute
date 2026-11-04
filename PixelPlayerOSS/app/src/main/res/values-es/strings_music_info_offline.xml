@@ -1,18 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="music_info_expand">Expandir descripción</string>
-    <string name="music_info_collapse">Recoger descripción</string>
-    <string name="offline_download_title">Descargar para usar sin conexión</string>
-    <string name="offline_download_all">Toda la biblioteca</string>
+    <string name="offline_download_title">Descargar información musical…</string>
+    <string name="offline_download_all">Descargar información musical</string>
     <string name="offline_download_lyrics">Letras</string>
     <string name="offline_download_photos">Fotos de artistas</string>
     <string name="offline_download_covers">Portadas que faltan</string>
-    <string name="offline_download_descriptions">Descripciones de artistas y álbumes</string>
+    <string name="offline_download_descriptions">Descripciones de álbumes</string>
     <string name="offline_download_pause">Pausar</string>
     <string name="offline_download_resume">Reanudar</string>
-    <string name="offline_download_failed">No se pudo iniciar la descarga. Inténtalo de nuevo.</string>
+    <string name="offline_download_failed">No se pudo empezar la descarga.</string>
     <string name="offline_download_close">Cerrar</string>
-    <string name="offline_download_progress_items">Elementos: %1$d / %2$d</string>
     <string name="external_link_unavailable">No hay navegador disponible o este dispositivo bloquea los enlaces externos.</string>
-    <string name="info_refreshing_catalog">Actualizando el catálogo. Ya puedes usar los resultados guardados.</string>
 </resources>

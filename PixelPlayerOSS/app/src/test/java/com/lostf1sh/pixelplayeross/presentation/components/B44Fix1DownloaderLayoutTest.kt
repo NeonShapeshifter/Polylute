@@ -32,15 +32,15 @@ class B44Fix1DownloaderLayoutTest {
     private val selection = mutableStateOf(InfoSelection(0, 0, null, 0))
     private var findCalls = 0
 
-    private fun show() {
+    private fun show(opening: Boolean = true) {
         compose.setContent {
             DapTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize(), color = Dap.background) {
                     // Same 720x1610 pixel viewport and system-bar reservation as the HONOR fixture.
                     Box(Modifier.fillMaxSize().padding(top = 37.dp, bottom = 22.dp)) {
                         val artists = pages.collectAsLazyPagingItems()
-                        MusicInfoDownloadsContent(artists, "", {}, InfoQueue(), InfoProgress(0, 0, 0),
-                            InfoProgress(0, 0, 0), selection.value, true, false, { flowOf(emptyList()) },
+                        MusicInfoDownloadsContent(artists, "", {}, InfoQueue(), if(opening) InfoProgress(0, 0, 0) else InfoProgress(100, 100, 0),
+                            InfoProgress(0, 0, 0), selection.value, opening, false, { flowOf(emptyList()) },
                             { findCalls++ }, {}, {}, {}, {}, { _, _ -> }, { _, _ -> }, {})
                     }
                 }
@@ -55,16 +55,17 @@ class B44Fix1DownloaderLayoutTest {
         assertThat(findCalls).isEqualTo(1)
     }
 
-    @Test fun `the header scrolls away and artist rows use the Library minimum`() {
-        show()
+    @Test fun `advanced artist rows scroll under fixed steps and use the Library minimum`() {
+        show(opening = false)
+        compose.onNodeWithText("Choose by artist or album").performClick()
         save("downloader-honor")
         val row = compose.onNodeWithText("Artist 0").fetchSemanticsNode().boundsInRoot
         println("B44-fix1 HOST downloader rowHeightDp=${row.height / 2f} viewport=360x805 status=37 navigation=22")
         assertThat(row.height / 2f).isWithin(0.5f).of(56f)
         compose.onNodeWithTag("info-artists").performScrollToNode(hasText("Artist 600"))
-        compose.onNodeWithText("Find").assertDoesNotExist()
-        compose.runOnIdle { selection.value = InfoSelection(2, 0, null, 2) }
-        compose.onNodeWithText("Download selected").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag("info-steps").assertIsDisplayed()
+        compose.runOnIdle { selection.value = InfoSelection(2, 0, null, 0) }
+        compose.onNodeWithText("Download 2").assertIsDisplayed().assertIsEnabled()
         save("downloader-honor-scrolled-selected")
     }
 

@@ -39,6 +39,11 @@ class UsbDeviceOwner(
 ) {
     private val monitor = Object()
 
+    /** B50: the last successfully started stream in this attachment, retained across releases. */
+    @Volatile
+    private var previousStreamRateValue = 0
+    val previousStreamRateHz: Int get() = previousStreamRateValue
+
     @Volatile
     private var generationValue = 0L
 
@@ -119,6 +124,7 @@ class UsbDeviceOwner(
     fun publishStream(sampleRateHz: Int, altSetting: Int): StreamFacts = synchronized(monitor) {
         val facts = StreamFacts(generationValue, sampleRateHz, altSetting)
         factsValue = facts
+        previousStreamRateValue = sampleRateHz
         facts
     }
 
@@ -134,6 +140,7 @@ class UsbDeviceOwner(
     fun deviceDetached() {
         val now: Long
         synchronized(monitor) {
+            previousStreamRateValue = 0
             // Said on every refresh of the bus while no DAC is there: only a stream, a recovery or a section in flight has anything to stop.
             if (factsValue == null && recovery == null && exclusiveThread == null) return
             generationValue++

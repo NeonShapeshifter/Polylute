@@ -97,6 +97,7 @@ fun MaintenanceToolsSection(
     offersTestCrash: Boolean = MaintenanceToolsPolicy.offersTestCrash(),
 ) {
     val context = LocalContext.current
+    val statsRegenerationStarted = stringResource(R.string.toast_stats_regeneration_started)
     var showRegenerateDailyMixDialog by remember { mutableStateOf(false) }
     var showRegenerateStatsDialog by remember { mutableStateOf(false) }
     var showRegenerateAllPalettesDialog by remember { mutableStateOf(false) }
@@ -124,10 +125,10 @@ fun MaintenanceToolsSection(
 
     SettingsSubsection(title = stringResource(R.string.maintenance_regenerate_section), addBottomSpace = offersTestCrash) {
         ActionSettingsItem(
-            title = stringResource(R.string.setcat_force_daily_mix_title),
-            subtitle = stringResource(R.string.setcat_force_daily_mix_subtitle),
+            title = stringResource(R.string.setcat_force_daily_mix_title, stringResource(R.string.collection_name_daily_mix)),
+            subtitle = stringResource(R.string.setcat_force_daily_mix_subtitle, stringResource(R.string.collection_name_daily_mix)),
             icon = { Icon(painterResource(R.drawable.rounded_instant_mix_24), null, tint = MaterialTheme.colorScheme.secondary) },
-            primaryActionLabel = stringResource(R.string.setcat_regenerate_daily_mix_action),
+            primaryActionLabel = stringResource(R.string.setcat_regenerate_daily_mix_action, stringResource(R.string.collection_name_daily_mix)),
             onPrimaryAction = { showRegenerateDailyMixDialog = true },
         )
         ActionSettingsItem(
@@ -343,16 +344,16 @@ fun MaintenanceToolsSection(
                 // An alert is a window of its own, so the activity's volume-key path does not reach
                 // it. The bridge routes Volume Up/Down to the same authority the activity uses.
                 ModalInputBridge()
-                Text(stringResource(R.string.dialog_regenerate_daily_mix_title))
+                Text(stringResource(R.string.dialog_regenerate_daily_mix_title, stringResource(R.string.collection_name_daily_mix)))
             },
-            text = { Text(stringResource(R.string.dialog_regenerate_daily_mix_body)) },
+            text = { Text(stringResource(R.string.dialog_regenerate_daily_mix_body, stringResource(R.string.collection_name_daily_mix))) },
             onDismissRequest = { showRegenerateDailyMixDialog = false },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showRegenerateDailyMixDialog = false
                         actions.onRegenerateDailyMix()
-                        Toast.makeText(context, context.getString(R.string.toast_daily_mix_regeneration_started), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.toast_daily_mix_regeneration_started, context.getString(R.string.collection_name_daily_mix)), Toast.LENGTH_SHORT).show()
                     }
                 ) {
                     Text(stringResource(R.string.dialog_regenerate), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -378,7 +379,7 @@ fun MaintenanceToolsSection(
                     onClick = {
                         showRegenerateStatsDialog = false
                         actions.onRegenerateStats()
-                        Toast.makeText(context, context.getString(R.string.toast_stats_regeneration_started), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, statsRegenerationStarted, Toast.LENGTH_SHORT).show()
                     }
                 ) {
                     Text(stringResource(R.string.dialog_regenerate), maxLines = 1, overflow = TextOverflow.Ellipsis)

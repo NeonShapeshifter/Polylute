@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 phase 7.1: how much the player's background moves -->
+    <string name="setcat_background_motion_title">Background motion</string>
+    <string name="setcat_background_motion_desc">How fast and how far the player\'s background moves. Only while the full player is open and a song plays.</string>
+    <string name="setcat_background_motion_desc_classic">How fast and how far the background moves. Before Android 13 it is the classic drifting glass; only while the full player is open and a song plays.</string>
+    <string name="background_motion_still">Still</string>
+    <string name="background_motion_gentle">Gentle</string>
+    <string name="background_motion_lively">Lively</string>
+</resources>

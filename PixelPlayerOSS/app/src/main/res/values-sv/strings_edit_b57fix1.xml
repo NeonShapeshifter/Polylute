@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="edit_song_unsupported_format">Taggar kan inte redigeras för den här filtypen.</string>
+    <string name="metadata_saved_without_cover">Sparat, utan omslaget: %1$s</string>
+    <string name="cover_skip_not_supported">den här filtypen kan inte innehålla en bild</string>
+    <string name="cover_skip_writer_refused">taggskrivaren avvisade bilden</string>
+    <string name="cover_skip_unreadable">bilden saknar data</string>
+    <string name="batch_edit_cover_skipped" tools:ignore="PluralsCandidate">Omslaget kunde inte skrivas till %1$d filer.</string>
+</resources>

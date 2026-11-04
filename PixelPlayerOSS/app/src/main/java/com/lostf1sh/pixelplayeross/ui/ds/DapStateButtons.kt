@@ -3,6 +3,7 @@ package com.lostf1sh.pixelplayeross.ui.ds
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -54,6 +55,8 @@ fun DapStateIconButton(
     modifier: Modifier = Modifier,
     stateDescription: String? = null,
     enabled: Boolean = true,
+    /** B56-3.4: a second action on a long press (the player's lyrics button sets how the lyrics show). Null: a plain button, as always. */
+    onLongClick: (() -> Unit)? = null,
     icon: @Composable (tint: Color) -> Unit,
 ) {
     val accent = LocalDapAccent.current
@@ -74,12 +77,25 @@ fun DapStateIconButton(
                 if (stateDescription != null) this.stateDescription = stateDescription
                 this.selected = active
             }
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                enabled = enabled,
-                role = Role.Button,
-                onClick = onClick,
+            .then(
+                if (onLongClick == null) {
+                    Modifier.clickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        enabled = enabled,
+                        role = Role.Button,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier.combinedClickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        enabled = enabled,
+                        role = Role.Button,
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    )
+                }
             ),
         contentAlignment = Alignment.Center,
     ) {

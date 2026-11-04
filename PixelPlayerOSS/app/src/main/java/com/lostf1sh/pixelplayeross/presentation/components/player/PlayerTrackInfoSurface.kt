@@ -6,10 +6,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Text
 import com.lostf1sh.pixelplayeross.ui.ds.DapStateIconButton
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -194,6 +193,8 @@ private fun SongMetadataDisplaySection(
             SongTitleText(
                 title = song?.let { songTitleLabel(it) }.orEmpty(),
                 motionAllowed = motionAllowed,
+                // B56-4: the title opens its place in the Library, as the artist and the album open theirs
+                onClick = song?.id?.takeIf { it.isNotBlank() }?.let { id -> { actions.onLocateSongInLibrary(id) } },
                 modifier = Modifier.weight(1f),
             )
             if (isBuffering) {
@@ -239,11 +240,17 @@ internal val PlayerMetadataScrolling = SemanticsPropertyKey<Boolean>("PlayerMeta
  * RESUMED, motion not reduced); without the gate it ends in an ellipsis, as it always did. The buttons are not part of this and neither move nor shrink.
  */
 @Composable
-private fun SongTitleText(title: String, motionAllowed: Boolean, modifier: Modifier) {
+private fun SongTitleText(title: String, motionAllowed: Boolean, onClick: (() -> Unit)?, modifier: Modifier) {
     val measurer = rememberTextMeasurer(cacheSize = 4)
     // The slot the buttons leave, and the title's natural width against it: decided from the measurement, as the metadata line does. (The text's own layout cannot say: under the
     // marquee it is laid out with unbounded width and never overflows, which would turn the marquee off, and back on, without end.)
-    BoxWithConstraints(modifier) {
+    BoxWithConstraints(
+        modifier
+            .then(
+                if (onClick == null) Modifier
+                else Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            )
+    ) {
         val titleWidth = measurer.measure(title, DapType.Heading, maxLines = 1, softWrap = false).size.width
         val scrolling = titleWidth > constraints.maxWidth && motionAllowed
         Text(
@@ -253,8 +260,7 @@ private fun SongTitleText(title: String, motionAllowed: Boolean, modifier: Modif
             maxLines = 1,
             overflow = if (scrolling) TextOverflow.Clip else TextOverflow.Ellipsis,
             modifier = Modifier
-                .clipToBounds()
-                .then(if (scrolling) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier)
+                .playerMarquee(scrolling, title)
                 .semantics { this[PlayerMetadataScrolling] = scrolling },
         )
     }
@@ -341,8 +347,7 @@ private fun MetadataText(
         maxLines = 1,
         overflow = if (scrolling) TextOverflow.Clip else TextOverflow.Ellipsis,
         modifier = modifier
-            .clipToBounds()
-            .then(if (scrolling) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier)
+            .playerMarquee(scrolling, text)
             .semantics { this[PlayerMetadataScrolling] = scrolling }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     )

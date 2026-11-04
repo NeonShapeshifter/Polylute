@@ -25,6 +25,7 @@ import com.lostf1sh.pixelplayeross.data.database.SourceType
 import com.lostf1sh.pixelplayeross.data.database.serializeArtistRefs
 import com.lostf1sh.pixelplayeross.data.model.ArtistRef
 import com.lostf1sh.pixelplayeross.data.media.AudioMetadataReader
+import com.lostf1sh.pixelplayeross.data.identity.ItemEvidence
 import com.lostf1sh.pixelplayeross.data.identity.LibraryIdentity
 import com.lostf1sh.pixelplayeross.data.identity.IdentityResolution
 import com.lostf1sh.pixelplayeross.data.metadata.LibraryRepairPolicy
@@ -83,7 +84,8 @@ constructor(
         private val overrideDao: LibraryItemOverrideDao,
         private val libraryChangeSignal: LibraryChangeSignal,
         private val userPreferencesRepository: UserPreferencesRepository,
-        private val lyricsRepository: LyricsRepository
+        private val lyricsRepository: LyricsRepository,
+        private val folderArtworkRefresh: com.lostf1sh.pixelplayeross.data.repository.FolderArtworkRefresh? = null
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val contentResolver: ContentResolver = appContext.contentResolver
@@ -118,8 +120,13 @@ constructor(
                         return@withContext Result.failure()
                     }
 
+                    // B56-1.2: a refresh the listener asked for (Library menu "Refresh", pull to refresh) runs at once, even while music
+                    // plays: it is the same incremental work, a non-expedited request at WorkManager's background priority. Only the
+                    // automatic ones (startup, storage change, foreground catch-up) keep waiting for the music to pause.
+                    val requestedByListener = inputData.getBoolean(INPUT_REQUESTED_BY_LISTENER, false)
                     if (
                         syncMode == SyncMode.INCREMENTAL &&
+                        !requestedByListener &&
                         PlaybackActivityTracker.isPlaybackActive &&
                         runAttemptCount < MAX_PLAYBACK_DEFERRALS
                     ) {
@@ -127,6 +134,9 @@ constructor(
                             "SyncWorker deferring INCREMENTAL sync (playback active, attempt=$runAttemptCount)"
                         )
                         return@withContext Result.retry()
+                    }
+                    if (requestedByListener && PlaybackActivityTracker.isPlaybackActive) {
+                        Timber.tag(TAG).i("SyncWorker running the listener's INCREMENTAL refresh while playback is active")
                     }
 
                     // The reattachments this scan decided on, executed once the new projections
@@ -137,6 +147,10 @@ constructor(
                     var pendingReattachments: List<IdentityResolution> = emptyList()
                     var pendingProjectionIds: Set<Long> = emptySet()
                     var pendingEvidenceUpdates: List<LibraryItemEntity> = emptyList()
+                    // The evidence every known item held when this scan read it. The write at the end is
+                    // conditional on it (B57 1.1): the metadata editor may have recorded the evidence of a file it
+                    // just rewrote in between, and the older reading must not go back over it.
+                    var evidenceReadAtStart: Map<String, ItemEvidence> = emptyMap()
                     var disagreeingEvidence: Map<Long, String> = emptyMap()
                     val handledEvidence = HandledEvidence(java.io.File(applicationContext.filesDir, HandledEvidence.FILE_NAME))
 
@@ -211,6 +225,9 @@ constructor(
                         // Reuse the inventory: old MediaStore dates cannot hide an unbound
                         // locator, a missing projection or changed identity evidence.
                         val libraryItems = musicDao.getAllLibraryItems()
+                        evidenceReadAtStart = libraryItems.associate {
+                            it.libraryItemId to ItemEvidence(it.stableKey, it.fileSignature)
+                        }
                         val knownByLocator = libraryItems.associateBy { it.currentLocator }
                         // B41-fix1 (B10): a row whose evidence disagrees with the library's is read again only until it has been handled for
                         // the evidence MediaStore gives now; what was handled is kept (see PendingProjections).
@@ -433,6 +450,8 @@ constructor(
                                     PROGRESS_PHASE to SyncProgress.SyncPhase.SAVING_TO_DATABASE.ordinal
                                 )
                             )
+                            // B56-6: a song the scan has just read again has a new file behind it: its composer is read again too (by the backfill below)
+                            musicDao.forgetComposers(correctedSongs.map { it.id })
                             musicDao.incrementalSyncMusicData(
                                     songs = correctedSongs,
                                     albums = albums,
@@ -502,13 +521,22 @@ constructor(
                     // active-projection query can see, because the predicate requires the join.
                     musicDao.seedLibraryItemsFromProjections()
                     // Commit fresh matching evidence only after successful projection writes.
-                    musicDao.updateLibraryItemEvidenceBatch(pendingEvidenceUpdates + songsToInsert.map {
+                    musicDao.updateLibraryItemEvidenceBatchGuarded(pendingEvidenceUpdates + songsToInsert.map {
                         LibraryItemEntity(
                             libraryItemId = it.libraryItemId,
                             stableKey = it.stableKey,
                             fileSignature = LibraryIdentity.computeFileSignature(it.duration, it.fileSize),
                         )
-                    })
+                    }, evidenceReadAtStart)
+
+                    // Reads the now-committed song projections, not matching evidence. Artwork is optional:
+                    // an unavailable folder must not lose identity evidence or fail the library sync.
+                    try {
+                        folderArtworkRefresh?.refresh()
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        Timber.tag(TAG).w(error, "Could not refresh folder artwork after the evidence commit")
+                    }
 
                     // B41-fix1 (B10): the disagreements this sync has dealt with are the ones it does not ask about again until MediaStore
                     // says something else. Only after the projections and the evidence were written, and never a reason to stop the sync.
@@ -531,6 +559,12 @@ constructor(
 
                     currentCoroutineContext().ensureActive()
                     userPreferencesRepository.setLastSyncTimestamp(startTime)
+
+                    // B56-6: composers for search, a batch at a time; never fails the sync
+                    runCatching { composerBackfill(musicDao).runOnce() }.onFailure { error ->
+                        if (error is CancellationException) throw error
+                        Timber.tag(TAG).w(error, "The composer backfill failed; the sync goes on")
+                    }
 
                     val endTime = System.currentTimeMillis()
                     Timber.tag(TAG)
@@ -1290,11 +1324,13 @@ constructor(
                         isDefaultMetadata(raw.artist) ||
                         isDefaultMetadata(raw.album)
 
+        var musicBrainzIds = com.lostf1sh.pixelplayeross.data.model.MusicBrainzIds()
         if (shouldAugmentMetadata) {
             val file = java.io.File(raw.filePath)
             if (file.exists()) {
                 try {
                     AudioMetadataReader.read(file, readArtwork = false)?.let { meta ->
+                        musicBrainzIds = meta.musicBrainzIds
                         if (!meta.title.isNullOrBlank()) title = meta.title
                         if (!meta.artist.isNullOrBlank()) artist = meta.artist
                         if (!meta.album.isNullOrBlank()) album = meta.album
@@ -1311,6 +1347,11 @@ constructor(
                     Timber.tag(TAG).w(e, "Failed to read metadata via TagLib for ${raw.filePath}")
                 }
             }
+        }
+
+        if (!shouldAugmentMetadata) {
+            val file = File(raw.filePath)
+            if (file.isFile) musicBrainzIds = AudioMetadataReader.readMusicBrainzIds(file)
         }
 
         // The fingerprint's track and disc come from the one frozen function the identity pass uses
@@ -1390,7 +1431,12 @@ constructor(
                 bitrate = audioMetadata?.bitrate,
                 sourceType = SourceType.LOCAL,
                 mediaStoreDateAdded = raw.dateAdded,
-                mediaStoreDateModified = raw.dateModified
+                mediaStoreDateModified = raw.dateModified,
+                mbRecordingId = musicBrainzIds.recording,
+                mbReleaseId = musicBrainzIds.release,
+                mbReleaseGroupId = musicBrainzIds.releaseGroup,
+                mbArtistId = musicBrainzIds.artist,
+                mbAlbumArtistId = musicBrainzIds.albumArtist,
         )
     }
 
@@ -1508,11 +1554,19 @@ constructor(
         /** B40-F3: the same, but only if the last walk is old enough (the periodic maintenance). */
         const val INPUT_WALK_FOLDERS_IF_DUE = "input_walk_folders_if_due"
 
+        /** B56-1.2: the listener asked for this sync (the Library menu's Refresh, pull to refresh), so it is not put off while music plays. */
+        const val INPUT_REQUESTED_BY_LISTENER = "input_requested_by_listener"
+
         /** B40-F3: how the worker gets its folder scanner. The tests hand in one over a fake MediaStore; nothing else touches it. */
         @Volatile
         internal var fileScannerFactory: (Context) -> com.lostf1sh.pixelplayeross.data.library.LibraryFileScanner =
             { context -> com.lostf1sh.pixelplayeross.data.library.LibraryFileScanner(context) }
         private const val MAX_PLAYBACK_DEFERRALS = 5
+
+        /** B56-6: how the worker gets the composer backfill. The tests hand in one over a fake tag reader; nothing else touches it. */
+        @Volatile
+        internal var composerBackfill: (MusicDao) -> com.lostf1sh.pixelplayeross.data.media.ComposerBackfill =
+            { dao -> com.lostf1sh.pixelplayeross.data.media.ComposerBackfill(dao) }
 
         /**
          * Stands in for "this item has no projection".
@@ -1551,14 +1605,16 @@ constructor(
 
         fun incrementalSyncWork(
             runMaintenance: Boolean = true,
-            walkFolders: Boolean = false
+            walkFolders: Boolean = false,
+            requestedByListener: Boolean = false
         ) =
                 OneTimeWorkRequestBuilder<SyncWorker>()
                         .setInputData(
                                 workDataOf(
                                         INPUT_SYNC_MODE to SyncMode.INCREMENTAL.name,
                                         INPUT_RUN_MAINTENANCE to runMaintenance,
-                                        INPUT_WALK_FOLDERS to walkFolders
+                                        INPUT_WALK_FOLDERS to walkFolders,
+                                        INPUT_REQUESTED_BY_LISTENER to requestedByListener
                                 )
                         )
                         .build()

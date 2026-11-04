@@ -111,8 +111,6 @@ internal fun DapRootShell(
                                 navController = navController,
                                 paddingValuesParent = paddingValues,
                                 playerViewModel = playerViewModel,
-                                settingsViewModel = hiltViewModel(key = "dap-root-home-settings"),
-                                onOpenSidebar = onOpenSidebar,
                             )
 
                             DapRootTab.SEARCH -> SearchScreen(

@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.presentation.components.LocalMaterialTheme
+import com.lostf1sh.pixelplayeross.presentation.components.subcomps.LyricsModeSheet
 import com.lostf1sh.pixelplayeross.presentation.components.rememberModalSheetState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState
 import com.lostf1sh.pixelplayeross.ui.ds.DapMotion
@@ -85,7 +87,13 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapMotion
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActions, pageSlots: PlayerPageSlots = PlayerPageSlots()) {
+internal fun FullPlayerScreen(
+    state: FullPlayerUiState,
+    actions: FullPlayerActions,
+    pageSlots: PlayerPageSlots = PlayerPageSlots(),
+    /** False where a window cannot reach the Safety authority's Hilt component (a JVM test); true in the app. */
+    mountModalInputBridge: Boolean = true,
+) {
     val song = state.cover.song
     var showArtistPicker by rememberSaveable { mutableStateOf(false) }
     var showSaveBookmarkDialog by rememberSaveable { mutableStateOf(false) }
@@ -99,8 +107,14 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
     // B29-L7: the queue swipe starts at the transport controls and below (see [QueueSwipePolicy]).
     val queueZone = remember { QueueSwipeZone() }
 
-    val pages = rememberPlayerPagesState()
-    val lyricsEntry = rememberPlayerLyricsEntry(song.id, state.lyrics, actions) { pages.goTo(PlayerPage.LYRICS) }
+    // B56-3.4: with the lyrics mode "Off" there is no Lyrics page: the pager is Menu, Player, Details. It starts again on Player when the mode changes.
+    val lyricsMode = state.lyrics.mode
+    val pages = key(lyricsMode.hasLyricsPage) { rememberPlayerPagesState(lyricsPage = lyricsMode.hasLyricsPage) }
+    var showLyricsModes by rememberSaveable { mutableStateOf(false) }
+    // the Lyrics page, or, where there is none, the small sheet that brings it back
+    val lyricsEntry = rememberPlayerLyricsEntry(song.id, state.lyrics, actions) {
+        if (pages.has(PlayerPage.LYRICS)) pages.goTo(PlayerPage.LYRICS) else showLyricsModes = true
+    }
 
     // Opening the player always lands on Player: a collapsed player is put back there (it is retained composed, and would otherwise reopen
     // on the page it was left on).
@@ -110,7 +124,7 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
     }
     // The layers around the player that belong to its Player page only (the queue's folded strip) are told which page it is on.
     val pageSignal = LocalPlayerPageSignal.current
-    if (pageSignal != null) PlayerPageSignalEffect(pages, pageSignal, lyricsEntry)
+    if (pageSignal != null) PlayerPageSignalEffect(pages, pageSignal, lyricsEntry) { showLyricsModes = true }
     PlayerPagesBackHandler(pages)
 
     val skip = rememberPlayerSkipCoordinator(
@@ -170,6 +184,19 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
                 onDismiss = { showSaveBookmarkDialog = false }
             )
         }
+    }
+
+    // B56-3.4: the small sheet behind a long press on the lyrics button (and what the button opens when there is no Lyrics page)
+    if (showLyricsModes) {
+        LyricsModeSheet(
+            mode = lyricsMode,
+            onSelect = { chosen ->
+                showLyricsModes = false
+                if (chosen != lyricsMode) actions.onLyricsModeChange(chosen)
+            },
+            onDismissRequest = { showLyricsModes = false },
+            mountInputBridge = mountModalInputBridge,
+        )
     }
 
     val isLandscape = state.isLandscape
@@ -247,9 +274,9 @@ internal fun FullPlayerScreen(state: FullPlayerUiState, actions: FullPlayerActio
                     },
                 // lazy: a page is composed while any of it is on screen, and not before
                 beyondViewportPageCount = 0,
-                key = { it },
+                key = { pages.pages[it].ordinal },
             ) { index ->
-                when (PlayerPage.entries[index]) {
+                when (pages.pages[index]) {
                     PlayerPage.MENU -> Box(Modifier.fillMaxSize().padding(top = topInset).testTag(PlayerPagesTags.Menu)) {
                         pageSlots.menu(pages)
                     }
@@ -330,14 +357,16 @@ internal object PlayerPagesTags {
  * page redraws this and not the screen), and puts "on Player" back when the player goes.
  */
 @Composable
-private fun PlayerPageSignalEffect(pages: PlayerPagesState, signal: PlayerPageSignal, lyricsEntry: PlayerLyricsEntry) {
+private fun PlayerPageSignalEffect(pages: PlayerPagesState, signal: PlayerPageSignal, lyricsEntry: PlayerLyricsEntry, openLyricsModes: () -> Unit) {
     val page = pages.current
+    val latestOpenModes by rememberUpdatedState(openLyricsModes)
     SideEffect {
         signal.page = page
         signal.openLyrics = { lyricsEntry.open() }
         signal.openDetails = { pages.goTo(PlayerPage.DETAILS) }
+        signal.openLyricsModes = { latestOpenModes() }
     }
-    DisposableEffect(signal) { onDispose { signal.page = PlayerPage.Start; signal.openLyrics = {}; signal.openDetails = {} } }
+    DisposableEffect(signal) { onDispose { signal.page = PlayerPage.Start; signal.openLyrics = {}; signal.openDetails = {}; signal.openLyricsModes = {} } }
 }
 
 /** Back from Menu, Lyrics or Details is Player; from Player it is not handled here, so it closes the player as it always did. */

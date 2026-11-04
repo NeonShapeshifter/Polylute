@@ -173,7 +173,7 @@ class B25WiringBoundaryTest {
         assertThat(host).contains("cover?.covered = WakeCycleCover.covers(machine.state, songPresent())")
         val sync = body(host, "fun sync()")
         assertThat(sync).contains("publishCover()")
-        assertThat(host).contains("DisposableEffect(cover) { onDispose { cover?.covered = false } }")
+        assertThat(host).contains("DisposableEffect(cover) { onDispose { cover?.covered = false; latestVisibleChange(false) } }")
         // the signal reaches the lifecycle cap through a listener, not through composition
         val freeze = code(text(main, "presentation/lockscreen/FreezeWhileCovered.kt"))
         assertThat(freeze).contains("cover?.attach { owner.coverHeld = it }")

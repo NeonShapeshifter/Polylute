@@ -60,6 +60,8 @@ class B44DownloaderScreenTest {
             }
         }
         compose.waitForIdle()
+        compose.onNodeWithText("Choose by artist or album").performClick()
+        compose.waitForIdle()
     }
     @Test fun `a reopened paused queue has resume without entering another mode`() {
         show()

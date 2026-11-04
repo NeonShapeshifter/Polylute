@@ -14,6 +14,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,9 +122,15 @@ fun AlbumDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val about by viewModel.about.collectAsStateWithLifecycle()
+    com.lostf1sh.pixelplayeross.presentation.components.MusicInfoPageFeedback(infoActions, viewModel::downloadedInfoChanged)
     var showOfflineDownloads by remember { mutableStateOf(false) }
-    if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.MusicInfoDownloadsScreen(
-        uiState.songs.map { it.id }, onDismiss = { showOfflineDownloads = false })
+    // B57 1.3: the whole-album editor, opened from the page menu. Everything it needs (its view model, the save progress) lives only while it is open.
+    var showEditAlbum by remember { mutableStateOf(false) }
+    if (showEditAlbum) com.lostf1sh.pixelplayeross.presentation.components.EditAlbumHost(
+        songs = uiState.songs,
+        playerViewModel = playerViewModel,
+        onClose = { showEditAlbum = false },
+    )
     val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
     val playbackStates = rememberLibraryPlaybackStates(playerViewModel)
     val isMiniPlayerVisible by remember {
@@ -219,6 +227,27 @@ fun AlbumDetailScreen(
                     songs.groupBy { it.discNumber ?: 1 }
                 }
                 val lazyListState = rememberLazyListState()
+                // B57 2.4: a title tap in the player lands here with the song to show: scrolled into view and highlighted for a few seconds. The request is taken once, by token.
+                val locateRequest by com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.request.collectAsStateWithLifecycle()
+                var highlightedSongId by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(locateRequest?.token, songs.size) {
+                    val request = locateRequest ?: return@LaunchedEffect
+                    if (request.albumId.toString() != albumId || songs.isEmpty()) return@LaunchedEffect
+                    if (!com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.isFresh(request)) {
+                        com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.consume(request.token)
+                        return@LaunchedEffect
+                    }
+                    val index = com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.listIndexOf(
+                        request.songId, songsByDisc.map { (_, discSongs) -> discSongs.map { it.id } }, hasAbout = !about.isEmpty
+                    )
+                    com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.consume(request.token)
+                    if (index >= 0) {
+                        highlightedSongId = request.songId
+                        lazyListState.scrollToItem(index)
+                        kotlinx.coroutines.delay(3_000)
+                        if (highlightedSongId == request.songId) highlightedSongId = null
+                    }
+                }
 
                 val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 val minTopBarHeight = 64.dp + statusBarHeight
@@ -359,6 +388,13 @@ fun AlbumDetailScreen(
                                 key = { song -> "album_song_${song.id}" },
                                 contentType = { "album_song" }
                             ) { song ->
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .then(
+                                            if (song.id == highlightedSongId) Modifier.background(LocalDapAccent.current.copy(alpha = 0.18f), RoundedCornerShape(12.dp)) else Modifier
+                                        )
+                                ) {
                                 LibraryPlaybackAwareSongItem(
                                     song = song,
                                     playback = playbackStates,
@@ -369,6 +405,7 @@ fun AlbumDetailScreen(
                                     },
                                     onClick = { playerViewModel.showAndPlaySong(song, songs, source = ListenSource(ListenSourceKind.ALBUM, album.id.toString())) }
                                 )
+                                }
                             }
                         }
                     }
@@ -391,6 +428,7 @@ fun AlbumDetailScreen(
                         SharedAlbumTopBarProbe(
                             album = album,
                             songsCount = songs.size,
+                            durationMs = songs.sumOf { it.duration },
                             collapseFraction = collapseFraction,
                             headerHeight = currentTopBarHeightDp,
                             headerImageRequestSize = headerImageRequestSize,
@@ -428,6 +466,7 @@ fun AlbumDetailScreen(
                         CollapsingAlbumTopBar(
                             album = album,
                             songsCount = songs.size,
+                            durationMs = songs.sumOf { it.duration },
                             collapseFraction = collapseFraction,
                             headerHeight = currentTopBarHeightDp,
                             headerImageRequestSize = headerImageRequestSize,
@@ -469,6 +508,7 @@ fun AlbumDetailScreen(
                             onPrepare = { showOfflineDownloads = true },
                             onRefresh = { infoActions.refreshAlbum(album.title, infoArtist, songs, viewModel::downloadedInfoChanged) },
                             onDelete = { infoActions.deleteAlbum(album.title, infoArtist, songs, viewModel::downloadedInfoChanged) },
+                            onEditInfo = { showEditAlbum = true },
                         )
                     }
 
@@ -541,7 +581,7 @@ fun AlbumDetailScreen(
                         }
                         showSongInfoBottomSheet = false
                     },
-                    onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                    onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                         playerViewModel.editSongMetadata(
                             currentSong,
                             newTitle,
@@ -555,7 +595,8 @@ fun AlbumDetailScreen(
                             newDiscNumber,
                             replayGainTrackGainDb,
                             replayGainAlbumGainDb,
-                            coverArtUpdate
+                            coverArtUpdate,
+                            newDate = newDate
                         )
                     },
                     removeFromListTrigger = removeFromListTrigger
@@ -592,6 +633,7 @@ fun AlbumDetailScreen(
 private fun SharedAlbumTopBarProbe(
     album: Album,
     songsCount: Int,
+    durationMs: Long = 0L,
     collapseFraction: Float,
     headerHeight: Dp,
     headerImageRequestSize: Size,
@@ -698,16 +740,18 @@ private fun SharedAlbumTopBarProbe(
                     // With no artist the line is the count alone, not a separator with nothing in
                     // front of it. The resource still formats the two-part case, so the separator
                     // stays the translator's to choose.
+                    // B57 4.3: three lines, the album name big, the artist a little smaller, and the data (year · N songs · duration) the smallest and dimmest
                     Text(
-                        text = albumArtistLabel(album)?.let { artistLabel ->
-                            stringResource(
-                                R.string.album_detail_meta_line,
-                                artistLabel,
-                                formatSongCountLabel(songsCount)
-                            )
-                        } ?: formatSongCountLabel(songsCount),
-                        style = DapType.ValueSmall,
-                        color = Dap.tertiaryText,
+                        text = albumArtistLabel(album).orEmpty(),
+                        style = DapType.Row,
+                        color = Dap.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = com.lostf1sh.pixelplayeross.utils.albumInfoLine(album.year, songsCount, durationMs),
+                        style = DapType.Caption,
+                        color = Dap.tertiaryText.copy(alpha = 0.85f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -727,6 +771,7 @@ private fun SharedAlbumTopBarProbe(
 private fun CollapsingAlbumTopBar(
     album: Album,
     songsCount: Int,
+    durationMs: Long = 0L,
     collapseFraction: Float,
     headerHeight: Dp,
     headerImageRequestSize: Size,
@@ -834,16 +879,18 @@ private fun CollapsingAlbumTopBar(
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            // B57 4.3: three lines, the album name big, the artist a little smaller, and the data (year · N songs · duration) the smallest and dimmest
                             Text(
-                                text = albumArtistLabel(album)?.let { artistLabel ->
-                                    stringResource(
-                                        R.string.album_detail_meta_line,
-                                        artistLabel,
-                                        formatSongCountLabel(songsCount)
-                                    )
-                                } ?: formatSongCountLabel(songsCount),
-                                style = DapType.ValueSmall,
-                                color = Dap.tertiaryText,
+                                text = albumArtistLabel(album).orEmpty(),
+                                style = DapType.Row,
+                                color = Dap.secondaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = com.lostf1sh.pixelplayeross.utils.albumInfoLine(album.year, songsCount, durationMs),
+                                style = DapType.Caption,
+                                color = Dap.tertiaryText.copy(alpha = 0.85f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )

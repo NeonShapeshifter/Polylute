@@ -38,8 +38,8 @@
     <string name="dialog_rebuild_database_message">Se reconstruirá por completo la biblioteca musical a partir de MediaStore. Se conservan los favoritos, las letras importadas y tus ediciones de metadatos. No se puede deshacer.</string>
     <string name="dialog_rebuild_database_title">¿Reconstruir la base de datos?</string>
     <string name="dialog_regenerate">Regenerar</string>
-    <string name="dialog_regenerate_daily_mix_body">Esto descartará la mezcla actual y generará una nueva basada en los hábitos de escucha recientes.</string>
-    <string name="dialog_regenerate_daily_mix_title">¿Regenerar Daily Mix?</string>
+    <string name="dialog_regenerate_daily_mix_body">Reemplaza %1$s por una lista nueva que se mantiene el resto del día.</string>
+    <string name="dialog_regenerate_daily_mix_title">¿Generar un nuevo %1$s?</string>
     <string name="dialog_regenerate_palettes_confirm_body">Esto borrará los datos del tema en caché y reconstruirá todos los estilos de paleta para %1$d carátulas de álbum únicas.</string>
     <string name="dialog_regenerate_palettes_progress_body">Reconstruyendo variantes de paleta en caché para %1$d carátulas de álbum únicas. Esto puede llevar un tiempo en bibliotecas grandes.</string>
     <string name="dialog_regenerate_palettes_title">¿Regenerar todas las paletas de álbum?</string>
@@ -103,8 +103,8 @@
     <string name="setcat_folder_back_gesture_subtitle">En la pestaña Carpetas, el botón de atrás del sistema navega por la pila de carpetas antes de salir de la Biblioteca.</string>
     <string name="setcat_folder_back_gesture_title">El gesto atrás controla carpetas</string>
     <string name="setcat_folders">Carpetas</string>
-    <string name="setcat_force_daily_mix_subtitle">Vuelve a crear la lista Daily Mix inmediatamente.</string>
-    <string name="setcat_force_daily_mix_title">Forzar regeneración de Daily Mix</string>
+    <string name="setcat_force_daily_mix_subtitle">Crea un nuevo %1$s ahora.</string>
+    <string name="setcat_force_daily_mix_title">Regenerar %1$s</string>
     <string name="setcat_force_palette_empty">No se encontraron canciones con carátula de álbum.</string>
     <string name="setcat_force_palette_subtitle">Reconstruir todas las variantes de paleta en caché para cada carátula, o elegir una sola para actualizar.</string>
     <string name="setcat_force_palette_title">Forzar regeneración de paleta de álbum</string>
@@ -149,7 +149,7 @@
     <string name="setcat_player_gestures">Gestos del reproductor</string>
     <string name="setcat_player_theme_label">Color del reproductor</string>
     <string name="setcat_regenerate_all">Regenerar todo</string>
-    <string name="setcat_regenerate_daily_mix_action">Regenerar Daily Mix</string>
+    <string name="setcat_regenerate_daily_mix_action">Regenerar %1$s</string>
     <string name="setcat_regenerate_stats_action">Regenerar estadísticas</string>
     <string name="setcat_regenerating">Regenerando…</string>
     <string name="setcat_reset_imported_lyrics_subtitle">Elimina todas las letras importadas por esta app, en todas las canciones. Tus canciones, listas y favoritos no se ven afectados.</string>
@@ -198,7 +198,7 @@
     <string name="settings_category_library_title">Biblioteca</string>
     <string name="settings_top_bar_title">Ajustes</string>
     <string name="tab_home">Inicio</string>
-    <string name="toast_daily_mix_regeneration_started">Regeneración de Daily Mix iniciada</string>
+    <string name="toast_daily_mix_regeneration_started">Generando %1$s</string>
     <string name="toast_full_rescan_started">Reescaneo completo iniciado…</string>
     <string name="toast_library_sync_finished">Sincronización de la biblioteca terminada</string>
     <string name="toast_rebuilding_database">Reconstruyendo base de datos…</string>
@@ -348,23 +348,19 @@
     <string name="setcat_app_colors_theme">Tema y acento</string>
     <string name="setcat_app_colors_album_art">De la carátula</string>
     <string name="setcat_app_colors_cover_glass">Cristal de la carátula</string>
-    <string name="setcat_moving_background_title">Fondo en movimiento</string>
-    <string name="setcat_moving_background_subtitle">El cristal detrás del reproductor completo y de la pantalla de bloqueo se desplaza despacio mientras suena una canción. En el resto de la app se queda quieto.</string>
-    <string name="setcat_lyrics_under_cover_title">Letras bajo la carátula</string>
-    <string name="setcat_lyrics_under_cover_subtitle">Muestra la línea actual y la siguiente bajo la carátula cuando la canción tiene letra sincronizada. Tócalas para abrir la letra.</string>
     <string name="setcat_lock_screen_section">Pantalla de bloqueo</string>
     <string name="setcat_accent_desc_album_art">Se usa cuando una canción no tiene carátula. La carátula decide el resto, ajustada hasta que se lea bien.</string>
     <string name="setcat_accent_without_cover_label">Acento sin carátula</string>
     <!-- B40-F4: music info from the internet (Deezer is gone). -->
-    <string name="setcat_music_info">Información musical de Internet</string>
-    <string name="setcat_music_info_note">Todo esto está desactivado hasta que lo actives. Cada opción envía solo el nombre de un artista o de un álbum (y lo que devolvió la respuesta anterior), una vez por segundo como máximo, y guarda la respuesta en este teléfono. No se envía nada sobre ti ni sobre tu biblioteca.</string>
-    <string name="setcat_music_info_covers_title">Carátulas de álbum que faltan</string>
-    <string name="setcat_music_info_covers_subtitle">Del Cover Art Archive, encontradas con MusicBrainz. Solo para álbumes sin carátula propia.</string>
+    <string name="setcat_music_info">Información musical</string>
+    <string name="setcat_music_info_note">Todo esto está desactivado hasta que lo actives. Solo se envían nombres de artistas y álbumes, poco a poco para no saturar las fuentes, y las respuestas se guardan en este teléfono. No se envía nada sobre ti.</string>
+    <string name="setcat_music_info_covers_title">Portadas que faltan</string>
+    <string name="setcat_music_info_covers_subtitle">Del Cover Art Archive. Solo para álbumes sin portada propia.</string>
     <string name="setcat_music_info_photos_title">Fotos de artistas</string>
-    <string name="setcat_music_info_photos_subtitle">Primero MusicBrainz y después Wikimedia Commons. Los créditos y las licencias disponibles están en Información.</string>
-    <string name="setcat_music_info_descriptions_title">Descripciones de artistas y álbumes</string>
-    <string name="setcat_music_info_descriptions_subtitle">Primero MusicBrainz y después Wikipedia en el idioma de la app o en inglés. Toca para ampliar; los créditos se abren dentro de la app.</string>
-    <string name="setcat_music_info_delete_title">Borrar los datos descargados</string>
-    <string name="setcat_music_info_delete_subtitle">Imágenes y descripciones guardadas en este teléfono: %1$s</string>
+    <string name="setcat_music_info_photos_subtitle">De MusicBrainz y Wikimedia Commons. Créditos en «Acerca de».</string>
+    <string name="setcat_music_info_descriptions_title">Biografías y descripciones</string>
+    <string name="setcat_music_info_descriptions_subtitle">De MusicBrainz y Wikipedia, en el idioma de la app o en inglés.</string>
+    <string name="setcat_music_info_delete_title">Borrar toda la información descargada</string>
+    <string name="setcat_music_info_delete_subtitle">Fotos, portadas, textos y letras: %1$s</string>
     <string name="setcat_music_info_deleted">Se borraron %1$s</string>
 </resources>

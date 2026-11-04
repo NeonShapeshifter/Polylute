@@ -91,8 +91,13 @@ class WaveScrollBoundaryTest {
                 assertThat(text).contains("lifecycle.isAtLeast(Lifecycle.State.RESUMED)")
                 assertThat(text).contains("isVisible && env.allowRealtimeUpdates")
                 assertThat(text).contains("env.currentSheetState == PlayerSheetState.EXPANDED")
-                assertThat(text).contains(".then(if (scrolling) Modifier.basicMarquee(")
+                // B57 2.5: the marquee lives in PlayerMarquee.kt (one place for its tuning); the surface asks for it only when the text overflows ([scrolling] carries the guards above)
+                assertThat(text).contains("playerMarquee(scrolling, title)")
+                assertThat(text).contains("playerMarquee(scrolling, text)")
                 assertThat(source("presentation/components/player/FullPlayerScreen.kt")).contains("isVisible = pages.isOnPlayer")
+            } else if (path == "presentation/components/player/PlayerMarquee.kt") {
+                // the endless animation exists only for text that overflows: a text that fits gets the plain clip and no animation
+                assertThat(text).contains("if (!scrolling) return this.clipToBounds()")
             } else {
                 assertThat(text).doesNotContain("iterations = Int.MAX_VALUE")
             }

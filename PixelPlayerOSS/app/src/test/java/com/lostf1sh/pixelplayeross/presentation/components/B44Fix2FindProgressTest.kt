@@ -41,7 +41,7 @@ class B44Fix2FindProgressTest {
                     Box(Modifier.fillMaxSize().padding(top = 37.dp, bottom = 22.dp)) {
                         val artists = pages.collectAsLazyPagingItems()
                         MusicInfoDownloadsContent(artists, "", {}, InfoQueue(), progress.value,
-                            InfoProgress(0, 0, 0), selection.value, true, false, { flowOf(emptyList()) },
+                            InfoProgress(0, 0, 0), selection.value, false, false, { flowOf(emptyList()) },
                             { findCalls++ }, {}, {}, {}, {}, { _, _ -> }, { _, _ -> }, {})
                     }
                 }
@@ -62,7 +62,7 @@ class B44Fix2FindProgressTest {
         show()
         compose.onAllNodes(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo)).assertCountEquals(1)
         compose.runOnIdle { progress.value = InfoProgress(100, 100, 0, pending = 0) }
-        compose.onNodeWithText("Checked 100 of 100").assertIsDisplayed()
+        compose.onNodeWithText("Checked today", substring = true).assertIsDisplayed()
         compose.onAllNodes(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo)).assertCountEquals(0)
     }
 

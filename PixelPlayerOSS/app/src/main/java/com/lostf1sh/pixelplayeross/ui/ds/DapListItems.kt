@@ -208,6 +208,8 @@ fun DapAlbumGridItem(
     artwork: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    /** B57 4.3: a third line, the smallest and dimmest (an album's "year · N songs · duration"). */
+    detail: String? = null,
 ) {
     Column(
         modifier
@@ -240,7 +242,18 @@ fun DapAlbumGridItem(
             Text(
                 text = subtitle,
                 style = DapType.Note.copy(fontSize = 11.sp),
-                color = Dap.tertiaryText,
+                // B57 4.3: with a data line under it the artist is a step brighter than that line
+                color = if (detail != null) Dap.secondaryText else Dap.tertiaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (detail != null) {
+            Spacer(Modifier.height(1.dp))
+            Text(
+                text = detail,
+                style = DapType.Note.copy(fontSize = 10.sp),
+                color = Dap.tertiaryText.copy(alpha = 0.85f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

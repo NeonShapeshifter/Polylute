@@ -9,7 +9,6 @@
     <string name="presentation_batch_d_view_list">List</string>
     <string name="presentation_batch_d_storage_internal">Internal</string>
     <string name="presentation_batch_d_storage_sd_card">SD Card</string>
-    <string name="presentation_batch_d_sd_card_unavailable">SD card is not available right now.</string>
     <string name="presentation_batch_d_max_albums_selection">You can select up to %1$d albums</string>
     <string name="presentation_batch_d_folder_name_fallback">Folder</string>
     <string name="presentation_batch_d_library_tabs_sheet_title">Library tabs</string>

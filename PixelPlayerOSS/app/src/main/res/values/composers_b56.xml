@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 phase 6: composers in search -->
+    <string name="search_results_composers">Composers</string>
+    <string name="search_filter_composers">Composers</string>
+    <string name="composer_empty">No songs credit this composer.</string>
+</resources>

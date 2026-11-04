@@ -37,8 +37,8 @@
     <string name="dap_timeout_2_minutes">2 minutes</string>
     <string name="dap_timeout_5_minutes">5 minutes</string>
     <string name="dap_timeout_10_minutes">10 minutes</string>
-    <string name="dap_timeout_never_while_playing">Never while playing</string>
-    <string name="dap_timeout_never_while_playing_desc">Keeps the screen on only during active playback. Pausing or stopping restores normal screen off.</string>
+    <string name="dap_timeout_never_while_playing">Never while playing, on any page</string>
+    <string name="dap_timeout_never_while_playing_desc">In DAP mode every Polylute page stays on while music plays. In app mode Android decides. The DAP lock screen always has a 30 second idle timeout.</string>
     <string name="dap_write_settings_required">Android requires one-time permission to change the system screen timeout.</string>
     <!-- F-05: shown when the system's own timeout is "never"; nothing is changed until the user taps. -->
     <string name="dap_timeout_system_never_title">The screen never turns off by itself</string>

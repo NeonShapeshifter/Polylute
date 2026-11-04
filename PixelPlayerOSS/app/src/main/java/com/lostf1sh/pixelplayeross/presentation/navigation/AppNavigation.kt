@@ -157,6 +157,15 @@ fun DetailNavigation(
                 }
             }
             composable(
+                Screen.Suggestions.route,
+                enterTransition = { enterTransition() }, exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() }, popExitTransition = { popExitTransition() },
+            ) {
+                ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
+                    com.lostf1sh.pixelplayeross.presentation.screens.SuggestionsScreen(playerViewModel)
+                }
+            }
+            composable(
                 Screen.RecentlyPlayed.route,
                 enterTransition = { enterTransition() },
                 exitTransition = { exitTransition() },
@@ -222,6 +231,23 @@ fun DetailNavigation(
                 }
             }
 
+            composable(
+                route = Screen.ComposerDetail.route,
+                arguments = listOf(navArgument("composer") { type = NavType.StringType }),
+                enterTransition = { enterTransition() },
+                exitTransition = { exitTransition() },
+                popEnterTransition = { popEnterTransition() },
+                popExitTransition = { popExitTransition() },
+            ) { backStackEntry ->
+                val composer = backStackEntry.arguments?.getString("composer").orEmpty()
+                ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
+                    com.lostf1sh.pixelplayeross.presentation.screens.ComposerDetailScreen(
+                        navController = navController,
+                        composer = composer,
+                        playerViewModel = playerViewModel,
+                    )
+                }
+            }
             composable(
                 route = Screen.GenreDetail.route,
                 arguments = listOf(navArgument("genreId") { type = NavType.StringType }),

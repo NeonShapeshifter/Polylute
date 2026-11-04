@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Remove
@@ -108,6 +109,9 @@ fun LyricsOptionsSheet(
     canReset: Boolean,
     onResetLyrics: () -> Unit,
     mountInputBridge: Boolean = true,
+    /** B56-3.2: the sync editor is offered for lyrics with no timing, or whose timing is wrong: any lyrics with text. */
+    canSync: Boolean = false,
+    onSyncLyrics: () -> Unit = {},
 ) {
     var showResetDialog by remember { mutableStateOf(false) }
     GlassModalBottomSheet(
@@ -185,6 +189,9 @@ fun LyricsOptionsSheet(
             SheetAction(Icons.Outlined.UploadFile, stringResource(R.string.lyrics_menu_import), onImportLyrics)
             if (canSave) {
                 SheetAction(Icons.Outlined.Save, stringResource(R.string.lyrics_menu_save), onSaveLyrics)
+            }
+            if (canSync) {
+                SheetAction(Icons.Outlined.Timer, stringResource(R.string.lyrics_menu_sync_editor), onSyncLyrics)
             }
             if (canReset) {
                 SheetAction(Icons.Outlined.RestartAlt, stringResource(R.string.reset_imported_lyrics)) { showResetDialog = true }

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 fase 3.2: el editor para sincronizar la letra -->
+    <string name="lyrics_menu_sync_editor">Sincronizar letra</string>
+    <string name="lyrics_sync_title">Sincronizar letra</string>
+    <string name="lyrics_sync_hint">Reproduce la canción y toca «Marcar línea» cuando empiece cada línea.</string>
+    <string name="lyrics_sync_stamp">Marcar línea</string>
+    <string name="lyrics_sync_undo">Deshacer última</string>
+    <string name="lyrics_sync_preview">Vista previa</string>
+    <string name="lyrics_sync_edit">Editar</string>
+    <string name="lyrics_sync_save">Guardar</string>
+    <string name="lyrics_sync_close">Cerrar</string>
+    <string name="lyrics_sync_restart">Empezar de nuevo</string>
+    <string name="lyrics_sync_all_stamped">Todas las líneas están marcadas</string>
+    <string name="lyrics_sync_nudge_earlier">−0,1 s</string>
+    <string name="lyrics_sync_nudge_later">+0,1 s</string>
+    <string name="lyrics_sync_back_5">−5 s</string>
+    <string name="lyrics_sync_forward_5">+5 s</string>
+    <string name="lyrics_sync_play">Reproducir</string>
+    <string name="lyrics_sync_pause">Pausa</string>
+    <string name="lyrics_sync_discard_title">¿Salir sin guardar?</string>
+    <string name="lyrics_sync_discard_message">Se perderán los tiempos que marcaste.</string>
+    <string name="lyrics_sync_discard">Descartar</string>
+    <string name="lyrics_sync_keep_editing">Seguir editando</string>
+    <plurals name="lyrics_sync_remaining">
+        <item quantity="one">Falta %1$d línea por marcar</item>
+        <item quantity="many">Faltan %1$d líneas por marcar</item>
+        <item quantity="other">Faltan %1$d líneas por marcar</item>
+    </plurals>
+    <!-- B56 fase 3.4: cómo se ve la letra en el reproductor completo -->
+    <string name="lyrics_mode_title">Letra en el reproductor</string>
+    <string name="lyrics_mode_desc">Dónde se ve la letra mientras suena una canción.</string>
+    <string name="lyrics_mode_over_cover">Sobre la portada</string>
+    <string name="lyrics_mode_full_page">Página completa</string>
+    <string name="lyrics_mode_off">Sin letra</string>
+    <string name="lyrics_mode_over_cover_hint">Dos líneas bajo la portada y la página de letra</string>
+    <string name="lyrics_mode_full_page_hint">Solo la página de letra</string>
+    <string name="lyrics_mode_off_hint">Sin letra en el reproductor</string>
+</resources>

@@ -17,7 +17,7 @@ class B43DeviceVisibilityTest {
     @Test fun `App mode has no Device category or timeout shortcut`() {
         assertThat(SettingsSurfacePolicy.visibleCategories()).doesNotContain(SettingsCategory.DEVICE)
         val source = File("src/main/java/com/lostf1sh/pixelplayeross/presentation/screens/SettingsCategoryScreen.kt").readText()
-        assertThat(source).contains("!com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.showScreenTimeout(mode.product)")
+        assertThat(source).contains("!com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.showDeviceCategory(mode.product)")
         assertThat(source.substringBefore("val categoryTitle")).contains("navController.popBackStack()")
     }
 }

@@ -166,6 +166,13 @@ sealed class SortOption(
         methodKey = "artist_name",
         direction = SortDirection.Descending
     )
+    object ArtistDateAdded : SortOption(
+        storageKey = "artist_date_added",
+        displayName = "Recently added",
+        methodLabel = "Recently added",
+        methodKey = "artist_date_added",
+        direction = SortDirection.Descending
+    )
     object ArtistNumSongsDesc : SortOption(
         storageKey = "artist_num_songs_desc",
         displayName = "Number of Songs (Most)",
@@ -267,6 +274,8 @@ sealed class SortOption(
         direction = SortDirection.Ascending
     )
 
+    object FolderPathAZ : SortOption("folder_path_az", "Path (A-Z)", "Path", "folder_path", SortDirection.Ascending)
+    object FolderPathZA : SortOption("folder_path_za", "Path (Z-A)", "Path", "folder_path", SortDirection.Descending)
     object FolderNameAZ : SortOption(
         storageKey = "folder_name_az",
         displayName = "Name (A-Z)",
@@ -367,6 +376,7 @@ sealed class SortOption(
             listOf(
                 ArtistNameAZ,
                 ArtistNameZA,
+                ArtistDateAdded,
                 ArtistNumSongsDesc,
                 ArtistNumSongsAsc
             )
@@ -385,6 +395,8 @@ sealed class SortOption(
             listOf(
                 FolderNameAZ,
                 FolderNameZA,
+                FolderPathAZ,
+                FolderPathZA,
                 FolderSongCountAsc,
                 FolderSongCountDesc,
                 FolderSubdirCountAsc,

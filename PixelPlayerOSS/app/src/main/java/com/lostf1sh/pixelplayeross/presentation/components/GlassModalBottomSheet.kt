@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
+import com.lostf1sh.pixelplayeross.ui.glass.SheetPresence
 import com.lostf1sh.pixelplayeross.ui.glass.StillGlassSheetBody
 import com.lostf1sh.pixelplayeross.ui.glass.glassSheetContainer
 import com.lostf1sh.pixelplayeross.ui.glass.rememberStillGlassClock
@@ -49,6 +50,8 @@ fun GlassModalBottomSheet(
 ) {
     val scene = LocalCoverGlass.current
     val clock = rememberStillGlassClock(scene)
+    // B56-7: a sheet is over the player for as long as this is composed; what moves behind it (the live background, an animated cover) holds still
+    SheetPresence.Hold()
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier,

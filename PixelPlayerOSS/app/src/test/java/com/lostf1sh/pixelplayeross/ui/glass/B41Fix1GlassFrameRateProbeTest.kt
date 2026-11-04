@@ -24,7 +24,8 @@ import java.time.Duration
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], application = android.app.Application::class, qualifiers = "w360dp-h800dp-xxhdpi")
+// B56-7.1: the classic glass (before Android 13) is stepped on every display frame; from 13 the live blobs are stepped at 30 a second (B56BackgroundMotionTest)
+@Config(sdk = [32], application = android.app.Application::class, qualifiers = "w360dp-h800dp-xxhdpi")
 class B41Fix1GlassFrameRateProbeTest {
     @get:Rule
     val compose = createComposeRule()

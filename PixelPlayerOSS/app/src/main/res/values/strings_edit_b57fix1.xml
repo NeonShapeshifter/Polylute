@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="edit_song_unsupported_format">Tags can\'t be edited for this file type.</string>
+    <string name="metadata_saved_without_cover">Saved, without the cover: %1$s</string>
+    <string name="cover_skip_not_supported">this file type can\'t hold a picture</string>
+    <string name="cover_skip_writer_refused">the tag writer refused the picture</string>
+    <string name="cover_skip_unreadable">the picture has no data</string>
+    <string name="batch_edit_cover_skipped" tools:ignore="PluralsCandidate">The cover could not be written to %1$d files.</string>
+</resources>

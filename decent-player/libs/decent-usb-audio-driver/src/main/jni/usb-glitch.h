@@ -243,6 +243,15 @@ const char *usbFeedbackPacketName(int verdict);
 #define USB_FEEDBACK_STUCK_MIN_MS 5000
 #define USB_FEEDBACK_STUCK_MIN_PPM 500.0
 /**
+ * B50: four starts after a rate change froze from their first second (+3316..+6653 ppm),
+ * and an interface restart cured each. Allow that first second plus the identical-reading hold.
+ * This deliberately also cuts the healthy +0.996 % plateau after 96 -> 44.1 kHz on 10-06:
+ * its >=3 s run cannot be distinguished earlier, at the cost of one restart gap.
+ * First attachment starts, cached skips and later playback keep the existing policy hold.
+ */
+#define USB_FEEDBACK_RATE_CHANGE_STUCK_MS 1500
+#define USB_FEEDBACK_RATE_CHANGE_WINDOW_MS 3000
+/**
  * No reading for this long (a pause: the writer idles and nobody reaps the endpoint) breaks the run.
  * Streaming delivers ~900 a second and a seek's barrier leaves a gap of tens of ms, which does not.
  */
@@ -317,6 +326,7 @@ enum UsbFeedbackEndReason {
 /** What the watcher found; filled by every call, `kind` NONE for almost all of them. */
 typedef struct {
     enum UsbFeedbackEventKind kind;
+    bool rateChangeHold;                // STUCK used the shorter rate-change start hold
     uint32_t raw;                      // the repeated reading, Q16.16
     double fpmf;
     double ppm;                        // its offset from nominal, signed
@@ -345,6 +355,8 @@ typedef struct {
  * reaps the feedback endpoint touches it.
  */
 typedef struct {
+    bool rateChangeStart;              // armed only by a new stream after a different attachment rate
+    int64_t streamStartMs;              // not re-armed by a recovery, pause or cached-stream skip
     bool haveRun;
     uint32_t runRaw;
     int64_t runStartMs;
@@ -377,7 +389,7 @@ void usbFeedbackWatchReset(UsbFeedbackWatch *w);
 void usbFeedbackWatchObserve(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, int64_t nowMs,
                              UsbFeedbackEvent *ev);
 
-/** The same, for a given feedback policy: `auto-early` calls a big plateau stuck sooner (usbFeedbackStuckHoldMs). The other policies are `auto`'s 5 s. */
+/** The same, for a given feedback policy: `auto-early` calls a big plateau stuck sooner (usbFeedbackStuckHoldMs). Outside an armed rate-change start, the other policies are `auto`'s 5 s. */
 void usbFeedbackWatchObservePolicy(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, int64_t nowMs, int policy,
                                    UsbFeedbackEvent *ev);
 

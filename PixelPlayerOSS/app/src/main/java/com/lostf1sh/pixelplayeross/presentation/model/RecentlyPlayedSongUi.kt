@@ -19,7 +19,8 @@ fun mapRecentlyPlayedSongs(
     songs: List<Song>,
     range: StatsTimeRange? = null,
     nowMillis: Long = System.currentTimeMillis(),
-    maxItems: Int = Int.MAX_VALUE
+    maxItems: Int = Int.MAX_VALUE,
+    zoneId: ZoneId = ZoneId.systemDefault(),
 ): List<RecentlyPlayedSongUiModel> {
     if (maxItems <= 0 || playbackHistory.isEmpty() || songs.isEmpty()) return emptyList()
 
@@ -28,15 +29,16 @@ fun mapRecentlyPlayedSongs(
         playbackHistory = playbackHistory,
         range = range,
         nowMillis = nowMillis,
-        maxItems = maxItems
+        maxItems = maxItems,
+        zoneId = zoneId
     )
 
     if (recentSongIds.isEmpty()) return emptyList()
 
     val recentSongIdSet = recentSongIds.toHashSet()
-    val (startBound, endBound) = range.resolveBounds(
+    val (startBound, _) = range.resolveBounds(
         nowMillis = nowMillis.coerceAtLeast(0L),
-        zoneId = ZoneId.systemDefault()
+        zoneId = zoneId
     )
 
     val seenSongIds = HashSet<String>()
@@ -49,8 +51,7 @@ fun mapRecentlyPlayedSongs(
 
     for (entry in sortedHistory) {
         if (deduped.size >= maxItems) break
-        val safeTimestamp = entry.timestamp.coerceAtLeast(0L)
-        if (safeTimestamp > endBound) continue
+        val safeTimestamp = entry.timestamp.coerceIn(0L, nowMillis.coerceAtLeast(0L))
         if (startBound != null && safeTimestamp < startBound) continue
         if (!seenSongIds.add(entry.songId)) continue
         if (entry.songId !in recentSongIdSet) continue
@@ -69,13 +70,14 @@ fun collectRecentlyPlayedSongIds(
     playbackHistory: List<PlaybackStatsRepository.PlaybackHistoryEntry>,
     range: StatsTimeRange? = null,
     nowMillis: Long = System.currentTimeMillis(),
-    maxItems: Int = Int.MAX_VALUE
+    maxItems: Int = Int.MAX_VALUE,
+    zoneId: ZoneId = ZoneId.systemDefault(),
 ): List<String> {
     if (maxItems <= 0 || playbackHistory.isEmpty()) return emptyList()
 
-    val (startBound, endBound) = range.resolveBounds(
+    val (startBound, _) = range.resolveBounds(
         nowMillis = nowMillis.coerceAtLeast(0L),
-        zoneId = ZoneId.systemDefault()
+        zoneId = zoneId
     )
 
     val seenSongIds = LinkedHashSet<String>()
@@ -86,8 +88,7 @@ fun collectRecentlyPlayedSongIds(
 
     for (entry in sortedHistory) {
         if (seenSongIds.size >= maxItems) break
-        val safeTimestamp = entry.timestamp.coerceAtLeast(0L)
-        if (safeTimestamp > endBound) continue
+        val safeTimestamp = entry.timestamp.coerceIn(0L, nowMillis.coerceAtLeast(0L))
         if (startBound != null && safeTimestamp < startBound) continue
         seenSongIds.add(entry.songId)
     }
@@ -126,4 +127,10 @@ private fun StatsTimeRange?.resolveBounds(
             null to safeNow
         }
     }
+}
+
+/** Same range boundaries for the full-ledger projection; no list-length cap. */
+fun filterRecentListening(items: List<RecentlyPlayedSongUiModel>, range: StatsTimeRange, nowMillis: Long, zoneId: ZoneId): List<RecentlyPlayedSongUiModel> {
+    val (start, _) = range.resolveBounds(nowMillis.coerceAtLeast(0), zoneId)
+    return items.filter { start == null || it.lastPlayedTimestamp.coerceAtMost(nowMillis) >= start }
 }

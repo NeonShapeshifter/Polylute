@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.media
 
 import com.lostf1sh.pixelplayeross.data.metadata.MetadataNormalizer
+import com.lostf1sh.pixelplayeross.data.model.MusicBrainzIds
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -35,7 +36,8 @@ data class AudioMetadata(
     /** Lossless/container token as reported by the reader header (e.g. "Flac"), not the extension. */
     val containerFormat: String? = null,
     /** Raw tag field keys that were present, for diagnostics. */
-    val tagFieldKeys: Set<String> = emptySet()
+    val tagFieldKeys: Set<String> = emptySet(),
+    val musicBrainzIds: MusicBrainzIds = MusicBrainzIds(),
 )
 
 data class AudioMetadataArtwork(
@@ -46,6 +48,31 @@ data class AudioMetadataArtwork(
 object AudioMetadataReader {
 
     private const val TAG = "AudioMetadataReader"
+
+    /** Scan-time hints need one tag-map read, without artwork or stream-header work. */
+    fun readMusicBrainzIds(file: File): MusicBrainzIds = try {
+        openPfd { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) }?.use { fd ->
+            MusicBrainzTags.read(TagLib.getMetadata(fd.detachFd(), readPictures = false)?.propertyMap.orEmpty())
+        } ?: MusicBrainzIds()
+    } catch (error: Exception) {
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        Timber.tag(TAG).w(error, "Could not read MusicBrainz tags in %s", file.path)
+        MusicBrainzIds()
+    }
+
+    /** B56 phase 6: the COMPOSER tag of a file, from one tag-map read (the same call the scan makes for MusicBrainz ids). */
+    fun readComposer(file: File): ComposerRead = try {
+        val map = openPfd { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) }?.use { fd ->
+            TagLib.getMetadata(fd.detachFd(), readPictures = false)?.propertyMap
+        }
+        if (map == null) ComposerRead.Unreadable
+        else (map["COMPOSER"]?.firstOrNull()?.takeIf { it.isNotBlank() } ?: map["TCOM"]?.firstOrNull()?.takeIf { it.isNotBlank() })
+            ?.let { ComposerRead.Found(it.trim()) } ?: ComposerRead.None
+    } catch (error: Exception) {
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        Timber.tag(TAG).w(error, "Could not read the composer tag in %s", file.path)
+        ComposerRead.Unreadable
+    }
 
     /**
      * Reads metadata straight from a content URI's file descriptor.
@@ -247,7 +274,8 @@ object AudioMetadataReader {
                 channels = channels ?: fallback?.channels,
                 bitDepth = fallback?.bitDepth,
                 containerFormat = fallback?.containerFormat,
-                tagFieldKeys = propertyMap.keys
+                tagFieldKeys = propertyMap.keys,
+                musicBrainzIds = MusicBrainzTags.read(propertyMap),
             )
         } catch (error: Exception) {
             Timber.tag(TAG).e(error, "Unable to read metadata from file: ${file?.absolutePath}")
@@ -383,23 +411,28 @@ object AudioMetadataReader {
         val bitDepth: Int? = null,
         val bitrate: Int? = null,
         val channels: Int? = null,
-        val durationMs: Long? = null
+        val durationMs: Long? = null,
+        /** B57 2.6: the codec the sound is stored in, from the file's own header ([CodecSniffer]); null when the file did not say. */
+        val codec: AudioCodec? = null,
     )
 
     fun readTechnical(file: File): TechnicalAudioInfo? = runCatching {
         val header = AudioFileIO.read(file).audioHeader
+        val sniffed = CodecSniffer.sniff(file)
         TechnicalAudioInfo(
             format = runCatching { header?.format }.getOrNull()?.let(::plausibleFormatName),
-            sampleRate = runCatching { header?.sampleRateAsNumber }.getOrNull()?.takeIf { it > 0 },
-            bitDepth = runCatching { header?.bitsPerSample }.getOrNull()?.takeIf { it > 0 },
+            // the file's own rate: its header, by the tag reader and then by the codec sniff; never the output's (Bluetooth, USB)
+            sampleRate = runCatching { header?.sampleRateAsNumber }.getOrNull()?.takeIf { it > 0 } ?: sniffed?.sampleRateHz,
+            bitDepth = runCatching { header?.bitsPerSample }.getOrNull()?.takeIf { it > 0 } ?: sniffed?.bitDepth,
             bitrate = runCatching { header?.bitRateAsNumber }.getOrNull()?.takeIf { it > 0 }?.toInt()?.times(1000),
             channels = runCatching { header?.channels?.trim()?.toIntOrNull() }.getOrNull()?.takeIf { it > 0 },
             durationMs = plausibleDurationMs(
                 trackLength = runCatching { header?.trackLength }.getOrNull(),
                 format = runCatching { header?.format }.getOrNull()
-            )
+            ),
+            codec = sniffed?.codec,
         ).takeIf { info ->
-            listOf(info.sampleRate, info.bitDepth, info.bitrate, info.channels, info.durationMs)
+            listOf(info.sampleRate, info.bitDepth, info.bitrate, info.channels, info.durationMs, info.codec)
                 .any { it != null }
         }
     }.getOrElse {

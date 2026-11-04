@@ -248,6 +248,7 @@ internal fun QueueSurface(
                             interactive = !visible,
                             onOpen = onOpenQueue,
                             onLyrics = { pageSignal?.openLyrics?.invoke() },
+                            onLyricsLongPress = { pageSignal?.openLyricsModes?.invoke() },
                             onDetails = { pageSignal?.openDetails?.invoke() },
                             onDragStart = onQueueDragStart,
                             onDrag = onQueueDrag,

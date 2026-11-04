@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 fas 6: kompositörer i sökningen -->
+    <string name="search_results_composers">Kompositörer</string>
+    <string name="search_filter_composers">Kompositörer</string>
+    <string name="composer_empty">Inga låtar är krediterade till den här kompositören.</string>
+</resources>

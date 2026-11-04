@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 fas 3.2: redigeraren för att synka låttexten -->
+    <string name="lyrics_menu_sync_editor">Synka låttext</string>
+    <string name="lyrics_sync_title">Synka låttext</string>
+    <string name="lyrics_sync_hint">Spela låten och tryck på Tidsstämpla rad när varje rad börjar.</string>
+    <string name="lyrics_sync_stamp">Tidsstämpla rad</string>
+    <string name="lyrics_sync_undo">Ångra senaste</string>
+    <string name="lyrics_sync_preview">Förhandsgranska</string>
+    <string name="lyrics_sync_edit">Redigera</string>
+    <string name="lyrics_sync_save">Spara</string>
+    <string name="lyrics_sync_close">Stäng</string>
+    <string name="lyrics_sync_restart">Börja om</string>
+    <string name="lyrics_sync_all_stamped">Alla rader är tidsstämplade</string>
+    <string name="lyrics_sync_nudge_earlier">−0,1 s</string>
+    <string name="lyrics_sync_nudge_later">+0,1 s</string>
+    <string name="lyrics_sync_back_5">−5 s</string>
+    <string name="lyrics_sync_forward_5">+5 s</string>
+    <string name="lyrics_sync_play">Spela</string>
+    <string name="lyrics_sync_pause">Pausa</string>
+    <string name="lyrics_sync_discard_title">Lämna utan att spara?</string>
+    <string name="lyrics_sync_discard_message">Tiderna du har satt går förlorade.</string>
+    <string name="lyrics_sync_discard">Släng</string>
+    <string name="lyrics_sync_keep_editing">Fortsätt redigera</string>
+    <plurals name="lyrics_sync_remaining">
+        <item quantity="one">%1$d rad kvar att tidsstämpla</item>
+        <item quantity="other">%1$d rader kvar att tidsstämpla</item>
+    </plurals>
+    <!-- B56 fas 3.4: hur låttexten visas i hela spelaren -->
+    <string name="lyrics_mode_title">Låttext i spelaren</string>
+    <string name="lyrics_mode_desc">Var låttexten visas medan en låt spelas.</string>
+    <string name="lyrics_mode_over_cover">Över omslaget</string>
+    <string name="lyrics_mode_full_page">Helsida</string>
+    <string name="lyrics_mode_off">Av</string>
+    <string name="lyrics_mode_over_cover_hint">Två rader under omslaget och låttextsidan</string>
+    <string name="lyrics_mode_full_page_hint">Bara låttextsidan</string>
+    <string name="lyrics_mode_off_hint">Ingen låttext i spelaren</string>
+</resources>

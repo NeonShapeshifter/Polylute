@@ -29,11 +29,15 @@ class HomeSectionTypographyTest {
             assertThat(it).doesNotContain("home_your_mix_title")
             assertThat(it).doesNotContain("presentation_batch_g_daily_mix_heading")
         }
-        val yourTitle = titleLine(yourMix, "song,")
-        val dailyTitle = titleLine(dailyMix, "stringResource(R.string.home_daily_mix_title),")
+        // B55 delegates the heading to ui/ds; keep checking the same type and ink at its new owner.
+        val shared = File("src/main/java/com/lostf1sh/pixelplayeross/ui/ds/DapHomeItems.kt").readText()
+            .substringAfter("fun DapFeatureHeader(").substringBefore("/** A larger")
+        val yourTitle = if (yourMix.contains("DapFeatureHeader(")) shared else titleLine(yourMix, "song,")
+        val dailyTitle = if (dailyMix.contains("DapFeatureHeader(")) shared else titleLine(dailyMix, "stringResource(R.string.home_daily_mix_title),")
         listOf(yourTitle, dailyTitle).forEach {
-            assertThat(it).contains("style = DapType.Heading,")
-            assertThat(it).contains("color = Dap.primaryText,")
+            val normalized = it.replace(Regex("\\s+"), "")
+            assertThat(normalized).contains("style=DapType.Heading,")
+            assertThat(normalized).contains("color=Dap.primaryText,")
         }
     }
 
@@ -47,18 +51,16 @@ class HomeSectionTypographyTest {
      */
     @Test
     fun `the Daily Mix title is one line and the covers sit on their own row below it`() {
-        val title = titleLine(dailyMix, "stringResource(R.string.home_daily_mix_title),")
-        assertThat(title).contains("maxLines = 1,")
-        assertThat(title).doesNotContain("maxLines = 2")
+        assertThat(dailyMix).contains("maxTitleLines = 1,")
         // No weight next to a row of covers: nothing shares the line with it.
         assertThat(dailyMix).doesNotContain("Modifier.weight(1f)")
-        val underTheTitle = dailyMix.substringAfter("overflow = TextOverflow.Ellipsis,")
+        val underTheTitle = dailyMix.substringAfter("maxTitleLines = 1,")
         assertThat(underTheTitle).contains("thumbnails.forEach")
-        assertThat(underTheTitle).contains(".size(32.dp)")
+        assertThat(underTheTitle).contains(".size(DapSpacing.GroupGap)")
         assertThat(underTheTitle).contains("SmartImage(")
         assertThat(underTheTitle).contains("RoundedCornerShape(DapRadius.Surface)")
         val card = File("$base/components/DailyMixSection.kt").readText()
-        assertThat(card).contains("DailyMixHeader(thumbnails = headerSongs)")
+        assertThat(card).contains("DailyMixHeader(thumbnails = headerSongs, onShuffle = shuffle)")
         assertThat(card).contains("val headerSongs = remember(songs) { songs.take(3).toImmutableList() }")
     }
 }

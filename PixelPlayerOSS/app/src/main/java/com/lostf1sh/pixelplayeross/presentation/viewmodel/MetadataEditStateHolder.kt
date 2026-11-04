@@ -36,6 +36,8 @@ class MetadataEditStateHolder @Inject constructor(
         val error: MetadataEditError? = null,
         val errorMessage: String? = null,
         val permissionIntentSender: android.content.IntentSender? = null,
+        /** B57-fix1 5.2: set when the text was saved but the cover was not written to the file. */
+        val coverNote: com.lostf1sh.pixelplayeross.data.media.CoverNote? = null,
     ) {
         /**
          * Returns a user-friendly error message based on the error type
@@ -68,7 +70,8 @@ class MetadataEditStateHolder @Inject constructor(
         newDiscNumber: Int?,
         newReplayGainTrackGainDb: String? = null,
         newReplayGainAlbumGainDb: String? = null,
-        coverArtUpdate: CoverArtUpdate?
+        coverArtUpdate: CoverArtUpdate?,
+        newDate: String? = null,
     ): MetadataEditResult = withContext(Dispatchers.IO) {
         
         Timber.tag("MetadataEditStateHolder").d("Starting saveMetadata for: ${song.title}")
@@ -119,6 +122,7 @@ class MetadataEditStateHolder @Inject constructor(
             newReplayGainTrackGainDb = newReplayGainTrackGainDb,
             newReplayGainAlbumGainDb = newReplayGainAlbumGainDb,
             coverArtUpdate = finalCoverArtUpdate,
+            newDate = newDate,
             songId = resolvedSongId,
         )
 
@@ -146,6 +150,7 @@ class MetadataEditStateHolder @Inject constructor(
                 lyrics = normalizedLyrics,
                 trackNumber = newTrackNumber,
                 discNumber = newDiscNumber,
+                year = if (newDate != null) com.lostf1sh.pixelplayeross.data.media.EditableDate.yearOf(newDate) ?: 0 else song.year,
                 albumArtUriString = refreshedAlbumArtUri,
             )
 
@@ -173,7 +178,8 @@ class MetadataEditStateHolder @Inject constructor(
                 success = true,
                 updatedSong = freshSong,
                 updatedAlbumArtUri = freshSong.albumArtUriString,
-                parsedLyrics = parsedLyrics
+                parsedLyrics = parsedLyrics,
+                coverNote = result.coverNote,
             )
         } else {
             Timber.tag("MetadataEditStateHolder").w("Metadata edit failed: ${result.error} - ${result.errorMessage}")

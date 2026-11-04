@@ -43,7 +43,7 @@ class B44DiscoveryMigrationTest {
             }).build())
         helper.writableDatabase.execSQL("INSERT INTO artists(id, name, track_count, image_url) VALUES (7, 'Artist', 2, '/saved/photo.jpg')")
         helper.close()
-        val db = Room.databaseBuilder(context, PixelPlayerDatabase::class.java, name).addMigrations(MIGRATION_13_14, MIGRATION_14_15).build()
+        val db = Room.databaseBuilder(context, PixelPlayerDatabase::class.java, name).addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17).build()
         val image = db.openHelper.writableDatabase.query("SELECT image_url FROM artists WHERE id = 7").use { cursor ->
             cursor.moveToFirst()
             cursor.getString(0)
@@ -51,7 +51,7 @@ class B44DiscoveryMigrationTest {
         assertThat(image).isEqualTo("/saved/photo.jpg")
         db.musicInfoDiscoveryDao().initQueue(InfoQueue(paused = true))
         db.close()
-        val reopened = Room.databaseBuilder(context, PixelPlayerDatabase::class.java, name).addMigrations(MIGRATION_13_14, MIGRATION_14_15).build()
+        val reopened = Room.databaseBuilder(context, PixelPlayerDatabase::class.java, name).addMigrations(MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17).build()
         assertThat(reopened.musicInfoDiscoveryDao().queueOnce()?.paused).isTrue()
         reopened.close()
         context.deleteDatabase(name)

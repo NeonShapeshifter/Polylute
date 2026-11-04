@@ -9,6 +9,7 @@ import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.dap.admin.DapReleaseOutcome
 import com.lostf1sh.pixelplayeross.dap.admin.DapReleaseResult
@@ -62,7 +63,11 @@ internal class AppearanceSettingsActionsImpl(
     override fun onOpenPaletteStyle() = Unit // Retired route; stored preferences are retained.
     // B41: the Player section's two switches, and what moved here from Lyrics and Behaviour (the same methods, so the same preferences).
     override fun onCoverGlassMovingChange(value: Boolean) = vm.setCoverGlassMoving(value)
-    override fun onLyricsUnderCoverChange(value: Boolean) = vm.setLyricsUnderCover(value)
+    override fun onBackgroundMotionChange(value: com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion) = vm.setBackgroundMotion(value)
+    override fun onLyricsModeChange(value: LyricsMode) = vm.setLyricsMode(value)
+    override fun onAnimatedCoversChange(value: Boolean) = vm.setAnimatedCovers(value)
+    override fun onAnimatedCoverFolderPicked(uri: android.net.Uri?, flags: Int) = vm.onAnimatedCoverFolderPicked(uri, flags)
+    override fun onAnimatedCoverFolderRemove() = vm.removeAnimatedCoverFolder()
     override fun onImmersiveLyricsEnabledChange(value: Boolean) = vm.setImmersiveLyricsEnabled(value)
     override fun onImmersiveLyricsTimeoutChange(value: Long) = vm.setImmersiveLyricsTimeout(value)
     override fun onLyricsAlignmentChange(value: String) = vm.setLyricsAlignment(value)
@@ -112,6 +117,7 @@ internal class LibrarySettingsActionsImpl(
     /** The host owns the explorer dialog; this raises it. */
     private val showExplorer: () -> Unit,
 ) : LibrarySettingsActions {
+    override fun onFolderCoversChange(value: Boolean) = vm.setFolderCoversEnabled(value)
     override fun onMinSongDurationChange(value: Int) = vm.setMinSongDuration(value)
     override fun onMinTracksPerAlbumChange(value: Int) = vm.setMinTracksPerAlbum(value)
     override fun onAlbumArtCacheLimitMbChange(value: Int) = vm.setAlbumArtCacheLimitMb(value)
@@ -120,6 +126,7 @@ internal class LibrarySettingsActionsImpl(
     override fun onMusicInfoDescriptionsChange(value: Boolean) = vm.setMusicInfoDescriptionsEnabled(value)
     override fun onMusicInfoCacheLimitChange(megabytes: Int) = vm.setMusicInfoCacheLimitMb(megabytes)
     override fun onDeleteMusicInfo(onDone: (Long) -> Unit) = vm.deleteMusicInfo(onDone)
+    override fun onDeleteMusicInfoResult(onDone: (Result<Long>) -> Unit) = vm.deleteMusicInfoResult(onDone)
     override fun onOpenLibraryFolders() {
         showExplorer()
         vm.openExplorer()

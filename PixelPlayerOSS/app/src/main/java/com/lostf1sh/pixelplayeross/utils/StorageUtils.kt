@@ -81,10 +81,10 @@ object StorageUtils {
         // its volume, then remove only the documented Android/data/<package>/files suffix.
         for (directory in context.getExternalFilesDirs(null).filterNotNull()) {
             val mounted = manager.getStorageVolume(directory) ?: continue
-            if (mounted.uuid != volume.uuid || mounted.isPrimary != volume.isPrimary) continue
-            val suffix = "/Android/data/${context.packageName}/files"
-            val path = directory.absolutePath
-            if (path.endsWith(suffix)) return File(path.removeSuffix(suffix))
+            deriveLegacyVolumeRoot(
+                directory.absolutePath, context.packageName,
+                volume.uuid, volume.isPrimary, mounted.uuid, mounted.isPrimary
+            )?.let { return File(it) }
         }
         return null
     }
@@ -92,6 +92,17 @@ object StorageUtils {
     /**
      * Determine the storage type based on StorageVolume properties
      */
+    internal fun deriveLegacyVolumeRoot(
+        directory: String, packageName: String,
+        expectedUuid: String?, expectedPrimary: Boolean,
+        actualUuid: String?, actualPrimary: Boolean
+    ): String? {
+        if (expectedPrimary != actualPrimary) return null
+        if (!expectedPrimary && (expectedUuid == null || !expectedUuid.equals(actualUuid, ignoreCase = true))) return null
+        val suffix = "/Android/data/$packageName/files"
+        return directory.takeIf { it.endsWith(suffix) }?.removeSuffix(suffix)?.takeIf { it.isNotBlank() }
+    }
+
     private fun determineStorageType(volume: StorageVolume): StorageType {
         if (volume.isPrimary) {
             return StorageType.INTERNAL

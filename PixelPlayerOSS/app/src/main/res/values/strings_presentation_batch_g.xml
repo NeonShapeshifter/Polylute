@@ -116,8 +116,8 @@ Backslash (\) can be used to escape character delimiters.</string>
     <string name="presentation_batch_g_file_explorer_empty_folders">No subfolders here</string>
     <string name="presentation_batch_g_file_explorer_cd_navigate_up">Navigate up</string>
     <string name="presentation_batch_g_file_explorer_cd_go_root">Go to root</string>
-    <string name="presentation_batch_g_daily_mix_queue_name">Daily Mix</string>
-    <string name="presentation_batch_g_daily_mix_see_all">Check all of Daily Mix</string>
+    <string name="presentation_batch_g_daily_mix_queue_name">@string/collection_name_daily_mix</string>
+    <string name="presentation_batch_g_daily_mix_see_all">See all: %1$s</string>
     <string name="presentation_batch_g_selection_all">All</string>
     <string name="presentation_batch_g_selection_deselect">Deselect</string>
     <string name="presentation_batch_g_selection_cd_more">More options</string>
@@ -126,11 +126,11 @@ Backslash (\) can be used to escape character delimiters.</string>
     <string name="presentation_batch_g_list_cd_more_for_title">More options for %1$s</string>
     <string name="presentation_batch_g_sync_percent">%1$d%%</string>
     <string name="presentation_batch_g_stats_overview_title">Listening stats</string>
-    <string name="presentation_batch_g_stats_overview_total_plays">Total plays</string>
+    <string name="presentation_batch_g_stats_overview_total_plays">Plays</string>
     <string name="presentation_batch_g_stats_overview_avg_per_day">Avg per day</string>
     <string name="presentation_batch_g_stats_overview_top_track">Top track</string>
     <string name="presentation_batch_g_stats_overview_top_track_line">%1$s • %2$d plays</string>
-    <string name="presentation_batch_g_recently_played_title">Recently Played</string>
+    <string name="presentation_batch_g_recently_played_title">@string/presentation_batch_b_recently_played_title</string>
     <string name="presentation_batch_g_presets_saved_title">Saved Presets</string>
     <string name="presentation_batch_g_presets_empty">No custom presets saved yet.</string>
     <string name="presentation_batch_g_presets_cd_unpin">Unpin</string>

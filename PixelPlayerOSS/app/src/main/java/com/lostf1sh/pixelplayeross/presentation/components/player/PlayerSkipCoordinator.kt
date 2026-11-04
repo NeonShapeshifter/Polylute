@@ -37,6 +37,29 @@ internal class PlayerSkipCoordinator(
 )
 
 /**
+ * B56-1.1: what a skip request tells the cover before the player has answered. The cover starts moving to [index] at once; the hint is only good while the
+ * player's answer can still be the song it was made for: [fromSongId] is the song that was playing when the first skip of the burst was asked, [expected] the songs
+ * the skips of the burst predicted, in order, and [index] where the last of them sits in the list the cover has.
+ *
+ * The prediction is "the next row of the list". That is the next *song* only when the list is in the order the player plays: right after a shuffle is tapped the
+ * screen still lists the source list as shown (the player holds the first block of the dealt sequence), so the row after the playing one is not what the player plays
+ * next. The old hold kept the cover on the predicted row for 900 ms after the last change, and every further skip restarted it and predicted from the wrong row
+ * again: the cover walked down the source list while the songs jumped about (#47). The hint now ends the moment the player answers with a song it did not predict.
+ */
+private class SkipHint(val fromSongId: String, val expected: List<String>, val index: Int) {
+    /** Still the hint of a player that has not answered, or answered with a song it predicted. */
+    fun holdsFor(currentSongId: String): Boolean = currentSongId == fromSongId || currentSongId in expected
+
+    /** What is left of it once the player is on [currentSongId]: the same hint (not answered), the rest of the burst, or nothing (arrived, or answered otherwise). */
+    fun answeredBy(currentSongId: String): SkipHint? {
+        if (currentSongId == fromSongId) return this
+        val at = expected.indexOf(currentSongId)
+        if (at < 0 || at == expected.lastIndex) return null
+        return SkipHint(fromSongId = currentSongId, expected = expected.drop(at + 1), index = index)
+    }
+}
+
+/**
  * Builds the coordinator and runs its collector. Moved here unchanged from `FullPlayerContent` (B21): the order of
  * requests is the order of dispatches, and a single skip is never delayed by anything.
  */
@@ -50,7 +73,10 @@ internal fun rememberPlayerSkipCoordinator(
     onPrevious: () -> Unit,
     previousDecisionPositionMs: () -> Long,
 ): PlayerSkipCoordinator {
-    var pendingCarouselIndex by remember { mutableStateOf<Int?>(null) }
+    var storedHint by remember { mutableStateOf<SkipHint?>(null) }
+    // Read in the composition that sees the player's answer, so the cover is never handed a hint the answer has already contradicted.
+    val hint = storedHint?.takeIf { it.holdsFor(song.id) }
+    val pendingCarouselIndex = hint?.index
     val currentQueueIndex = remember(song.id, currentMediaItemIndex, currentPlaybackQueue) {
         resolveQueueIndex(
             queue = currentPlaybackQueue,
@@ -69,18 +95,24 @@ internal fun rememberPlayerSkipCoordinator(
     val latestRepeatMode by rememberUpdatedState(repeatMode)
     val latestOnNext by rememberUpdatedState(onNext)
     val latestOnPrevious by rememberUpdatedState(onPrevious)
+    val latestHint by rememberUpdatedState(hint)
+
+    // The player answered: trim the hint to what is still ahead (the burst's later skips), or drop it.
+    LaunchedEffect(song.id) {
+        storedHint = storedHint?.answeredBy(song.id)
+    }
 
     LaunchedEffect(currentQueueIndex, pendingCarouselIndex) {
-        if (pendingCarouselIndex == currentQueueIndex) {
-            pendingCarouselIndex = null
+        if (pendingCarouselIndex != null && pendingCarouselIndex == currentQueueIndex) {
+            storedHint = null
         }
     }
 
     LaunchedEffect(pendingCarouselIndex, currentQueueIndex) {
         val targetIndex = pendingCarouselIndex ?: return@LaunchedEffect
         kotlinx.coroutines.delay(900)
-        if (pendingCarouselIndex == targetIndex && currentQueueIndex != targetIndex) {
-            pendingCarouselIndex = null
+        if (latestHint?.index == targetIndex && latestCurrentQueueIndex != targetIndex) {
+            storedHint = null
         }
     }
 
@@ -106,7 +138,7 @@ internal fun rememberPlayerSkipCoordinator(
 
     fun predictSkipCarouselIndex(direction: SkipDirection): Int? {
         val queueSnapshot = latestQueue
-        val baseIndex = pendingCarouselIndex
+        val baseIndex = latestHint?.index
             ?: latestCurrentQueueIndex
             ?: queueSnapshot.indexOfFirst { it.id == latestSongId }.takeIf { it >= 0 }
 
@@ -129,7 +161,13 @@ internal fun rememberPlayerSkipCoordinator(
     fun requestSkip(direction: SkipDirection) {
         val predictedTargetIndex = predictSkipCarouselIndex(direction)
         if (skipRequests.tryEmit(direction) && predictedTargetIndex != null) {
-            pendingCarouselIndex = predictedTargetIndex
+            val predictedSongId = latestQueue.getOrNull(predictedTargetIndex)?.id
+            val earlier = latestHint
+            storedHint = if (predictedSongId == null) null else SkipHint(
+                fromSongId = earlier?.fromSongId ?: latestSongId,
+                expected = (earlier?.expected ?: emptyList()) + predictedSongId,
+                index = predictedTargetIndex,
+            )
         }
     }
 

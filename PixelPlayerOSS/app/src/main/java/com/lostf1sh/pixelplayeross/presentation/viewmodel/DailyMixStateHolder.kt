@@ -42,6 +42,9 @@ class DailyMixStateHolder @Inject constructor(
     @ApplicationContext private val context: Context,
     @AppScope private val appScope: CoroutineScope,
 ) {
+    val homeMixes = collections.homeMixes
+    fun refreshSuggestionsPreview(): Job = appScope.launch { collections.refreshSuggestionsPreview() }
+
     private var midnightJob: Job? = null
     private var dayChangeReceiver: BroadcastReceiver? = null
 
@@ -70,9 +73,9 @@ class DailyMixStateHolder @Inject constructor(
         .map { it.isReady }
         .stateIn(appScope, SharingStarted.Eagerly, false)
 
-    /** Takes a track out of today's mix, for the rest of the day (a swipe on Home). */
-    fun removeFromDailyMix(songId: String) {
-        appScope.launch { collections.removeFromDailyMix(songId) }
+    /** Takes a track out of today's mix, after a file deletion, for the rest of the day. */
+    fun removeFromDailyMix(locator: String) {
+        appScope.launch { collections.removeFromDailyMix(locator) }
     }
 
     /** Builds the collections if this process has not, or if they are old. The rest of the time it costs nothing. */
@@ -85,7 +88,7 @@ class DailyMixStateHolder @Inject constructor(
 
     /** Builds them again regardless of the day: a user-initiated refresh. */
     fun forceUpdate() {
-        appScope.launch { collections.refresh("user requested a refresh") }
+        appScope.launch { collections.refresh("user requested a refresh", regenerate = true) }
     }
 
     /**

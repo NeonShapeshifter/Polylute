@@ -255,6 +255,10 @@ fun QueueBottomSheet(
     var showClearQueueDialog by remember { mutableStateOf(false) }
     var isFabExpanded by rememberSaveable { mutableStateOf(false) }
 
+    // B56-7: the queue is a sheet over the player once it is more than half open: the live background and an animated cover hold still behind it
+    val queueOpenOverPlayer by remember(foldProgress) { derivedStateOf { isVisible && foldProgress() >= 0.5f } }
+    com.lostf1sh.pixelplayeross.ui.glass.SheetPresence.Hold(queueOpenOverPlayer)
+
     LaunchedEffect(isVisible) {
         if (!isVisible) {
             showTimerOptions = false
@@ -1917,7 +1921,7 @@ fun QueuePlaylistSongItem(
                             .size(48.dp)
                             .clip(albumShape),
                         contentScale = ContentScale.Crop,
-                        targetSize = SmartImageCompactListTargetSize
+                        targetSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(48.dp)
                     )
 
                     Spacer(Modifier.width(12.dp))

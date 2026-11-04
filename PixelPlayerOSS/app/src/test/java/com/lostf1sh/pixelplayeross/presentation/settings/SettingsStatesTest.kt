@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.settings
 
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import com.google.common.truth.Truth.assertThat
 import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
@@ -33,7 +34,7 @@ class SettingsStatesTest {
         resumeOnHeadsetReconnect = true,
         dapLockScreenEnabled = true,
         coverGlassMoving = false,
-        lyricsUnderCover = false,
+        lyricsMode = LyricsMode.FULL_PAGE,
         persistentShuffleEnabled = true,
         randomMode = RandomMode.FAST,
         showQueueHistory = false,
@@ -80,7 +81,7 @@ class SettingsStatesTest {
         val state = AppearanceSettingsState.from(ui)
         // the two new switches
         assertThat(state.coverGlassMoving).isFalse()
-        assertThat(state.lyricsUnderCover).isFalse()
+        assertThat(state.lyricsMode).isEqualTo(LyricsMode.FULL_PAGE)
         // how the lyrics read and look (it was Settings, Lyrics)
         assertThat(state.immersiveLyricsEnabled).isTrue()
         assertThat(state.immersiveLyricsTimeout).isEqualTo(6000L)
@@ -175,6 +176,6 @@ class SettingsStatesTest {
         assertThat(AppearanceSettingsState.from(defaults).animatedLyricsBlurStrength).isEqualTo(defaults.animatedLyricsBlurStrength)
         // B41: both new switches are on until the listener turns them off
         assertThat(defaults.coverGlassMoving).isTrue()
-        assertThat(defaults.lyricsUnderCover).isTrue()
+        assertThat(defaults.lyricsMode).isEqualTo(LyricsMode.OVER_COVER)
     }
 }

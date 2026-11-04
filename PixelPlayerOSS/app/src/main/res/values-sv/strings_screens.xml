@@ -42,16 +42,15 @@
     <string name="cd_reset_defaults">Återställ standard</string>
     <string name="dialog_delete_song_title">Ta bort låten?</string>
     <string name="dialog_delete_song_message">\"%1$s\" av %2$s\n\nDen här låten tas bort permanent från din enhet och kan inte återställas.</string>
-    <string name="home_daily_mix_title">Daglig mix</string>
-    <string name="home_empty_placeholder_title">Inga data att visa ännu</string>
-    <string name="home_empty_placeholder_subtitle">Din mix visas här när Polylute hittar låtar eller synkar en källa.</string>
+    <string name="home_daily_mix_title">@string/collection_name_daily_mix</string>
+    <string name="home_empty_placeholder_title">Inga låtar ännu</string>
+    <string name="home_empty_placeholder_subtitle">Uppdatera biblioteket för att hitta din musik.</string>
     <string name="home_empty_placeholder_refresh">Uppdatera</string>
     <string name="cd_shuffle_play">Blanda och spela</string>
     <string name="cd_album_art_for_title">Albumomslag för %1$s</string>
     <string name="genre_quick_fill">Snabbfyll genre</string>
     <string name="cd_play_album">Spela album</string>
     <string name="album_cover_for">Omslag till %1$s</string>
-    <string name="album_detail_meta_line">%1$s · %2$s</string>
     <string name="crash_report_title">Hoppsan! Något gick fel</string>
     <string name="crash_report_subtitle">Appen kraschade under din senaste session. Hjälp oss att rätta till det genom att dela kraschrapporten.</string>
     <string name="crash_report_date_line">Datum: %1$s</string>
@@ -100,6 +99,6 @@
     <string name="about_licenses_third_party">Tredjepartskomponenter</string>
     <string name="about_licenses_fonts">Medföljande teckensnitt</string>
     <string name="about_licenses_unavailable">Licensfilerna kunde inte läsas från den här versionen.</string>
-    <string name="home_your_mix_queue_name">Din mix</string>
-    <string name="home_your_mix_heading">Dagens mix åt dig</string>
+    <string name="home_your_mix_queue_name">@string/home_your_mix_heading</string>
+    <string name="home_your_mix_heading">Förslag</string>
 </resources>

@@ -190,7 +190,8 @@ internal fun mergeSourceDetails(
     live: LiveAudioFormat?,
     fileSizeBytes: Long?
 ): SourceDetails = SourceDetails(
-    format = live?.format ?: technical?.format,
+    // B57 2.6: both the codec and its file, "Opus (.ogg file)"; the player's own reading (or the reader's header token) only when the header could not be sniffed
+    format = com.lostf1sh.pixelplayeross.data.media.AudioCodec.describe(technical?.codec, song?.path) ?: live?.format ?: technical?.format,
     sampleRateHz = live?.sampleRateHz
         ?: technical?.sampleRate
         ?: song?.sampleRate?.takeIf { it > 0 },

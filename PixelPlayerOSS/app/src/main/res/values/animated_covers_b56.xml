@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 phase 7.2: animated covers -->
+    <string name="setcat_animated_covers_title">Animated covers</string>
+    <string name="setcat_animated_covers_subtitle">In the full player, play cover.mp4, cover.webp or cover.gif from the album folder, muted and in a loop. Lists, the mini player and the lock screen keep the still cover.</string>
+</resources>

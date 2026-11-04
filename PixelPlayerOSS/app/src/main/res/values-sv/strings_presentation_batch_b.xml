@@ -33,11 +33,11 @@
     <string name="presentation_batch_b_add_custom_genre_title">Lägg till egen genre</string>
     <string name="presentation_batch_b_genre_name_label">Genrenamn</string>
     <string name="presentation_batch_b_select_icon">Välj ikon</string>
-    <string name="presentation_batch_b_recently_played_title">Nyligen spelade</string>
+    <string name="presentation_batch_b_recently_played_title">Nyligen spelat</string>
     <string name="presentation_batch_b_play_latest">Spela senaste</string>
     <string name="presentation_batch_b_recent_empty_title">Inga nyligen spelade låtar i %1$s</string>
     <string name="presentation_batch_b_recent_empty_subtitle">Ändra intervallet eller spela fler låtar för att fylla den här tidslinjen.</string>
-    <string name="presentation_batch_b_queue_recently_played">Nyligen spelade</string>
+    <string name="presentation_batch_b_queue_recently_played">@string/presentation_batch_b_recently_played_title</string>
     <string name="presentation_batch_b_date_today">Idag</string>
     <string name="presentation_batch_b_date_yesterday">Igår</string>
     <string name="presentation_batch_b_genre_shuffle_label">Blanda %1$s</string>

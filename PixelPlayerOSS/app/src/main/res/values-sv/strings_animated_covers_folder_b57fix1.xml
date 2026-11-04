@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="setcat_animated_covers_folder_title">Mapp för animerade omslag</string>
+    <string name="setcat_animated_covers_folder_change">Ändra</string>
+    <string name="setcat_animated_covers_folder_remove_title">Ta bort mappen</string>
+    <string name="setcat_animated_covers_folder_remove_desc">Polylute slutar läsa den och Animerade omslag stängs av.</string>
+</resources>

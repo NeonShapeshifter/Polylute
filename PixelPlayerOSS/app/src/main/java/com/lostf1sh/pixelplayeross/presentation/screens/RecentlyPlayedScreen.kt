@@ -106,12 +106,13 @@ import kotlinx.collections.immutable.persistentListOf
 fun RecentlyPlayedScreen(
     playerViewModel: PlayerViewModel,
     playlistViewModel: PlaylistViewModel = hiltViewModel(),
-    navController: NavController
+    navController: NavController,
+    history: com.lostf1sh.pixelplayeross.presentation.viewmodel.HomeOverviewViewModel = hiltViewModel(),
 ) = traceSection("RecentlyPlayedScreen.Composition") {
     val context = LocalContext.current
     val queueRecentlyPlayed = stringResource(R.string.presentation_batch_b_queue_recently_played)
     val shuffleLabel = stringResource(R.string.shortcut_shuffle_short)
-    val playbackHistory by playerViewModel.playbackHistory.collectAsStateWithLifecycle()
+    val listening by history.state.collectAsStateWithLifecycle()
     val currentSongId by remember(playerViewModel.stablePlayerState) {
         playerViewModel.stablePlayerState.map { it.currentSong?.id }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = null)
@@ -131,31 +132,12 @@ fun RecentlyPlayedScreen(
     var showPlaylistBottomSheet by remember { mutableStateOf(false) }
     val bottomBarHeightDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    val recentSongIds = remember(playbackHistory, selectedRange) {
-        collectRecentlyPlayedSongIds(
-            playbackHistory = playbackHistory,
-            range = selectedRange,
-            maxItems = Int.MAX_VALUE
-        )
+    val recentlyPlayedSongs = remember(listening.recent, selectedRange, listening.nowMs, listening.zone) {
+        com.lostf1sh.pixelplayeross.presentation.model.filterRecentListening(
+            listening.recent, selectedRange, listening.nowMs, listening.zone).toImmutableList()
     }
-    val recentSongsInitialValue: List<Song>? = remember(recentSongIds) {
-        if (recentSongIds.isEmpty()) emptyList<Song>() else null
-    }
-    val recentlyPlayedSourceSongs by remember(recentSongIds, playerViewModel) {
-        playerViewModel.observeSongs(recentSongIds)
-            .map<List<Song>, List<Song>?> { it }
-    }.collectAsStateWithLifecycle(initialValue = recentSongsInitialValue)
 
-    val recentlyPlayedSongs = remember(playbackHistory, recentlyPlayedSourceSongs, selectedRange) {
-        val sourceSongs = recentlyPlayedSourceSongs ?: return@remember persistentListOf()
-        mapRecentlyPlayedSongs(
-            playbackHistory = playbackHistory,
-            songs = sourceSongs,
-            range = selectedRange,
-            maxItems = Int.MAX_VALUE
-        ).toImmutableList()
-    }
-    val groupedSongs = remember(recentlyPlayedSongs, selectedRange, context) {
+    val groupedSongs = remember(recentlyPlayedSongs, selectedRange, context, listening.nowMs, listening.zone) {
         groupRecentlyPlayedSongs(
             context = context,
             songs = recentlyPlayedSongs,
@@ -184,7 +166,7 @@ fun RecentlyPlayedScreen(
             .fillMaxSize()
             .background(backgroundBrush)
     ) {
-        if (recentlyPlayedSourceSongs == null) {
+        if (!listening.loaded) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -328,7 +310,7 @@ fun RecentlyPlayedScreen(
                     }
                     showSongInfoBottomSheet = false
                 },
-                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                     playerViewModel.editSongMetadata(
                         song,
                         newTitle,
@@ -342,7 +324,8 @@ fun RecentlyPlayedScreen(
                         newDiscNumber,
                         replayGainTrackGainDb,
                         replayGainAlbumGainDb,
-                        coverArtUpdate
+                        coverArtUpdate,
+                        newDate = newDate
                     )
                 },
                 // Nothing to wire: the list is built from observeSongs (Room), and the mapper drops

@@ -24,7 +24,8 @@ class FolderTreeBuilder @Inject constructor() {
         blockedDirs: Set<String>,
         isFolderFilterActive: Boolean,
         folderSource: FolderSource,
-        context: Context
+        context: Context,
+        preferredRootPath: String = ""
     ): List<MusicFolder> {
         val resolver = DirectoryRuleResolver(allowedDirs, blockedDirs)
 
@@ -51,7 +52,15 @@ class FolderTreeBuilder @Inject constructor() {
             .toSet()
         val sdStorageRoot = StorageUtils.getSdCardStorage(context)?.path?.path
 
-        val selectedRootPaths = when (folderSource) {
+        val inferred = inferRemovableStorageRoots(filteredSongs, internalStorageRoot, removableStorageRoots)
+        val hasInternalSongs = filteredSongs.any { isPathAtOrUnder(normalizePath(it.parentDirectoryPath), normalizePath(internalStorageRoot)) }
+        val effectiveSource = when {
+            folderSource == FolderSource.SD_CARD && inferred.isNotEmpty() -> FolderSource.SD_CARD
+            hasInternalSongs -> FolderSource.INTERNAL
+            inferred.isNotEmpty() -> FolderSource.SD_CARD
+            else -> folderSource
+        }
+        val selectedRootPaths = when (effectiveSource) {
             FolderSource.INTERNAL -> setOf(internalStorageRoot)
             FolderSource.SD_CARD -> buildSet {
                 sdStorageRoot?.let(::add)
@@ -66,9 +75,42 @@ class FolderTreeBuilder @Inject constructor() {
             }
         }
 
-        return buildFolderTreeForRoots(
-            folderSongs = filteredSongs,
-            selectedRootPaths = selectedRootPaths
+        val availableRoots = selectedRootPaths.filter { root -> filteredSongs.any { isPathAtOrUnder(normalizePath(it.parentDirectoryPath), root) } }.sorted()
+        val selectedRoot = preferredRootPath.takeIf { it in availableRoots } ?: availableRoots.firstOrNull()
+        return buildCompactTree(filteredSongs, setOfNotNull(selectedRoot), allowedDirs)
+    }
+
+    /** Included music roots replace the storage scaffolding. No filesystem traversal. */
+    internal fun buildCompactTree(
+        songs: List<FolderSongRow>,
+        volumeRoots: Set<String>,
+        includedRoots: Set<String>
+    ): List<MusicFolder> {
+        val volumes = volumeRoots.map(::normalizePath)
+        val roots = includedRoots.map(::normalizePath).filter { candidate ->
+            volumes.any { isPathAtOrUnder(candidate, it) }
+        }.ifEmpty { volumes }
+        // Prefer the outer included root when includes overlap, so songs appear once.
+        val distinctRoots = roots.distinct().filterNot { candidate ->
+            roots.any { it != candidate && isPathAtOrUnder(candidate, it) }
+        }
+        return distinctRoots.flatMap { root ->
+            val tree = buildFolderTreeForRoot(songs, root, includeRoot = true)
+            tree.map { compact(it, root) }
+        }.sortedBy { it.name.lowercase(java.util.Locale.ROOT) }
+    }
+
+    private fun compact(folder: MusicFolder, root: String): MusicFolder {
+        var leaf = folder
+        var name = folder.name
+        while (leaf.songs.isEmpty() && leaf.subFolders.size == 1) {
+            leaf = leaf.subFolders.single()
+            name += " / " + leaf.name
+        }
+        return leaf.copy(
+            name = name,
+            musicRootPath = root,
+            subFolders = leaf.subFolders.map { compact(it, root) }.toImmutableList()
         )
     }
 
@@ -92,7 +134,8 @@ class FolderTreeBuilder @Inject constructor() {
 
     private fun buildFolderTreeForRoot(
         folderSongs: List<FolderSongRow>,
-        selectedRootPath: String
+        selectedRootPath: String,
+        includeRoot: Boolean = false
     ): List<MusicFolder> {
         val normalizedSelectedRoot = normalizePath(selectedRootPath)
 
@@ -130,6 +173,8 @@ class FolderTreeBuilder @Inject constructor() {
             }
         }
         
+        if (includeRoot) return listOfNotNull(buildImmutableFolder(rootFolder.path, folderMap)).filter { it.totalSongCount > 0 }
+
         return rootFolder.subFolderPaths
             .mapNotNull { path -> buildImmutableFolder(path, folderMap) }
             .filter { it.totalSongCount > 0 }

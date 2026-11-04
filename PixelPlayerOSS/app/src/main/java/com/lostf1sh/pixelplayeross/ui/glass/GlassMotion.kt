@@ -99,15 +99,15 @@ object GlassMotion {
      * sines of all three) in each of the two moving layers' lambdas, 2 lists and 6 layers where 2 are needed; at the display's rate (B41-fix1,
      * B4) that is the per-frame cost, so it is only what is drawn.
      */
-    fun layer(phase: Float, index: Int): Layer {
+    fun layer(phase: Float, index: Int, travel: Float = Tuning.TRAVEL): Layer {
         if (index == 0) return BASE
         val drift = Tuning.DRIFTS.getOrNull(index - 1) ?: throw IndexOutOfBoundsException("no glass layer $index")
         return Layer(
-            scale = drift.scale + wave(phase, drift.scaleWave),
-            rotationDegrees = wave(phase, drift.rotationWave),
-            translationX = wave(phase, drift.translationXWave),
-            translationY = wave(phase, drift.translationYWave),
-            alpha = drift.alpha + wave(phase, drift.alphaWave),
+            scale = drift.scale + wave(phase, drift.scaleWave, travel),
+            rotationDegrees = wave(phase, drift.rotationWave, travel),
+            translationX = wave(phase, drift.translationXWave, travel),
+            translationY = wave(phase, drift.translationYWave, travel),
+            alpha = drift.alpha + wave(phase, drift.alphaWave, travel),
             mirrored = false,
         )
     }

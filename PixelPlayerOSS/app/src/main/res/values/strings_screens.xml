@@ -51,16 +51,15 @@
     <string name="dialog_delete_song_title">Delete song?</string>
     <string name="dialog_delete_song_message">\"%1$s\" by %2$s\n\nThis song will be permanently deleted from your device and cannot be recovered.</string>
 
-    <string name="home_daily_mix_title">Daily Mix</string>
-    <string name="home_empty_placeholder_title">No data to show yet</string>
-    <string name="home_empty_placeholder_subtitle">Your mix will appear here when Polylute finds songs or syncs a source.</string>
+    <string name="home_daily_mix_title">@string/collection_name_daily_mix</string>
+    <string name="home_empty_placeholder_title">No songs yet</string>
+    <string name="home_empty_placeholder_subtitle">Refresh your library to find your music.</string>
     <string name="home_empty_placeholder_refresh">Refresh</string>
     <string name="cd_shuffle_play">Shuffle Play</string>
     <string name="cd_album_art_for_title">Album art for %1$s</string>
     <string name="genre_quick_fill">Quick Fill Genre</string>
     <string name="cd_play_album">Play album</string>
     <string name="album_cover_for">Cover of %1$s</string>
-    <string name="album_detail_meta_line">%1$s · %2$s</string>
 
     <string name="crash_report_title">Oops! Something went wrong</string>
     <string name="crash_report_subtitle">The app crashed during your last session. Help us fix this by sharing the crash report.</string>
@@ -115,6 +114,6 @@
     <string name="about_licenses_third_party">Third-party components</string>
     <string name="about_licenses_fonts">Bundled fonts</string>
     <string name="about_licenses_unavailable">The licence files could not be read from this build.</string>
-    <string name="home_your_mix_queue_name">Your Mix</string>
-    <string name="home_your_mix_heading">Today\'s Mix for you</string>
+    <string name="home_your_mix_queue_name">@string/home_your_mix_heading</string>
+    <string name="home_your_mix_heading">Suggestions</string>
 </resources>

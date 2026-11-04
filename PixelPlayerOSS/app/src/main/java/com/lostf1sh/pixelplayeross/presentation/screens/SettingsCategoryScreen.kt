@@ -96,7 +96,7 @@ fun SettingsCategoryScreen(
     val category = SettingsCategory.fromId(categoryId) ?: return
     com.lostf1sh.pixelplayeross.presentation.settings.ProductModeLiveEffect(productModeViewModel)
     val mode by productModeViewModel.state.collectAsStateWithLifecycle()
-    if (category == SettingsCategory.DEVICE && !com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.showScreenTimeout(mode.product)) {
+    if (category == SettingsCategory.DEVICE && !com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.showDeviceCategory(mode.product)) {
         LaunchedEffect(category) { navController.popBackStack() }
         return
     }
@@ -152,7 +152,7 @@ fun SettingsCategoryScreen(
                         SettingsCategory.DEVICE -> DeviceSettingsHost(deviceControlViewModel)
                         SettingsCategory.LIBRARY -> LibrarySettingsHost(settingsViewModel, navigate) { showExplorerSheet = true }
                         SettingsCategory.LYRICS -> LyricsSettingsHost(settingsViewModel)
-                        SettingsCategory.APPEARANCE -> AppearanceSettingsHost(settingsViewModel, navigate)
+                        SettingsCategory.APPEARANCE -> AppearanceSettingsHost(settingsViewModel, navigate, mode.product)
                         SettingsCategory.AUDIO -> AudioSettingsHost(settingsViewModel, navigate, deviceControlViewModel)
                         SettingsCategory.BEHAVIOR -> BehaviorSettingsHost(settingsViewModel)
                         SettingsCategory.BACKUP_RESTORE -> BackupSettingsHost()
@@ -255,10 +255,10 @@ private fun LyricsSettingsHost(settingsViewModel: SettingsViewModel) {
 }
 
 @Composable
-private fun AppearanceSettingsHost(settingsViewModel: SettingsViewModel, navigate: (String) -> Unit) {
+private fun AppearanceSettingsHost(settingsViewModel: SettingsViewModel, navigate: (String) -> Unit, product: com.lostf1sh.pixelplayeross.dap.mode.ProductModeState) {
     val state by settingsViewModel.appearanceState.collectAsStateWithLifecycle()
     val actions = remember(settingsViewModel, navigate) { AppearanceSettingsActionsImpl(settingsViewModel, navigate) }
-    AppearanceSettingsScreen(state, actions)
+    AppearanceSettingsScreen(state.copy(showDapLockScreen = com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.isVisible(com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.Entry.APPEARANCE_DAP_LOCK_SCREEN, product)), actions)
 }
 
 @Composable

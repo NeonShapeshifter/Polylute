@@ -38,20 +38,32 @@ internal enum class PlayerPage {
     }
 }
 
-/** The pages' state: the pager, and the moves between pages (a jump from a header icon, the way back). */
+/**
+ * The pages' state: the pager, and the moves between pages (a jump from a header icon, the way back).
+ *
+ * [pages] are the pages that exist, in the pager's order: all four, or (B56-3.4, lyrics mode "Off") Menu, Player and Details. The pager's index is the position in
+ * [pages], not the page's ordinal; every swipe rule (a swipe that begins on the cover changes the song, anywhere else it changes the page) is the pager's and the
+ * cover's, so it is the same with three pages as with four.
+ */
 @Stable
 internal class PlayerPagesState(
     val pager: PagerState,
     private val scope: CoroutineScope,
+    val pages: List<PlayerPage> = PlayerPage.entries,
 ) {
     /** The page the pager is on (nearest to the middle while a finger is moving it). Read only where a change of page has to be drawn. */
-    val current: PlayerPage get() = PlayerPage.entries[pager.currentPage.coerceIn(0, PlayerPage.entries.size - 1)]
+    val current: PlayerPage get() = pages[pager.currentPage.coerceIn(0, pages.size - 1)]
 
-    val isOnPlayer: Boolean get() = pager.currentPage == PlayerPage.PLAYER.ordinal
+    val isOnPlayer: Boolean get() = pages.getOrNull(pager.currentPage) == PlayerPage.PLAYER
 
-    /** Goes to [page], sliding. */
+    /** Whether [page] exists in this player (the Lyrics page does not when the lyrics mode is Off). */
+    fun has(page: PlayerPage): Boolean = page in pages
+
+    /** Goes to [page], sliding. A page this player does not have is not gone to. */
     fun goTo(page: PlayerPage) {
-        scope.launch { pager.animateScrollToPage(page.ordinal) }
+        val index = pages.indexOf(page)
+        if (index < 0) return
+        scope.launch { pager.animateScrollToPage(index) }
     }
 
     /** From a page that is not Player: back to Player. False (and nothing done) on Player itself, where back closes the player. */
@@ -63,15 +75,20 @@ internal class PlayerPagesState(
 
     /** Lands on Player without a slide: the player was collapsed and is opening, or being left. */
     suspend fun reset() {
-        if (!isOnPlayer) pager.scrollToPage(PlayerPage.Start.ordinal)
+        if (!isOnPlayer) pager.scrollToPage(pages.indexOf(PlayerPage.Start))
     }
 }
 
+/**
+ * The pager and its pages. [lyricsPage] false is the three-page player of the lyrics mode "Off"; a caller that can change it while it is composed
+ * wraps this in `key(lyricsPage)` so the pager starts again on Player instead of keeping an index of the other layout.
+ */
 @Composable
-internal fun rememberPlayerPagesState(): PlayerPagesState {
-    val pager = rememberPagerState(initialPage = PlayerPage.Start.ordinal) { PlayerPage.entries.size }
+internal fun rememberPlayerPagesState(lyricsPage: Boolean = true): PlayerPagesState {
+    val pages = remember(lyricsPage) { if (lyricsPage) PlayerPage.entries else PlayerPage.entries - PlayerPage.LYRICS }
+    val pager = rememberPagerState(initialPage = pages.indexOf(PlayerPage.Start)) { pages.size }
     val scope = rememberCoroutineScope()
-    return remember(pager, scope) { PlayerPagesState(pager, scope) }
+    return remember(pager, scope, pages) { PlayerPagesState(pager, scope, pages) }
 }
 
 /**
@@ -109,6 +126,9 @@ internal class PlayerPageSignal {
 
     var openLyrics: () -> Unit = {}
     var openDetails: () -> Unit = {}
+
+    /** B56-3.4: the lyrics button's long press: the small sheet that sets how the lyrics show. */
+    var openLyricsModes: () -> Unit = {}
 
     val onPlayerPage: Boolean get() = page == PlayerPage.PLAYER
 }

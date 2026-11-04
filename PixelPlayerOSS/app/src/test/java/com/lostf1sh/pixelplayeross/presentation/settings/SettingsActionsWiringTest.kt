@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.settings
 
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import android.net.Uri
 import com.google.common.truth.Truth.assertThat
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupHistoryEntry
@@ -145,10 +146,10 @@ class SettingsActionsWiringTest {
     fun `B41 - the two new switches write their own preferences`() {
         val actions = AppearanceSettingsActionsImpl(vm, navigate)
         actions.onCoverGlassMovingChange(false)
-        actions.onLyricsUnderCoverChange(false)
+        actions.onLyricsModeChange(LyricsMode.FULL_PAGE)
         actions.onAppColorSourceChange(com.lostf1sh.pixelplayeross.data.preferences.AppColorSource.COVER_GLASS)
         verify(exactly = 1) { vm.setCoverGlassMoving(false) }
-        verify(exactly = 1) { vm.setLyricsUnderCover(false) }
+        verify(exactly = 1) { vm.setLyricsMode(LyricsMode.FULL_PAGE) }
         verify(exactly = 1) { vm.setAppColorSource("cover_glass") }
     }
 

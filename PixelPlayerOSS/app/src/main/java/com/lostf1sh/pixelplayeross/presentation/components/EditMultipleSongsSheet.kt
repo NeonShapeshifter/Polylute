@@ -90,6 +90,7 @@ fun EditMultipleSongsSheet(
         discNumber: Int?,
         replayGainTrackGainDb: String?,
         replayGainAlbumGainDb: String?,
+        date: String?,
         coverArtUpdate: CoverArtUpdate?
     ) -> Unit
 ) {
@@ -124,7 +125,7 @@ fun EditMultipleSongsSheet(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun EditMultipleSongsContent(
+internal fun EditMultipleSongsContent(
     songs: ImmutableList<Song>,
     onDismiss: () -> Unit,
     onSave: (
@@ -140,6 +141,7 @@ private fun EditMultipleSongsContent(
         discNumber: Int?,
         replayGainTrackGainDb: String?,
         replayGainAlbumGainDb: String?,
+        date: String?,
         coverArtUpdate: CoverArtUpdate?
     ) -> Unit,
 ) {
@@ -163,6 +165,7 @@ private fun EditMultipleSongsContent(
     var discNumber by remember { mutableStateOf<String?>(null) }
     var replayGainTrackGainDb by remember { mutableStateOf<String?>(null) }
     var replayGainAlbumGainDb by remember { mutableStateOf<String?>(null) }
+    var date by remember { mutableStateOf<String?>(null) }
     var coverArtUpdate by remember { mutableStateOf<CoverArtUpdate?>(null) }
 
     var coverArtPreview by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -364,6 +367,21 @@ private fun EditMultipleSongsContent(
                 }
 
                 item {
+                    // B57 1.3: left empty it changes nothing; typed, it is written to every selected file's date tag.
+                    BatchEditField(
+                        value = date ?: "",
+                        onValueChange = { date = it.ifBlank { null } },
+                        label = stringResource(R.string.song_field_date),
+                        placeholder = stringResource(R.string.batch_edit_optional),
+                        icon = Icons.Rounded.Category,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        textFieldColors = textFieldColors,
+                        textFieldShape = textFieldShape,
+                        keyboardType = KeyboardType.Number
+                    )
+                }
+
+                item {
                     BatchEditField(
                         value = composer ?: "",
                         onValueChange = { composer = it.ifBlank { null } },
@@ -449,6 +467,7 @@ private fun EditMultipleSongsContent(
                                     discNumber?.toIntOrNull(),
                                     replayGainTrackGainDb,
                                     replayGainAlbumGainDb,
+                                    date,
                                     coverArtUpdate
                                 )
                             },

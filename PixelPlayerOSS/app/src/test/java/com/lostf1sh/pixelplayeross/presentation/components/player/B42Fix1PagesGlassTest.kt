@@ -191,7 +191,7 @@ open class B42Fix1PagesGlassTest {
                 song = current, isFavorite = false, onToggleFavorite = {}, onDismiss = {}, onPlaySong = {}, onAddToQueue = {}, onAddNextToQueue = {},
                 onAddToPlayList = {}, onDeleteFromDevice = { _, _, _ -> }, onNavigateToAlbum = {}, onNavigateToArtist = {}, onNavigateToGenre = {},
                 onViewTrackDetails = {}, onViewCredits = {},
-                onEditSong = { _, _, _, _, _, _, _, _, _, _, _, _ -> },
+                onEditSong = { _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
                 removeFromListTrigger = {}, songInfoViewModel = infoViewModel, presentation = SongOptionsPresentation.PAGE,
             )
         },

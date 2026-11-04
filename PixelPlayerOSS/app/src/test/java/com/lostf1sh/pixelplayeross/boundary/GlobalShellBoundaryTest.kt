@@ -32,7 +32,7 @@ class GlobalShellBoundaryTest {
         // reserved row". Until 14.0H that was expressed as the first LazyColumn item; Home is now
         // hosted by a retained Column (its scroll range is about one viewport and its sections are
         // bounded), so the same property is the first entry of the section list that host renders.
-        assertThat(home).contains("add(\"home_title\" to secHomeTitle)")
+        assertThat(home.indexOf("DapBrandHeader(")).isLessThan(home.indexOf("if(!loaded)"))
         assertThat(home).contains(".verticalScroll(rememberScrollState())")
     }
 
@@ -43,8 +43,8 @@ class GlobalShellBoundaryTest {
         // the gutter. It is now the title's trailing icon button, so it scrolls with the title and
         // is below the status-bar inset the page already carries. What this still guards: a gear
         // glyph, the DS icon button (full 48 dp target), and no reserved top-bar row (see above).
-        assertThat(home).contains("kind = DapIconKind.Gear")
-        assertThat(home).contains("trailing = {\n                        DapIconButton(")
+        assertThat(home.replace(Regex("\\s+"), "")).contains("DapIconButton(DapIconKind.Gear")
+        assertThat(home.substringAfter("DapBrandHeader(").substringBefore("Spacer(")).contains("trailing={")
         assertThat(home).doesNotContain("DapOverlayAction(")
     }
 

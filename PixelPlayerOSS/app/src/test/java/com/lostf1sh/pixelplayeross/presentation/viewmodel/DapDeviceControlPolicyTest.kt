@@ -15,21 +15,21 @@ class DapDeviceControlPolicyTest {
             DapDeviceControlPolicy.shouldKeepScreenOn(
                 DAP_SCREEN_TIMEOUT_NEVER_WHILE_PLAYING,
                 isPlaying = true,
-                playerVisible = true,
+                dapMode = true,
             )
         )
         assertFalse(
             DapDeviceControlPolicy.shouldKeepScreenOn(
                 DAP_SCREEN_TIMEOUT_NEVER_WHILE_PLAYING,
                 isPlaying = false,
-                playerVisible = true,
+                dapMode = true,
             )
         )
     }
 
     @Test
     fun `ordinary timeout never holds screen awake`() {
-        assertFalse(DapDeviceControlPolicy.shouldKeepScreenOn(60_000L, isPlaying = true, playerVisible = true))
+        assertFalse(DapDeviceControlPolicy.shouldKeepScreenOn(60_000L, isPlaying = true, dapMode = true))
     }
 
     @Test

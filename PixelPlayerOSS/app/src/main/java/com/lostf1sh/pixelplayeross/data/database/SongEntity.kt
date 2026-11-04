@@ -165,7 +165,9 @@ data class SongEntity(
 
     @ColumnInfo(name = "mb_recording_id") val mbRecordingId: String? = null,
     @ColumnInfo(name = "mb_release_id") val mbReleaseId: String? = null,
-    @ColumnInfo(name = "mb_artist_id") val mbArtistId: String? = null
+    @ColumnInfo(name = "mb_artist_id") val mbArtistId: String? = null,
+    @ColumnInfo(name = "mb_release_group_id") val mbReleaseGroupId: String? = null,
+    @ColumnInfo(name = "mb_album_artist_id") val mbAlbumArtistId: String? = null,
 )
 
 private fun SongEntity.toSongInternal(
@@ -205,7 +207,8 @@ private fun SongEntity.toSongInternal(
         year = this.year,
         mimeType = this.mimeType,
         bitrate = this.bitrate,
-        sampleRate = this.sampleRate
+        sampleRate = this.sampleRate,
+        musicBrainzIds = com.lostf1sh.pixelplayeross.data.model.MusicBrainzIds(mbRecordingId, mbReleaseId, mbReleaseGroupId, mbArtistId, mbAlbumArtistId),
     )
 }
 
@@ -294,7 +297,12 @@ fun Song.toEntity(filePathFromMediaStore: String, parentDirFromMediaStore: Strin
         mimeType = this.mimeType,
         bitrate = this.bitrate,
         sampleRate = this.sampleRate,
-        sourceType = SourceType.LOCAL
+        sourceType = SourceType.LOCAL,
+        mbRecordingId = musicBrainzIds.recording,
+        mbReleaseId = musicBrainzIds.release,
+        mbReleaseGroupId = musicBrainzIds.releaseGroup,
+        mbArtistId = musicBrainzIds.artist,
+        mbAlbumArtistId = musicBrainzIds.albumArtist,
     )
 }
 
@@ -331,6 +339,11 @@ fun Song.toEntityWithoutPaths(): SongEntity {
         mimeType = this.mimeType,
         bitrate = this.bitrate,
         sampleRate = this.sampleRate,
-        sourceType = SourceType.LOCAL
+        sourceType = SourceType.LOCAL,
+        mbRecordingId = musicBrainzIds.recording,
+        mbReleaseId = musicBrainzIds.release,
+        mbReleaseGroupId = musicBrainzIds.releaseGroup,
+        mbArtistId = musicBrainzIds.artist,
+        mbAlbumArtistId = musicBrainzIds.albumArtist,
     )
 }

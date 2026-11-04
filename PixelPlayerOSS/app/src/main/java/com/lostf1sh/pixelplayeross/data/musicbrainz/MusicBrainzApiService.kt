@@ -27,10 +27,40 @@ data class MusicBrainzMatch(
     val disambiguation: String?
 )
 
+/** A release the search found, enough for the listener to choose between several. */
+data class MusicBrainzReleaseCandidate(
+    val releaseId: String,
+    val title: String,
+    val artist: String,
+    val date: String?,
+    val trackCount: Int,
+    val country: String?,
+    val disambiguation: String?,
+    val score: Int,
+)
+
+data class MusicBrainzReleaseTrack(val disc: Int, val position: Int, val title: String, val recordingId: String?)
+
+/** One release as the album editor needs it: the album-level facts and every track. */
+data class MusicBrainzRelease(
+    val releaseId: String,
+    val title: String,
+    val artist: String,
+    val date: String?,
+    val genres: List<String>,
+    val tracks: List<MusicBrainzReleaseTrack>,
+)
+
+/** What the album editor asks of MusicBrainz; the app's client implements it and tests fake it (no real request). */
+interface MusicBrainzReleaseSource {
+    suspend fun searchReleases(album: String, artist: String): List<MusicBrainzReleaseCandidate>
+    suspend fun lookupRelease(releaseId: String): MusicBrainzRelease?
+}
+
 @Singleton
 class MusicBrainzApiService @Inject constructor(
     baseClient: OkHttpClient
-) {
+) : MusicBrainzReleaseSource {
     private val client = baseClient.newBuilder()
         .addInterceptor { chain ->
             chain.proceed(
@@ -49,13 +79,7 @@ class MusicBrainzApiService @Inject constructor(
         artist: String,
         album: String?,
         durationMs: Long?
-    ): List<MusicBrainzMatch> = requestMutex.withLock {
-        val elapsed = SystemClock.elapsedRealtime() - lastRequestStartedAt
-        if (elapsed in 0 until MIN_REQUEST_INTERVAL_MS) {
-            delay(MIN_REQUEST_INTERVAL_MS - elapsed)
-        }
-        lastRequestStartedAt = SystemClock.elapsedRealtime()
-
+    ): List<MusicBrainzMatch> = rateLimited {
         val query = buildRecordingQuery(title, artist, album)
         val url = API_ROOT.toHttpUrl().newBuilder()
             .addPathSegment("recording")
@@ -79,6 +103,46 @@ class MusicBrainzApiService @Inject constructor(
         }
     }
 
+    /** One request at a time, at most one a second (MusicBrainz's rule), for every call this client makes. */
+    private suspend fun <T> rateLimited(block: suspend () -> T): T = requestMutex.withLock {
+        val elapsed = SystemClock.elapsedRealtime() - lastRequestStartedAt
+        if (elapsed in 0 until MIN_REQUEST_INTERVAL_MS) {
+            delay(MIN_REQUEST_INTERVAL_MS - elapsed)
+        }
+        lastRequestStartedAt = SystemClock.elapsedRealtime()
+        block()
+    }
+
+    /** B57 1.3: releases called [album] by [artist], best first, for the album editor's "Fill from MusicBrainz". */
+    override suspend fun searchReleases(album: String, artist: String): List<MusicBrainzReleaseCandidate> = rateLimited {
+        val terms = mutableListOf("release:\"${escapeLucene(album)}\"")
+        artist.takeIf { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }?.let { terms += "artist:\"${escapeLucene(it)}\"" }
+        val url = API_ROOT.toHttpUrl().newBuilder()
+            .addPathSegment("release")
+            .addQueryParameter("query", terms.joinToString(" AND "))
+            .addQueryParameter("fmt", "json")
+            .addQueryParameter("limit", MAX_RESULTS.toString())
+            .build()
+        client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("MusicBrainz returned HTTP ${response.code}")
+            parseReleaseSearch(JSONObject(response.body.string()))
+        }
+    }
+
+    /** B57 1.3: one release with its tracks, by MBID. */
+    override suspend fun lookupRelease(releaseId: String): MusicBrainzRelease? = rateLimited {
+        val url = API_ROOT.toHttpUrl().newBuilder()
+            .addPathSegment("release").addPathSegment(releaseId)
+            .addQueryParameter("inc", "recordings+artist-credits+genres+release-groups")
+            .addQueryParameter("fmt", "json")
+            .build()
+        client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+            if (response.code == 404) return@use null
+            if (!response.isSuccessful) throw IOException("MusicBrainz returned HTTP ${response.code}")
+            parseRelease(JSONObject(response.body.string()))
+        }
+    }
+
     companion object {
         private const val API_ROOT = "https://musicbrainz.org/ws/2/"
         private const val MAX_RESULTS = 8
@@ -92,6 +156,53 @@ class MusicBrainzApiService @Inject constructor(
             album?.takeIf { it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true) }
                 ?.let { terms += "release:\"${escapeLucene(it)}\"" }
             return terms.joinToString(" AND ")
+        }
+
+        internal fun parseReleaseSearch(json: JSONObject): List<MusicBrainzReleaseCandidate> {
+            val releases = json.optJSONArray("releases") ?: return emptyList()
+            return (0 until releases.length()).mapNotNull { index ->
+                val release = releases.optJSONObject(index) ?: return@mapNotNull null
+                val id = release.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                MusicBrainzReleaseCandidate(
+                    releaseId = id,
+                    title = release.optString("title"),
+                    artist = artistCreditName(release.optJSONArray("artist-credit")),
+                    date = release.optString("date").takeIf { it.isNotBlank() },
+                    trackCount = release.optInt("track-count", 0),
+                    country = release.optString("country").takeIf { it.isNotBlank() },
+                    disambiguation = release.optString("disambiguation").takeIf { it.isNotBlank() },
+                    score = release.optInt("score", 0),
+                )
+            }.sortedByDescending { it.score }
+        }
+
+        internal fun parseRelease(json: JSONObject): MusicBrainzRelease? {
+            val id = json.optString("id").takeIf { it.isNotBlank() } ?: return null
+            val media = json.optJSONArray("media") ?: JSONArray()
+            val tracks = buildList {
+                for (m in 0 until media.length()) {
+                    val medium = media.optJSONObject(m) ?: continue
+                    val disc = medium.optInt("position", m + 1)
+                    val list = medium.optJSONArray("tracks") ?: continue
+                    for (t in 0 until list.length()) {
+                        val track = list.optJSONObject(t) ?: continue
+                        val title = track.optString("title").ifBlank { track.optJSONObject("recording")?.optString("title").orEmpty() }
+                        if (title.isBlank()) continue
+                        add(MusicBrainzReleaseTrack(disc = disc, position = track.optInt("position", t + 1), title = title, recordingId = track.optJSONObject("recording")?.optString("id")?.takeIf { it.isNotBlank() }))
+                    }
+                }
+            }
+            val genreArray = json.optJSONArray("genres") ?: json.optJSONObject("release-group")?.optJSONArray("genres") ?: JSONArray()
+            val genres = (0 until genreArray.length()).mapNotNull { genreArray.optJSONObject(it) }
+                .sortedByDescending { it.optInt("count", 0) }.mapNotNull { it.optString("name").takeIf { name -> name.isNotBlank() } }
+            return MusicBrainzRelease(
+                releaseId = id,
+                title = json.optString("title"),
+                artist = artistCreditName(json.optJSONArray("artist-credit")),
+                date = json.optString("date").takeIf { it.isNotBlank() },
+                genres = genres,
+                tracks = tracks,
+            )
         }
 
         private fun escapeLucene(value: String): String = buildString(value.length) {

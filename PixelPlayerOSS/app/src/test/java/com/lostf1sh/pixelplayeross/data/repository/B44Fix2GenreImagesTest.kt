@@ -114,7 +114,7 @@ class B44Fix2GenreImagesTest {
         io.mockk.every { preferences.blockedDirectoriesFlow } returns kotlinx.coroutines.flow.flowOf(emptySet())
         db.musicDao().insertArtistsIgnoreConflicts(listOf(ArtistEntity(1, "Artist", 1)))
         db.musicDao().insertAlbumsIgnoreConflicts(listOf(AlbumEntity(10, "Album", "Artist", 1, null, 1, 0, 2026)))
-        val song = com.lostf1sh.pixelplayeross.data.model.Song.emptySong().copy(id = "1", title = "Song", artistId = 1, albumId = 10, genre = "Rock/Pop, rock pop")
+        val song = com.lostf1sh.pixelplayeross.data.model.Song.emptySong().copy(id = "1", title = "Song", artistId = 1, albumId = 10, genre = "Rock Pop, rock pop")
         db.musicDao().insertSongsIgnoreConflicts(listOf(song.toEntity("/music/1.flac", "/music")))
         val music = MusicRepositoryImpl(context, preferences, io.mockk.mockk(relaxed = true), db.searchHistoryDao(), db.musicDao(),
             io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true), db.favoritesDao(), io.mockk.mockk(relaxed = true),
@@ -128,9 +128,9 @@ class B44Fix2GenreImagesTest {
             assertThat(genres).hasSize(1)
             assertThat(genres.single().id).isEqualTo("rock_pop")
             val type = com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailViewModel::class.java
-            viewModel = type.constructors.single { it.parameterCount == 4 }.newInstance(music,
+            viewModel = type.constructors.single { it.parameterCount == 5 }.newInstance(music,
                 androidx.lifecycle.SavedStateHandle(mapOf("genreId" to "rock_pop")),
-                com.lostf1sh.pixelplayeross.presentation.viewmodel.TestDispatcherProvider(kotlinx.coroutines.Dispatchers.Unconfined), images) as com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailViewModel
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.TestDispatcherProvider(kotlinx.coroutines.Dispatchers.Unconfined), images, io.mockk.mockk<com.lostf1sh.pixelplayeross.data.stats.LedgerProvider>(relaxed = true)) as com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailViewModel
             kotlinx.coroutines.withTimeout(5000) { viewModel.uiState.first { image(it.genre) == chosen } }
             call(images, "removeImage", "rock_pop")
             kotlinx.coroutines.withTimeout(5000) { viewModel.uiState.first { it.genre != null && image(it.genre) == null } }

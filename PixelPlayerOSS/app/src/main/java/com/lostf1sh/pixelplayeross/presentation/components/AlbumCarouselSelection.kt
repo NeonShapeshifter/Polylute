@@ -25,6 +25,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.yield
 import kotlin.coroutines.cancellation.CancellationException
+import timber.log.Timber
 
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
 import androidx.compose.ui.unit.dp
@@ -59,7 +60,12 @@ fun AlbumCarouselSection(
      * expand is handed the current one: it must jump there, not scroll a distant index at the start of the sheet's
      * own animation, and it must not answer its own resync with a playback command.
      */
-    isOnScreen: () -> Boolean = { true }
+    isOnScreen: () -> Boolean = { true },
+    /**
+     * B56-7.2: drawn over a page's still cover, inside the page (so the carousel's rounded mask and a swipe carry it). [isCurrent] is true on the one page that shows the song that is
+     * playing; the animated cover is drawn there and nowhere else.
+     */
+    pageOverlay: @Composable BoxScope.(song: Song, isCurrent: Boolean) -> Unit = { _, _ -> }
 ) {
     if (queue.isEmpty()) return
 
@@ -179,6 +185,18 @@ fun AlbumCarouselSection(
             programmaticScrollInProgress = false
         }
         lastSettledSongId = currentSong?.id
+        // B56-1.1: where the cover ended up for the song that is playing, so a cover that stays on another image can be told from the log (#47).
+        val target = queue.getOrNull(effectiveTargetIndex)
+        Timber.tag("CoverBind").d(
+            "COVER_BIND song=%s art=%s page=%d target=%d of=%d rest=%b targetSong=%s",
+            currentSong?.id,
+            target?.albumArtUriString?.takeLast(48),
+            carouselState.currentItem,
+            effectiveTargetIndex,
+            queue.size,
+            carouselState.isAtRestOn(effectiveTargetIndex),
+            target?.id,
+        )
     }
 
     val hapticFeedback = LocalHapticFeedback.current
@@ -251,6 +269,7 @@ fun AlbumCarouselSection(
                         targetSize = targetSize,
                         contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                     )
+                    pageOverlay(song, isFocusedItem && song.id == currentSong?.id)
                 }
             }
         )

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_recent_artists">Senast spelade artister</string>
+    <string name="home_suggested_albums">Albumförslag</string>
+    <string name="home_suggestions_library_caption">Senast tillagda i ditt bibliotek</string>
+    <string name="listening_duration_hours_minutes">%1$dh %2$02dmin</string>
+    <string name="listening_duration_hours">%1$dh</string>
+    <string name="listening_duration_minutes">%1$dmin</string>
+    <string name="listening_duration_seconds">%1$ds</string>
+    <string name="home_suggestions_empty_body">Fler förslag visas när ditt bibliotek och din lyssningshistorik växer.</string>
+</resources>

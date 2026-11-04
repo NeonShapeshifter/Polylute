@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenu
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,7 +56,7 @@ internal fun CollectionCover(items: List<CatalogItem>, modifier: Modifier = Modi
             arts.size < 4 -> OptimizedAlbumArt(
                 uri = arts.first(),
                 title = items.first().title,
-                targetSize = coil.size.Size(128, 128),
+                targetSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(size),
                 modifier = Modifier.fillMaxSize(),
             )
             else -> Column(Modifier.fillMaxSize()) {
@@ -67,7 +67,7 @@ internal fun CollectionCover(items: List<CatalogItem>, modifier: Modifier = Modi
                                 OptimizedAlbumArt(
                                     uri = uri,
                                     title = "",
-                                    targetSize = coil.size.Size(64, 64),
+                                    targetSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(size / 2),
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -141,9 +141,9 @@ internal fun AutoCollectionRow(
                         onClick = { menuOpen = true },
                         description = stringResource(R.string.playlists_collection_options, name),
                     )
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.playlists_hide)) },
+                    DapMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DapMenuItem(
+                            text = stringResource(R.string.playlists_hide),
                             onClick = {
                                 menuOpen = false
                                 onHide()

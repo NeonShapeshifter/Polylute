@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="edit_song_unsupported_format">No se pueden editar las etiquetas de este tipo de archivo.</string>
+    <string name="metadata_saved_without_cover">Guardado, sin la portada: %1$s</string>
+    <string name="cover_skip_not_supported">este tipo de archivo no admite imágenes</string>
+    <string name="cover_skip_writer_refused">el escritor de etiquetas rechazó la imagen</string>
+    <string name="cover_skip_unreadable">la imagen no tiene datos</string>
+    <string name="batch_edit_cover_skipped" tools:ignore="PluralsCandidate">No se pudo escribir la portada en %1$d archivos.</string>
+</resources>

@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="info_entry_settings_sub">Hela biblioteket. Sök efter information, välj och spara den för användning offline.</string>
+    <plurals name="info_scope_library">
+        <item quantity="one">Hela biblioteket · %1$d låt</item>
+        <item quantity="other">Hela biblioteket · %1$d låtar</item>
+    </plurals>
+    <string name="info_scope_album">Album · %1$s</string>
+    <string name="info_scope_artist">Artist · %1$s</string>
+    <plurals name="info_scope_selection">
+        <item quantity="one">%1$d vald låt</item>
+        <item quantity="other">%1$d valda låtar</item>
+    </plurals>
+    <string name="info_step_find">Sök</string>
+    <string name="info_step_choose">Välj</string>
+    <string name="info_step_download">Hämta</string>
+    <string name="info_find_again">Sök igen</string>
+    <string name="info_wifi_only">Endast via Wi-Fi</string>
+    <string name="info_runs_in_background">Du kan stänga detta. Arbetet fortsätter i bakgrunden.</string>
+    <string name="info_preparing">Förbereder listan…</string>
+    <string name="info_preparing_note">Du kan redan välja bland tidigare resultat.</string>
+    <string name="info_find_queued">Söker när listan är klar</string>
+    <string name="info_searching">Söker</string>
+    <string name="info_choose_while_searching">Du kan välja medan sökningen pågår. Det du öppnar eller spelar söks först.</string>
+    <string name="info_checked_today">Kontrollerat i dag</string>
+    <plurals name="info_checked_days_ago">
+        <item quantity="one">Kontrollerat för %1$d dag sedan</item>
+        <item quantity="other">Kontrollerat för %1$d dagar sedan</item>
+    </plurals>
+    <string name="info_up_to_date">aktuellt</string>
+    <string name="info_result_available">Tillgängliga</string>
+    <string name="info_result_local">Finns redan i dina filer</string>
+    <string name="info_result_missing">Hittades inte</string>
+    <string name="info_result_failed">Kunde inte kontrolleras</string>
+    <string name="info_could_not_check_hint">Det beror oftast på anslutningen eller en källa som inte svarar.</string>
+    <string name="info_retry_n">Försök igen med %1$d</string>
+    <string name="info_empty_title">Det finns inga låtar här</string>
+    <string name="info_empty_body">Lägg till musik i biblioteket och kom tillbaka för att söka efter information.</string>
+    <plurals name="info_kinds_selected">
+        <item quantity="one">%1$d av %2$d typ</item>
+        <item quantity="other">%1$d av %2$d typer</item>
+    </plurals>
+    <string name="info_kind_available">%1$d av %2$d</string>
+    <plurals name="info_kind_chosen">
+        <item quantity="one">%1$d av %2$d vald</item>
+        <item quantity="other">%1$d av %2$d valda</item>
+    </plurals>
+    <plurals name="info_kind_saved">
+        <item quantity="one">%1$d sparad</item>
+        <item quantity="other">%1$d sparade</item>
+    </plurals>
+    <plurals name="info_kind_queued">
+        <item quantity="one">%1$d i kö</item>
+        <item quantity="other">%1$d i kö</item>
+    </plurals>
+    <string name="info_kind_to_save">%1$d kvar att spara</string>
+    <string name="info_no_size">storlek saknas</string>
+    <string name="info_no_size_note">Källorna anger ingen storlek för låttexter och andra texter. De tar mycket lite plats.</string>
+    <string name="info_choose_by_group">Välj efter artist eller album</string>
+    <string name="info_by_group_title">Efter artist eller album</string>
+    <string name="info_back_to_summary">Tillbaka till sammanfattningen</string>
+    <plurals name="info_artists_count">
+        <item quantity="one">%1$d artist</item>
+        <item quantity="other">%1$d artister</item>
+    </plurals>
+    <plurals name="info_group_chosen">
+        <item quantity="one">%1$d av %2$d valt</item>
+        <item quantity="other">%1$d av %2$d valda</item>
+    </plurals>
+    <string name="info_group_select_all">Välj allt av %1$s</string>
+    <string name="info_nothing_available">Inget tillgängligt</string>
+    <string name="info_no_match">Inget matchar ”%1$s”</string>
+    <string name="info_no_match_hint">Sök efter artistens eller albumets namn. Låttexterna finns under varje album.</string>
+    <string name="info_clear_search">Rensa sökning</string>
+    <string name="info_item_photo">Artistfoto</string>
+    <string name="info_item_bio">Biografi</string>
+    <string name="info_item_cover">Omslag</string>
+    <string name="info_item_album_desc">Albumbeskrivning</string>
+    <string name="info_item_lyrics">Låttext · %1$s</string>
+    <string name="info_queued">I kö</string>
+    <string name="info_downloading_item">Hämtar…</string>
+    <string name="info_will_retry">Försöker igen om %1$s</string>
+    <string name="info_deleted_by_you">Raderad av dig · tillgänglig</string>
+    <string name="info_at_least">minst %1$s</string>
+    <string name="info_new_and_saved">%1$s · %2$s</string>
+    <string name="info_downloading">Hämtar</string>
+    <string name="info_paused">Pausad</string>
+    <string name="info_paused_note">Inget hämtas förrän du fortsätter. Sökningen fortsätter.</string>
+    <string name="info_waiting_wifi">Väntar på Wi-Fi</string>
+    <string name="info_waiting_wifi_note">Fortsätter när du ansluter till Wi-Fi. Mobildata används aldrig.</string>
+    <string name="info_offline">Ingen internetanslutning</string>
+    <string name="info_offline_note">Fortsätter automatiskt när anslutningen är tillbaka.</string>
+    <string name="info_source_wait">%1$s bad oss vänta · %2$s om %3$d s</string>
+    <string name="info_source_wait_note">Resten fortsätter. Du behöver inte göra något.</string>
+    <string name="info_source_down">%1$s svarar inte. Nya försök görs automatiskt, med allt längre mellanrum.</string>
+    <string name="info_queue_global">Inkluderar sådant som begärts från andra skärmar.</string>
+    <string name="info_done">Klart</string>
+    <plurals name="info_done_note">
+        <item quantity="one">%1$d sparad på den här telefonen: %2$s. Den fungerar nu offline.</item>
+        <item quantity="other">%1$d sparade på den här telefonen: %2$s. De fungerar nu offline.</item>
+    </plurals>
+    <string name="info_ok">OK</string>
+    <string name="info_error_find">Kunde inte starta sökningen.</string>
+    <string name="info_error_select">Kunde inte spara ditt val.</string>
+    <string name="info_error_delete">Kunde inte radera.</string>
+    <string name="info_error_pause">Kunde inte pausa.</string>
+    <string name="info_error_resume">Kunde inte fortsätta.</string>
+    <string name="info_choice_kept">Ditt val finns kvar.</string>
+    <string name="info_retry">Försök igen</string>
+    <string name="music_info_refreshing">Uppdaterar information…</string>
+    <string name="music_info_refreshed">Informationen har uppdaterats</string>
+    <string name="music_info_refresh_failed">Kunde inte uppdatera. Kontrollera anslutningen.</string>
+    <string name="music_info_delete_failed">Kunde inte radera informationen.</string>
+    <string name="info_deleting">Raderar %1$d…</string>
+    <plurals name="info_deleted_undo">
+        <item quantity="one">Raderade %1$d. Den hämtas inte igen automatiskt.</item>
+        <item quantity="other">Raderade %1$d. De hämtas inte igen automatiskt.</item>
+    </plurals>
+    <string name="music_info_deleted_page">Informationen för ”%1$s” har raderats.</string>
+    <string name="info_undo">Ångra</string>
+    <string name="setcat_music_info_nothing_saved">Inget sparat</string>
+    <string name="setcat_delete_confirm_title">Radera all hämtad information?</string>
+    <string name="setcat_delete_confirm_what">Hämtade foton, omslag, biografier, beskrivningar och låttexter: %1$s.</string>
+    <string name="setcat_delete_confirm_local">Det som redan fanns i dina musikfiler behålls.</string>
+    <string name="setcat_delete_confirm_lasting">Inget hämtas igen förrän du ber om det.</string>
+    <string name="common_cancel">Avbryt</string>
+    <string name="common_delete">Radera</string>
+    <string name="setcat_music_info_auto">Automatiskt när du öppnar album och artister</string>
+    <string name="setcat_lyrics_pointer">Låttexter från nätet aktiveras i Inställningar › Låttexter.</string>
+    <string name="music_info_read_more">Läs mer</string>
+    <string name="music_info_source_line">Från Wikipedia · %1$s</string>
+    <string name="credits_group_text">Text</string>
+    <string name="credits_group_photo">Artistfoto</string>
+    <string name="credits_group_id">Identifiering</string>
+    <string name="credits_musicbrainz_id">Artist och album identifierade med MusicBrainz.</string>
+    <string name="music_info_read_less">Läs mindre</string>
+    <string name="info_download_n">Hämta %1$d</string>
+    <string name="info_cancel">Avbryt</string>
+    <string name="info_cancel_note">Avbryt tömmer den väntande kön. Sparade objekt behålls. Sökningen fortsätter.</string>
+    <plurals name="info_cancelled_undo">
+        <item quantity="one">Avbröt %1$d. Redan sparade objekt behålls.</item>
+        <item quantity="other">Avbröt %1$d. Redan sparade objekt behålls.</item>
+    </plurals>
+    <string name="info_error_cancel">Kunde inte avbryta.</string>
+    <string name="info_error_undo">Kunde inte ångra.</string>
+    <string name="info_step_done">klart</string>
+    <string name="info_step_current">aktuellt steg</string>
+    <string name="info_step_pending">väntar</string>
+    <string name="info_expanded">Utökat</string>
+    <string name="info_collapsed">Hopfällt</string>
+    <string name="info_available_pending">%1$s · %2$s</string>
+    <string name="info_so_far">hittills</string>
+    <string name="info_none_chosen">inget valt</string>
+    <plurals name="info_retrying_count">
+        <item quantity="one">%1$d försöker igen</item>
+        <item quantity="other">%1$d försöker igen</item>
+    </plurals>
+    <string name="info_size_not_given">storlek inte angiven</string>
+    <string name="info_find_waiting_wifi_note">Sökningen fortsätter när du ansluter till Wi-Fi. Mobildata används aldrig.</string>
+    <string name="info_find_offline_note">Fortsätter automatiskt när anslutningen är tillbaka. Du kan redan välja bland tidigare resultat.</string>
+    <string name="info_seconds">%1$d s</string>
+    <string name="info_minutes">%1$d min</string>
+    <string name="info_scope_counts">%1$s · %2$s · %3$s</string>
+    <string name="music_info_source_musicbrainz">Från MusicBrainz · CC0</string>
+    <string name="music_info_from_source">Från %1$s</string>
+    <string name="info_deleting_all">Raderar hämtad information…</string>
+    <string name="info_undone">Åtgärden har ångrats</string>
+    <plurals name="info_new_count">
+        <item quantity="one">%1$d ny</item>
+        <item quantity="other">%1$d nya</item>
+    </plurals>
+    <plurals name="info_available_count">
+        <item quantity="one">%1$d tillgänglig</item>
+        <item quantity="other">%1$d tillgängliga</item>
+    </plurals>
+    <plurals name="info_remaining_count">
+        <item quantity="one">%1$d kvar</item>
+        <item quantity="other">%1$d kvar</item>
+    </plurals>
+    <plurals name="info_albums_count">
+        <item quantity="one">%1$d album</item>
+        <item quantity="other">%1$d album</item>
+    </plurals>
+    <plurals name="info_songs_count">
+        <item quantity="one">%1$d låt</item>
+        <item quantity="other">%1$d låtar</item>
+    </plurals>
+    <plurals name="info_saved_count">
+        <item quantity="one">%1$d sparat</item>
+        <item quantity="other">%1$d sparade</item>
+    </plurals>
+    <string name="info_clear_selection">Rensa val</string>
+    <string name="info_all_saved">Allt sparat</string>
+    <string name="info_downloading_finishes">Den här nedladdningen slutförs</string>
+    <plurals name="info_saved_chosen">
+        <item quantity="one">%1$d sparat objekt valt</item>
+        <item quantity="other">%1$d sparade objekt valda</item>
+    </plurals>
+    <plurals name="info_on_phone">
+        <item quantity="one">%1$d på telefonen</item>
+        <item quantity="other">%1$d på telefonen</item>
+    </plurals>
+    <plurals name="info_plain_on_phone">
+        <item quantity="one">%1$d utan tidsstämplar</item>
+        <item quantity="other">%1$d utan tidsstämplar</item>
+    </plurals>
+    <plurals name="info_shared_items">
+        <item quantity="one">%1$d delas med andra</item>
+        <item quantity="other">%1$d delas med andra</item>
+    </plurals>
+    <plurals name="info_cleared_undo">
+        <item quantity="one">Valet har rensats</item>
+        <item quantity="other">Valen har rensats</item>
+    </plurals>
+    <string name="info_remove_from_queue">Ta bort ur kön</string>
+</resources>

@@ -12,6 +12,22 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 @HiltWorker
+class MusicInfoUndoWorker @AssistedInject constructor(
+    @Assisted context: Context,
+    @Assisted parameters: WorkerParameters,
+    private val downloads: MusicInfoDownloads,
+) : CoroutineWorker(context, parameters) {
+    override suspend fun doWork(): Result = try {
+        downloads.finishExpiredUndo()
+        Result.success()
+    } catch (error: Exception) {
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        timber.log.Timber.w(error, "Could not finish pending music info deletion")
+        Result.retry()
+    }
+}
+
+@HiltWorker
 class MusicInfoFindWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted parameters: WorkerParameters,

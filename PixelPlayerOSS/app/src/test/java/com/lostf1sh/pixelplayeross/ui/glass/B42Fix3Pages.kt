@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.ui.glass
 
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -261,7 +262,7 @@ internal object B42Fix3Pages {
         override fun onThemeChoiceChange(choice: DapAppearanceChoice) {}
         override fun onOpenPaletteStyle() {}
         override fun onCoverGlassMovingChange(value: Boolean) {}
-        override fun onLyricsUnderCoverChange(value: Boolean) {}
+        override fun onLyricsModeChange(value: LyricsMode) {}
         override fun onImmersiveLyricsEnabledChange(value: Boolean) {}
         override fun onImmersiveLyricsTimeoutChange(value: Long) {}
         override fun onLyricsAlignmentChange(value: String) {}

@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.components.player
 
+import com.lostf1sh.pixelplayeross.data.media.AudioCodec
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -115,12 +116,17 @@ internal fun resolveSongTechnicalIdentity(
     runtimeSampleRateHz: Int?,
     reader: AudioMetadataReader.TechnicalAudioInfo?,
 ): SongTechnicalIdentity = SongTechnicalIdentity(
-    format = sourceFormatToken(libraryMimeType)
-        ?: readerFormatToken(reader?.format)
+    // B57 2.6: the codec, by its common name, never the container. The file's own header says it (Opus or Vorbis in an .ogg, AAC or ALAC in an .m4a); failing that, what the player
+    // says it is decoding when that names a codec; failing that, a container that can hold only one codec (MP3, FLAC, WAV). An .ogg or .m4a nobody could read says nothing rather than
+    // a wrong name.
+    format = (reader?.codec ?: AudioCodec.fromRuntimeMime(runtimeMimeType) ?: AudioCodec.fromUnambiguousContainerMime(libraryMimeType) ?: AudioCodec.fromUnambiguousReaderToken(reader?.format))
+        ?.let(AudioCodec::playerLabel)
+        // a codec the player names that is not one of the seven (EAC3, AC3, DTS...) is still a codec, never decoded PCM
         ?: sourceFormatToken(runtimeMimeType),
+    // B57 2.6: the FILE's rate: its header, then the library's. The player's rate is deliberately not a source: it can be the output's (a Bluetooth or USB sink), which says nothing
+    // about the file. ([runtimeSampleRateHz] stays a parameter so callers need not change; it is ignored.)
     sampleRateHz = reader?.sampleRate?.takeIf { it > 0 }
-        ?: librarySampleRateHz?.takeIf { it > 0 }
-        ?: runtimeSampleRateHz?.takeIf { it > 0 },
+        ?: librarySampleRateHz?.takeIf { it > 0 },
     bitDepth = reader?.bitDepth?.takeIf { it > 0 },
 )
 

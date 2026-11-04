@@ -23,7 +23,8 @@ import com.lostf1sh.pixelplayeross.data.preferences.AppThemeMode
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_COVER_GLASS_MOVING
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_DAC_SHARE_ENABLED
-import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_LYRICS_UNDER_COVER
+import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_LYRICS_MODE
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_DAP_LOCK_SCREEN_ENABLED
 import com.lostf1sh.pixelplayeross.data.preferences.CarouselStyle
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_SHOW_QUEUE_HISTORY
@@ -46,9 +47,11 @@ import com.lostf1sh.pixelplayeross.data.worker.SyncProgress
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import timber.log.Timber
 
@@ -117,8 +120,14 @@ data class SettingsUiState(
     val coverThemeChoice: String = CoverThemeChoice.DARK,
     /** B41: the cover glass drifts in the full player and on the lock screen. */
     val coverGlassMoving: Boolean = DEFAULT_COVER_GLASS_MOVING,
-    /** B41: two lines of synced lyrics under the cover. */
-    val lyricsUnderCover: Boolean = DEFAULT_LYRICS_UNDER_COVER,
+    /** B56-3.4: how the lyrics show in the full player (over the cover, full page, off). */
+    val lyricsMode: LyricsMode = DEFAULT_LYRICS_MODE,
+    /** B56-7.1: "Background motion" is Lively (with [coverGlassMoving] on) instead of Gentle. */
+    val coverGlassLively: Boolean = false,
+    /** B56-7.2: "Animated covers" as the listener set it, or null while they have not (the mode's default stands: see `AnimatedCovers.effective`). */
+    val animatedCoversStored: Boolean? = null,
+    /** B57-fix1 4: the folder the animated covers are read through (Android 13+): its name, or null while there is none. */
+    val animatedCoversFolder: String? = null,
     /** Whether waking the dedicated player raises the DAP lock surface. Off unless asked for. */
     val dapLockScreenEnabled: Boolean = DEFAULT_DAP_LOCK_SCREEN_ENABLED,
     /** B39-A7: Resonance shares the DAC with other apps (the Audio page's switch). */
@@ -127,6 +136,7 @@ data class SettingsUiState(
     val resonanceLimiterEnabled: Boolean = false,
     val albumArtQuality: AlbumArtQuality = AlbumArtQuality.MEDIUM,
     val albumArtCacheLimitMb: Int = 200,
+    val folderCoversEnabled: Boolean = true,
     val tapBackgroundClosesPlayer: Boolean = false,
     val hapticsEnabled: Boolean = true,
     val immersiveLyricsEnabled: Boolean = false,
@@ -172,7 +182,7 @@ private sealed interface SettingsUiUpdate {
         val dapLockScreenEnabled: Boolean,
         val appColorSource: String,
         val coverGlassMoving: Boolean,
-        val lyricsUnderCover: Boolean,
+        val lyricsMode: LyricsMode,
         val coverThemeChoice: String,
     ) : SettingsUiUpdate
     
@@ -214,6 +224,8 @@ class SettingsViewModel @Inject constructor(
     private val dormantItemCleanup: com.lostf1sh.pixelplayeross.data.identity.DormantItemCleanup,
     private val libraryFolders: com.lostf1sh.pixelplayeross.data.library.LibraryFolderService,
     private val musicInfo: com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository,
+    private val musicInfoDownloads: com.lostf1sh.pixelplayeross.data.offline.MusicInfoDownloads,
+    private val animatedCoverFolderStore: com.lostf1sh.pixelplayeross.data.preferences.AnimatedCoverFolderStore,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -385,6 +397,15 @@ class SettingsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            themePreferencesRepository.coverGlassLivelyFlow.collect { lively -> _uiState.update { it.copy(coverGlassLively = lively) } }
+        }
+        viewModelScope.launch {
+            themePreferencesRepository.animatedCoversStoredFlow.collect { stored -> _uiState.update { it.copy(animatedCoversStored = stored) } }
+        }
+        viewModelScope.launch {
+            animatedCoverFolderStore.folder.collect { tree -> _uiState.update { it.copy(animatedCoversFolder = tree?.let(animatedCoverFolderStore::nameOf)) } }
+        }
+        viewModelScope.launch {
             userPreferencesRepository.repeatSharedSongsInShuffleFlow.collect { repeat ->
                 _uiState.update { it.copy(repeatSharedSongsInShuffle = repeat) }
             }
@@ -415,7 +436,7 @@ class SettingsViewModel @Inject constructor(
                 themePreferencesRepository.appColorSourceFlow,
                 // Appended: the indices are literals.
                 themePreferencesRepository.coverGlassMovingFlow,
-                userPreferencesRepository.lyricsUnderCoverFlow,
+                userPreferencesRepository.lyricsModeFlow,
                 themePreferencesRepository.coverThemeChoiceFlow,
             ) { values ->
                 SettingsUiUpdate.Group1(
@@ -437,7 +458,7 @@ class SettingsViewModel @Inject constructor(
                     dapLockScreenEnabled = values[15] as Boolean,
                     appColorSource = values[16] as String,
                     coverGlassMoving = values[17] as Boolean,
-                    lyricsUnderCover = values[18] as Boolean,
+                    lyricsMode = values[18] as LyricsMode,
                     coverThemeChoice = values[19] as String,
                 )
             }.collect { update ->
@@ -461,7 +482,7 @@ class SettingsViewModel @Inject constructor(
                         dapLockScreenEnabled = update.dapLockScreenEnabled,
                         appColorSource = update.appColorSource,
                         coverGlassMoving = update.coverGlassMoving,
-                        lyricsUnderCover = update.lyricsUnderCover,
+                        lyricsMode = update.lyricsMode,
                         coverThemeChoice = update.coverThemeChoice,
                     )
                 }
@@ -578,6 +599,11 @@ class SettingsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            userPreferencesRepository.folderCoversEnabledFlow.collect { enabled ->
+                _uiState.update { it.copy(folderCoversEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
             userPreferencesRepository.musicInfoCoversEnabledFlow.collect { enabled ->
                 _uiState.update { it.copy(musicInfoCoversEnabled = enabled) }
             }
@@ -599,8 +625,8 @@ class SettingsViewModel @Inject constructor(
         }
         // how much is kept: read when the page is opened and whenever a cover arrives or the data is deleted
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            musicInfo.coverVersion.collect {
-                val used = musicInfo.usedBytes()
+            kotlinx.coroutines.flow.combine(musicInfo.coverVersion, musicInfoDownloads.dao.downloadProgress()) { _, _ -> Unit }.collect {
+                val used = musicInfoDownloads.downloadedBytes()
                 _uiState.update { it.copy(musicInfoUsedBytes = used) }
             }
         }
@@ -848,10 +874,40 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** B41: "Lyrics under the cover". */
-    fun setLyricsUnderCover(enabled: Boolean) {
+    /** B56-7.2: "Animated covers". */
+    fun setAnimatedCovers(enabled: Boolean) {
+        viewModelScope.launch { themePreferencesRepository.setAnimatedCovers(enabled) }
+    }
+
+    /**
+     * B57-fix1 4: the system folder picker's answer, when the listener turned "Animated covers" on (or chose Change). A folder that is kept turns the feature on; cancelling, or a folder the
+     * system or the app cannot use, changes nothing: the feature stays as it was (off, when it was the first time).
+     */
+    fun onAnimatedCoverFolderPicked(uri: android.net.Uri?, flags: Int) {
         viewModelScope.launch {
-            userPreferencesRepository.setLyricsUnderCover(enabled)
+            // a cancelled picker (no uri) keeps nothing, and then nothing is turned on
+            val kept = uri != null && withContext(Dispatchers.IO) { animatedCoverFolderStore.choose(uri, flags) }
+            if (com.lostf1sh.pixelplayeross.data.preferences.AnimatedCovers.enabledAfterPicker(kept)) themePreferencesRepository.setAnimatedCovers(true)
+        }
+    }
+
+    /** B57-fix1 4: "Remove": the permission is released and the feature goes off. */
+    fun removeAnimatedCoverFolder() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { animatedCoverFolderStore.remove() }
+            themePreferencesRepository.setAnimatedCovers(false)
+        }
+    }
+
+    /** B56-7.1: "Background motion": still, gentle or lively. */
+    fun setBackgroundMotion(motion: com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion) {
+        viewModelScope.launch { themePreferencesRepository.setBackgroundMotion(motion) }
+    }
+
+    /** B56-3.4: how the lyrics show in the full player. */
+    fun setLyricsMode(mode: LyricsMode) {
+        viewModelScope.launch {
+            userPreferencesRepository.setLyricsMode(mode)
         }
     }
 
@@ -997,6 +1053,10 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setFolderCoversEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.setFolderCoversEnabled(enabled) }
+    }
+
     fun setMusicInfoCoversEnabled(enabled: Boolean) {
         viewModelScope.launch { userPreferencesRepository.setMusicInfoCoversEnabled(enabled) }
     }
@@ -1013,12 +1073,30 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { userPreferencesRepository.setMusicInfoCacheLimitMb(megabytes) }
     }
 
-    /** "Delete downloaded data" (Settings, Library): every picture and description that was downloaded. */
+    private var pendingMusicInfoDelete: com.lostf1sh.pixelplayeross.data.offline.InfoUndo? = null
+
+    /** Settings uses the same durable marks, lyrics cleanup and delayed deletion as chosen items. */
     fun deleteMusicInfo(onDone: (freedBytes: Long) -> Unit = {}) {
+        deleteMusicInfoResult { it.onSuccess(onDone) }
+    }
+
+    fun deleteMusicInfoResult(onDone: (Result<Long>) -> Unit) {
         viewModelScope.launch {
-            val freed = musicInfo.deleteDownloadedData()
-            _uiState.update { it.copy(musicInfoUsedBytes = musicInfo.usedBytes()) }
-            onDone(freed)
+            try {
+                val undo = pendingMusicInfoDelete ?: musicInfoDownloads.deleteAllDownloaded().also { pendingMusicInfoDelete = it }
+                if (musicInfoDownloads.dao.undoAction(undo.token)?.failed == true) musicInfoDownloads.retryDelete(undo.token)
+                kotlinx.coroutines.delay((undo.untilAt - System.currentTimeMillis()).coerceAtLeast(0) + 1)
+                musicInfoDownloads.finishExpiredUndo()
+                check(musicInfoDownloads.dao.undoAction(undo.token) == null) { "Downloaded info cleanup failed" }
+                _uiState.update { it.copy(musicInfoUsedBytes = musicInfoDownloads.downloadedBytes()) }
+                pendingMusicInfoDelete = null
+                onDone(Result.success(undo.knownBytes))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                timber.log.Timber.tag("MusicInfo").w(failure, "Settings delete failed")
+                onDone(Result.failure(failure))
+            }
         }
     }
 

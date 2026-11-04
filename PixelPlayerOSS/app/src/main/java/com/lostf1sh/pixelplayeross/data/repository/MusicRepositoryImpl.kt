@@ -33,6 +33,10 @@ import com.lostf1sh.pixelplayeross.data.database.toSong
 import com.lostf1sh.pixelplayeross.data.model.Album
 import com.lostf1sh.pixelplayeross.data.model.Artist
 import com.lostf1sh.pixelplayeross.data.model.Genre
+import com.lostf1sh.pixelplayeross.data.model.GenreGroup
+import com.lostf1sh.pixelplayeross.data.model.GenreGrouping
+import com.lostf1sh.pixelplayeross.data.model.GenreKeyMigration
+import com.lostf1sh.pixelplayeross.data.model.GenreNames
 import com.lostf1sh.pixelplayeross.data.model.Lyrics
 import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.model.MusicFolder
@@ -106,6 +110,7 @@ class MusicRepositoryImpl @Inject constructor(
     companion object {
         /** Maximum number of search results to load at once to avoid memory issues with large libraries. */
         private const val SEARCH_RESULTS_LIMIT = 100
+        private const val MAX_COMPOSER_RESULTS = 20
         private const val UNKNOWN_GENRE_NAME = "Unknown"
         private const val UNKNOWN_GENRE_ID = "unknown"
     }
@@ -402,6 +407,9 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
+    override fun getAlbumDurationsMs(): Flow<Map<Long, Long>> =
+        musicDao.albumDurations().map { rows -> rows.associate { it.albumId to it.totalMs } }
+
     override fun getAlbums(storageFilter: StorageFilter, minTracks: Int): Flow<List<Album>> {
         return combine(
             userPreferencesRepository.allowedDirectoriesFlow,
@@ -451,6 +459,9 @@ class MusicRepositoryImpl @Inject constructor(
             )
         }.flowOn(Dispatchers.IO)
     }
+
+    override fun observeArtistsForHome(artistIds: List<Long>): Flow<List<Artist>> =
+        musicDao.observeArtistsForHome(artistIds).map { rows -> rows.map { it.toArtist() } }.flowOn(Dispatchers.IO)
 
     override fun getArtistById(artistId: Long): Flow<Artist?> {
         return musicDao.getArtistById(artistId).map { it?.toArtist() }
@@ -571,6 +582,39 @@ class MusicRepositoryImpl @Inject constructor(
             }
     }
 
+    override fun searchComposers(query: String): Flow<List<com.lostf1sh.pixelplayeross.data.media.ComposerResult>> {
+        if (query.isBlank()) return flowOf(emptyList())
+        return composerRows(query).combine(userPreferencesRepository.artistDelimitersFlow) { rows, delimiters ->
+            com.lostf1sh.pixelplayeross.data.media.ComposerNames.matching(rows, delimiters, query).take(MAX_COMPOSER_RESULTS)
+        }.flowOn(Dispatchers.Default)
+    }
+
+    override fun getSongsByComposer(name: String): Flow<List<Song>> {
+        if (name.isBlank()) return flowOf(emptyList())
+        return combine(userPreferencesRepository.allowedDirectoriesFlow, userPreferencesRepository.blockedDirectoriesFlow) { allowed, blocked -> allowed to blocked }
+            .flatMapLatest { (allowed, blocked) ->
+                observeAllowedDirs(allowed, blocked).flatMapLatest { (parents, apply) ->
+                    musicDao.searchComposerValues(name, parents, apply)
+                        .combine(userPreferencesRepository.artistDelimitersFlow) { rows, delimiters ->
+                            com.lostf1sh.pixelplayeross.data.media.ComposerNames.valuesFor(rows, delimiters, name).toList().sorted()
+                        }
+                        .distinctUntilChanged()
+                        .flatMapLatest { values ->
+                            if (values.isEmpty()) flowOf(emptyList()) else musicDao.getSongsByComposerValues(values, parents, apply)
+                        }
+                }
+            }
+            .map { entities -> entities.map { it.toSong() } }
+            .flowOn(Dispatchers.IO)
+    }
+
+    /** The composer tag values containing [query], for the allowed folders. */
+    private fun composerRows(query: String): Flow<List<com.lostf1sh.pixelplayeross.data.database.ComposerCountRow>> =
+        combine(userPreferencesRepository.allowedDirectoriesFlow, userPreferencesRepository.blockedDirectoriesFlow) { allowed, blocked -> allowed to blocked }
+            .flatMapLatest { (allowed, blocked) ->
+                observeAllowedDirs(allowed, blocked).flatMapLatest { (parents, apply) -> musicDao.searchComposerValues(query, parents, apply) }
+            }
+
     override fun searchAll(query: String, filterType: SearchFilterType): Flow<List<SearchResultItem>> {
         if (query.isBlank()) return flowOf(emptyList())
         val playlistsFlow = flow { emit(searchPlaylists(query)) }
@@ -586,13 +630,15 @@ class MusicRepositoryImpl @Inject constructor(
                         searchSongs(query),
                         searchAlbums(query, minTracks),
                         searchArtists(query),
-                        playlistsFlow
-                    ) { songs, albums, artists, playlists ->
+                        playlistsFlow,
+                        searchComposers(query)
+                    ) { songs, albums, artists, playlists, composers ->
                         mutableListOf<SearchResultItem>().apply {
                             songs.forEach { add(SearchResultItem.SongItem(it)) }
                             albums.forEach { add(SearchResultItem.AlbumItem(it)) }
                             artists.forEach { add(SearchResultItem.ArtistItem(it)) }
                             playlists.forEach { add(SearchResultItem.PlaylistItem(it)) }
+                            composers.forEach { add(SearchResultItem.ComposerItem(it.name, it.songCount)) }
                         }
                     }
                 }
@@ -600,6 +646,7 @@ class MusicRepositoryImpl @Inject constructor(
                 SearchFilterType.ALBUMS -> searchAlbums(query, minTracks).map { albums -> albums.map { SearchResultItem.AlbumItem(it) } }
                 SearchFilterType.ARTISTS -> searchArtists(query).map { artists -> artists.map { SearchResultItem.ArtistItem(it) } }
                 SearchFilterType.PLAYLISTS -> playlistsFlow.map { playlists -> playlists.map { SearchResultItem.PlaylistItem(it) } }
+                SearchFilterType.COMPOSERS -> searchComposers(query).map { composers -> composers.map { SearchResultItem.ComposerItem(it.name, it.songCount) } }
             }
         }.flowOn(Dispatchers.Default)
     }
@@ -648,18 +695,18 @@ class MusicRepositoryImpl @Inject constructor(
                             applyDirectoryFilter = applyDirectoryFilter
                         )
                     } else {
-                        // getSongsByGenreContaining uses a LIKE query so that a song stored as
-                        // "Rock, Pop" is returned when browsing either "Rock" or "Pop".
-                        musicDao.getSongsByGenreContaining(
-                            genreName = genreName,
-                            genrePrefix = "$genreName,%",          // "Rock,..." / "Rock, ..."
-                            genreSuffixWithSpace = "%, $genreName", // "..., Rock"
-                            genreSuffix = "%,$genreName",          // "...,Rock"
-                            genreMiddleWithSpace = "%, $genreName,%", // "..., Rock,..."
-                            genreMiddle = "%,$genreName,%",        // "...,Rock,..."
-                            allowedParentDirs = allowedParentDirs,
-                            applyDirectoryFilter = applyDirectoryFilter
-                        )
+                        // B56-5: the genre as the library reads it (merged spellings, split lists): the songs whose tag value is one of the values that name it.
+                        musicDao.getGenreCounts(allowedParentDirs, applyDirectoryFilter)
+                            .map { rows ->
+                                val tagValues = HashMap<String, Int>()
+                                for (row in rows) if (!row.genre.isNullOrBlank()) tagValues.merge(row.genre, row.songCount, Int::plus)
+                                GenreGrouping.find(GenreGrouping.of(tagValues), genreName)?.rawValues.orEmpty().toList().sorted()
+                            }
+                            .distinctUntilChanged()
+                            .flatMapLatest { values ->
+                                if (values.isEmpty()) flowOf(emptyList())
+                                else musicDao.getSongsByGenreValues(values, allowedParentDirs, applyDirectoryFilter)
+                            }
                     }
                 )
             }.flatMapLatest { it }
@@ -857,32 +904,32 @@ class MusicRepositoryImpl @Inject constructor(
                     ),
                     musicDao.getGenreCounts(allowedParentDirs, applyDirectoryFilter).onStart { emit(emptyList()) },
                 ) { genreNames, hasUnknown, groupedCounts ->
-                    val counts = mutableMapOf<String, Int>()
-                    for (row in groupedCounts) {
-                        val names = row.genre.orEmpty().split(',').map(String::trim).filter(String::isNotBlank)
-                            .ifEmpty { listOf(UNKNOWN_GENRE_NAME) }.map(Genre::idFor).distinct()
-                        for (id in names) counts[id] = (counts[id] ?: 0) + row.songCount
-                    }
-                    val knownGenres = genreNames
-                        .asSequence()
-                        .flatMap { raw -> raw.split(",") } // split "Rock, Pop" → ["Rock", "Pop"]
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-                        .map { buildGenre(it).copy(songCount = counts[Genre.idFor(it)] ?: 0) }
-                        .distinctBy { it.id }
-                        .sortedBy { it.name.lowercase() }
-                        .toList()
-                    val unknownAlreadyPresent = knownGenres.any { it.id == UNKNOWN_GENRE_ID }
-                    if (hasUnknown && !unknownAlreadyPresent) {
-                        knownGenres + buildGenre(UNKNOWN_GENRE_NAME).copy(songCount = counts[UNKNOWN_GENRE_ID] ?: 0)
-                    } else {
-                        knownGenres
-                    }
+                    // B56-5: the tag values as stored and how many songs carry each; read into genres by GenreGrouping (merged spellings, split lists)
+                    val countsByTag = HashMap<String, Int>()
+                    for (row in groupedCounts) countsByTag.merge(row.genre.orEmpty(), row.songCount, Int::plus)
+                    val tagValues = LinkedHashMap<String, Int>()
+                    for (name in genreNames) tagValues[name] = countsByTag[name] ?: 0
+                    for ((tag, count) in countsByTag) if (tag.isBlank()) tagValues[tag] = count        // songs with no genre tag: the unknown genre
+                    val groups = GenreGrouping.of(tagValues)
+                    val unknownCount = groups.firstOrNull { it.key == GenreNames.UnknownKey }?.songCount
+                    val groupsWithUnknown = if (hasUnknown && unknownCount == null) {
+                        groups + GenreGroup(GenreNames.UnknownKey, UNKNOWN_GENRE_NAME, 0, mapOf(UNKNOWN_GENRE_NAME to 0), emptySet())
+                    } else groups
+                    groupsWithUnknown
                 }
             }.flatMapLatest { it }
-        }.combine(musicDao.observeGenreImages().onStart { emit(emptyList()) }) { genres, images ->
+        }.combine(musicDao.observeGenreImages().onStart { emit(emptyList()) }) { groups, images ->
             val paths = images.associate { it.genreKey to it.imagePath }
-            genres.map { it.copy(imagePath = paths[it.id]) }
+            // B56-5: an image stored under an older spelling's id follows the merged genre (and is moved to its id, once)
+            val moves = GenreKeyMigration.plan(groups, paths.keys)
+            for (move in moves) musicDao.moveGenreImage(move.from, move.to)
+            val moved = moves.associate { it.to to paths[it.from] }
+            groups.map { group ->
+                buildGenre(group.displayName).copy(
+                    songCount = group.songCount,
+                    imagePath = paths[group.id] ?: moved[group.id],
+                )
+            }
         }.conflate().flowOn(Dispatchers.IO)
     }
 
@@ -953,13 +1000,15 @@ class MusicRepositoryImpl @Inject constructor(
             userPreferencesRepository.allowedDirectoriesFlow,
             userPreferencesRepository.blockedDirectoriesFlow,
             userPreferencesRepository.isFolderFilterActiveFlow,
-            userPreferencesRepository.foldersSourceFlow
-        ) { allowedDirs, blockedDirs, isFolderFilterActive, folderSource ->
+            userPreferencesRepository.foldersSourceFlow,
+            userPreferencesRepository.foldersVolumeRootFlow
+        ) { allowedDirs, blockedDirs, isFolderFilterActive, folderSource, volumeRoot ->
             FolderFlowConfig(
                 allowedDirs = allowedDirs,
                 blockedDirs = blockedDirs,
                 isFolderFilterActive = isFolderFilterActive,
-                folderSource = folderSource
+                folderSource = folderSource,
+                volumeRoot = volumeRoot
             )
         }.flatMapLatest { config ->
             observeAllowedDirs(config.allowedDirs, config.blockedDirs).map { (allowedParentDirs, applyDirectoryFilter) ->
@@ -974,7 +1023,8 @@ class MusicRepositoryImpl @Inject constructor(
                         blockedDirs = config.blockedDirs,
                         isFolderFilterActive = config.isFolderFilterActive,
                         folderSource = config.folderSource,
-                        context = context
+                        context = context,
+                        preferredRootPath = config.volumeRoot
                     )
                 }
             }.flatMapLatest { it }
@@ -985,7 +1035,8 @@ class MusicRepositoryImpl @Inject constructor(
         val allowedDirs: Set<String>,
         val blockedDirs: Set<String>,
         val isFolderFilterActive: Boolean,
-        val folderSource: FolderSource
+        val folderSource: FolderSource,
+        val volumeRoot: String
     )
 
     override suspend fun deleteById(id: Long) {

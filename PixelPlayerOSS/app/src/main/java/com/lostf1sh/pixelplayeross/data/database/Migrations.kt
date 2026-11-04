@@ -638,3 +638,28 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
         db.execSQL("CREATE TABLE IF NOT EXISTS genre_images (genre_key TEXT NOT NULL PRIMARY KEY, image_path TEXT NOT NULL, updated_at INTEGER NOT NULL)")
     }
 }
+
+/**
+ * v16 -> v17 (B56 phase 6, Sherlock #36): composers for search. One additive table: `song_composers` holds the COMPOSER tag of each song that has been read (an empty string
+ * when the file has none; no row yet means "not read"), removed with its song. Nothing in `songs` changes, so no projection, index or backup of the song list moves.
+ */
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `song_composers` (`song_id` INTEGER NOT NULL, `composer` TEXT NOT NULL, `read_at` INTEGER NOT NULL, PRIMARY KEY(`song_id`), FOREIGN KEY(`song_id`) REFERENCES `songs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )")
+    }
+}
+
+/** Persisted Undo, selection defaults and worker generations; tag IDs are lookup hints only. */
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE songs ADD COLUMN mb_release_group_id TEXT")
+        db.execSQL("ALTER TABLE songs ADD COLUMN mb_album_artist_id TEXT")
+        db.execSQL("ALTER TABLE info_discovery ADD COLUMN downloadEpoch INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE info_discovery ADD COLUMN retrySource TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE info_discovery ADD COLUMN retryReason TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE info_discovery ADD COLUMN deletedByUser INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE IF NOT EXISTS info_scope_state (scope TEXT NOT NULL PRIMARY KEY, findRequested INTEGER NOT NULL, defaultChosen INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS info_undo (token TEXT NOT NULL PRIMARY KEY, action TEXT NOT NULL, untilAt INTEGER NOT NULL, count INTEGER NOT NULL, knownBytes INTEGER NOT NULL, failed INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS info_undo_items (token TEXT NOT NULL, `key` TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, songId TEXT NOT NULL, state TEXT NOT NULL, selected INTEGER NOT NULL, saved INTEGER NOT NULL, attempts INTEGER NOT NULL, retryAt INTEGER NOT NULL, epoch INTEGER NOT NULL, deleted INTEGER NOT NULL, PRIMARY KEY(token, `key`))")
+    }
+}

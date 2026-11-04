@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -22,7 +23,6 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
 import androidx.compose.foundation.lazy.grid.LazyGridLayoutInfo
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
-import com.lostf1sh.pixelplayeross.ui.ds.DapType
 import androidx.compose.ui.util.fastFirstOrNull
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -248,8 +247,8 @@ fun ExpressiveScrollBar(
     paddingEnd: Dp = 3.dp,
     endInset: Dp = ScrollbarGutter.DefaultInset,
     dragLabelProvider: ((Int) -> String?)? = null,
-    dragLabelSize: Dp = 32.dp,
-    dragLabelGap: Dp = 10.dp
+    dragLabelSize: Dp = ScrollBubble.Size,
+    dragLabelGap: Dp = ScrollBubble.Gap
 ) {
     val listMetricsTracker = remember(listState) { AxisObservationTracker() }
     val gridMetricsTracker = remember(gridState) { AxisObservationTracker() }
@@ -573,6 +572,7 @@ fun ExpressiveScrollBar(
             label = "DragLabelScale"
         )
         val dragLabelSlide by animateDpAsState(
+            // B57.5 3: the bubble rises into place (it used to slide in from the side)
             targetValue = if (showDragLabel) 0.dp else 8.dp,
             animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
             label = "DragLabelSlide"
@@ -686,12 +686,14 @@ fun ExpressiveScrollBar(
 
             val displayedDragLabel = activeDragLabel ?: retainedDragLabel
             if (dragLabelAlpha > 0f && !displayedDragLabel.isNullOrBlank()) {
-                Surface(
+                // B57.5 3: a big bubble above the finger (see [ScrollBubble]). Drawn by the one bar every list shares, so every list that passes a provider has it. It is a plain box with a
+                // background: nothing in it takes a touch (the bar's own input is the only one on this node, and it is not changed).
+                val accent = com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent.current
+                Box(
                     modifier = Modifier
-                        // B29-fix1 F5: the scrollbar's own box is 9 dp wide, and a child inherits its parent's maximum width, so the
-                        // 32 dp circle came out 9 dp wide, a capsule with no room for the letter. It is measured at its own size
-                        // whatever the box allows and placed at explicit coordinates (it draws outside the box, to the left of the
-                        // thumb, as before); the box is told it takes no room.
+                        // B29-fix1 F5: the scrollbar's own box is 9 dp wide, and a child inherits its parent's maximum width, so a disc came out 9 dp wide, a capsule with no room for the letter.
+                        // It is measured at its own size whatever the box allows and placed at explicit coordinates (it draws outside the box, to the left of the thumb); the box is told it
+                        // takes no room.
                         .layout { measurable, _ ->
                             val side = dragLabelSize.roundToPx()
                             val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(side, side))
@@ -701,43 +703,38 @@ fun ExpressiveScrollBar(
                                 val visualProgress = displayedProgress.value
                                 val displayProgress = if (isDragging && dragProgress >= 0f) dragProgress else visualProgress
                                 val handleY = displayProgress * scrollableHeight
-                                val handleHeightPx = minHeight.toPx()
-                                val gapPx = dragLabelGap.toPx()
-                                val slidePx = dragLabelSlide.toPx()
-                                val paddingEndPx = paddingEnd.toPx()
-                                val animatedWidthPx = animatedWidth.toPx()
-                                val maxWidthPx = constraintsMaxWidth.toPx()
-
-                                val indicatorX = maxWidthPx - paddingEndPx - animatedWidthPx
-                                val x = indicatorX - side - gapPx - slidePx
-                                val y = handleY + (handleHeightPx / 2f) - (side / 2f)
-                                placeable.place(x.toInt(), y.toInt())
+                                val placement = ScrollBubble.place(
+                                    barWidth = constraintsMaxWidth.toPx(),
+                                    barHeight = constraintsMaxHeight.toPx(),
+                                    thumbTop = handleY,
+                                    thumbHeight = minHeight.toPx(),
+                                    side = side.toFloat(),
+                                    gap = dragLabelGap.toPx(),
+                                    inset = ScrollBubble.EdgeInset.toPx(),
+                                    slideTravel = ScrollBubble.SlideTravel.toPx(),
+                                )
+                                placeable.place(placement.x.toInt(), (placement.y + dragLabelSlide.toPx()).toInt())
                             }
                         }
                         .size(dragLabelSize)
+                        .testTag(ScrollBubble.TAG)
                         .graphicsLayer {
                             alpha = dragLabelAlpha
                             scaleX = dragLabelScale
                             scaleY = dragLabelScale
-                        },
-                    shape = CircleShape,
-                    color = Dap.surfaceRaised,
-                    contentColor = Dap.primaryText,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp
+                        }
+                        .background(Dap.surfaceRaised, CircleShape),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = androidx.compose.ui.Alignment.Center
-                    ) {
-                        Text(
-                            text = displayedDragLabel,
-                            style = DapType.Value,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = DapSpacing.Sm)
-                        )
-                    }
+                    Text(
+                        text = displayedDragLabel,
+                        style = ScrollBubble.textStyleFor(displayedDragLabel),
+                        color = accent,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = DapSpacing.Sm)
+                    )
                 }
             }
         }

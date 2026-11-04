@@ -34,8 +34,8 @@
     <string name="dap_timeout_2_minutes">2 minuter</string>
     <string name="dap_timeout_5_minutes">5 minuter</string>
     <string name="dap_timeout_10_minutes">10 minuter</string>
-    <string name="dap_timeout_never_while_playing">Aldrig under uppspelning</string>
-    <string name="dap_timeout_never_while_playing_desc">Håller skärmen på endast under aktiv uppspelning. Vid paus eller stopp återgår skärmen till normal avstängning.</string>
+    <string name="dap_timeout_never_while_playing">Aldrig vid uppspelning, på alla sidor</string>
+    <string name="dap_timeout_never_while_playing_desc">I DAP-läge hålls skärmen på på alla sidor i Polylute medan musik spelas. I appläge styr Android. DAP-låsskärmen har alltid 30 sekunders tidsgräns vid inaktivitet.</string>
     <string name="dap_write_settings_required">Android kräver ett engångstillstånd för att ändra systemets tidsgräns för skärmen.</string>
     <string name="dap_timeout_system_never_title">Skärmen stängs aldrig av av sig själv</string>
     <string name="dap_timeout_system_never_body">Androids tidsgräns för skärmen är inställd på ”aldrig”. Skärmen förblir på tills du trycker på strömknappen, låsskärmen visas inte och enheten går inte i vila. Uppspelningen påverkas inte.</string>

@@ -178,7 +178,7 @@ class PushedScreenStripTest {
         show {
             GenrePage(
                 title = "Rock", state = state, currentSongId = null, isUnknownGenre = false, onBack = {}, onRetry = {}, onPlay = {}, onShuffle = {},
-                onQuickFill = {}, onPlaySong = {}, onMoreSong = {},
+                onQuickFill = {}, onPlaySong = {}, onMoreSong = {}, startOnAllSongs = true,
             )
         }
         // the page's list is asked for by what it is: the one that scrolls to an index

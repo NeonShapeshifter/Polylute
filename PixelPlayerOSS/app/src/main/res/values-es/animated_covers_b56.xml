@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 fase 7.2: portadas animadas -->
+    <string name="setcat_animated_covers_title">Portadas animadas</string>
+    <string name="setcat_animated_covers_subtitle">En el reproductor completo, reproduce cover.mp4, cover.webp o cover.gif de la carpeta del álbum, sin sonido y en bucle. Las listas, el mini reproductor y la pantalla de bloqueo conservan la portada fija.</string>
+</resources>

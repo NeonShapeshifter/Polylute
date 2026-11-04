@@ -231,8 +231,8 @@ class SyncManager @Inject constructor(
     fun incrementalSync() {
         Timber.tag(TAG).i("Incremental sync requested - Scheduling incremental worker")
         enqueueSyncWork(
-            // the pull to refresh is the listener's own ask: files Android has not indexed yet are looked for first (B40-F3)
-            request = SyncWorker.incrementalSyncWork(runMaintenance = false, walkFolders = true),
+            // the pull to refresh is the listener's own ask: files Android has not indexed yet are looked for first (B40-F3), and it runs even while music plays (B56-1.2)
+            request = SyncWorker.incrementalSyncWork(runMaintenance = false, walkFolders = true, requestedByListener = true),
             policy = ExistingWorkPolicy.REPLACE
         )
     }
@@ -270,8 +270,8 @@ class SyncManager @Inject constructor(
     fun forceRefresh() {
         Timber.tag(TAG).i("Manual local refresh requested - Scheduling incremental worker")
         enqueueSyncWork(
-            // "Update library" is the listener's own ask: files Android has not indexed yet are looked for first (B40-F3)
-            request = SyncWorker.incrementalSyncWork(runMaintenance = false, walkFolders = true),
+            // "Update library" is the listener's own ask: files Android has not indexed yet are looked for first (B40-F3), and it runs even while music plays (B56-1.2)
+            request = SyncWorker.incrementalSyncWork(runMaintenance = false, walkFolders = true, requestedByListener = true),
             policy = ExistingWorkPolicy.REPLACE
         )
     }

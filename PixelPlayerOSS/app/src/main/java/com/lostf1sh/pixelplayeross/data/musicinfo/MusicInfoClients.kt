@@ -2,6 +2,13 @@ package com.lostf1sh.pixelplayeross.data.musicinfo
 
 import com.lostf1sh.pixelplayeross.data.network.PriorityRequestGate
 import com.lostf1sh.pixelplayeross.data.network.RequestPriority
+import com.lostf1sh.pixelplayeross.data.network.SourceWait
+import com.lostf1sh.pixelplayeross.data.network.SourceWaitKind
+import com.lostf1sh.pixelplayeross.data.network.SourceWaits
+import com.lostf1sh.pixelplayeross.data.network.SourceRequestException
+import com.lostf1sh.pixelplayeross.data.network.musicInfoSource
+import com.lostf1sh.pixelplayeross.data.network.noteSourceWait
+import com.lostf1sh.pixelplayeross.data.network.sourceRetryAt
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import com.lostf1sh.pixelplayeross.utils.splitArtistsByDelimiters
@@ -59,7 +66,14 @@ class MusicInfoHttp(
             if (wait > 0) sleep(wait)
             host.lastStartedAt = nowMs()
             sent += url.toString()
-            block()
+            try {
+                block().also { SourceWaits.clear(musicInfoSource(url.host)) }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                noteSourceWait((error as? SourceRequestException)?.wait
+                    ?: SourceWait(musicInfoSource(url.host), SourceWaitKind.UNAVAILABLE, System.currentTimeMillis() + 30_000))
+                throw error
+            }
         }
     }
 
@@ -67,7 +81,7 @@ class MusicInfoHttp(
     suspend fun json(url: HttpUrl): JSONObject? = limited(url) {
         client.newCall(request(url, "application/json")).execute().use { response ->
             if (response.code == 404) return@use null
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
+            requireSuccess(response, url)
             JSONObject(response.body.string())
         }
     }
@@ -76,7 +90,7 @@ class MusicInfoHttp(
     suspend fun bytes(url: HttpUrl, maxBytes: Long): ByteArray? = limited(url) {
         client.newCall(request(url, "image/*")).execute().use { response ->
             if (response.code == 404) return@use null
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
+            requireSuccess(response, url)
             if (response.body.contentType()?.type != "image") return@use null
             val declared = response.body.contentLength()
             if (declared > maxBytes) return@use null
@@ -88,9 +102,15 @@ class MusicInfoHttp(
     suspend fun imageExists(url: HttpUrl): Boolean = limited(url) {
         client.newCall(request(url, "image/*").newBuilder().head().build()).execute().use { response ->
             if (response.code == 404) return@use false
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code} from ${url.host}")
+            requireSuccess(response, url)
             response.header("Content-Type").orEmpty().startsWith("image/")
         }
+    }
+
+    private fun requireSuccess(response: okhttp3.Response, url: HttpUrl) {
+        if (!response.isSuccessful) throw SourceRequestException(SourceWait(musicInfoSource(url.host),
+            if (response.code == 429) SourceWaitKind.RATE_LIMIT else SourceWaitKind.UNAVAILABLE,
+            sourceRetryAt(response.header("Retry-After"))), response.code)
     }
 
     private fun request(url: HttpUrl, accept: String) =
@@ -126,7 +146,11 @@ private class MusicInfoLookupGates {
     }
 }
 
-class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https://musicbrainz.org/ws/2/") {
+class MusicBrainzClient(
+    private val http: MusicInfoHttp,
+    root: String = "https://musicbrainz.org/ws/2/",
+    private val taggedId: suspend (kind: String, name: String, artist: String?) -> String? = { _, _, _ -> null },
+) {
     private val root = root.toHttpUrl()
 
     private val artistGate = MusicInfoLookupGates()
@@ -136,6 +160,7 @@ class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https:/
 
     /** Concurrent photo and description queues share one conclusive artist lookup; network failures are retried. */
     suspend fun findArtist(name: String): MbMatch? {
+        taggedMatch("artist", name, null)?.let { return it }
         val key = name.trim().lowercase(Locale.ROOT)
         return artistGate.request(key) {
             if (currentCoroutineContext()[MusicInfoRefresh] == null) synchronized(artistMatches) {
@@ -151,6 +176,7 @@ class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https:/
 
     /** The release (an edition of the album) with this title by this artist, or null. */
     suspend fun findRelease(album: String, artist: String): MbMatch? {
+        taggedMatch("release", album, artist)?.let { return it }
         val url = root.newBuilder().addPathSegment("release")
             .addQueryParameter("query", "release:\"${escape(album)}\" AND artist:\"${escape(artist)}\"")
             .addQueryParameter("fmt", "json").addQueryParameter("limit", "5").build()
@@ -159,6 +185,7 @@ class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https:/
 
     /** The release group (the album, all its editions) with this title by this artist, or null. */
     suspend fun findReleaseGroup(album: String, artist: String): MbMatch? {
+        taggedMatch("release-group", album, artist)?.let { return it }
         val credited = firstCreditedArtist(artist)
         if (credited.isBlank()) return null
         fun query(withArtist: Boolean) = root.newBuilder().addPathSegment("release-group")
@@ -179,6 +206,12 @@ class MusicBrainzClient(private val http: MusicInfoHttp, root: String = "https:/
             return null
         }
         return matching(http.json(query(true)), requireCredit = false) ?: matching(http.json(query(false)), requireCredit = true)
+    }
+
+    private suspend fun taggedMatch(kind: String, name: String, artist: String?): MbMatch? {
+        val id = taggedId(kind, name, artist) ?: return null
+        if (!Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(id)) return null
+        return MbMatch(id, name, 100)
     }
 
     private val detailsGate = MusicInfoLookupGates()

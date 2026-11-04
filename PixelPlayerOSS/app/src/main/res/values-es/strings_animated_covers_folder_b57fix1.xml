@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="setcat_animated_covers_folder_title">Carpeta de portadas animadas</string>
+    <string name="setcat_animated_covers_folder_change">Cambiar</string>
+    <string name="setcat_animated_covers_folder_remove_title">Quitar carpeta</string>
+    <string name="setcat_animated_covers_folder_remove_desc">Polylute deja de leerla y las portadas animadas se apagan.</string>
+</resources>

@@ -20,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.size.Size
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Genre
+import com.lostf1sh.pixelplayeross.data.model.GenreGrouping
 import com.lostf1sh.pixelplayeross.presentation.components.MiniPlayerHeight
 import com.lostf1sh.pixelplayeross.presentation.components.getNavigationBarHeight
 import com.lostf1sh.pixelplayeross.presentation.components.resolveNavBarOccupiedHeight
@@ -41,6 +42,7 @@ fun GenreCategoriesGrid(
     val icons by playerViewModel.customGenreIcons.collectAsStateWithLifecycle(initialValue = emptyMap())
     val padding = PaddingValues(top = 8.dp, bottom = bottomContentPadding ?: (28.dp + resolveNavBarOccupiedHeight(getNavigationBarHeight(), compact) + MiniPlayerHeight))
     val content = modifier.fillMaxSize().padding(horizontal = DapSpacing.Gutter)
+    val (other, main) = remember(genres) { genres.partition { GenreGrouping.isOther(it) } }
     val header: @Composable () -> Unit = {
         GenreListHeader(playerViewModel::toggleGenreViewMode, playerViewModel::shuffleRandomGenre)
     }
@@ -52,14 +54,34 @@ fun GenreCategoriesGrid(
         LazyVerticalGrid(GridCells.Fixed(2), content, contentPadding = padding,
             verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
-            items(genres, key = { it.id }) { genre -> GenreTile(genre, icons[genre.id]) { onGenreClick(genre) } }
+            items(main, key = { it.id }) { genre -> GenreTile(genre, icons[genre.id]) { onGenreClick(genre) } }
+            // B56-5.2: the genres with fewer than three songs are not hidden: they go at the end, under one header
+            if (other.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "other_header") { OtherGenresHeader() }
+                items(other, key = { it.id }) { genre -> GenreTile(genre, icons[genre.id]) { onGenreClick(genre) } }
+            }
         }
     } else {
         LazyColumn(content, contentPadding = padding, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             item { header() }
-            items(genres, key = { it.id }) { genre -> GenreListRow(genre, icons[genre.id]) { onGenreClick(genre) } }
+            items(main, key = { it.id }) { genre -> GenreListRow(genre, icons[genre.id]) { onGenreClick(genre) } }
+            if (other.isNotEmpty()) {
+                item(key = "other_header") { OtherGenresHeader() }
+                items(other, key = { it.id }) { genre -> GenreListRow(genre, icons[genre.id]) { onGenreClick(genre) } }
+            }
         }
     }
+}
+
+/** B56-5.2: the one header over the genres with fewer than three songs. */
+@Composable
+internal fun OtherGenresHeader() {
+    Text(
+        text = stringResource(R.string.genre_other_header),
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 6.dp),
+        style = DapType.SectionHeader,
+        color = Dap.tertiaryText,
+    )
 }
 
 @Composable
@@ -71,15 +93,19 @@ private fun GenreListHeader(onToggle: () -> Unit, onShuffle: () -> Unit) {
     }
 }
 
+/** B57 4.4: the margin between a genre row's card edge and its content: the grid tile's own `padding(8.dp)`. */
+internal val GenreListRowInset = 8.dp
+
 @Composable
 internal fun GenreListRow(genre: Genre, icon: Int?, onClick: () -> Unit) {
     DapMediaRow(
         title = genre.name,
         subtitle = pluralStringResource(R.plurals.genre_count_songs, genre.songCount, genre.songCount),
-        modifier = Modifier.clip(RoundedCornerShape(DapRadius.Surface)).background(frostedPanelOr(Dap.surfaceRaised)),
+        // B57 4.4: the same 8 dp inner margin as the grid tile (`GenreTile`): the rounded card used to clip the letter tile on its left edge
+        modifier = Modifier.clip(RoundedCornerShape(DapRadius.Surface)).background(frostedPanelOr(Dap.surfaceRaised)).padding(GenreListRowInset),
         // B48-2: the genre's own image, else its custom icon, else its letter (not the music-note placeholder)
         leading = {
-            GenreArt(genre, icon, Modifier.genreRowThumb().background(Dap.panelRaised), DapType.Row, Size(96, 96))
+            GenreArt(genre, icon, Modifier.genreRowThumb().background(Dap.panelRaised), DapType.Row, com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(DapSizes.ThumbRow))
         },
         divider = false,
         onClick = onClick,
@@ -92,7 +118,7 @@ private fun GenreTile(genre: Genre, icon: Int?, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(DapRadius.Surface))
         .background(frostedPanelOr(Dap.surfaceRaised)).clickable(onClick = onClick).padding(8.dp)) {
         // B48-2: the genre's own image cropped like an album tile, else its custom icon, else its letter
-        GenreArt(genre, icon, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(DapRadius.Surface)), DapType.Heading, Size(360, 360))
+        GenreArt(genre, icon, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(DapRadius.Surface)), DapType.Heading, com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forColumns(2, DapSpacing.Gutter * 2 + 32.dp, 12.dp))
         Spacer(Modifier.height(8.dp))
         Text(genre.name, style = DapType.Row, color = Dap.primaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(pluralStringResource(R.plurals.genre_count_songs, genre.songCount, genre.songCount), style = DapType.Caption, color = Dap.secondaryText)

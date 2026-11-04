@@ -36,8 +36,7 @@
     <string name="cd_repeat">Repetir</string>
     <string name="cd_share_all">Compartir todo</string>
     <string name="cd_share_all_as_zip">Compartir todo como ZIP</string>
-    <string name="cd_show_controls">Mostrar controles</string>
-    <string name="cd_show_metadata_info">Mostrar información</string>
+    <string name="cd_show_metadata_info">Créditos y licencias</string>
     <string name="cd_unlike_all">Quitar me gusta a todas</string>
     <string name="create_playlist_dialog_title">Nueva lista de reproducción</string>
     <string name="create_playlist_name_label">Nombre de la lista</string>

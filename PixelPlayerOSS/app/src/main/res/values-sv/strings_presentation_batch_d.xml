@@ -9,7 +9,6 @@
     <string name="presentation_batch_d_view_list">Lista</string>
     <string name="presentation_batch_d_storage_internal">Internt</string>
     <string name="presentation_batch_d_storage_sd_card">SD-kort</string>
-    <string name="presentation_batch_d_sd_card_unavailable">SD-kortet är inte tillgängligt just nu.</string>
     <string name="presentation_batch_d_max_albums_selection">Du kan välja upp till %1$d album</string>
     <string name="presentation_batch_d_folder_name_fallback">Mapp</string>
     <string name="presentation_batch_d_library_tabs_sheet_title">Biblioteksflikar</string>

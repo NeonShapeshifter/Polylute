@@ -281,6 +281,13 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
     @Inject
     lateinit var coverGlassFields: com.lostf1sh.pixelplayeross.ui.glass.CoverGlassFields
     @Inject
+    lateinit var animatedCoverFinder: com.lostf1sh.pixelplayeross.ui.animatedcover.AnimatedCoverFinder
+    /** B57-fix1 4: the folder the animated covers are read through (Android 13+); a change of it makes the player look again. */
+    @Inject
+    lateinit var animatedCoverFolderStore: com.lostf1sh.pixelplayeross.data.preferences.AnimatedCoverFolderStore
+    @Inject
+    lateinit var libraryChangeSignal: com.lostf1sh.pixelplayeross.data.stats.LibraryChangeSignal
+    @Inject
     lateinit var fixedOutputNoticeCoordinator: com.lostf1sh.pixelplayeross.data.volume.FixedOutputNoticeCoordinator
     private val _pendingPlaylistNavigation = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     private val _pendingShuffleAll = kotlinx.coroutines.flow.MutableStateFlow(false)
@@ -313,6 +320,8 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
         }
     }
     private val dapDeviceOwnerController by lazy { DapDeviceOwnerController(this) }
+    @Inject @JvmField var suggestionsOpenSession = com.lostf1sh.pixelplayeross.presentation.viewmodel.SuggestionsOpenSession()
+
     private val productModeController by lazy { ProductModeController(this) }
     private var maintenanceExpiryJob: Job? = null
 
@@ -336,6 +345,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
      */
     private val lockCover = CoverSignal()
     private val lockSurfaceShowing = kotlinx.coroutines.flow.MutableStateFlow(false)
+    private val dapDisplayMode = kotlinx.coroutines.flow.MutableStateFlow(false)
     // B40-F9b: the process's tracker, not one per instance (MainActivity can have two; see DapActivityInstancePolicy)
     private val homeChangeTracker get() = DapHomeChangeTracker.process
 
@@ -637,6 +647,11 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         // quiet), so it shows under the sliding surface as it was; when the surface is gone it hears
                         // the player again, and reads the latest.
                         var lockRevealing by remember { mutableStateOf(false) }
+                        @Suppress("UNUSED_VARIABLE")
+                        val ownerFactsEpoch = ownerEpoch.intValue
+                        val productState = productModeController.currentState()
+                        androidx.compose.runtime.SideEffect { dapDisplayMode.value = productState.level != null }
+
                         // B25-S4: the wake cycle says it has the app covered from `SCREEN_OFF`, before the surface is on
                         // screen: the app is held (lifecycle) and unplaced from then, so the wake's first frame is not the app's.
                         // (B42-fix1: the signal is the activity's, `lockCover`, because the keep-screen-on flag reads it too.)
@@ -645,11 +660,14 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         if (glassShown) {
                             val glassMoving by themePreferencesRepository.coverGlassMovingFlow
                                 .collectAsStateWithLifecycle(initialValue = DEFAULT_COVER_GLASS_MOVING)
+                            val glassMotion by themePreferencesRepository.backgroundMotionFlow
+                                .collectAsStateWithLifecycle(initialValue = com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.DEFAULT)
                             CoverGlassHost(
                                 scene = glassScene,
                                 playing = remember { playerViewModel.stablePlayerState.map { it.isPlaying }.distinctUntilChanged() },
                                 playerExpansion = { playerViewModel.playerContentExpansionFraction.value },
                                 movingBackgroundOn = glassMoving,
+                                backgroundMotion = glassMotion,
                                 lockSurfaceVisible = lockSurfaceVisible,
                                 lockCovers = lockSurfaceVisible && !lockRevealing,
                             )
@@ -665,9 +683,24 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                     else Modifier
                                 ),
                         ) {
+                            // B56-7.2: the animated covers: on in app mode and off on a DAP until the listener says otherwise; the sync's change counter is what makes the player look again
+                            val animatedCoversStored by themePreferencesRepository.animatedCoversStoredFlow.collectAsStateWithLifecycle(initialValue = null)
+                            val libraryVersion by libraryChangeSignal.version.collectAsStateWithLifecycle()
+                            val animatedCoverFolder by animatedCoverFolderStore.folder.collectAsStateWithLifecycle()
+                            val animatedCoverEnv = remember(animatedCoversStored, productState.level != null, libraryVersion, animatedCoverFolder) {
+                                // a folder chosen, changed or removed: what the finder remembers about every album folder was read through the old one
+                                animatedCoverFinder.invalidate()
+                                com.lostf1sh.pixelplayeross.ui.animatedcover.AnimatedCoverEnv(
+                                    finder = animatedCoverFinder,
+                                    enabled = com.lostf1sh.pixelplayeross.data.preferences.AnimatedCovers.effective(animatedCoversStored, productState.level != null),
+                                    libraryVersion = libraryVersion * 31 + (animatedCoverFolder?.hashCode() ?: 0),
+                                )
+                            }
                             androidx.compose.runtime.CompositionLocalProvider(
                                 com.lostf1sh.pixelplayeross.presentation.screens.LocalFindFolders provides mainViewModel::findFolders,
                                 LocalMusicAccessGranted provides mediaPermissionGranted,
+                                com.lostf1sh.pixelplayeross.presentation.LocalDapMode provides (productState.level != null),
+                                com.lostf1sh.pixelplayeross.ui.animatedcover.LocalAnimatedCoverEnv provides animatedCoverEnv,
                             ) {
                                 // B42-fix1: what inside the app holds the screen on (the lyrics toggle) must not while the lock screen is what
                                 // the listener sees.
@@ -686,9 +719,6 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         // The mode derives from HOME and the containment facts, which change outside
                         // composition. Reading the epoch makes a change the activity noticed (F-08)
                         // recompose this, so it is derived again instead of staying as it was.
-                        @Suppress("UNUSED_VARIABLE")
-                        val ownerFactsEpoch = ownerEpoch.intValue
-                        val productState = productModeController.currentState()
                         val dedicatedActive = productState.isDedicatedActive
                         // B34: the surface is a playback face for a device whose home is Polylute, at any level (Launcher, Pinned,
                         // Dedicated). Only the keyguard policy (below) is Dedicated's: it is Device Owner policy and a no-op without one.
@@ -839,35 +869,16 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
-                    userPreferencesRepository.dapBrightnessPercentFlow.collect { percent ->
-                        val attributes = window.attributes
-                        attributes.screenBrightness = if (percent == DAP_BRIGHTNESS_FOLLOW_SYSTEM) {
-                            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                        } else {
-                            (percent.coerceIn(5, 100) / 100f)
-                        }
-                        window.attributes = attributes
-                    }
+                    combine(userPreferencesRepository.dapBrightnessPercentFlow,dapDisplayMode) { percent,dap -> percent to dap }
+                        .collect { (percent,dap) -> com.lostf1sh.pixelplayeross.presentation.viewmodel.DapWindowBrightness.apply(window,percent,dap) }
                 }
                 launch {
-                    // F-05: the flag is held only while a song is playing and the player is in
-                    // front, and this block lives inside repeatOnLifecycle(STARTED), so it is gone
-                    // with the activity too. Nothing here touches the system's screen timeout.
-                    // B42-fix1: "in front" is what the listener sees: the DAP lock screen is drawn over a player that stays EXPANDED, and
-                    // used to leave the flag on it. The lock signal is the wake cycle's own (set at SCREEN_OFF, before any frame) or the
-                    // surface being on screen.
-                    DapDeviceControlPolicy.keepScreenOnFlow(
+                    com.lostf1sh.pixelplayeross.presentation.viewmodel.KeepScreenOnBinder(window).bind(
+                        dapMode = dapDisplayMode,
                         timeoutMode = userPreferencesRepository.dapScreenTimeoutModeFlow,
-                        isPlaying = playerViewModel.stablePlayerState.map { it.isPlaying }.distinctUntilChanged(),
-                        sheetExpanded = playerViewModel.sheetState.map { it == PlayerSheetState.EXPANDED }.distinctUntilChanged(),
+                        playing = playerViewModel.stablePlayerState.map { it.isPlaying }.distinctUntilChanged(),
                         lockSurfaceShowing = combine(lockCover.coveredFlow, lockSurfaceShowing) { covered, shown -> covered || shown },
-                    ).collect { keepScreenOn ->
-                        if (keepScreenOn) {
-                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        } else {
-                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        }
-                    }
+                    )
                 }
             }
         }
@@ -2198,7 +2209,9 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
 
     @androidx.annotation.OptIn(UnstableApi::class)
     override fun onStart() {
+        dapDisplayMode.value = runCatching { productModeController.currentState().level != null }.getOrDefault(false)
         super.onStart()
+        suggestionsOpenSession.foreground()
         LogUtils.d(this, "onStart")
         playerViewModel.onMainActivityStart()
 
@@ -2214,6 +2227,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
 
     override fun onStop() {
         super.onStop()
+        suggestionsOpenSession.background()
         LogUtils.d(this, "onStop")
         settleInstances("onStop")
     }
@@ -2264,6 +2278,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
         }
         settleHomeExit()
         reconcileOwnerPolicyIfHomeChanged("onResume")
+        dapDisplayMode.value = runCatching { productModeController.currentState().level != null }.getOrDefault(false)
         reconcileScreenTimeoutDrift("onResume")
         reconcileMaintenanceSessionOnResume()
         maybeEnterDedicatedMode()

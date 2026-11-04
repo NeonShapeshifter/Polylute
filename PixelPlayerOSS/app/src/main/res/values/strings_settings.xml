@@ -137,8 +137,8 @@
     <string name="setcat_import_backup_title">Import Backup</string>
     <string name="setcat_import_backup_subtitle">Browse or pick from recent backups. Selected data will replace current data.</string>
     <string name="setcat_maintenance">Maintenance</string>
-    <string name="setcat_force_daily_mix_title">Force Daily Mix Regeneration</string>
-    <string name="setcat_force_daily_mix_subtitle">Re-creates the daily mix playlist immediately.</string>
+    <string name="setcat_force_daily_mix_title">Regenerate %1$s</string>
+    <string name="setcat_force_daily_mix_subtitle">Creates a new %1$s now.</string>
     <string name="setcat_force_stats_title">Force Stats Regeneration</string>
     <string name="setcat_force_stats_subtitle">Clears cache and recalculates playback statistics.</string>
     <string name="setcat_force_palette_title">Force Album Palette Regeneration</string>
@@ -192,15 +192,15 @@
     <string name="dialog_rebuild_database_message">This will rebuild the local library from MediaStore. Favorites, imported lyrics and your metadata edits are kept. This action cannot be undone.</string>
     <string name="rebuild">Rebuild</string>
     <string name="toast_rebuilding_database">Rebuilding database…</string>
-    <string name="dialog_regenerate_daily_mix_title">Regenerate Daily Mix?</string>
-    <string name="dialog_regenerate_daily_mix_body">This will discard the current mix and generate a new one based on recent listening habits.</string>
-    <string name="toast_daily_mix_regeneration_started">Daily Mix regeneration started</string>
+    <string name="dialog_regenerate_daily_mix_title">Generate a new %1$s?</string>
+    <string name="dialog_regenerate_daily_mix_body">Replaces %1$s with a new list that stays for the rest of the day.</string>
+    <string name="toast_daily_mix_regeneration_started">Generating %1$s</string>
     <string name="dialog_regenerate_stats_title">Regenerate Stats?</string>
     <string name="dialog_regenerate_stats_body">This will clear the statistics cache and force a recalculation from the database history.</string>
     <string name="toast_stats_regeneration_started">Stats regeneration started</string>
     <string name="backup_file_name_format" translatable="false">Polylute_Backup_%1$d.pxpl</string>
 
-    <string name="setcat_regenerate_daily_mix_action">Regenerate Daily Mix</string>
+    <string name="setcat_regenerate_daily_mix_action">Regenerate %1$s</string>
     <string name="setcat_regenerate_stats_action">Regenerate Stats</string>
     <string name="setcat_force_palette_empty">No songs with album art were found.</string>
     <string name="setcat_force_palette_subtitle">Rebuild all cached palette variants for every album art, or pick a single one to refresh.</string>
@@ -367,23 +367,19 @@
     <string name="setcat_app_colors_theme">Theme and accent</string>
     <string name="setcat_app_colors_album_art">From album art</string>
     <string name="setcat_app_colors_cover_glass">Cover glass</string>
-    <string name="setcat_moving_background_title">Moving background</string>
-    <string name="setcat_moving_background_subtitle">The glass behind the full player and the lock screen drifts slowly while a song plays. Everywhere else it holds still.</string>
-    <string name="setcat_lyrics_under_cover_title">Lyrics under the cover</string>
-    <string name="setcat_lyrics_under_cover_subtitle">Shows the current line and the next one under the cover when the song has synced lyrics. Tap them to open the lyrics.</string>
     <string name="setcat_lock_screen_section">Lock screen</string>
     <string name="setcat_accent_desc_album_art">Used when a song has no cover. The cover decides the rest, adjusted until it reads clearly.</string>
     <string name="setcat_accent_without_cover_label">Accent without a cover</string>
     <!-- B40-F4: music info from the internet (Deezer is gone). -->
-    <string name="setcat_music_info">Music info from the internet</string>
-    <string name="setcat_music_info_note">Everything here is off until you turn it on. Each switch sends only the name of an artist or an album (and what the previous answer gave back), once a second at most, and keeps the answer on this phone. Nothing about you or your library is sent.</string>
+    <string name="setcat_music_info">Music info</string>
+    <string name="setcat_music_info_note">Everything here is off until you turn it on. Only artist and album names are sent, a little at a time so the sources aren’t overloaded, and the answers are kept on this phone. Nothing about you is sent.</string>
     <string name="setcat_music_info_covers_title">Missing album covers</string>
-    <string name="setcat_music_info_covers_subtitle">From the Cover Art Archive, found through MusicBrainz. Only for albums with no cover of their own.</string>
+    <string name="setcat_music_info_covers_subtitle">From the Cover Art Archive. Only for albums with no cover of their own.</string>
     <string name="setcat_music_info_photos_title">Artist photos</string>
-    <string name="setcat_music_info_photos_subtitle">MusicBrainz first, then Wikimedia Commons. Available credits and licences are in Information.</string>
-    <string name="setcat_music_info_descriptions_title">Artist and album descriptions</string>
-    <string name="setcat_music_info_descriptions_subtitle">MusicBrainz first, then Wikipedia in the app language or English. Tap to expand; credits open inside the app.</string>
-    <string name="setcat_music_info_delete_title">Delete downloaded data</string>
-    <string name="setcat_music_info_delete_subtitle">Pictures and descriptions kept on this phone: %1$s</string>
+    <string name="setcat_music_info_photos_subtitle">From MusicBrainz and Wikimedia Commons. Credits in About.</string>
+    <string name="setcat_music_info_descriptions_title">Biographies and descriptions</string>
+    <string name="setcat_music_info_descriptions_subtitle">From MusicBrainz and Wikipedia, in the app’s language or English.</string>
+    <string name="setcat_music_info_delete_title">Delete all downloaded info</string>
+    <string name="setcat_music_info_delete_subtitle">Photos, covers, text and lyrics: %1$s</string>
     <string name="setcat_music_info_deleted">Deleted %1$s</string>
 </resources>

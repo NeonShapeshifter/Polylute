@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 phase 5: the genre page and the Genres tab -->
+    <string name="genre_other_header">Other</string>
+    <string name="genre_top_artists_header">Top artists</string>
+    <string name="genre_albums_header">Albums</string>
+    <string name="genre_all_songs">All songs (%1$d)</string>
+</resources>

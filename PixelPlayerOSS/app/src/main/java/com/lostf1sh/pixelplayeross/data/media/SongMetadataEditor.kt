@@ -15,15 +15,22 @@ import androidx.core.net.toUri
 import com.kyant.taglib.Picture
 import com.kyant.taglib.TagLib
 import com.lostf1sh.pixelplayeross.data.database.ArtistEntity
+import com.lostf1sh.pixelplayeross.data.database.EvidenceRow
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
 import com.lostf1sh.pixelplayeross.data.database.SongArtistCrossRef
 import com.lostf1sh.pixelplayeross.data.database.serializeArtistRefs
+import com.lostf1sh.pixelplayeross.data.identity.EditedEvidence
+import com.lostf1sh.pixelplayeross.data.identity.EditedFileFacts
+import com.lostf1sh.pixelplayeross.data.identity.ItemEvidence
 import com.lostf1sh.pixelplayeross.data.model.ArtistRef
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.worker.collectArtistNames
 import com.lostf1sh.pixelplayeross.utils.AlbumArtUtils
 import com.lostf1sh.pixelplayeross.utils.LocalArtworkUri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.gagravarr.opus.OpusFile
@@ -52,6 +59,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
+import kotlin.coroutines.resume
 
 private const val TAG = "SongMetadataEditor"
 
@@ -74,18 +82,193 @@ private const val REPLAYGAIN_TRACK_GAIN_KEY = "REPLAYGAIN_TRACK_GAIN"
 private const val REPLAYGAIN_ALBUM_GAIN_KEY = "REPLAYGAIN_ALBUM_GAIN"
 private const val MP4_REVERSE_DNS_ISSUER = "com.apple.iTunes"
 
-private sealed interface ReplayGainUpdate {
+internal sealed interface ReplayGainUpdate {
     data object Keep : ReplayGainUpdate
     data object Clear : ReplayGainUpdate
     data class Set(val formattedValue: String) : ReplayGainUpdate
 }
 
 
+/** What a writer could not do for the file in front of it. One per edit; a writer that is retried resets it. */
+internal class WriteReport {
+    var coverNote: CoverNote? = null
+}
+
+/** One edit of a file's tags, in the terms every tag format shares. [applyTo] writes it to a JAudioTagger [Tag]. */
+internal class TagEdit(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val albumArtist: String?,
+    val composer: String?,
+    val genre: String,
+    val lyrics: String,
+    val trackNumber: Int,
+    val discNumber: Int?,
+    val replayGainTrack: ReplayGainUpdate,
+    val replayGainAlbum: ReplayGainUpdate,
+    val cover: CoverArtUpdate?,
+    val date: String?,
+) {
+    fun applyTo(tag: Tag, report: WriteReport) {
+        tag.setField(FieldKey.TITLE, title)
+        tag.setField(FieldKey.ARTIST, artist)
+        tag.setField(FieldKey.ALBUM, album)
+        if (!albumArtist.isNullOrBlank()) {
+            tag.setField(FieldKey.ALBUM_ARTIST, albumArtist)
+        }
+        if (!composer.isNullOrBlank()) {
+            tag.setField(FieldKey.COMPOSER, composer)
+        } else {
+            tag.deleteField(FieldKey.COMPOSER)
+        }
+
+        if (genre.isNotBlank()) {
+            tag.setField(FieldKey.GENRE, genre)
+        } else {
+            tag.deleteField(FieldKey.GENRE)
+        }
+
+        if (lyrics.isNotBlank()) {
+            tag.setField(FieldKey.LYRICS, lyrics)
+        } else {
+            tag.deleteField(FieldKey.LYRICS)
+        }
+
+        tag.setField(FieldKey.TRACK, trackNumber.toString())
+        if (discNumber != null && discNumber > 0) {
+            tag.setField(FieldKey.DISC_NO, discNumber.toString())
+        } else {
+            tag.deleteField(FieldKey.DISC_NO)
+        }
+        tag.applyReplayGainUpdate(REPLAYGAIN_TRACK_GAIN_KEY, replayGainTrack)
+        tag.applyReplayGainUpdate(REPLAYGAIN_ALBUM_GAIN_KEY, replayGainAlbum)
+        if (date != null) {
+            if (date.isBlank()) tag.deleteField(FieldKey.YEAR) else tag.setField(FieldKey.YEAR, date.trim())
+        }
+        cover?.let { report.coverNote = tag.applyCover(it) }
+    }
+}
+
+/**
+ * B57-fix1 5.2. AndroidArtwork is JAudioTagger's picture for Android, which has no ImageIO: its [setImageFromData] throws. FLAC and Vorbis-comment tags call it
+ * before they read the picture's width and height, so every cover for those formats failed (and, because the old cover was deleted first, was lost). The caller
+ * has already set the width and height, so there is nothing to decode.
+ */
+private class DirectArtwork : AndroidArtwork() {
+    override fun setImageFromData(): Boolean = true
+}
+
+/**
+ * Puts a cover in [this] tag, or takes it out. The new picture is **built before the old one is removed**: a cover that cannot be built changes nothing, and the
+ * file keeps the cover it had. Returns why the cover was not written, or null when it was.
+ */
+private fun Tag.applyCover(update: CoverArtUpdate): CoverNote? {
+    if (update.isDeletion) {
+        try {
+            deleteArtworkField()
+            Timber.tag(TAG).d("JAUDIOTAGGER: Removed cover art")
+        } catch (e: UnsupportedOperationException) {
+            Timber.tag(TAG).d("JAUDIOTAGGER: this tag type holds no cover to remove")
+        }
+        return null
+    }
+    val bytes = update.bytes
+    if (bytes == null) {
+        Timber.tag(TAG).w("JAUDIOTAGGER: Ignoring invalid CoverArtUpdate with no bytes and no deletion flag")
+        return null
+    }
+    if (bytes.isEmpty()) return CoverNote.UNREADABLE_IMAGE
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    val artwork = DirectArtwork().apply {
+        binaryData = bytes
+        mimeType = update.mimeType.ifBlank { "image/jpeg" }
+        pictureType = 3
+        description = ""
+        width = bounds.outWidth.coerceAtLeast(0)
+        height = bounds.outHeight.coerceAtLeast(0)
+    }
+    val field = try {
+        createField(artwork)
+    } catch (e: UnsupportedOperationException) {
+        Timber.tag(TAG).w(e, "JAUDIOTAGGER: this tag type cannot hold a cover")
+        return CoverNote.NOT_SUPPORTED
+    } catch (e: Exception) {
+        Timber.tag(TAG).e(e, "JAUDIOTAGGER: Failed to create artwork from bytes")
+        return CoverNote.WRITER_REFUSED
+    }
+    deleteArtworkField()
+    setField(field)
+    Timber.tag(TAG).d("JAUDIOTAGGER: Embedded new cover art (${update.mimeType}, ${bounds.outWidth}x${bounds.outHeight})")
+    return null
+}
+
+/**
+ * Asks Android to index a file again and, unlike a fire-and-forget scan request, **waits** for the answer
+ * (bounded), so the editor can read back what MediaStore now reports before it records the file's evidence.
+ */
+fun interface MediaRescanner {
+    suspend fun rescan(path: String)
+}
+
+internal class AndroidMediaRescanner(
+    private val context: Context,
+    private val timeoutMs: Long = RESCAN_TIMEOUT_MS,
+) : MediaRescanner {
+    override suspend fun rescan(path: String) {
+        if (!File(path).exists()) {
+            Timber.tag(TAG).w("RESCAN: file does not exist")
+            return
+        }
+        val answered = withTimeoutOrNull(timeoutMs) {
+            suspendCancellableCoroutine<Unit> { continuation ->
+                try {
+                    MediaScannerConnection.scanFile(context, arrayOf(path), null) { _, _ ->
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
+                } catch (e: Exception) {
+                    Timber.tag(TAG).w(e, "RESCAN: could not start")
+                    if (continuation.isActive) continuation.resume(Unit)
+                }
+            }
+        }
+        if (answered == null) Timber.tag(TAG).w("RESCAN: no answer in ${timeoutMs} ms")
+    }
+
+    companion object {
+        const val RESCAN_TIMEOUT_MS = 4_000L
+    }
+}
+
 class SongMetadataEditor(
     private val context: Context,
     private val musicDao: MusicDao,
-    private val userPreferencesRepository: UserPreferencesRepository
+    private val userPreferencesRepository: UserPreferencesRepository,
+    /** Off only on a host that cannot load TagLib's native library (JVM tests): the writer then falls back to JAudioTagger, as it does on the phone when TagLib declines a file. */
+    private val tagLibEnabled: Boolean = true,
+    private val rescanner: MediaRescanner = AndroidMediaRescanner(context),
 ) {
+
+    /** The tag writers, each with the formats it is responsible for. */
+    enum class Writer { VORBIS_JAVA, WAV, J_AUDIO_TAGGER, TAG_LIB }
+
+    companion object {
+        /**
+         * B57-fix1 5. The writers to try for a file of this container, in order; the first one whose copy passes the audio guard wins.
+         * - Opus: vorbis-java (the only writer that keeps an Opus stream valid).
+         * - WAV: [WavTagWriter] only. JAudioTagger corrupted the audio of some WAV layouts, so it is never a fallback here.
+         * - Ogg Vorbis: JAudioTagger (TagLib is not used for it).
+         * - everything else, FLAC of any resolution included: TagLib, then JAudioTagger. On a host without TagLib's native library (JVM tests) JAudioTagger alone.
+         */
+        internal fun writersFor(container: String, tagLibAvailable: Boolean): List<Writer> = when {
+            container == "opus" -> listOf(Writer.VORBIS_JAVA)
+            container == "wav" -> listOf(Writer.WAV)
+            container == "ogg" -> listOf(Writer.J_AUDIO_TAGGER)
+            tagLibAvailable -> listOf(Writer.TAG_LIB, Writer.J_AUDIO_TAGGER)
+            else -> listOf(Writer.J_AUDIO_TAGGER)
+        }
+    }
 
     /**
      * Maximum allowed length for metadata fields to prevent buffer overflows
@@ -123,6 +306,11 @@ class SongMetadataEditor(
         return null
     }
 
+    private fun validateDate(date: String?): String? {
+        if (date == null || date.isBlank()) return null
+        return if (EditableDate.isValid(date)) null else "Date must be YYYY, YYYY-MM or YYYY-MM-DD"
+    }
+
     private fun parseReplayGainUpdate(rawValue: String?, fieldName: String): Result<ReplayGainUpdate> {
         if (rawValue == null) return Result.success(ReplayGainUpdate.Keep)
 
@@ -151,7 +339,11 @@ class SongMetadataEditor(
         album: String,
         genre: String?,
         trackNumber: Int,
-        discNumber: Int?
+        discNumber: Int?,
+        libraryItemId: String?,
+        evidence: ItemEvidence,
+        fileSize: Long,
+        year: Int?,
     ) {
         val existingArtists = musicDao.getAllArtistsListRaw()
         val existingByNormalizedName =
@@ -212,7 +404,9 @@ class SongMetadataEditor(
             )
         }
 
-        musicDao.updateSongMetadataAndArtistLinks(
+        // The `songs` row, the artist links and the item's evidence are one transaction (B57 1.1): a
+        // write the library row does not know about is what made the next scan mint a new identity.
+        musicDao.commitEditedSongMetadata(
             songId = songId,
             title = title,
             artist = artist,
@@ -223,7 +417,11 @@ class SongMetadataEditor(
             trackNumber = trackNumber,
             discNumber = discNumber,
             artistsToEnsure = artistsToEnsure,
-            crossRefs = crossRefs
+            crossRefs = crossRefs,
+            libraryItemId = libraryItemId,
+            evidence = evidence,
+            fileSize = fileSize,
+            year = year,
         )
     }
 
@@ -241,8 +439,11 @@ class SongMetadataEditor(
         newReplayGainTrackGainDb: String? = null,
         newReplayGainAlbumGainDb: String? = null,
         coverArtUpdate: CoverArtUpdate? = null,
+        /** B57: the file's date tag. null = leave as it is, blank = remove it, else `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. */
+        newDate: String? = null,
     ): SongMetadataEditResult = withContext(Dispatchers.IO) {
         val validationError = validateMetadataInput(newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics)
+            ?: validateDate(newDate)
         if (validationError != null) {
             Timber.w("Metadata validation failed: $validationError")
             return@withContext SongMetadataEditResult(
@@ -322,68 +523,30 @@ class SongMetadataEditor(
             }
             val needsExtensionSwap =
                 effectiveExtension != extension && detectedContainer != DetectedContainer.OGG_OPUS
-            val flacAnalysis = isProblematicFlacFile(finalFilePath)
-            val isHighResFlac = flacAnalysis is FlacAnalysisResult.Problematic
-            val useVorbisJavaPrimary = effectiveExtension == "opus"
-            val useJAudioTaggerPrimary = effectiveExtension in setOf("wav", "ogg") || isHighResFlac
             val fileExists = finalFilePath.isNotBlank() && File(finalFilePath).exists()
 
-            val runPipeline: (String) -> Boolean = { path ->
-                if (useVorbisJavaPrimary) {
-                    Timber.tag(TAG).d("METADATA_EDIT: Using VorbisJava Opus writer for $effectiveExtension: $path")
-                    updateFileMetadataWithVorbisJava(
-                        filePath = path,
-                        newTitle = newTitle,
-                        newArtist = newArtist,
-                        newAlbum = newAlbum,
-                        newAlbumArtist = newAlbumArtist,
-                        newComposer = newComposer,
-                        newGenre = trimmedGenre,
-                        newLyrics = trimmedLyrics,
-                        newTrackNumber = newTrackNumber,
-                        newDiscNumber = newDiscNumber,
-                        replayGainTrackUpdate = replayGainTrackUpdate,
-                        replayGainAlbumUpdate = replayGainAlbumUpdate,
-                        coverArtUpdate = coverArtUpdate
-                    )
-                } else if (useJAudioTaggerPrimary) {
-                    Timber.tag(TAG).d("METADATA_EDIT: Using JAudioTagger as primary for $effectiveExtension: $path")
-                    updateFileMetadataWithJAudioTagger(
-                        filePath = path,
-                        newTitle = newTitle,
-                        newArtist = newArtist,
-                        newAlbum = newAlbum,
-                        newAlbumArtist = newAlbumArtist,
-                        newComposer = newComposer,
-                        newGenre = trimmedGenre,
-                        newLyrics = trimmedLyrics,
-                        newTrackNumber = newTrackNumber,
-                        newDiscNumber = newDiscNumber,
-                        replayGainTrackUpdate = replayGainTrackUpdate,
-                        replayGainAlbumUpdate = replayGainAlbumUpdate,
-                        coverArtUpdate = coverArtUpdate
-                    )
-                } else {
-                    Timber.tag(TAG).d("METADATA_EDIT: Using TagLib for $effectiveExtension: $path")
-                    val tagLibSuccess = updateFileMetadataWithTagLib(
-                        filePath = path,
-                        newTitle = newTitle,
-                        newArtist = newArtist,
-                        newAlbum = newAlbum,
-                        newAlbumArtist = newAlbumArtist,
-                        newComposer = newComposer,
-                        newGenre = trimmedGenre,
-                        newLyrics = trimmedLyrics,
-                        newTrackNumber = newTrackNumber,
-                        newDiscNumber = newDiscNumber,
-                        replayGainTrackUpdate = replayGainTrackUpdate,
-                        replayGainAlbumUpdate = replayGainAlbumUpdate,
-                        coverArtUpdate = coverArtUpdate
-                    )
-                    if (!tagLibSuccess) {
-                        Timber.tag(TAG)
-                            .w("METADATA_EDIT: TagLib failed for $effectiveExtension, falling back to JAudioTagger")
-                        updateFileMetadataWithJAudioTagger(
+            // B57-fix1 5: what a writer could not do is reported, never silently dropped.
+            val report = WriteReport()
+            val tagEdit = TagEdit(
+                title = newTitle,
+                artist = newArtist,
+                album = newAlbum,
+                albumArtist = newAlbumArtist,
+                composer = newComposer,
+                genre = trimmedGenre,
+                lyrics = trimmedLyrics,
+                trackNumber = newTrackNumber,
+                discNumber = newDiscNumber,
+                replayGainTrack = replayGainTrackUpdate,
+                replayGainAlbum = replayGainAlbumUpdate,
+                cover = coverArtUpdate,
+                date = newDate,
+            )
+            val writerFor: (Writer) -> (String) -> Boolean = { writer ->
+                { path ->
+                    Timber.tag(TAG).d("METADATA_EDIT: Using $writer for $effectiveExtension: $path")
+                    when (writer) {
+                        Writer.VORBIS_JAVA -> updateFileMetadataWithVorbisJava(
                             filePath = path,
                             newTitle = newTitle,
                             newArtist = newArtist,
@@ -396,11 +559,54 @@ class SongMetadataEditor(
                             newDiscNumber = newDiscNumber,
                             replayGainTrackUpdate = replayGainTrackUpdate,
                             replayGainAlbumUpdate = replayGainAlbumUpdate,
-                            coverArtUpdate = coverArtUpdate
+                            coverArtUpdate = coverArtUpdate,
+                            newDate = newDate
                         )
-                    } else true
+                        Writer.WAV -> updateWavFile(path, tagEdit, report)
+                        Writer.J_AUDIO_TAGGER -> updateFileMetadataWithJAudioTagger(path, tagEdit, report)
+                        Writer.TAG_LIB -> updateFileMetadataWithTagLib(
+                            filePath = path,
+                            newTitle = newTitle,
+                            newArtist = newArtist,
+                            newAlbum = newAlbum,
+                            newAlbumArtist = newAlbumArtist,
+                            newComposer = newComposer,
+                            newGenre = trimmedGenre,
+                            newLyrics = trimmedLyrics,
+                            newTrackNumber = newTrackNumber,
+                            newDiscNumber = newDiscNumber,
+                            replayGainTrackUpdate = replayGainTrackUpdate,
+                            replayGainAlbumUpdate = replayGainAlbumUpdate,
+                            coverArtUpdate = coverArtUpdate,
+                            newDate = newDate,
+                            report = report,
+                        )
+                    }
                 }
             }
+
+            // B57 1.1. Parked BEFORE the file is touched. If the evidence cannot be parked, nothing is
+            // written. From here until the commit below, an interruption (process death, a failing
+            // transaction) leaves the item with no stored evidence, and the resolver keeps an item with
+            // no evidence and lets the next scan record it, so the identity survives a half-finished edit.
+            val parked: EvidenceRow? = if (fileExists) {
+                try {
+                    musicDao.parkEvidenceForSong(songId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.tag(TAG).e(e, "METADATA_EDIT: could not park the item's identity evidence; the file is not written")
+                    return@withContext SongMetadataEditResult(
+                        success = false,
+                        updatedAlbumArtUri = null,
+                        error = MetadataEditError.IO_ERROR,
+                        errorMessage = "Could not prepare the library for the edit"
+                    )
+                }
+            } else {
+                null
+            }
+            val fileBefore = File(finalFilePath).let { it.length() to it.lastModified() }
 
             val fileUpdateSuccess = if (!fileExists) {
                 Timber.tag(TAG).e("METADATA_EDIT: File does not exist: $finalFilePath")
@@ -413,11 +619,25 @@ class SongMetadataEditor(
                 if (needsExtensionSwap) {
                     Timber.tag(TAG).d("METADATA_EDIT: Writing via .$effectiveExtension copy for $finalFilePath")
                 }
-                writeMetadataViaExtensionSwap(finalFilePath, effectiveExtension, runPipeline)
+                // B57-fix1 5.3: each writer gets its own fresh copy of the original, and a copy whose audio is not the
+                // original's is thrown away before it can replace anything (FLAC and WAV: AudioPayloadGuard). A writer
+                // that fails or fails the guard hands over to the next one; the last failure is the edit's failure.
+                var written = false
+                for (writer in writersFor(effectiveExtension, tagLibEnabled)) {
+                    report.coverNote = null
+                    written = writeMetadataViaExtensionSwap(finalFilePath, effectiveExtension, writerFor(writer))
+                    if (written) break
+                    Timber.tag(TAG).w("METADATA_EDIT: $writer did not produce a usable copy of $finalFilePath")
+                }
+                written
             }
 
             if (!fileUpdateSuccess) {
                 Timber.tag(TAG).e("Failed to update file metadata for songId: $songId")
+                // The evidence goes back only if the file is demonstrably as it was; otherwise it stays
+                // "none" and the next scan records what is there.
+                val untouched = File(finalFilePath).let { it.exists() && it.length() == fileBefore.first && it.lastModified() == fileBefore.second }
+                if (parked != null && untouched) restoreEvidence(songId, parked)
                 return@withContext SongMetadataEditResult(
                     success = false,
                     updatedAlbumArtUri = null,
@@ -440,6 +660,14 @@ class SongMetadataEditor(
                 Timber.w("MediaStore update failed, but file was updated for songId: $songId")
             }
 
+            // Let Android index the file as it is now and wait (bounded) for it, then read back what a
+            // scan will read: that, not a prediction, is what the item's evidence has to equal.
+            if (finalFilePath.isNotBlank()) {
+                rescanner.rescan(finalFilePath)
+            }
+            val newFileSize = File(finalFilePath).length()
+            val newEvidence = settleEvidence(songId, newFileSize)
+
             var storedCoverArtUri: String? = null
             updateSongArtistMetadata(
                 songId = songId,
@@ -448,21 +676,28 @@ class SongMetadataEditor(
                 album = newAlbum,
                 genre = normalizedGenre,
                 trackNumber = newTrackNumber,
-                discNumber = newDiscNumber
+                discNumber = newDiscNumber,
+                libraryItemId = parked?.libraryItemId,
+                year = if (newDate != null) EditableDate.yearOf(newDate) ?: 0 else null,
+                evidence = newEvidence,
+                // Unconfirmed evidence stays "none" in both halves: the size stays blanked too (0 = unknown),
+                // otherwise the scan would derive a signature from it.
+                fileSize = if (newEvidence.isEmpty) 0L else newFileSize,
             )
 
-            coverArtUpdate?.let {
-                AlbumArtUtils.clearCacheForSong(context, songId)
-                storedCoverArtUri = if (it.isDeletion) null else LocalArtworkUri.buildSongUriWithTimestamp(songId)
-                musicDao.updateSongAlbumArt(songId, storedCoverArtUri)
-            }
-
-            if (finalFilePath.isNotBlank()) {
-                forceMediaRescan(finalFilePath)
+            // A cover the writer could not put in the file changes nothing about the song's art: the old cover is still there.
+            if (report.coverNote == null) {
+                coverArtUpdate?.let {
+                    AlbumArtUtils.clearCacheForSong(context, songId)
+                    storedCoverArtUri = if (it.isDeletion) null else LocalArtworkUri.buildSongUriWithTimestamp(songId)
+                    musicDao.updateSongAlbumArt(songId, storedCoverArtUri)
+                }
+            } else {
+                Timber.tag(TAG).w("METADATA_EDIT: saved without the cover (${report.coverNote}) for songId: $songId")
             }
 
             Timber.tag(TAG).d("METADATA_EDIT: Successfully updated metadata for songId: $songId")
-            SongMetadataEditResult(success = true, updatedAlbumArtUri = storedCoverArtUri)
+            SongMetadataEditResult(success = true, updatedAlbumArtUri = storedCoverArtUri, coverNote = report.coverNote)
         } catch (e: RecoverableSecurityException) {
             SongMetadataEditResult(
                 success = false,
@@ -539,6 +774,11 @@ class SongMetadataEditor(
                 Timber.tag(TAG).e("METADATA_EDIT: Writer failed on temp file ${tempFile.absolutePath}")
                 return false
             }
+            // B57-fix1: the edited copy carries the original's audio, or it replaces nothing.
+            if (!AudioPayloadGuard.sameAudio(originalFile, tempFile, correctExtension)) {
+                Timber.tag(TAG).e("METADATA_EDIT: The edited copy of ${originalFile.name} does not carry the original's audio; the original is left as it is")
+                return false
+            }
             replaceFileContentSafely(tempFile, originalFile)
             Timber.tag(TAG).d(
                 "METADATA_EDIT: Restored ${tempFile.length()} edited bytes back to $originalPath"
@@ -597,67 +837,6 @@ class SongMetadataEditor(
                 out.fd.sync()
             }
         }
-    }
-
-    /**
-     * FLAC files with high sample rates (>96kHz) or bit depths (>24bit) can cause issues with TagLib.
-     * This function detects such files and logs warnings.
-     */
-    private fun isProblematicFlacFile(filePath: String): FlacAnalysisResult {
-        val extension = filePath.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        if (extension != "flac") {
-            return FlacAnalysisResult.NotFlac
-        }
-        
-        return try {
-            val file = File(filePath)
-            file.inputStream().use { inputStream ->
-                val header = ByteArray(42)
-                val bytesRead = inputStream.read(header)
-                
-                if (bytesRead < 42) {
-                    return FlacAnalysisResult.NotFlac
-                }
-                
-                if (header[0].toInt().toChar() != 'f' ||
-                    header[1].toInt().toChar() != 'L' ||
-                    header[2].toInt().toChar() != 'a' ||
-                    header[3].toInt().toChar() != 'C'
-                ) {
-                    return FlacAnalysisResult.NotFlac
-                }
-                
-                val sampleRate = ((header[18].toInt() and 0xFF) shl 12) or
-                    ((header[19].toInt() and 0xFF) shl 4) or
-                    ((header[20].toInt() and 0xF0) shr 4)
-                
-                val bitsPerSample = (((header[20].toInt() and 0x01) shl 4) or
-                    ((header[21].toInt() and 0xF0) shr 4)) + 1
-
-                Timber.tag(TAG)
-                    .d("FLAC analysis: sampleRate=$sampleRate, bitsPerSample=$bitsPerSample")
-                
-                val isProblematic = sampleRate > 96000 || bitsPerSample > 24
-                
-                if (isProblematic) {
-                    Timber.tag(TAG)
-                        .w("FLAC file may be problematic: $filePath (${sampleRate}Hz, ${bitsPerSample}bit)")
-                    FlacAnalysisResult.Problematic(sampleRate, bitsPerSample)
-                } else {
-                    FlacAnalysisResult.Safe(sampleRate, bitsPerSample)
-                }
-            }
-        } catch (e: Exception) {
-            Timber.tag(TAG).w(e, "Could not analyze FLAC file: $filePath")
-            FlacAnalysisResult.Unknown
-        }
-    }
-
-    private sealed class FlacAnalysisResult {
-        object NotFlac : FlacAnalysisResult()
-        data class Safe(val sampleRate: Int, val bitsPerSample: Int) : FlacAnalysisResult()
-        data class Problematic(val sampleRate: Int, val bitsPerSample: Int) : FlacAnalysisResult()
-        object Unknown : FlacAnalysisResult()
     }
 
     private enum class DetectedContainer(val canonicalExtension: String) {
@@ -761,20 +940,14 @@ class SongMetadataEditor(
         newDiscNumber: Int?,
         replayGainTrackUpdate: ReplayGainUpdate = ReplayGainUpdate.Keep,
         replayGainAlbumUpdate: ReplayGainUpdate = ReplayGainUpdate.Keep,
-        coverArtUpdate: CoverArtUpdate? = null
+        coverArtUpdate: CoverArtUpdate? = null,
+        newDate: String? = null,
+        report: WriteReport = WriteReport(),
     ): Boolean {
-        when (val flacResult = isProblematicFlacFile(filePath)) {
-            is FlacAnalysisResult.Problematic -> {
-                Timber.tag(TAG)
-                    .w("TAGLIB: Skipping file modification for high-resolution FLAC (${flacResult.sampleRate}Hz, ${flacResult.bitsPerSample}bit)")
-                // Declining is a failure, not a success: returning true here reported the edit as
-                // written and lost it on the next scan. False lets the JAudioTagger fallback write it.
-                Timber.tag(TAG)
-                    .w("TAGLIB: High-res FLAC files may not work correctly with TagLib; handing over to JAudioTagger.")
-                return false
-            }
-            else -> { }
-        }
+        if (!tagLibEnabled) return false
+        // B57-fix1 5.3: there used to be a refusal here for FLAC above 96 kHz or 24 bit ("may not work correctly with TagLib"). No reproducer, test or
+        // report came with it, and the host probe (taglib-highres-probe.py: 16/24/32-bit up to 384 kHz) shows TagLib leaves STREAMINFO and every audio frame
+        // byte for byte. The safety net is AudioPayloadGuard, which runs on the copy before it replaces the file, whatever the writer.
         
         return try {
             val audioFile = File(filePath)
@@ -809,6 +982,11 @@ class SongMetadataEditor(
                 }
                 propertyMap.applyReplayGainUpdate(REPLAYGAIN_TRACK_GAIN_KEY, replayGainTrackUpdate)
                 propertyMap.applyReplayGainUpdate(REPLAYGAIN_ALBUM_GAIN_KEY, replayGainAlbumUpdate)
+                if (newDate != null) {
+                    // DATE is the property TagLib maps to ID3 TDRC, MP4 ©day and the Vorbis DATE comment; YEAR is the old spelling some files carry.
+                    propertyMap.remove("YEAR")
+                    propertyMap.upsertOrRemove("DATE", newDate.trim().takeIf { it.isNotEmpty() })
+                }
                 Timber.tag(TAG).d("TAGLIB: Updated property map, saving...")
 
                 val saveFd = fd.dup()
@@ -839,6 +1017,8 @@ class SongMetadataEditor(
                         val pictureFd = fd.dup()
                         val coverSaved = TagLib.savePictures(pictureFd.detachFd(), it)
                         if (!coverSaved) {
+                            // B57-fix1 5.2: said, not swallowed.
+                            report.coverNote = CoverNote.WRITER_REFUSED
                             Timber.tag(TAG)
                                 .w("TAGLIB: Failed to save cover art, but metadata was saved")
                         } else {
@@ -867,21 +1047,7 @@ class SongMetadataEditor(
         }
     }
 
-    private fun updateFileMetadataWithJAudioTagger(
-        filePath: String,
-        newTitle: String,
-        newArtist: String,
-        newAlbum: String,
-        newAlbumArtist: String?,
-        newComposer: String?,
-        newGenre: String,
-        newLyrics: String,
-        newTrackNumber: Int,
-        newDiscNumber: Int?,
-        replayGainTrackUpdate: ReplayGainUpdate = ReplayGainUpdate.Keep,
-        replayGainAlbumUpdate: ReplayGainUpdate = ReplayGainUpdate.Keep,
-        coverArtUpdate: CoverArtUpdate? = null
-    ): Boolean {
+    private fun updateFileMetadataWithJAudioTagger(filePath: String, edit: TagEdit, report: WriteReport): Boolean {
         val targetFile = File(filePath)
         
         return try {
@@ -889,68 +1055,7 @@ class SongMetadataEditor(
             
             val audioFile = AudioFileIO.read(targetFile)
             val tag = audioFile.tag ?: audioFile.createDefaultTag()
-            
-            tag.setField(FieldKey.TITLE, newTitle)
-            tag.setField(FieldKey.ARTIST, newArtist)
-            tag.setField(FieldKey.ALBUM, newAlbum)
-            if (!newAlbumArtist.isNullOrBlank()) {
-                tag.setField(FieldKey.ALBUM_ARTIST, newAlbumArtist)
-            }
-            if (!newComposer.isNullOrBlank()) {
-                tag.setField(FieldKey.COMPOSER, newComposer)
-            } else {
-                tag.deleteField(FieldKey.COMPOSER)
-            }
-            
-            if (newGenre.isNotBlank()) {
-                tag.setField(FieldKey.GENRE, newGenre)
-            } else {
-                tag.deleteField(FieldKey.GENRE)
-            }
-            
-            if (newLyrics.isNotBlank()) {
-                tag.setField(FieldKey.LYRICS, newLyrics)
-            } else {
-                tag.deleteField(FieldKey.LYRICS)
-            }
-            
-            tag.setField(FieldKey.TRACK, newTrackNumber.toString())
-            if (newDiscNumber != null && newDiscNumber > 0) {
-                tag.setField(FieldKey.DISC_NO, newDiscNumber.toString())
-            } else {
-                tag.deleteField(FieldKey.DISC_NO)
-            }
-            tag.applyReplayGainUpdate(REPLAYGAIN_TRACK_GAIN_KEY, replayGainTrackUpdate)
-            tag.applyReplayGainUpdate(REPLAYGAIN_ALBUM_GAIN_KEY, replayGainAlbumUpdate)
-
-            coverArtUpdate?.let { update ->
-                if (update.isDeletion) {
-                    tag.deleteArtworkField()
-                    Timber.tag(TAG).d("JAUDIOTAGGER: Removed cover art")
-                } else if (update.bytes != null) {
-                    try {
-                        tag.deleteArtworkField()
-                        val artwork = AndroidArtwork()
-                        artwork.binaryData = update.bytes
-                        artwork.mimeType = update.mimeType
-                        artwork.pictureType = 3
-                        
-                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(update.bytes, 0, update.bytes.size, options)
-                        artwork.width = options.outWidth
-                        artwork.height = options.outHeight
-                        
-                        tag.setField(artwork)
-                        Timber.tag(TAG)
-                            .d("JAUDIOTAGGER: Embedded new cover art (${update.mimeType}, ${options.outWidth}x${options.outHeight})")
-                    } catch (e: Exception) {
-                        Timber.tag(TAG).e(e, "JAUDIOTAGGER: Failed to create artwork from bytes")
-                    }
-                } else {
-                    Timber.tag(TAG).w("JAUDIOTAGGER: Ignoring invalid CoverArtUpdate with no bytes and no deletion flag")
-                }
-            }
-
+            edit.applyTo(tag, report)
             audioFile.commit()
             Timber.tag(TAG).d("JAUDIOTAGGER: SUCCESS - Updated file metadata: $filePath")
             true
@@ -958,6 +1063,35 @@ class SongMetadataEditor(
             Timber.tag(TAG).e("JAUDIOTAGGER ERROR: ${e.javaClass.simpleName}: ${e.message}")
             Timber.e(e)
             false
+        }
+    }
+
+    /**
+     * B57-fix1 5.1: a WAV file's tags, written by [WavTagWriter] (the chunks that are not tags are copied byte for byte).
+     * [filePath] is the working copy; the result replaces it, so the copy is rewritten through a sibling file.
+     */
+    private fun updateWavFile(filePath: String, edit: TagEdit, report: WriteReport): Boolean {
+        val target = File(filePath)
+        val rewritten = File(target.parentFile, "${target.name}.wav-${System.nanoTime()}.tmp")
+        return try {
+            val info = buildMap<String, String?> {
+                put(WavTagWriter.InfoId.TITLE, edit.title)
+                put(WavTagWriter.InfoId.ARTIST, edit.artist)
+                put(WavTagWriter.InfoId.ALBUM, edit.album)
+                put(WavTagWriter.InfoId.GENRE, edit.genre)
+                put(WavTagWriter.InfoId.TRACK, edit.trackNumber.takeIf { it > 0 }?.toString())
+                if (edit.date != null) put(WavTagWriter.InfoId.DATE, edit.date.trim())
+            }
+            java.util.logging.Logger.getLogger("org.jaudiotagger").level = java.util.logging.Level.OFF
+            WavTagWriter.edit(target, rewritten, info) { id3 -> edit.applyTo(id3, report) }
+            rewritten.inputStream().use { input -> FileOutputStream(target, false).use { out -> input.copyTo(out); out.fd.sync() } }
+            Timber.tag(TAG).d("WAV: SUCCESS - Updated file metadata: $filePath")
+            true
+        } catch (e: Exception) {
+            Timber.tag(TAG).e("WAV ERROR: ${e.javaClass.simpleName}: ${e.message}")
+            false
+        } finally {
+            if (rewritten.exists() && !rewritten.delete()) Timber.tag(TAG).w("WAV: Could not delete temp file ${rewritten.absolutePath}")
         }
     }
 
@@ -974,7 +1108,8 @@ class SongMetadataEditor(
         newDiscNumber: Int?,
         replayGainTrackUpdate: ReplayGainUpdate = ReplayGainUpdate.Keep,
         replayGainAlbumUpdate: ReplayGainUpdate = ReplayGainUpdate.Keep,
-        coverArtUpdate: CoverArtUpdate? = null
+        coverArtUpdate: CoverArtUpdate? = null,
+        newDate: String? = null,
     ): Boolean {
         val audioFile = File(filePath)
         val originalExtension = audioFile.extension.ifBlank { "opus" }
@@ -1006,6 +1141,7 @@ class SongMetadataEditor(
             tags.replaceSingleComment("DISCNUMBER", newDiscNumber?.takeIf { it > 0 }?.toString())
             tags.applyReplayGainUpdate(REPLAYGAIN_TRACK_GAIN_KEY, replayGainTrackUpdate)
             tags.applyReplayGainUpdate(REPLAYGAIN_ALBUM_GAIN_KEY, replayGainAlbumUpdate)
+            if (newDate != null) tags.replaceSingleComment("DATE", newDate.trim().takeIf { it.isNotEmpty() })
             coverArtUpdate?.let { update ->
                 tags.applyCoverArtUpdate(update)
             }
@@ -1099,23 +1235,62 @@ class SongMetadataEditor(
         }
     }
 
-    private fun forceMediaRescan(filePath: String) {
+    /** Puts an item's evidence back after a write that failed with the file unchanged. Failing to do so is harmless: the item stays "no evidence". */
+    private suspend fun restoreEvidence(songId: Long, row: EvidenceRow) {
         try {
-            val file = File(filePath)
-            if (file.exists()) {
-                Timber.tag(TAG).e("RESCAN: Starting MediaScanner for: $filePath")
-                MediaScannerConnection.scanFile(
-                    context,
-                    arrayOf(filePath),
-                    null
-                ) { path, uri ->
-                    Timber.tag(TAG).e("RESCAN: Completed for: $path, new URI: $uri")
-                }
-            } else {
-                Timber.tag(TAG).e("RESCAN: File does not exist: $filePath")
-            }
+            musicDao.restoreEvidenceForSong(songId, row)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Timber.tag(TAG).e("RESCAN ERROR: ${e.message}")
+            Timber.tag(TAG).w(e, "METADATA_EDIT: could not restore the item's evidence; it stays empty and the next scan records it")
+        }
+    }
+
+    /**
+     * The evidence a scan will compute for the file as it is now, read from the row MediaStore reports
+     * (the scan's own source), or [ItemEvidence.NONE] when MediaStore has not caught up: its size must
+     * equal the file's real size, otherwise the row is still the old one and recording it would plant the
+     * very mismatch this exists to prevent. "None" is always safe: the resolver keeps the item and the
+     * next scan records the evidence.
+     */
+    private fun settleEvidence(songId: Long, fileSize: Long): ItemEvidence {
+        if (fileSize <= 0L) return ItemEvidence.NONE
+        return try {
+            context.contentResolver.query(
+                ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, songId),
+                arrayOf(
+                    MediaStore.Audio.Media.DURATION,
+                    MediaStore.Audio.Media.SIZE,
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.TRACK,
+                ),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return ItemEvidence.NONE
+                val reportedSize = cursor.getLong(1)
+                val duration = cursor.getLong(0)
+                if (reportedSize != fileSize || duration <= 0L) {
+                    Timber.tag(TAG).w("METADATA_EDIT: MediaStore has not caught up (size $reportedSize, file $fileSize); evidence left empty")
+                    return ItemEvidence.NONE
+                }
+                EditedEvidence.of(
+                    EditedFileFacts(
+                        durationMs = duration,
+                        fileSize = reportedSize,
+                        title = cursor.getString(2),
+                        artist = cursor.getString(3),
+                        album = cursor.getString(4),
+                        rawTrack = cursor.getInt(5),
+                    )
+                )
+            } ?: ItemEvidence.NONE
+        } catch (e: Exception) {
+            Timber.tag(TAG).w(e, "METADATA_EDIT: could not read the file back from MediaStore; evidence left empty")
+            ItemEvidence.NONE
         }
     }
 
@@ -1311,7 +1486,21 @@ data class SongMetadataEditResult(
     val error: MetadataEditError? = null,
     val errorMessage: String? = null,
     val permissionIntentSender: android.content.IntentSender? = null,
+    /** B57-fix1 5.2: non-null when the text was saved but the cover could not be written to this file ("saved, without the cover: <reason>"). The old cover is untouched. */
+    val coverNote: CoverNote? = null,
 )
+
+/** Why a cover was not written to a file whose other tags were saved. */
+enum class CoverNote {
+    /** The file's tag format has no place for a picture. */
+    NOT_SUPPORTED,
+
+    /** The tag writer refused this picture. */
+    WRITER_REFUSED,
+
+    /** The picture has no bytes. */
+    UNREADABLE_IMAGE,
+}
 
 data class CoverArtUpdate(
     val bytes: ByteArray? = null,
@@ -1335,4 +1524,22 @@ data class CoverArtUpdate(
         result = 31 * result + mimeType.hashCode()
         return result
     }
+}
+
+/**
+ * The date the editor writes to a file's date tag (B57 1.3): a year, a year and month, or a full date, as every tag format spells it.
+ * [yearOf] is the year the library keeps (`songs.year`); null when the text has none.
+ */
+object EditableDate {
+    private val shape = Regex("""\d{4}(-\d{2}(-\d{2})?)?""")
+
+    fun isValid(text: String): Boolean {
+        val value = text.trim()
+        if (!shape.matches(value)) return false
+        val month = value.drop(5).take(2).toIntOrNull()
+        val day = value.drop(8).take(2).toIntOrNull()
+        return (month == null || month in 1..12) && (day == null || day in 1..31)
+    }
+
+    fun yearOf(text: String?): Int? = text?.trim()?.takeIf { shape.matches(it) }?.take(4)?.toIntOrNull()?.takeIf { it > 0 }
 }

@@ -135,6 +135,8 @@ data class PlayerLyricsState(
     val lyricsResolveCompletedProvider: () -> Boolean,
     /** B41: two lines of synced lyrics under the cover (Appearance, Player). */
     val underCover: Boolean = true,
+    /** B56-3.4: how the lyrics show in the player. [underCover] is the same answer for the lines; this one also decides whether the Lyrics page exists. */
+    val mode: com.lostf1sh.pixelplayeross.data.preferences.LyricsMode = com.lostf1sh.pixelplayeross.data.preferences.LyricsMode.OVER_COVER,
 )
 
 /** Everything the full player shows. Built once per composition of the host; each surface reads its own slice. */
@@ -243,6 +245,8 @@ interface FullPlayerActions {
     // ── the track ──
     fun onPlayFromCarousel(song: Song, queue: ImmutableList<Song>, queueName: String, index: Int)
     fun onOpenAlbum(albumId: Long)
+    /** B56-4: the song's title was tapped: close the player and show the song in the Library's Songs tab. */
+    fun onLocateSongInLibrary(songId: String) {}
     fun onOpenArtist(artistId: Long)
     fun onAddBookmark(song: Song, title: String, positionMs: Long)
 
@@ -259,6 +263,11 @@ interface FullPlayerActions {
     fun onShowLyricsRomanizationChange(show: Boolean)
     fun onImmersiveTemporarilyDisabledChange(disabled: Boolean)
     fun onSaveLyricsToFile(song: Song, lyrics: Lyrics, preferSynced: Boolean)
+    /** B56-3.2: the sync editor's save: the `.lrc` beside the audio (or the app's own copy) and the database, so the timed lines are what plays. */
+    fun onSaveSyncedLyrics(song: Song, lyrics: Lyrics) {}
+
+    /** B56-3.4: the player's lyrics button changes how the lyrics show, in place. */
+    fun onLyricsModeChange(mode: com.lostf1sh.pixelplayeross.data.preferences.LyricsMode) {}
     fun onImportLyricsFromFile(songId: Long, validated: ValidatedLyricsImport)
     fun onToast(message: String)
 

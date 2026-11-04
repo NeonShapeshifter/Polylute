@@ -286,7 +286,7 @@ class LibraryStateHolder @Inject constructor(
             _isLoadingCategories.value = true
             @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
             effectiveStorageFilter.flatMapLatest { filter ->
-                musicRepository.getArtists(filter)
+                kotlinx.coroutines.flow.combine(musicRepository.getArtists(filter),allSongs) { artists,_ -> artists }
             }.conflate().collect { artists ->
                 val sortedArtists = withContext(Dispatchers.Default) {
                     sortArtistsList(artists, _currentArtistSortOption.value).toImmutableList()
@@ -465,6 +465,10 @@ class LibraryStateHolder @Inject constructor(
 
     private fun sortArtistsList(artists: Iterable<Artist>, sortOption: SortOption): List<Artist> {
         return when (sortOption) {
+            SortOption.ArtistDateAdded -> {
+                val newest = newestAddedByArtist(_allSongs.value)
+                artists.sortedWith(compareByDescending<Artist> { newest[it.id] ?: 0L }.thenBy { it.name.lowercase() }.thenBy { it.id })
+            }
             SortOption.ArtistNameAZ -> artists.sortedWith(
                 compareBy<Artist> { it.name.lowercase() }
                     .thenBy { it.id }

@@ -149,6 +149,10 @@ open class B33HeroRenderTest {
 
     private fun album(art: String) = Album(id = 1L, title = "Game Over", artist = "Ska-P", year = 2018, dateAdded = 0L, albumArtUriString = art, songCount = 3)
 
+    private fun idleInfoActions() = mockk<com.lostf1sh.pixelplayeross.presentation.viewmodel.MusicInfoActionsViewModel>(relaxed = true).also { actions ->
+        every { actions.result } returns MutableStateFlow<com.lostf1sh.pixelplayeross.presentation.viewmodel.MusicInfoActionResult?>(null)
+    }
+
     private fun albumPage(art: String) {
         val songs = listOf(
             song(1, "Colores", "Ska-P", 1L, "Game Over", 1L, art),
@@ -161,7 +165,7 @@ open class B33HeroRenderTest {
         show {
             AlbumDetailScreen(
                 albumId = "1", navController = rememberNavController(), playerViewModel = player,
-                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = mockk(relaxed = true),
+                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = idleInfoActions(),
             )
         }
     }
@@ -187,7 +191,7 @@ open class B33HeroRenderTest {
         show {
             ArtistDetailScreen(
                 artistId = "1", navController = rememberNavController(), playerViewModel = player,
-                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = mockk(relaxed = true),
+                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = idleInfoActions(),
             )
         }
     }
@@ -200,7 +204,7 @@ open class B33HeroRenderTest {
         show {
             AlbumDetailScreen(
                 albumId = "1", navController = rememberNavController(), playerViewModel = player,
-                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = mockk(relaxed = true),
+                viewModel = viewModel, playlistViewModel = mockk<PlaylistViewModel>(relaxed = true), infoActions = idleInfoActions(),
             )
         }
         val chevron = compose.onNodeWithContentDescription(context.getString(com.lostf1sh.pixelplayeross.R.string.auth_cd_back)).fetchSemanticsNode().boundsInRoot

@@ -23,7 +23,6 @@
     <string name="presentation_batch_d_playlist_view">Vista de listas</string>
     <string name="presentation_batch_d_reorder_tabs_label">Reordenar pestañas</string>
     <string name="presentation_batch_d_reset_to_default">Restablecer predeterminado</string>
-    <string name="presentation_batch_d_sd_card_unavailable">La tarjeta SD no está disponible ahora.</string>
     <string name="presentation_batch_d_sort_by">Ordenar por</string>
     <string name="presentation_batch_d_storage_internal">Interna</string>
     <string name="presentation_batch_d_storage_sd_card">Tarjeta SD</string>

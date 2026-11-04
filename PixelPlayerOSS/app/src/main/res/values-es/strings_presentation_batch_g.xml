@@ -98,8 +98,8 @@
     <string name="presentation_batch_g_backup_transfer_progress">Transferencia en curso…</string>
     <string name="presentation_batch_g_backup_unknown">Desconocido</string>
     <string name="presentation_batch_g_cd_switch_on">Interruptor activado</string>
-    <string name="presentation_batch_g_daily_mix_queue_name">Mix Diario</string>
-    <string name="presentation_batch_g_daily_mix_see_all">Ver todo el Mix Diario</string>
+    <string name="presentation_batch_g_daily_mix_queue_name">@string/collection_name_daily_mix</string>
+    <string name="presentation_batch_g_daily_mix_see_all">Ver todo: %1$s</string>
     <string name="presentation_batch_g_device_info_title">Información del dispositivo</string>
     <string name="presentation_batch_g_device_key_android_version">Versión de Android</string>
     <string name="presentation_batch_g_device_key_brand">Marca</string>
@@ -130,7 +130,7 @@
     <string name="presentation_batch_g_presets_cd_unpin">Desfijar</string>
     <string name="presentation_batch_g_presets_empty">Aún no hay preajustes personalizados guardados.</string>
     <string name="presentation_batch_g_presets_saved_title">Preajustes guardados</string>
-    <string name="presentation_batch_g_recently_played_title">Reproducido recientemente</string>
+    <string name="presentation_batch_g_recently_played_title">@string/presentation_batch_b_recently_played_title</string>
     <string name="presentation_batch_g_selection_all">Todos</string>
     <string name="presentation_batch_g_selection_cd_more">Más opciones</string>
     <string name="presentation_batch_g_selection_deselect">Deseleccionar</string>
@@ -143,7 +143,7 @@
     <string name="presentation_batch_g_stats_overview_title">Estadísticas de escucha</string>
     <string name="presentation_batch_g_stats_overview_top_track">Pista más escuchada</string>
     <string name="presentation_batch_g_stats_overview_top_track_line">%1$s • %2$d repro.</string>
-    <string name="presentation_batch_g_stats_overview_total_plays">Reproducciones totales</string>
+    <string name="presentation_batch_g_stats_overview_total_plays">Reproducciones</string>
     <string name="presentation_batch_g_stats_range_all_time">Todo el tiempo</string>
     <string name="presentation_batch_g_stats_range_month_to_date">Mes hasta hoy</string>
     <string name="presentation_batch_g_stats_range_today">Hoy</string>

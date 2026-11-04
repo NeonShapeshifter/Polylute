@@ -24,12 +24,17 @@ class ScreenTimeoutBoundaryTest {
             .toList()
 
     @Test
-    fun `the app writes the system screen timeout from exactly one place, behind the preset guard`() {
+    fun `the preset writer stays guarded and the lock surface owns only its temporary timeout`() {
         val writers = allSources().filter { (_, text) -> text.contains("Settings.System.SCREEN_OFF_TIMEOUT") }
             .filter { (_, text) -> text.contains("putLong(") || text.contains("putInt(") }
             .map { it.first }
-        // FIX-2: the settings list and the drift guard both write through this one function.
-        assertThat(writers).containsExactly("presentation/viewmodel/SystemScreenTimeout.kt")
+        // FIX-2: presets and drift guard still share one writer. B55 permits the temporary lock timeout and its restoration.
+        assertThat(writers).containsExactly("presentation/viewmodel/SystemScreenTimeout.kt", "presentation/lockscreen/DapLockScreenSleep.kt")
+        val lock = source("presentation/lockscreen/DapLockScreenSleep.kt")
+        assertThat(lock).contains("Settings.System.canWrite(context)")
+        assertThat(lock).contains("Settings.System.SCREEN_OFF_TIMEOUT,LockSurfaceIdleTimer.TIMEOUT_MS.toInt()")
+        assertThat(lock).contains("Settings.System.SCREEN_OFF_TIMEOUT,previous")
+        assertThat(lock).contains("==LockSurfaceIdleTimer.TIMEOUT_MS.toInt()")
 
         val write = source("presentation/viewmodel/SystemScreenTimeout.kt")
             .substringAfter("fun write(context: Context, timeoutMs: Long): Boolean {")
@@ -56,12 +61,12 @@ class ScreenTimeoutBoundaryTest {
     }
 
     @Test
-    fun `the keep-screen-on flag follows playing and the player being in front, and never writes the system`() {
+    fun `the keep-screen-on binder follows DAP playing and lock inputs and never writes the system`() {
         val activity = source("MainActivity.kt")
         val block = activity.substringAfter("private fun observeDapDisplayPolicy()").substringBefore("private fun restoreDeviceOwnerPolicy")
-        assertThat(block).contains("playerViewModel.sheetState.map { it == PlayerSheetState.EXPANDED }")
+        assertThat(block).doesNotContain("playerViewModel.sheetState")
         // B42-fix1: and the lock screen is not the player: the wake cycle's cover or the surface on screen releases the flag
-        assertThat(block).contains("DapDeviceControlPolicy.keepScreenOnFlow(")
+        assertThat(block).contains("KeepScreenOnBinder(window).bind(")
         assertThat(block).contains("lockSurfaceShowing = combine(lockCover.coveredFlow, lockSurfaceShowing)")
         assertThat(block).contains("repeatOnLifecycle(Lifecycle.State.STARTED)")
         assertThat(block).doesNotContain("SCREEN_OFF_TIMEOUT")
@@ -70,8 +75,8 @@ class ScreenTimeoutBoundaryTest {
     @Test
     fun `the lyrics toggle releases the screen when playback pauses`() {
         val sheet = source("presentation/components/LyricsSheet.kt")
-        assertThat(sheet).contains("DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, lifecycleOwner)")
-        assertThat(sheet).contains("DapDeviceControlPolicy.shouldKeepScreenOnForLyrics(keepScreenOn, isPlaying, lockSurfaceShowing)")
+        assertThat(sheet).contains("DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, dapMode, lifecycleOwner)")
+        assertThat(sheet).contains("DapDeviceControlPolicy.shouldKeepScreenOnForLyrics(keepScreenOn, isPlaying, lockSurfaceShowing, dapMode)")
         // B42-fix1: the lock screen's presence reaches it as a composition local that MainActivity provides from the same two signals
         assertThat(sheet).contains("LocalLockSurfaceShowing.current")
         assertThat(source("MainActivity.kt")).contains("LocalLockSurfaceShowing provides")
@@ -81,9 +86,9 @@ class ScreenTimeoutBoundaryTest {
     fun `nothing else holds the screen on`() {
         // The window flag and the view flag are the only screen-on holders; each has one owner.
         val holders = allSources().filter { (_, text) ->
-            text.contains("FLAG_KEEP_SCREEN_ON") || text.contains("keepScreenOn = true")
+            text.contains("FLAG_KEEP_SCREEN_ON") || text.contains("view.keepScreenOn =")
         }.map { it.first }
-        assertThat(holders).containsExactly("MainActivity.kt", "presentation/components/LyricsSheet.kt")
+        assertThat(holders).containsExactly("presentation/viewmodel/KeepScreenOnBinder.kt", "presentation/components/LyricsSheet.kt")
     }
 
     @Test

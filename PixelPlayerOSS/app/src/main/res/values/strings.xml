@@ -41,7 +41,6 @@
     <string name="save_synced_lyrics">Synced (with timestamps)</string>
     <string name="save_plain_lyrics">Plain (text only)</string>
     <string name="lyrics_saved_successfully">Lyrics saved successfully</string>
-    <string name="lyrics_save_failed">Failed to save lyrics</string>
     <string name="no_lyrics_to_save">No lyrics available to save</string>
     <string name="reset_imported_lyrics">Reset lyrics for this song</string>
 
@@ -143,7 +142,6 @@
     <string name="player_delete_file_not_found">Can\'t delete the file or file not found</string>
     <string name="player_deletion_cancelled">Deletion cancelled</string>
     <string name="player_permission_denied_edit_files">Permission denied – cannot edit files</string>
-    <string name="player_permission_denied_save_lyrics">Permission denied – cannot save lyrics</string>
     <string name="player_permission_denied_edit_this_file">Permission denied – cannot edit this file</string>
     <string name="metadata_updated_successfully">Metadata updated successfully</string>
     <string name="player_updating_n_songs">Updating %1$d songs…</string>
@@ -170,7 +168,6 @@
     <string name="batch_edit_mixed_values">(Mixed values)</string>
     <string name="batch_edit_optional">(Optional - leave empty to skip)</string>
     <string name="batch_edit_success">Successfully updated %d songs</string>
-    <string name="batch_edit_partial_success">Updated %1$d of %2$d songs. Some files could not be edited.</string>
     <string name="batch_edit_failed">Failed to update songs</string>
 
     <string name="batch_edit_cover_art_heading">Batch Cover Art</string>
@@ -445,7 +442,7 @@
     <string name="sort_method_title">Title</string>
     <string name="sort_method_artist">Artist</string>
     <string name="sort_method_album">Album</string>
-    <string name="sort_method_date_added">Date Added</string>
+    <string name="sort_method_date_added">Recently added</string>
     <string name="sort_method_duration">Duration</string>
     <string name="sort_method_release_year">Release Year</string>
     <string name="sort_method_song_count">Song Count</string>
@@ -473,41 +470,42 @@
     <string name="genre_dance">Dance</string>
     <string name="genre_easy_listening">Easy Listening</string>
     <!-- Full player header: the three sibling views. Shown in capitals by the header. -->
-    <string name="action_view_history">View history</string>
     <string name="appearance_preview">Preview</string>
     <string name="playlist_select_hint">Select a playlist</string>
     <string name="bookmark_name_label">Bookmark name</string>
     <string name="library_menu_options">Library options</string>
-    <string name="offline_download_retry">Waiting to retry: %1$d</string>
+    <plurals name="offline_download_retry">
+        <item quantity="one">%1$d will retry in %2$s</item>
+        <item quantity="other">%1$d will retry in %2$s</item>
+    </plurals>
     <string name="offline_download_estimate">About %1$d min left</string>
     <string name="player_action_close">Close player</string>
-    <string name="music_info_prepare">Prepare for offline…</string>
+    <string name="music_info_prepare">Download music info…</string>
     <string name="music_info_refresh">Refresh info</string>
     <string name="music_info_delete">Delete downloaded info</string>
-    <string name="info_internet_title">Music info from the internet</string>
-    <string name="info_find_title">1. Find what is available</string>
+    <string name="info_internet_title">Music info</string>
+    <string name="info_find_title">Find what’s available</string>
     <string name="info_find">Find</string>
-    <string name="info_find_note">Only checks availability. Nothing is saved until you choose it.</string>
+    <string name="info_find_note">Looks up your artist and album names in the sources. Nothing is added to your library until you choose it.</string>
     <string name="info_search">Search artist or album</string>
-    <string name="info_bios">Biographies</string>
+    <string name="info_bios">Artist biographies</string>
     <plurals name="info_selected">
-        <item quantity="one">%1$d selected</item>
-        <item quantity="other">%1$d selected</item>
+        <item quantity="one">%1$d chosen</item>
+        <item quantity="other">%1$d chosen</item>
     </plurals>
-    <string name="info_download_selected">Download selected</string>
-    <string name="info_delete_selected">Delete selected</string>
-    <string name="info_reported_size">Size reported by sources: %1$s</string>
+    <string name="info_delete_selected">Delete %1$d</string>
     <plurals name="info_could_not_check">
-        <item quantity="one">Could not check %1$d item. Find will try it again.</item>
-        <item quantity="other">Could not check %1$d items. Find will try them again.</item>
+        <item quantity="one">Couldn’t check %1$d.</item>
+        <item quantity="other">Couldn’t check %1$d.</item>
     </plurals>
-    <string name="info_saved">✓ Saved</string>
-    <string name="info_missing">— Not available</string>
-    <string name="info_local">Already in your music files</string>
+    <string name="info_saved">Saved</string>
+    <string name="info_missing">Not found</string>
+    <string name="info_local">Already in your files</string>
+    <string name="info_local_plain">On the phone, no timing</string>
     <string name="info_failed_check">Could not check</string>
     <string name="info_available">Available</string>
-    <string name="info_unchecked">Not checked yet</string>
-    <string name="info_select_all">Select all of a kind</string>
+    <string name="info_unchecked">Not checked</string>
+    <string name="info_select_all">What to keep</string>
     <string name="shuffle_all_albums">Shuffle albums</string>
     <string name="shuffle_all_artists">Shuffle artists</string>
     <string name="shuffle_all_genres">Shuffle genres</string>
@@ -515,8 +513,30 @@
     <string name="show_bookmark_button_note">Display the bookmark button beside the song title.</string>
     <string name="setcat_repeat_shared_shuffle_title">Repeat shared songs in shuffle</string>
     <string name="setcat_repeat_shared_shuffle_desc">Artist and genre shuffles play a song that belongs to several artists or genres in each of them.</string>
-    <string name="info_checked_result">Checked %1$d of %2$d</string>
     <string name="genre_change_image">Change image</string>
     <string name="genre_remove_image">Remove image</string>
     <string name="genre_image_change_failed">Could not update the image.</string>
+    <string name="folders_tree">Tree</string>
+    <string name="folders_search">Search folders</string>
+    <string name="folders_path">Path</string>
+    <string name="lyrics_folder_explanation">To save lyrics next to your music on the SD card, choose your music folder once.</string>
+    <string name="lyrics_choose_folder">Choose folder</string>
+    <string name="lyrics_keep_in_app">Save in Polylute</string>
+    <string name="lyrics_saved_in_app">Saved in Polylute (couldn’t write the .lrc file: %1$s)</string>
+    <string name="lyrics_local_save_failed">Couldn’t save lyrics in Polylute: %1$s</string>
+    <string name="lyrics_reason_permission">write permission missing</string>
+    <string name="lyrics_reason_card_read_only">SD card is not writable</string>
+    <string name="lyrics_reason_file_read_only">file is read-only</string>
+    <string name="lyrics_reason_no_space">no space left</string>
+    <string name="lyrics_reason_wrong_folder">choose a folder containing this song</string>
+    <string name="lyrics_reason_unavailable">folder or SD card unavailable</string>
+    <string name="lyrics_reason_io">storage write error</string>
+    <string name="lyrics_folder_grants">Folders allowed for lyrics</string>
+    <string name="lyrics_remove_grant">Remove access</string>
+    <string name="folder_covers_title">Use the album folder’s cover (cover.jpg…)</string>
+    <string name="folder_covers_note">Only folders with one album. Changes apply on the next library refresh.</string>
+    <string name="folders_open">Open folder</string>
+    <string name="folders_actions">Folder actions</string>
+    <string name="lyrics_folder_title">Save lyrics beside your music</string>
+    <string name="lyrics_reason_existing_file">a lyrics file already exists</string>
 </resources>

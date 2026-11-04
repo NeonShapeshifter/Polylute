@@ -247,7 +247,7 @@ class DetailedLoggingTest {
         assertThat(tags).containsNoneOf(
             "QueueLoad", "PlayerViewModel", "PlaylistViewModel", "PlaylistVM", "LyricsRepository", "MusicInfo", "ArtistImageRepository",
             "MediaStoreSongRepository", "SongMetadataEditor", "AudioMetadataReader", "AlbumArtCacheManager", "SearchScreen", "TransitionDebug",
-            "MusicService", "MusicService_PixelPlayer", "PlaybackStateHolder", "ShuffleAll", "ShuffleDebug", "SongChange", "ArtistDebug", "AlbumDebug",
+            "MusicService", "PolyluteMusicService", "PlaybackStateHolder", "ShuffleAll", "ShuffleDebug", "SongChange", "ArtistDebug", "AlbumDebug",
         )
     }
 }

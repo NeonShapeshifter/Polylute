@@ -78,6 +78,8 @@ internal fun QueueFoldedStrip(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     onLyrics: () -> Unit = {},
+    /** B56-3.4: a long press on the lyrics button: the small sheet that sets how the lyrics show. */
+    onLyricsLongPress: (() -> Unit)? = null,
     onDetails: () -> Unit = {},
     onDragStart: () -> Unit = {},
     onDrag: (Float) -> Unit = {},
@@ -136,7 +138,7 @@ internal fun QueueFoldedStrip(
                 }
             }
             Spacer(Modifier.width(DapSpacing.Md))
-            DapStateIconButton(contentDescription = stringResource(R.string.player_header_lyrics), active = false, onClick = onLyrics) {
+            DapStateIconButton(contentDescription = stringResource(R.string.player_header_lyrics), active = false, onClick = onLyrics, onLongClick = onLyricsLongPress) {
                 Icon(Icons.Outlined.Lyrics, contentDescription = null, tint = it, modifier = Modifier.size(24.dp))
             }
             DapStateIconButton(contentDescription = stringResource(R.string.player_header_details), active = false, onClick = onDetails) {

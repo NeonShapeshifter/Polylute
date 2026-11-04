@@ -17,7 +17,7 @@ object SettingsSurfacePolicy {
 
     /** Categories a listener may see, in the order they are declared. */
     fun visibleCategories(product: com.lostf1sh.pixelplayeross.dap.mode.ProductModeState? = null): List<SettingsCategory> =
-        SettingsCategory.entries.filter { isVisible(it.visibility) && (it != SettingsCategory.DEVICE || product?.let(ModeSurfacePolicy::showScreenTimeout) == true) }
+        SettingsCategory.entries.filter { isVisible(it.visibility) && (it != SettingsCategory.DEVICE || product?.let(ModeSurfacePolicy::showDeviceCategory) == true) }
 
     fun isVisible(visibility: SettingsVisibility): Boolean = when (visibility) {
         // Normal product functionality: always.

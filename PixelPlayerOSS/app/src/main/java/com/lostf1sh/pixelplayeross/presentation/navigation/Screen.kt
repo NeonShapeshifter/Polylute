@@ -35,9 +35,14 @@ sealed class Screen(val route: String) {
     object AutoCollection : Screen("auto_collection/{collectionKey}") {
         fun createRoute(collectionKey: String) = "auto_collection/$collectionKey"
     }
+    object Suggestions : Screen("home_suggestions")
     object RecentlyPlayed : Screen("recently_played")
     object Stats : Screen("stats")
     object Duplicates : Screen("duplicates")
+    /** B56-6: a composer's songs, by the composer's name (URL-encoded). */
+    object ComposerDetail : Screen("composer_detail/{composer}") {
+        fun createRoute(composer: String) = "composer_detail/${Uri.encode(composer)}"
+    }
     object GenreDetail : Screen("genre_detail/{genreId}") {
         fun createRoute(genreId: String) = "genre_detail/$genreId"
     }

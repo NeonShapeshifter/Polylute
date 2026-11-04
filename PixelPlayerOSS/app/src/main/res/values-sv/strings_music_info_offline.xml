@@ -1,18 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="music_info_expand">Visa hela beskrivningen</string>
-    <string name="music_info_collapse">Fäll ihop beskrivningen</string>
-    <string name="offline_download_title">Ladda ned för offlinebruk</string>
-    <string name="offline_download_all">Hela biblioteket</string>
+    <string name="offline_download_title">Hämta musikinformation…</string>
+    <string name="offline_download_all">Hämta musikinformation</string>
     <string name="offline_download_lyrics">Låttexter</string>
     <string name="offline_download_photos">Artistbilder</string>
     <string name="offline_download_covers">Saknade omslag</string>
-    <string name="offline_download_descriptions">Artist- och albumbeskrivningar</string>
+    <string name="offline_download_descriptions">Albumbeskrivningar</string>
     <string name="offline_download_pause">Pausa</string>
     <string name="offline_download_resume">Återuppta</string>
-    <string name="offline_download_failed">Kunde inte starta nedladdningen. Försök igen.</string>
+    <string name="offline_download_failed">Kunde inte starta hämtningen.</string>
     <string name="offline_download_close">Stäng</string>
-    <string name="offline_download_progress_items">Objekt: %1$d / %2$d</string>
     <string name="external_link_unavailable">Ingen webbläsare är tillgänglig eller externa länkar är blockerade på enheten.</string>
-    <string name="info_refreshing_catalog">Uppdaterar katalogen. Sparade resultat går redan att använda.</string>
 </resources>

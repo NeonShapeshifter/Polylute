@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -29,6 +30,8 @@ import com.lostf1sh.pixelplayeross.data.preferences.CarouselStyle
 import com.lostf1sh.pixelplayeross.presentation.components.AlbumCarouselSection
 import com.lostf1sh.pixelplayeross.presentation.components.LocalMaterialTheme
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState
+import com.lostf1sh.pixelplayeross.ui.animatedcover.AnimatedCoverLayer
+import com.lostf1sh.pixelplayeross.ui.animatedcover.rememberAnimatedCoverHost
 
 /** The sheet's expansion from which the cover carousel counts as on screen: it animates and takes swipes only then (B23-P3). */
 internal const val CAROUSEL_ON_SCREEN_FRACTION = 0.5f
@@ -58,6 +61,14 @@ internal fun PlayerCoverSurface(
     }
     val onAlbumClick: (Song) -> Unit = { albumSong -> actions.onOpenAlbum(albumSong.albumId) }
     val shouldDelay = loadingTweaks.delayAll || loadingTweaks.delayAlbumCarousel
+    // B56-7.2: the animated cover of the song that plays (cover.mp4 / .webp / .gif in its folder), drawn over its page of the carousel: here and nowhere else.
+    val animatedCover = rememberAnimatedCoverHost(
+        songPath = song.path,
+        isPlaying = cover.isPlayingProvider,
+        playerExpanded = currentSheetState == PlayerSheetState.EXPANDED,
+        coverPageShowing = LocalPlayerPageSignal.current?.onPlayerPage ?: true,
+        albumId = song.albumId,
+    )
     // Artwork keeps its size when paused: shrinking it to 95% made the cover look disabled, and
     // playback state is already explicit in the central control.
 
@@ -131,7 +142,12 @@ internal fun PlayerCoverSurface(
                 modifier = Modifier.width(carouselWidth).height(carouselHeight),
                 albumArtQuality = albumArtQuality,
                 // B23-P3: the sheet is mostly open. Below that the carousel is being parked or revealed, not used.
-                isOnScreen = { expansionFractionProvider() >= CAROUSEL_ON_SCREEN_FRACTION }
+                isOnScreen = { expansionFractionProvider() >= CAROUSEL_ON_SCREEN_FRACTION },
+                pageOverlay = { _, isCurrent ->
+                    if (isCurrent && animatedCover != null) {
+                        Box(Modifier.fillMaxSize().onSizeChanged { animatedCover.onSize(it.width) }) { AnimatedCoverLayer(animatedCover) }
+                    }
+                },
             )
         }
     }

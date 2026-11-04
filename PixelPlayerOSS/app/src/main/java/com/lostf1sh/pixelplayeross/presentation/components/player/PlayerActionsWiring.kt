@@ -65,6 +65,7 @@ internal class PlayerViewModelFullPlayerActions(
             indexInQueue = index
         )
     override fun onOpenAlbum(albumId: Long) = player.triggerAlbumNavigationFromPlayer(albumId)
+    override fun onLocateSongInLibrary(songId: String) = player.triggerLocateInLibraryFromPlayer(songId)
     override fun onOpenArtist(artistId: Long) = player.triggerArtistNavigationFromPlayer(artistId)
     override fun onAddBookmark(song: Song, title: String, positionMs: Long) = bookmarks.addBookmark(song, title, positionMs)
 
@@ -81,6 +82,10 @@ internal class PlayerViewModelFullPlayerActions(
     override fun onImmersiveTemporarilyDisabledChange(disabled: Boolean) = player.setImmersiveTemporarilyDisabled(disabled)
     override fun onSaveLyricsToFile(song: Song, lyrics: Lyrics, preferSynced: Boolean) =
         player.saveLyricsToFile(song, lyrics, preferSynced)
+
+    override fun onSaveSyncedLyrics(song: Song, lyrics: Lyrics) = player.saveSyncedLyrics(song, lyrics)
+
+    override fun onLyricsModeChange(mode: com.lostf1sh.pixelplayeross.data.preferences.LyricsMode) = player.setLyricsMode(mode)
     override fun onImportLyricsFromFile(songId: Long, validated: ValidatedLyricsImport) =
         player.importLyricsFromFile(songId, validated)
     override fun onToast(message: String) = player.sendToast(message)

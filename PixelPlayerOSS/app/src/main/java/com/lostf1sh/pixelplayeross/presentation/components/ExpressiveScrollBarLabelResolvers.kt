@@ -37,7 +37,7 @@ internal fun albumFastScrollLabel(album: Album?, sortOption: SortOption): String
         SortOption.AlbumTitleZA -> extractFastScrollGlyph(album?.title)
 
         SortOption.AlbumArtist,
-        SortOption.AlbumArtistDesc -> extractFastScrollGlyph(album?.artist)
+        SortOption.AlbumArtistDesc -> extractFastScrollGlyph(album?.albumArtist?.trim()?.takeIf { it.isNotEmpty() } ?: album?.artist) // B57.5 1: the list sorts by COALESCE(NULLIF(TRIM(album_artist), ''), artist_name)
 
         SortOption.AlbumReleaseYear,
         SortOption.AlbumReleaseYearAsc -> fastScrollYearLabel(album?.year ?: 0)

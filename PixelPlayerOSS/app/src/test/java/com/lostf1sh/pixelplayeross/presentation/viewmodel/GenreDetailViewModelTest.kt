@@ -40,7 +40,7 @@ class GenreDetailViewModelTest {
         val repository = mockk<MusicRepository>()
         every { repository.getGenres() } returns flowOf(listOf(rock))
         every { repository.getMusicByGenre("Rock") } returns flowOf(returned)
-        return GenreDetailViewModel(repository, SavedStateHandle(mapOf("genreId" to "rock")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true))
+        return GenreDetailViewModel(repository, SavedStateHandle(mapOf("genreId" to "rock")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true))
     }
 
     @Test
@@ -87,7 +87,7 @@ class GenreDetailViewModelTest {
             flowOf(listOf(song(1, "Alpha", "Amy", 1, "LP", 10), song(2, "Beta", "Amy", 1, "LP", 10))),
             flowOf(listOf(song(1, "Alpha", "Amy", 1, "LP", 10))),
         )
-        val vm = GenreDetailViewModel(repository, SavedStateHandle(mapOf("genreId" to "rock")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true))
+        val vm = GenreDetailViewModel(repository, SavedStateHandle(mapOf("genreId" to "rock")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true))
         assertThat(vm.uiState.value.songs).hasSize(2)
         vm.reload()
         assertThat(vm.uiState.value.songs.map { it.id }).containsExactly("1")
@@ -98,7 +98,7 @@ class GenreDetailViewModelTest {
         val repository = mockk<MusicRepository>()
         every { repository.getGenres() } returns flowOf(emptyList())
         every { repository.getMusicByGenre("Unknown") } returns flowOf(listOf(song(1, "Alpha", "Amy", 1, "LP", 10)))
-        val vm = GenreDetailViewModel(repository, SavedStateHandle(mapOf("genreId" to "unknown")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true))
+        val vm = GenreDetailViewModel(repository, SavedStateHandle(mapOf("genreId" to "unknown")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true))
         assertThat(vm.uiState.value.genre?.name).isEqualTo("Unknown")
         assertThat(vm.uiState.value.songs).hasSize(1)
     }

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,45 +16,31 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.ExperimentalTextApi
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
+import com.lostf1sh.pixelplayeross.ui.ds.DapFeatureHeader
+import com.lostf1sh.pixelplayeross.ui.ds.DapNavRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapMediaRow
+import com.lostf1sh.pixelplayeross.ui.ds.DapIconKind
 import com.lostf1sh.pixelplayeross.ui.ds.DapOverflowButton
+import com.lostf1sh.pixelplayeross.ui.ds.DapRoundPlayAction
 import com.lostf1sh.pixelplayeross.ui.ds.DapRowState
 import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
 import com.lostf1sh.pixelplayeross.ui.ds.DapRadius
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
-import com.lostf1sh.pixelplayeross.ui.ds.DapType
-import androidx.compose.foundation.layout.width
-import androidx.compose.ui.text.style.TextOverflow
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.components.player.TrackDetailsHost
@@ -65,10 +50,7 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import androidx.compose.ui.res.stringResource
-import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
 import kotlinx.collections.immutable.persistentListOf
-import com.lostf1sh.pixelplayeross.presentation.components.songTitleLabel
-import com.lostf1sh.pixelplayeross.presentation.components.songArtistLabel
 
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -81,10 +63,8 @@ fun DailyMixSection(
     onNavigateToArtist: (Song) -> Unit = {},
     onNavigateToGenre: (Song) -> Unit = {},
 ) {
-    val playlistViewModel: PlaylistViewModel = hiltViewModel()
     val favoriteSongIds by playerViewModel.favoriteSongIds.collectAsStateWithLifecycle()
     val selectedSongForInfo by playerViewModel.selectedSongForInfo.collectAsStateWithLifecycle()
-    val playlistUiState by playlistViewModel.uiState.collectAsStateWithLifecycle()
     val navBarCompactMode by playerViewModel.navBarCompactMode.collectAsStateWithLifecycle()
     val systemNavBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomBarHeightDp = resolveNavBarOccupiedHeight(systemNavBarInset, navBarCompactMode)
@@ -101,7 +81,6 @@ fun DailyMixSection(
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
-        Spacer(Modifier.height(16.dp))
         DailyMixCard(
             songs = songs,
             playerViewModel = playerViewModel,
@@ -158,7 +137,7 @@ fun DailyMixSection(
                 onNavigateToGenre(song)
                 showSongInfoSheet = false
             },
-            onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+            onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                 playerViewModel.editSongMetadata(
                     song,
                     newTitle,
@@ -172,7 +151,8 @@ fun DailyMixSection(
                     newDiscNumber,
                     replayGainTrackGainDb,
                     replayGainAlbumGainDb,
-                    coverArtUpdate
+                    coverArtUpdate,
+                    newDate = newDate
                 )
             },
             // The mix is a snapshot the player holds, not a query over the library, so removing the
@@ -191,6 +171,9 @@ fun DailyMixSection(
         }
 
         if (showPlaylistBottomSheet) {
+            val playlistViewModel: PlaylistViewModel = hiltViewModel()
+            val playlistUiState by playlistViewModel.uiState.collectAsStateWithLifecycle()
+
             PlaylistBottomSheet(
                 playlistUiState = playlistUiState,
                 songs = persistentListOf(song),
@@ -212,24 +195,24 @@ private fun DailyMixCard(
 ) {
     val headerSongs = remember(songs) { songs.take(3).toImmutableList() }
     val visibleSongs = remember(songs) { songs.take(4).toImmutableList() }
-    val cornerRadius = 30.dp
+    // B57-fix1 1: the header's control is Shuffle: the mix as shown (the whole list the page lists), shuffled, as every shuffle button does. "See all" below opens the page.
+    val dailyMixQueueName = stringResource(R.string.presentation_batch_g_daily_mix_queue_name)
+    val shuffle = {
+        playerViewModel.playSongsShuffled(
+            songsToPlay = songs,
+            queueName = dailyMixQueueName,
+            startAtZero = true,
+            source = ListenSource(ListenSourceKind.HOME_MIX, "daily_mix"),
+        )
+    }
     Card(
-        shape = AbsoluteSmoothCornerShape(
-            cornerRadiusBR = cornerRadius,
-            smoothnessAsPercentTL = 60,
-            cornerRadiusTR = cornerRadius,
-            smoothnessAsPercentTR = 60,
-            cornerRadiusBL = cornerRadius,
-            smoothnessAsPercentBL = 60,
-            cornerRadiusTL = cornerRadius,
-            smoothnessAsPercentBR = 60
-        ),
+        shape = RoundedCornerShape(DapRadius.Surface),
         colors = CardDefaults.cardColors(containerColor = Dap.panel),
         elevation = CardDefaults.elevatedCardElevation(0.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Gutter)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            DailyMixHeader(thumbnails = headerSongs)
+            DailyMixHeader(thumbnails = headerSongs, onShuffle = shuffle)
             DailyMixSongList(
                 songs = visibleSongs,
                 playbackQueue = songs,
@@ -239,12 +222,7 @@ private fun DailyMixCard(
             ViewAllDailyMixButton(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(
-                        start = 10.dp,
-                        end = 10.dp,
-                        top = 6.dp,
-                        bottom = 6.dp
-                    ),
+                    .padding(horizontal = DapSpacing.Lg, vertical = DapSpacing.Xs),
                 onClickOpen = {
                     onClickOpen()
                 },
@@ -254,38 +232,25 @@ private fun DailyMixCard(
 }
 
 @Composable
-fun DailyMixHeader(thumbnails: ImmutableList<Song>) {
-    val titleStyle = rememberDailyMixTitleStyle()
-
-    fun shapeConditionalModifier(index: Int): Modifier {
-        if (index == 0){
-            return Modifier.size(50.dp).padding(top = 4.dp)
-        } else {
-            if (index == 1) {
-                return Modifier.size(44.dp).aspectRatio(1f).padding(bottom = 4.dp)
-            }
-            return Modifier.size(48.dp)
-        }
-    }
-
-    // A section, not a banner. The tinted gradient and the three novelty shapes were the loudest
-    // thing on Home; the mix is a row with a name and a way in.
+fun DailyMixHeader(thumbnails: ImmutableList<Song>, onShuffle: (() -> Unit)? = null) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = DapSpacing.Gutter, vertical = DapSpacing.Md)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Lg, vertical = DapSpacing.Md)
     ) {
-        // Same hierarchy as "Your mix" (AUD-131, B25-S7): one Heading line and no label above it. The section's name was
-        // "MIX DIARIO" over "Basado en el historial"; two headers for one section, like "TU MIX" over "Tu mix de hoy".
-        //
-        // The line has the whole row (AUD-132): the three covers they used to share it with left the
-        // title ~200 dp for ~290 dp of text on a 360 dp phone, so it broke in two.
-        Text(
-            text = stringResource(R.string.home_daily_mix_title),
-            style = DapType.Heading,
-            color = Dap.primaryText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        // One control, one action (B57-fix1 1): the title is text, and the round shuffle button (the one "Your mix" has) is the header's control.
+        DapFeatureHeader(
+            title = stringResource(R.string.home_daily_mix_title),
+            trailing = onShuffle?.let { shuffle ->
+                {
+                    DapRoundPlayAction(
+                        shuffle,
+                        kind = DapIconKind.Shuffle,
+                        size = DapSizes.MinTouchTarget,
+                        iconSize = DapSpacing.Gutter,
+                        contentDescription = stringResource(R.string.cd_shuffle_play),
+                    )
+                }
+            },
+            maxTitleLines = 1,
         )
         // The covers have their own row under the title, in the size and shape they always had.
         if (thumbnails.isNotEmpty()) {
@@ -294,7 +259,7 @@ fun DailyMixHeader(thumbnails: ImmutableList<Song>) {
                 thumbnails.forEach { song ->
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(DapSpacing.GroupGap)
                             .clip(RoundedCornerShape(DapRadius.Surface))
                     ) {
                         SmartImage(
@@ -325,7 +290,7 @@ private fun DailyMixSongList(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp, start = DapSpacing.Gutter, end = DapSpacing.Gutter)
+            .padding(top = DapSpacing.Sm, start = DapSpacing.Lg, end = DapSpacing.Lg)
     ) {
         songs.forEach { song ->
             val isCurrent = stablePlayerState.currentSong?.id == song.id
@@ -345,7 +310,7 @@ private fun DailyMixSongList(
                         model = song.albumArtUriString,
                         contentDescription = stringResource(R.string.cd_album_art_for_title, song.title),
                         shape = RoundedCornerShape(DapRadius.Surface),
-                        targetSize = SmartImageCompactListTargetSize,
+                        targetSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(DapSizes.ThumbRow),
                         modifier = Modifier.size(DapSizes.ThumbRow),
                     )
                 },
@@ -374,68 +339,10 @@ private fun ViewAllDailyMixButton(
     modifier: Modifier = Modifier,
     onClickOpen: () -> Unit
 ) {
-    FilledTonalButton(
+    DapNavRow(
+        label = stringResource(R.string.presentation_batch_g_daily_mix_see_all, stringResource(R.string.collection_name_daily_mix)),
         modifier = modifier,
-        onClick = {
-            onClickOpen()
-        },
-        colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = Color.Transparent
-        ),
-        shape = AbsoluteSmoothCornerShape(
-            cornerRadiusTL = 10.dp,
-            cornerRadiusTR = 10.dp,
-            smoothnessAsPercentTL = 70,
-            smoothnessAsPercentTR = 70,
-            cornerRadiusBL = 60.dp,
-            cornerRadiusBR = 60.dp,
-            smoothnessAsPercentBL = 70,
-            smoothnessAsPercentBR = 70
-
-        )
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.presentation_batch_g_daily_mix_see_all),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
-            )
-            Icon(
-                painter = painterResource(R.drawable.rounded_arrow_forward_24),
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalTextApi::class)
-@Composable
-private fun rememberDailyMixTitleStyle(): TextStyle {
-    return remember {
-        TextStyle(
-            fontFamily = FontFamily(
-                Font(
-                    resId = R.font.gflex_variable,
-                    variationSettings = FontVariation.Settings(
-                        FontVariation.weight(630),
-                        FontVariation.width(136f),
-                        FontVariation.grade(40),
-                        FontVariation.Setting("ROND", 100f),
-                        FontVariation.Setting("XTRA", 520f),
-                        FontVariation.Setting("YOPQ", 90f),
-                        FontVariation.Setting("YTLC", 505f)
-                    )
-                )
-            ),
-            fontWeight = FontWeight(630),
-            fontSize = 20.sp,
-            lineHeight = 22.sp,
-            letterSpacing = (-0.35).sp
-        )
-    }
+        onClick = onClickOpen,
+        divider = false,
+    )
 }

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material.icons.rounded.Abc
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.FormatAlignCenter
 import androidx.compose.material.icons.rounded.Image
@@ -29,6 +30,8 @@ import androidx.compose.ui.res.stringResource
 import com.lostf1sh.pixelplayeross.MainActivity
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.preferences.ANIMATED_LYRICS_BLUR_STRENGTH_MAX
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
+import com.lostf1sh.pixelplayeross.presentation.components.subcomps.lyricsModeLabel
 import com.lostf1sh.pixelplayeross.data.preferences.ANIMATED_LYRICS_BLUR_STRENGTH_MIN
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtPaletteStyle
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
@@ -70,8 +73,16 @@ data class AppearanceSettingsState(
     val libraryNavigationMode: String,
     /** B41 (Player): the cover glass drifts in the full player and on the lock screen. */
     val coverGlassMoving: Boolean = true,
-    /** B41 (Player): two lines of synced lyrics under the cover. */
-    val lyricsUnderCover: Boolean = true,
+    /** B56-7.1: with the background moving, Lively instead of Gentle. */
+    val coverGlassLively: Boolean = false,
+    /** B56-3.4 (Player): how the lyrics show in the full player. */
+    val lyricsMode: LyricsMode = LyricsMode.DEFAULT,
+    /** B56-7.2 (Player): "Animated covers" as the listener set it; null = not yet, the mode's default stands. */
+    val animatedCoversStored: Boolean? = null,
+    /** B57-fix1 4: the folder the animated covers are read through (its name), or null while there is none. Only Android 13+ has one. */
+    val animatedCoversFolder: String? = null,
+    /** B57-fix1 4: Android 13+ reads the covers through a folder the listener picks; before it there is no picker and no folder row. */
+    val animatedCoversNeedsFolder: Boolean = com.lostf1sh.pixelplayeross.data.preferences.AnimatedCovers.needsFolderGrant(android.os.Build.VERSION.SDK_INT),
     val showBookmarkButton: Boolean = true,
     // B41 (Lyrics): the whole reading and effects part of what Settings, Lyrics used to hold; the same preferences.
     val immersiveLyricsEnabled: Boolean = false,
@@ -84,6 +95,7 @@ data class AppearanceSettingsState(
     val animatedLyricsBlurStrength: Float = 2.5f,
     /** B41 (Lock screen): "DAP lock screen", moved here from Behaviour. */
     val dapLockScreenEnabled: Boolean = false,
+    val showDapLockScreen: Boolean = true,
 ) {
     companion object {
         fun from(ui: SettingsUiState) = AppearanceSettingsState(
@@ -100,7 +112,10 @@ data class AppearanceSettingsState(
             launchTab = ui.launchTab,
             libraryNavigationMode = ui.libraryNavigationMode,
             coverGlassMoving = ui.coverGlassMoving,
-            lyricsUnderCover = ui.lyricsUnderCover,
+            coverGlassLively = ui.coverGlassLively,
+            lyricsMode = ui.lyricsMode,
+            animatedCoversStored = ui.animatedCoversStored,
+            animatedCoversFolder = ui.animatedCoversFolder,
             showBookmarkButton = ui.showBookmarkButton,
             immersiveLyricsEnabled = ui.immersiveLyricsEnabled,
             immersiveLyricsTimeout = ui.immersiveLyricsTimeout,
@@ -135,8 +150,16 @@ interface AppearanceSettingsActions {
 
     /** B41 (Player): "Moving background". */
     fun onCoverGlassMovingChange(value: Boolean)
-    /** B41 (Player): "Lyrics under the cover". */
-    fun onLyricsUnderCoverChange(value: Boolean)
+    /** B56-7.1 (Player): "Background motion": still, gentle or lively. A fake that knows only the old switch gets it. */
+    fun onBackgroundMotionChange(value: com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion) = onCoverGlassMovingChange(value.moves)
+    /** B56-3.4 (Player): "Lyrics in the player": over the cover, full page, off. */
+    fun onLyricsModeChange(value: LyricsMode)
+    /** B56-7.2 (Player): "Animated covers". A fake that does not care leaves it alone. */
+    fun onAnimatedCoversChange(value: Boolean) = Unit
+    /** B57-fix1 4: the system folder picker's answer (null = cancelled): a kept folder turns the feature on, anything else changes nothing. */
+    fun onAnimatedCoverFolderPicked(uri: android.net.Uri?, flags: Int) = Unit
+    /** B57-fix1 4: "Remove" the folder: the permission is released and the feature goes off. */
+    fun onAnimatedCoverFolderRemove() = Unit
 
     // B41 (Lyrics): what Settings, Lyrics used to call; each one writes the preference it has always written.
     fun onImmersiveLyricsEnabledChange(value: Boolean)
@@ -239,28 +262,44 @@ fun AppearanceSettingsScreen(state: AppearanceSettingsState, actions: Appearance
         // B41: there is a glass to move only once "Cover glass" is the app's colour source. It moves in the full player and on the lock
         // screen; the rest of the app holds still whatever this says.
         if (AppColorSource.hasGlass(state.appColorSource)) {
-            SwitchSettingItem(
-                title = stringResource(R.string.setcat_moving_background_title),
-                subtitle = stringResource(R.string.setcat_moving_background_subtitle),
-                checked = state.coverGlassMoving,
-                onCheckedChange = { actions.onCoverGlassMovingChange(it) },
+            // B56-7.1: three values (still, gentle, lively) over the old switch. Speed and amplitude only; on Android 13 and later the motion is drifting blobs of the cover's colours,
+            // before it the classic drifting glass (the same speeds and amplitudes), and the line under the title says so.
+            val motion = com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.of(state.coverGlassMoving, state.coverGlassLively)
+            ThemeSelectorItem(
+                label = stringResource(R.string.setcat_background_motion_title),
+                description = stringResource(
+                    if (android.os.Build.VERSION.SDK_INT >= 33) R.string.setcat_background_motion_desc else R.string.setcat_background_motion_desc_classic,
+                ),
+                options = com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.entries.associate {
+                    it.storageKey to stringResource(
+                        when (it) {
+                            com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.STILL -> R.string.background_motion_still
+                            com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.GENTLE -> R.string.background_motion_gentle
+                            com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.LIVELY -> R.string.background_motion_lively
+                        }
+                    )
+                },
+                selectedKey = motion.storageKey,
+                onSelectionChanged = { key -> com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.fromStorageKey(key)?.let(actions::onBackgroundMotionChange) },
                 leadingIcon = { Icon(Icons.Rounded.AutoAwesomeMotion, null, tint = MaterialTheme.colorScheme.secondary) },
             )
         }
-        SwitchSettingItem(
-            title = stringResource(R.string.setcat_lyrics_under_cover_title),
-            subtitle = stringResource(R.string.setcat_lyrics_under_cover_subtitle),
-            checked = state.lyricsUnderCover,
-            onCheckedChange = { actions.onLyricsUnderCoverChange(it) },
+        ThemeSelectorItem(
+            label = stringResource(R.string.lyrics_mode_title),
+            description = stringResource(R.string.lyrics_mode_desc),
+            options = LyricsMode.entries.associate { it.storageKey to stringResource(lyricsModeLabel(it)) },
+            selectedKey = state.lyricsMode.storageKey,
+            onSelectionChanged = { key -> LyricsMode.fromStorageKey(key)?.let(actions::onLyricsModeChange) },
             leadingIcon = { Icon(painterResource(R.drawable.rounded_lyrics_24), null, tint = MaterialTheme.colorScheme.secondary) },
         )
+        AnimatedCoversRows(state, actions)
     }
 
     // B41: how lyrics look is Appearance's: the reading and the effects moved here from Settings, Lyrics, which keeps the sources.
     LyricsAppearanceSection(state, actions)
 
     // B41: the DAP lock screen, moved here from Behaviour. Same preference, same switch.
-    SettingsSubsection(title = stringResource(R.string.setcat_lock_screen_section)) {
+    if (state.showDapLockScreen) SettingsSubsection(title = stringResource(R.string.setcat_lock_screen_section)) {
         SwitchSettingItem(
             title = stringResource(R.string.setcat_dap_lock_screen_title),
             subtitle = stringResource(R.string.setcat_dap_lock_screen_subtitle),

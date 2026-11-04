@@ -33,6 +33,14 @@ class B48OwnerWiringBoundaryTest {
     }
 
     @Test
+    fun `a new stream receives the attachments previous rate before publishing its own`() {
+        assertThat(sink).contains("stream.start(usbAudioDevice.owner.previousStreamRateHz)")
+        assertThat(sink.indexOf("stream.start(usbAudioDevice.owner.previousStreamRateHz)")).isLessThan(
+            sink.indexOf("usbAudioDevice.owner.publishStream(sampleRate, altSetting)"),
+        )
+    }
+
+    @Test
     fun `a dead stream whose DAC is gone tells the owner before it releases`() {
         val dead = sink.substringAfter("if (stream != null && !stream.isAlive) {").substringBefore("stream = null")
         assertThat(dead).contains("usbAudioDevice.owner.deviceDetached()")

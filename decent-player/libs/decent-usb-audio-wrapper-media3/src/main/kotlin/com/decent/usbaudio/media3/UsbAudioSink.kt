@@ -2115,7 +2115,7 @@ class UsbAudioSink(
         }
         val confirmedSampleRate = reconfigured.confirmedSampleRate
 
-        if (!stream.start()) {
+        if (!stream.start(usbAudioDevice.owner.previousStreamRateHz)) {
             Log.e(TAG, "USB stream start failed")
             stream.release()
             return failUsbInitialization("USB stream start failed")

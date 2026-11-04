@@ -154,7 +154,7 @@ internal fun RowCover(uri: String?, title: String, modifier: Modifier = Modifier
             OptimizedAlbumArt(
                 uri = uri,
                 title = title,
-                targetSize = coil.size.Size(96, 96),
+                targetSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(DapSizes.ThumbRow),
                 modifier = Modifier.fillMaxSize(),
             )
         }

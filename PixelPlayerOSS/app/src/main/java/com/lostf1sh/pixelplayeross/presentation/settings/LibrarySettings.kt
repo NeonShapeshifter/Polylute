@@ -61,9 +61,11 @@ data class LibrarySettingsState(
     val musicInfoUsedBytes: Long,
     val isSyncing: Boolean,
     val syncProgress: SyncProgress,
+    val folderCoversEnabled: Boolean = true,
 ) {
     companion object {
         fun from(ui: SettingsUiState, isSyncing: Boolean, syncProgress: SyncProgress) = LibrarySettingsState(
+            folderCoversEnabled = ui.folderCoversEnabled,
             minSongDuration = ui.minSongDuration,
             minTracksPerAlbum = ui.minTracksPerAlbum,
             albumArtCacheLimitMb = ui.albumArtCacheLimitMb,
@@ -104,6 +106,7 @@ internal fun libraryStateFlow(
 
 /** Everything the Library page can do. */
 interface LibrarySettingsActions {
+    fun onFolderCoversChange(value: Boolean) {}
     fun onMinSongDurationChange(value: Int)
     fun onMinTracksPerAlbumChange(value: Int)
     fun onAlbumArtCacheLimitMbChange(value: Int)
@@ -116,6 +119,9 @@ interface LibrarySettingsActions {
     fun onMusicInfoCacheLimitChange(megabytes: Int)
     /** B40-F4: removes everything that was downloaded; [onDone] gets the bytes freed. */
     fun onDeleteMusicInfo(onDone: (Long) -> Unit)
+    fun onDeleteMusicInfoResult(onDone: (Result<Long>) -> Unit) {
+        onDeleteMusicInfo { onDone(Result.success(it)) }
+    }
     /** Opens the folders sheet over this page (the host owns the dialog): the folders that are in the library. */
     fun onOpenLibraryFolders()
     /** B39-A9: looks for folders that hold music and are not in the library, and offers them (the host owns the dialog). */
@@ -129,7 +135,7 @@ interface LibrarySettingsActions {
 }
 
 @Composable
-fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsActions) {
+fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsActions, mountInputBridge: Boolean = true) {
     var showOfflineDownloads by remember { mutableStateOf(false) }
     if (showOfflineDownloads) com.lostf1sh.pixelplayeross.presentation.components.MusicInfoDownloadsScreen(null, { showOfflineDownloads = false })
     val context = LocalContext.current
@@ -186,6 +192,17 @@ fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsA
             onClick = { actions.onOpenArtistSettings() }
         )
     }
+
+    SettingsSubsection(title = stringResource(R.string.folder_covers_title)) {
+        SwitchSettingItem(
+            title = stringResource(R.string.folder_covers_title),
+            subtitle = stringResource(R.string.folder_covers_note),
+            checked = state.folderCoversEnabled,
+            onCheckedChange = actions::onFolderCoversChange,
+            leadingIcon = { Icon(Icons.Outlined.Image, null, tint = MaterialTheme.colorScheme.secondary) }
+        )
+    }
+    LyricsFolderGrants()
 
     SettingsSubsection(title = stringResource(R.string.setcat_filtering)) {
         SliderSettingsItem(
@@ -265,60 +282,5 @@ fun LibrarySettingsScreen(state: LibrarySettingsState, actions: LibrarySettingsA
     // B40-F4: music info from the internet. Three switches, each off until the listener turns it on; everything downloaded stays on the
     // phone within the limit set here and is deleted from here. (Lyrics have their own category.) Deezer, which used to be the one switch
     // here, is gone.
-    SettingsSubsection(
-        title = stringResource(R.string.setcat_music_info),
-        addBottomSpace = false
-    ) {
-        Text(
-            text = stringResource(R.string.setcat_music_info_note),
-            style = DapType.Caption,
-            color = Dap.secondaryText,
-            modifier = Modifier.padding(horizontal = DapSpacing.Gutter, vertical = DapSpacing.Sm),
-        )
-        SwitchSettingItem(
-            title = stringResource(R.string.setcat_music_info_covers_title),
-            subtitle = stringResource(R.string.setcat_music_info_covers_subtitle),
-            checked = state.musicInfoCoversEnabled,
-            onCheckedChange = { actions.onMusicInfoCoversChange(it) },
-            leadingIcon = { Icon(Icons.Outlined.Image, null, tint = MaterialTheme.colorScheme.secondary) },
-        )
-        SwitchSettingItem(
-            title = stringResource(R.string.setcat_music_info_photos_title),
-            subtitle = stringResource(R.string.setcat_music_info_photos_subtitle),
-            checked = state.musicInfoArtistPhotosEnabled,
-            onCheckedChange = { actions.onMusicInfoArtistPhotosChange(it) },
-            leadingIcon = { Icon(painterResource(R.drawable.rounded_artist_24), null, tint = MaterialTheme.colorScheme.secondary) },
-        )
-        SwitchSettingItem(
-            title = stringResource(R.string.setcat_music_info_descriptions_title),
-            subtitle = stringResource(R.string.setcat_music_info_descriptions_subtitle),
-            checked = state.musicInfoDescriptionsEnabled,
-            onCheckedChange = { actions.onMusicInfoDescriptionsChange(it) },
-            leadingIcon = { Icon(Icons.Outlined.Description, null, tint = MaterialTheme.colorScheme.secondary) },
-        )
-
-        SettingsItem(
-            title = stringResource(R.string.info_internet_title),
-            leadingIcon = { Icon(Icons.Outlined.Description, null, tint = MaterialTheme.colorScheme.secondary) },
-            subtitle = stringResource(R.string.offline_download_all),
-            onClick = { showOfflineDownloads = true },
-        )
-        SettingsItem(
-            title = stringResource(R.string.setcat_music_info_delete_title),
-            subtitle = stringResource(
-                R.string.setcat_music_info_delete_subtitle,
-                android.text.format.Formatter.formatShortFileSize(context, state.musicInfoUsedBytes),
-            ),
-            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.secondary) },
-            onClick = {
-                actions.onDeleteMusicInfo { freed ->
-                    Toast.makeText(
-                        context,
-                        resources.getString(R.string.setcat_music_info_deleted, android.text.format.Formatter.formatShortFileSize(context, freed)),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            },
-        )
-    }
+    MusicInfoSettingsSection(state, actions, onOpen = { showOfflineDownloads = true }, mountInputBridge = mountInputBridge)
 }

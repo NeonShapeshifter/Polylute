@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
@@ -20,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,12 +41,12 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.TextStyle
 import androidx.compose.runtime.remember
-import com.lostf1sh.pixelplayeross.ui.ds.DapChevron
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
 import com.lostf1sh.pixelplayeross.ui.ds.DapRadius
+import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,36 +68,11 @@ fun StatsOverviewCard(
         // No accent wash: accent means "active or applied", and a summary card is neither.
         Box {
             Column(Modifier.padding(DapSpacing.Lg)) {
-                // Header: the title, the range, and a disclosure chevron. It used to spend 24 dp of
-                // vertical padding on each side plus a 40 dp arrow tile, which is most of a row for
-                // a label that does not need one.
-                // Title over range, then the chevron. Side by side, a long title and the range
-                // label collided: the title took its intrinsic width and "Estadísticas de escucha"
-                // ran straight through "Semana hasta hoy". Stacking them removes the collision at
-                // every width and matches the hierarchy the card is meant to read with.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.presentation_batch_g_stats_overview_title),
-                            style = DapType.Row,
-                            color = Dap.primaryText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = stringResource(((summary?.period as? StatsPeriod.Preset)?.range ?: StatsTimeRange.WEEK).displayNameRes()),
-                            style = DapType.Caption,
-                            color = Dap.tertiaryText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Spacer(Modifier.width(DapSpacing.Sm))
-                    DapChevron()
-                }
+                com.lostf1sh.pixelplayeross.ui.ds.DapFeatureHeader(
+                    title = stringResource(R.string.presentation_batch_g_stats_overview_title),
+                    subtitle = stringResource(((summary?.period as? StatsPeriod.Preset)?.range ?: StatsTimeRange.WEEK).displayNameRes()),
+                    onClick = onClick,
+                )
 
                 Spacer(Modifier.height(DapSpacing.Md))
 
@@ -123,23 +100,25 @@ private fun OverviewContent(summary: StatsReport) {
     Column(verticalArrangement = Arrangement.spacedBy(DapSpacing.Md)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            // Each figure is as wide as its own words, not a fixed third: at 360 dp a third less
-            // the gaps is 85 dp, narrower than "Reproducciones" alone, so the word broke in two.
-            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+            // Equal columns share the number's baseline independently of a label wrapping below it.
+            horizontalArrangement = Arrangement.spacedBy(DapSpacing.Sm),
         ) {
             StatFigure(
-                value = formatListeningDurationCompact(summary.totals.listenedMs),
+                value = formatListeningDurationCompact(summary.totals.listenedMs, androidx.compose.ui.platform.LocalResources.current),
                 label = stringResource(R.string.presentation_batch_g_stats_overview_total_time),
                 emphasis = true,
+                modifier = Modifier.weight(1f).alignByBaseline(),
             )
             StatFigure(
                 value = summary.totals.plays.toString(),
                 label = stringResource(R.string.presentation_batch_g_stats_overview_total_plays),
+                modifier = Modifier.weight(1f).alignByBaseline(),
             )
             StatFigure(
-                value = formatListeningDurationCompact(summary.totals.avgPerDayMs),
+                value = formatListeningDurationCompact(summary.totals.avgPerDayMs, androidx.compose.ui.platform.LocalResources.current),
                 label = stringResource(R.string.presentation_batch_g_stats_overview_avg_per_day),
+                modifier = Modifier.weight(1f).alignByBaseline(),
             )
         }
 
@@ -218,14 +197,23 @@ private fun PlaceholderOverviewContent() {
 }
 
 /** One bar of the card's sparkline: what it is called and how tall it is. */
-private class MiniBar(val label: String, val value: Long)
+internal data class MiniBar(val label: String, val value: Long)
 
 /**
  * The bars of the card for [report]: the last seven days of a week or a month's last week, a month as its weeks, a year as
  * its months. Future buckets are left out, so the sparkline ends where the listening does.
  */
-private fun miniBars(report: StatsReport, zone: ZoneId, locale: java.util.Locale, weekLabel: (Int) -> String): List<MiniBar> {
+internal fun miniBars(report: StatsReport, zone: ZoneId, locale: java.util.Locale, weekLabel: (Int) -> String): List<MiniBar> {
     val now = report.generatedAtMs
+    if (report.period == StatsPeriod.Preset(StatsTimeRange.WEEK)) {
+        val monday = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        val byDate = report.timeline.buckets.associateBy { Instant.ofEpochMilli(it.startMs).atZone(zone).toLocalDate() }
+        return (0L..6L).map { offset ->
+            val date=monday.plusDays(offset)
+            MiniBar(date.dayOfWeek.getDisplayName(TextStyle.SHORT,locale),byDate[date]?.timeMs ?: 0)
+        }
+    }
     val buckets = report.timeline.buckets.filter { it.startMs <= now }
     return when (report.timeline.unit) {
         TimelineUnit.HOUR -> buckets.map { MiniBar(Instant.ofEpochMilli(it.startMs).atZone(zone).hour.toString(), it.timeMs) }.takeLast(7)
@@ -285,7 +273,7 @@ private fun MiniListeningTimeline(summary: StatsReport?) {
                         .fillMaxWidth()
                         .height((MiniTimelineBarHeight * heightFraction).coerceAtLeast(3.dp))
                         .clip(RoundedCornerShape(DapRadius.Surface))
-                        .background(LocalDapAccent.current)
+                        .background(if ((entry?.value ?: 0) > 0) LocalDapAccent.current else Dap.trackStroke)
                 )
                 if (!entry?.label.isNullOrBlank()) {
                     Spacer(Modifier.height(DapSpacing.Xs))
@@ -307,17 +295,18 @@ private fun MonthlyHorizontalListeningTimeline(bars: List<MiniBar>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(MiniTimelineHeight),
+            .heightIn(min = MiniTimelineHeight)
+            .testTag("stats-month-chart"),
         verticalArrangement = Arrangement.spacedBy(DapSpacing.Xs)
     ) {
         bars.takeLast(6).forEach { entry ->
             val fraction = (entry.value.toFloat() / maxDuration.toFloat()).coerceIn(0f, 1f)
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.heightIn(min = DapSpacing.SectionGap),verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = entry.label,
                     style = DapType.Axis,
                     color = Dap.tertiaryText,
-                    modifier = Modifier.width(28.dp),
+                    modifier = Modifier.width(DapSizes.ThumbFeature + DapSpacing.Gutter),
                     maxLines = 1,
                 )
                 Box(

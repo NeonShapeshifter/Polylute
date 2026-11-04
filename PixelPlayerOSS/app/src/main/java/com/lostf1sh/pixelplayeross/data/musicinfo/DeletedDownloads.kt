@@ -11,6 +11,13 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import com.lostf1sh.pixelplayeross.data.network.DownloadCommitGuard
+import org.json.JSONObject
+import org.json.JSONArray
 import timber.log.Timber
 
 /** User decisions live beside the cache index, independently of missing results and cache entries.
@@ -28,15 +35,59 @@ class DeletedDownloads(private val file: File) {
     private var loaded = false
     private var stamp: Stamp? = null
     private var entries: Set<String> = emptySet()
+    private val holdsFile = File(file.parentFile, "${file.name}.undo")
+
+    private fun held(): Map<String, Set<String>> {
+        if (!holdsFile.exists()) return emptyMap()
+        val json = JSONObject(holdsFile.readText())
+        return json.keys().asSequence().associateWith { token ->
+            val values = json.getJSONArray(token)
+            (0 until values.length()).map { values.getString(it) }.toSet()
+        }
+    }
+
+    private fun writeHolds(holds: Map<String, Set<String>>) {
+        if (holds.isEmpty()) {
+            check(!holdsFile.exists() || holdsFile.delete()) { "Could not release pending deletion" }
+            return
+        }
+        holdsFile.parentFile?.mkdirs()
+        val json = JSONObject()
+        holds.forEach { (token, keys) -> json.put(token, JSONArray(keys)) }
+        val target = android.util.AtomicFile(holdsFile)
+        val stream = target.startWrite()
+        try {
+            stream.write(json.toString().toByteArray(Charsets.UTF_8))
+            target.finishWrite(stream)
+        } catch (error: Exception) {
+            target.failWrite(stream)
+            throw error
+        }
+    }
+
+    /** Temporary suppression is separate from durable deletion, and is removed verbatim by Undo. */
+    suspend fun hold(token: String, keys: Collection<String>) = lock.mutex.withLock {
+        writeHolds(held() + (token to keys.map(::encoded).toSet()))
+    }
+
+    suspend fun releaseHold(token: String) = lock.mutex.withLock { writeHolds(held() - token) }
+
+    suspend fun restoreHolds(actions: Map<String, List<String>>) = lock.mutex.withLock {
+        val wanted = actions.mapValues { (_, keys) -> keys.map(::encoded).toSet() }
+        if (wanted != held()) writeHolds(wanted)
+    }
+
+    /** Queue cancellation uses this same short lock as a response's final file/DB commit. */
+    suspend fun <T> withCommitLock(action: suspend () -> T): T = lock.mutex.withLock { action() }
 
     class Snapshot internal constructor(private val entries: Set<String>) {
-        fun contains(key: String): Boolean = encoded(key) in entries
+        fun contains(key: String): Boolean = candidates(key).any { it in entries }
         fun fingerprint(): String = entries.sorted().joinToString("\n")
     }
 
     internal suspend fun revision(): Any? = lock.mutex.withLock {
         try {
-            fingerprint()
+            listOf(fingerprint(), holdsFile.takeIf { it.exists() }?.let { it.length() to it.lastModified() })
         } catch (_: Exception) {
             // Force the normal read path, which reports and ignores unreadable marks.
             Any()
@@ -44,11 +95,12 @@ class DeletedDownloads(private val file: File) {
     }
 
     suspend fun snapshot(): Snapshot = lock.mutex.withLock {
-        Snapshot(readLocked().toSet())
+        Snapshot(readLocked() + held().values.flatten())
     }
 
     suspend fun contains(key: String): Boolean = lock.mutex.withLock {
-        encoded(key) in readLocked()
+        val candidates = candidates(key)
+        candidates.any { it in readLocked() } || held().values.any { keys -> candidates.any { it in keys } }
     }
 
     suspend fun mark(keys: Collection<String>) = lock.mutex.withLock {
@@ -59,16 +111,29 @@ class DeletedDownloads(private val file: File) {
 
     suspend fun allow(keys: Collection<String>): Boolean = lock.mutex.withLock {
         val previous = readLocked()
-        val updated = previous - keys.map(::encoded).toSet()
-        if (updated == previous) return@withLock false
-        writeLocked(updated)
-        true
+        val removed = keys.flatMap(::candidates).toSet()
+        val updated = previous - removed
+        val holds = held()
+        val remaining = holds.mapValues { it.value - removed }.filterValues { it.isNotEmpty() }
+        if (holds != remaining) writeHolds(remaining)
+        if (updated != previous) writeLocked(updated)
+        updated != previous || holds != remaining
     }
 
     /** No network work belongs here, only the short disk/DB commit after a response arrived. */
     suspend fun <T> commitIfAllowed(key: String, commit: suspend () -> T): T? = lock.mutex.withLock {
-        if (encoded(key) in readLocked()) return@withLock null
-        commit()
+        currentCoroutineContext().ensureActive()
+        val candidates = candidates(key)
+        if (candidates.any { it in readLocked() } || held().values.any { keys -> candidates.any { it in keys } }) return@withLock null
+        val guard = currentCoroutineContext()[DownloadCommitGuard]
+        if (guard?.allowed?.invoke() == false) return@withLock null
+        // This is the short disk/DB commit, never a request. Once started it completes atomically
+        // with its queue acknowledgement before Cancel can take the same lock.
+        withContext(NonCancellable) {
+            val result = commit()
+            if (result != null && result != false) guard?.committed?.invoke()
+            result
+        }
     }
 
     private fun fingerprint(): Stamp? = try {
@@ -139,6 +204,26 @@ class DeletedDownloads(private val file: File) {
     }
 
     companion object {
+        /** Old cache indexes retain a hash rather than a name. Delete all can suppress those too. */
+        internal fun cacheIds(key: String): List<String> {
+            if ("|cache:" in key) return listOf(key.substringAfter("|cache:"))
+            val parts = key.split('|')
+            return when (parts.firstOrNull()) {
+                "photo" -> listOf(MusicInfoCache.savedEntryId(MusicInfoCache.Kind.ARTIST_PHOTO, parts.drop(1).joinToString("|")))
+                "cover" -> listOf(MusicInfoCache.savedEntryId(MusicInfoCache.Kind.COVER, parts.drop(1).joinToString("|")))
+                "about" -> if (parts.size >= 4) {
+                    val kind = if (parts[1] == "true") AboutKind.ALBUM else AboutKind.ARTIST
+                    (listOf<String?>(null, "und", "en", "es", "sv")).map {
+                        MusicInfoCache.savedEntryId(MusicInfoCache.Kind.ABOUT, MusicInfoService.aboutKey(kind, parts[2], parts[3], it))
+                    }
+                } else emptyList()
+                else -> emptyList()
+            }
+        }
+
+        private fun candidates(key: String): List<String> = listOf(encoded(key)) +
+            if ("|cache:" in key) emptyList() else cacheIds(key).map { encoded("${key.substringBefore('|')}|cache:$it") }
+
         private fun encoded(key: String): String {
             val kind = key.substringBefore('|')
             require(kind in KINDS)

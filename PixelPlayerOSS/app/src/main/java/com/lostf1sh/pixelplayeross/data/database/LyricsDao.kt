@@ -6,17 +6,26 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 
+data class DownloadedLyricsRecord(val songId: Long, val libraryItemId: String, val bytes: Long)
+
 @Dao
 interface LyricsDao {
+    @Query("SELECT songId, library_item_id AS libraryItemId, length(CAST(content AS BLOB)) AS bytes FROM lyrics WHERE source = 'remote' AND trim(content) != '' AND length(content) <= 50000 AND length(CAST(content AS BLOB)) <= 200000 AND instr(content, char(0)) = 0")
+    suspend fun downloadedRecords(): List<DownloadedLyricsRecord>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCheckedValue(lyrics: LyricsEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAllCheckedValues(lyrics: List<LyricsEntity>)
 
+    @Query("SELECT library_item_id FROM songs WHERE id = :songId LIMIT 1")
+    suspend fun identityForSong(songId: Long): String?
+
+    @Transaction
     suspend fun insert(lyrics: LyricsEntity) {
         val text = com.lostf1sh.pixelplayeross.data.lyrics.LyricsTextPolicy.forStorage(lyrics.songId, lyrics.content)
-        if (text != null) insertCheckedValue(lyrics.copy(content = text))
+        if (text != null) insertCheckedValue(lyrics.copy(content = text,
+            libraryItemId = lyrics.libraryItemId.ifBlank { identityForSong(lyrics.songId).orEmpty() }))
         else if (lyrics.libraryItemId.isNotBlank()) deleteLyricsForLibraryItem(lyrics.libraryItemId) else deleteLyrics(lyrics.songId)
     }
     @Transaction

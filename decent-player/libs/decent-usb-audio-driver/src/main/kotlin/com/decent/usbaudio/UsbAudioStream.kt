@@ -155,10 +155,11 @@ class UsbAudioStream(
     /**
      * Start the USB audio stream. The pipeline fills naturally with
      * data from subsequent [write] calls.
+     * [previousSampleRateHz] is the attachment's last started rate, or zero on its first stream.
      */
-    fun start(): Boolean {
+    fun start(previousSampleRateHz: Int = 0): Boolean {
         if (nativeHandle == 0L) return false
-        return nativeUsbAudioStart(nativeHandle)
+        return nativeUsbAudioStart(nativeHandle, previousSampleRateHz)
     }
 
     /**
@@ -390,7 +391,7 @@ class UsbAudioStream(
 
     private external fun nativeUsbAudioSetAltSetting(handle: Long, altSetting: Int): Boolean
     private external fun nativeUsbAudioSetSampleRate(handle: Long, sampleRateHz: Int, clockSourceId: Int): Boolean
-    private external fun nativeUsbAudioStart(handle: Long): Boolean
+    private external fun nativeUsbAudioStart(handle: Long, previousSampleRateHz: Int): Boolean
     private external fun nativeUsbAudioWrite(handle: Long, pcmBuffer: FloatArray)
     private external fun nativeUsbAudioWriteRaw(handle: Long, pcmBuffer: ByteArray, inputBitDepth: Int)
     private external fun nativeUsbAudioStop(handle: Long)

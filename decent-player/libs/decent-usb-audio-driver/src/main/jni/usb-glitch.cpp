@@ -318,6 +318,7 @@ void usbFeedbackWatchObserve(UsbFeedbackWatch *w, uint32_t raw, double nominalFp
 void usbFeedbackWatchObservePolicy(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, int64_t nowMs, int policy,
                                    UsbFeedbackEvent *ev) {
     ev->kind = USB_FEEDBACK_EVENT_NONE;
+    ev->rateChangeHold = false;
     ev->implausibleStarted = false;
     ev->implausibleRampMs = 0;
     settleFolds(w, nowMs);
@@ -338,16 +339,21 @@ void usbFeedbackWatchObservePolicy(UsbFeedbackWatch *w, uint32_t raw, double nom
     w->runLastMs = nowMs;
     if (!w->stuck) {
         const double ppm = usbFeedbackPpm(raw / 65536.0, nominalFpmf);
-        if (nowMs - w->runStartMs >= usbFeedbackStuckHoldMs(policy, ppm) &&
+        const int64_t ageMs = nowMs - w->streamStartMs;
+        const bool rateChangeHold = w->rateChangeStart && ageMs >= 0 && ageMs < USB_FEEDBACK_RATE_CHANGE_WINDOW_MS;
+        const int64_t holdMs = rateChangeHold ? USB_FEEDBACK_RATE_CHANGE_STUCK_MS : usbFeedbackStuckHoldMs(policy, ppm);
+        if (nowMs - w->runStartMs >= holdMs &&
             (ppm > USB_FEEDBACK_STUCK_MIN_PPM || ppm < -USB_FEEDBACK_STUCK_MIN_PPM)) {
             w->stuck = true;
             fillEvent(ev, USB_FEEDBACK_EVENT_STUCK, w, nominalFpmf, nowMs - w->runStartMs);
+            ev->rateChangeHold = rateChangeHold;
         }
     }
 }
 
 void usbFeedbackWatchOutOfWindow(UsbFeedbackWatch *w, uint32_t raw, double nominalFpmf, UsbFeedbackEvent *ev) {
     ev->kind = USB_FEEDBACK_EVENT_NONE;
+    ev->rateChangeHold = false;
     ev->implausibleStarted = false;
     ev->implausibleRampMs = 0;
     const double fpmf = raw / 65536.0;
@@ -356,6 +362,7 @@ void usbFeedbackWatchOutOfWindow(UsbFeedbackWatch *w, uint32_t raw, double nomin
 
 void usbFeedbackWatchEnd(UsbFeedbackWatch *w, double nominalFpmf, UsbFeedbackEvent *ev) {
     ev->kind = USB_FEEDBACK_EVENT_NONE;
+    ev->rateChangeHold = false;
     ev->implausibleStarted = false;
     ev->implausibleRampMs = 0;
     if (w->haveRun && w->stuck) closeRun(w, nominalFpmf, USB_FEEDBACK_END_STREAM, 0, ev);

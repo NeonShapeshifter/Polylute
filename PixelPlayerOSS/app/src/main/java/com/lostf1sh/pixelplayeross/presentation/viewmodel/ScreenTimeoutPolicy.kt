@@ -15,8 +15,8 @@ package com.lostf1sh.pixelplayeross.presentation.viewmodel
  *
  * - it never leaves the system setting at "never" by its own doing, and never writes anything
  *   outside the presets ([isAppWritable]);
- * - "keep the screen on while playing" is a window flag held only while the player is in front and
- *   playing, so it cannot turn into a timeout of "never" (see [DapDeviceControlPolicy]);
+ * - "keep the screen on while playing" is a window flag held on DAP pages outside the lock surface,
+ *   so it cannot turn into a system timeout of "never" (see [DapDeviceControlPolicy]);
  * - a system value that is "never" is *reported*, with a one-tap correction, and never changed
  *   without the user asking ([offer]).
  */

@@ -245,6 +245,7 @@ internal fun PlayerLyricsPage(
         onShowLyricsTranslationChange = { actions.onShowLyricsTranslationChange(it) },
         onShowLyricsRomanizationChange = { actions.onShowLyricsRomanizationChange(it) },
         onSaveLyricsToFile = actions::onSaveLyricsToFile,
+        onSaveSyncedLyrics = actions::onSaveSyncedLyrics,
         onSeekTo = { actions.onSeek(it) },
         onPlayPause = {
             actions.onPlayPause()

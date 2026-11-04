@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 class LookupFailures : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<LookupFailures>
     @Volatile var failed = false
+    @Volatile var wait: SourceWait? = null
 }
 
 sealed interface RemoteOutcome<out T> {
@@ -17,14 +18,14 @@ sealed interface RemoteOutcome<out T> {
     data object NotFound : RemoteOutcome<Nothing>
     data object Failed : RemoteOutcome<Nothing>
     companion object {
-        suspend fun <T : Any> lookup(block: suspend () -> T?): RemoteOutcome<T> {
+        suspend fun <T : Any> lookup(onFailure: (SourceWait?) -> Unit = {}, block: suspend () -> T?): RemoteOutcome<T> {
             val failures = LookupFailures()
             return withContext(failures) {
                 try {
                     val result = block()
-                    if (result != null) Found(result) else if (failures.failed) Failed else NotFound
+                    if (result != null) Found(result) else if (failures.failed) { onFailure(failures.wait); Failed } else NotFound
                 } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { Failed }
+                catch (error: Exception) { onFailure((error as? SourceRequestException)?.wait ?: failures.wait); Failed }
             }
         }
     }

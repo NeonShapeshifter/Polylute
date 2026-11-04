@@ -62,6 +62,7 @@ val DEFAULT_SECTION_ORDER = listOf(
     SearchFilterType.SONGS,
     SearchFilterType.ALBUMS,
     SearchFilterType.ARTISTS,
+    SearchFilterType.COMPOSERS,
     SearchFilterType.PLAYLISTS
 )
 
@@ -95,6 +96,7 @@ fun SearchResultItem.typeOrder(): Int = when (this) {
     is SearchResultItem.AlbumItem -> 1
     is SearchResultItem.ArtistItem -> 2
     is SearchResultItem.PlaylistItem -> 3
+    is SearchResultItem.ComposerItem -> 4
 }
 
 /** The text the row leads with — what the user is actually looking for. */
@@ -104,6 +106,7 @@ val SearchResultItem.primaryText: String
         is SearchResultItem.AlbumItem -> album.title
         is SearchResultItem.ArtistItem -> artist.name
         is SearchResultItem.PlaylistItem -> playlist.name
+        is SearchResultItem.ComposerItem -> name
     }
 
 /** Who made it, when the row says so. */
@@ -113,6 +116,7 @@ private val SearchResultItem.secondaryText: String?
         is SearchResultItem.AlbumItem -> album.artist
         is SearchResultItem.ArtistItem -> null
         is SearchResultItem.PlaylistItem -> null
+        is SearchResultItem.ComposerItem -> null
     }
 
 /**

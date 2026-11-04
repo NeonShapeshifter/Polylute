@@ -26,6 +26,10 @@ import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Lyrics
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /**
  * B41: which two lines of the lyrics the player shows under the cover: the line that is being sung and the one that comes next.
@@ -41,7 +45,50 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapType
 object CoverLyricsLines {
     /** What the two lines say. [current] is null while nothing is being sung. */
     @Immutable
-    data class Shown(val current: String?, val next: String?)
+    data class Shown(
+        val current: String?,
+        val next: String?,
+        /** B57 2.2: the words of the line being sung with their times, when the synced lyrics carry them (two or more); null otherwise. */
+        val currentWords: List<com.lostf1sh.pixelplayeross.data.model.SyncedWord>? = null,
+        /** B57 2.2: when the line being sung ends (the next line's time, or a little after its last word), in the lyrics' own clock. */
+        val currentLineEndMs: Long = 0L,
+    )
+
+    /** The words of [line] that can be filled one by one: at least two non-blank ones, in time order. */
+    fun fillableWords(line: com.lostf1sh.pixelplayeross.data.model.SyncedLine?): List<com.lostf1sh.pixelplayeross.data.model.SyncedWord>? =
+        line?.words?.filter { it.word.isNotBlank() }?.sortedBy { it.time }?.takeIf { it.size >= 2 }
+
+    /** The text the words spell, and where each word starts in it: a space before a word that begins a new word, none inside a split one. */
+    fun spell(words: List<com.lostf1sh.pixelplayeross.data.model.SyncedWord>): Pair<String, IntArray> {
+        val starts = IntArray(words.size)
+        val text = buildString {
+            words.forEachIndexed { i, w ->
+                if (i > 0 && w.startsNewWord) append(' ')
+                starts[i] = length
+                append(w.word.trim())
+            }
+        }
+        return text to starts
+    }
+
+    /**
+     * How many characters of the spelt line have been sung at [atMs] (fractional: the word being sung is filled in proportion to the time it has taken): every word whose
+     * time has come is full, the one in progress is part full, the rest empty. A word lasts until the next begins (the last until [lineEndMs]).
+     */
+    fun filledChars(words: List<com.lostf1sh.pixelplayeross.data.model.SyncedWord>, starts: IntArray, textLength: Int, atMs: Long, lineEndMs: Long): Float {
+        var filled = 0f
+        for (i in words.indices) {
+            val begin = words[i].time.toLong()
+            if (atMs < begin) break
+            val end = if (i + 1 < words.size) words[i + 1].time.toLong() else maxOf(lineEndMs, begin + 1)
+            val wordEnd = if (i + 1 < words.size) starts[i + 1] else textLength
+            val wordStart = starts[i]
+            val fraction = ((atMs - begin).toFloat() / (end - begin).coerceAtLeast(1L)).coerceIn(0f, 1f)
+            filled = wordStart + (wordEnd - wordStart) * fraction
+            if (fraction < 1f) break
+        }
+        return filled
+    }
 
     /**
      * The index of the line whose time has come at [positionMs] (plus [offsetMs], the song's own sync correction), or -1 before the first.
@@ -68,11 +115,14 @@ object CoverLyricsLines {
     fun at(lyrics: Lyrics?, positionMs: Long, offsetMs: Int): Shown? {
         val lines = lyrics?.synced?.takeIf { synced -> synced.any { it.line.isNotBlank() } } ?: return null
         val index = indexAt(lines, positionMs, offsetMs)
-        val current = lines.getOrNull(index)?.line?.trim()?.takeIf { it.isNotEmpty() }
+        val currentLine = lines.getOrNull(index)
+        val current = currentLine?.line?.trim()?.takeIf { it.isNotEmpty() }
         val next = lines.drop(index + 1).firstOrNull { it.line.isNotBlank() }?.line?.trim()
         // after the last sung line, with nothing to come
         if (current == null && next == null) return Shown(null, null)
-        return Shown(current, next)
+        val words = if (current != null) fillableWords(currentLine) else null
+        val lineEnd = lines.getOrNull(index + 1)?.time?.toLong() ?: ((words?.lastOrNull()?.time ?: currentLine?.time ?: 0).toLong() + 800L)
+        return Shown(current, next, words, lineEnd)
     }
 }
 
@@ -125,7 +175,7 @@ internal fun PlayerLyricsLines(
     ) {
         // B41-fix1 (B7): the line that is sung has room for two lines whatever it says (a short one, none at all in a gap), so the block
         // keeps its height from one line to the next and the title and the controls under it never move; the next line stays one, dim.
-        SungLine(lines.current.orEmpty())
+        SungLine(lines.current.orEmpty(), lines.currentWords, lines.currentLineEndMs) { progress.currentPositionProvider() + lyrics.lyricsSyncOffset }
         Text(
             text = lines.next.orEmpty(),
             style = DapType.Body,
@@ -141,21 +191,29 @@ internal fun PlayerLyricsLines(
  * The line being sung: up to two lines, and shrunk a little (never under [LyricsFit.MIN_SCALE]) only when two lines at full size are not
  * enough. Its height is two lines of the full-size style whatever its text, so shrinking never changes the block's height: only the size of
  * the letters changes, not the leading.
+ *
+ * B57 2.2 (owner, 11-03): **no tonal backdrop** behind it (B56 added one; "looks horrible"). Without per-word times the line is bright and the lines around it dim, as before B56.
+ * With them ([words]: the synced lyrics carry a time for each word) it fills word by word as it is sung: the words already sung are bright, the one being sung fills in proportion
+ * to the time it takes, the rest of the line waits dim. The fill is drawn, not composed: [positionMs] is read in the draw phase, so a tick repaints the line and recomposes nothing.
+ * The lyrics page is unchanged.
  */
 @Composable
-private fun SungLine(text: String) {
+private fun SungLine(text: String, words: List<com.lostf1sh.pixelplayeross.data.model.SyncedWord>?, lineEndMs: Long, positionMs: () -> Long) {
     val measurer = rememberTextMeasurer(cacheSize = 4)
     val style = DapType.BodyLarge
     // Two lines of the style's own line height, whatever the text: `minLines` alone is not it (two real lines and one line padded to two
     // measure a few pixels apart, which is a jump of everything under the block each time the line changes length).
     val height = with(LocalDensity.current) { (style.lineHeight * 2).toDp() }
+    val spelt = remember(words) { words?.let(CoverLyricsLines::spell) }
+    // the words' own spelling when they are filled one by one, so the two layers (dim and bright) and the fill agree on every character
+    val shown = spelt?.first ?: text
     BoxWithConstraints(Modifier.fillMaxWidth().height(height)) {
         val widthPx = constraints.maxWidth
-        val scale = remember(text, widthPx, style) {
-            if (text.isEmpty() || widthPx == Constraints.Infinity) 1f
+        val scale = remember(shown, widthPx, style) {
+            if (shown.isEmpty() || widthPx == Constraints.Infinity) 1f
             else LyricsFit.scaleFor { candidate ->
                 !measurer.measure(
-                    text = text,
+                    text = shown,
                     style = style.scaledTo(candidate),
                     overflow = TextOverflow.Ellipsis,
                     maxLines = 2,
@@ -163,13 +221,27 @@ private fun SungLine(text: String) {
                 ).hasVisualOverflow
             }
         }
-        Text(
-            text = text,
-            style = style.scaledTo(scale),
-            color = Dap.primaryText,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (spelt == null || words == null) {
+            Text(text = shown, style = style.scaledTo(scale), color = Dap.primaryText, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        } else {
+            var layout by remember(shown, scale, widthPx) { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+            // the unsung part
+            Text(text = shown, style = style.scaledTo(scale), color = Dap.secondaryText, maxLines = 2, overflow = TextOverflow.Ellipsis, onTextLayout = { layout = it })
+            // the sung part: the same text, bright, clipped to the characters sung so far
+            Text(
+                text = shown,
+                style = style.scaledTo(scale),
+                color = Dap.primaryText,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.drawWithContent {
+                    val measured = layout ?: return@drawWithContent
+                    val filled = CoverLyricsLines.filledChars(words, spelt.second, shown.length, positionMs(), lineEndMs)
+                    val end = kotlin.math.ceil(filled).toInt().coerceIn(0, shown.length)
+                    if (end > 0) clipPath(measured.getPathForRange(0, end)) { this@drawWithContent.drawContent() }
+                },
+            )
+        }
     }
 }
 

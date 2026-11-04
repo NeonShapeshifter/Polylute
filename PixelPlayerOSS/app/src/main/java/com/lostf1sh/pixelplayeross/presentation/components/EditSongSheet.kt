@@ -137,6 +137,7 @@ fun EditSongSheet(
         discNumber: Int?,
         replayGainTrackGainDb: String,
         replayGainAlbumGainDb: String,
+        date: String?,
         coverArtUpdate: CoverArtUpdate?
     ) -> Unit
 ) {
@@ -171,7 +172,7 @@ fun EditSongSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EditSongContent(
+internal fun EditSongContent(
     song: Song,
     onDismiss: () -> Unit,
     onSave: (
@@ -186,6 +187,7 @@ private fun EditSongContent(
         discNumber: Int?,
         replayGainTrackGainDb: String,
         replayGainAlbumGainDb: String,
+        date: String?,
         coverArtUpdate: CoverArtUpdate?
     ) -> Unit,
 ) {
@@ -200,6 +202,9 @@ private fun EditSongContent(
     var discNumber by remember { mutableStateOf(song.discNumber?.toString() ?: "") }
     var replayGainTrackGainDb by remember { mutableStateOf("") }
     var replayGainAlbumGainDb by remember { mutableStateOf("") }
+    // B57 1.3: the file's date tag as the listener sees it (a year, or a full date when the file has one) and as it was when the sheet opened: only a changed value is written.
+    var date by remember { mutableStateOf("") }
+    var originalDate by remember { mutableStateOf("") }
     var coverArtPreview by remember { mutableStateOf<ImageBitmap?>(null) }
     var editedCoverArt by remember { mutableStateOf<CoverArtUpdate?>(null) }
     var isCoverArtDeleted by remember { mutableStateOf(false) }
@@ -208,6 +213,10 @@ private fun EditSongContent(
 
     var showInfoDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    // B57-fix1 5.1: asked before the listener types. A file the editor cannot write with certainty says so here, and has no Save, so the failure never comes after it.
+    val canEditTags by produceState(initialValue = true, song.path) {
+        value = withContext(Dispatchers.IO) { com.lostf1sh.pixelplayeross.data.media.MetadataEditSupport.canEdit(song.path) }
+    }
     val pickCoverArtLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             pendingCoverArtUri = uri
@@ -227,6 +236,8 @@ private fun EditSongContent(
         discNumber = song.discNumber?.toString() ?: ""
         replayGainTrackGainDb = ""
         replayGainAlbumGainDb = ""
+        date = song.year.takeIf { it > 0 }?.toString().orEmpty()
+        originalDate = date
         coverArtPreview = null
         editedCoverArt = null
         isCoverArtDeleted = false
@@ -253,6 +264,7 @@ private fun EditSongContent(
             }
 
             embeddedMetadata?.composer?.takeIf { it.isNotBlank() }?.let { composer = it }
+            embeddedMetadata?.year?.takeIf { it > 0 }?.let { date = it.toString(); originalDate = date }
             replayGainTrackGainDb = formatReplayGainForInput(embeddedMetadata?.replayGainTrackGainDb)
             replayGainAlbumGainDb = formatReplayGainForInput(embeddedMetadata?.replayGainAlbumGainDb)
         }
@@ -322,6 +334,7 @@ private fun EditSongContent(
                 resolvedDiscNumber,
                 replayGainTrackGainDb.trim(),
                 replayGainAlbumGainDb.trim(),
+                date.trim().takeIf { it != originalDate.trim() },
                 editedCoverArt
             )
         }
@@ -386,7 +399,7 @@ private fun EditSongContent(
                             // Disabled for the in-flight window only. Cancel stays live on
                             // purpose: dismissing never writes, and blocking it would trap the
                             // user in the editor if a save ever failed to settle.
-                            enabled = !saveAction.isTaken,
+                            enabled = !saveAction.isTaken && canEditTags,
                         )
                     }
                 }
@@ -405,6 +418,14 @@ private fun EditSongContent(
                 .padding(horizontal = DapSpacing.Gutter)
                 .padding(bottom = DapSpacing.SectionGap),
         ) {
+            if (!canEditTags) {
+                Text(
+                    text = stringResource(R.string.edit_song_unsupported_format),
+                    style = DapType.Note,
+                    color = Dap.warning,
+                    modifier = Modifier.padding(bottom = DapSpacing.Md),
+                )
+            }
             CoverArtSection(
                 albumArtUri = song.albumArtUriString,
                 preview = coverArtPreview,
@@ -453,6 +474,12 @@ private fun EditSongContent(
                     label = stringResource(R.string.song_field_genre),
                     value = genre,
                     onValueChange = { genre = it },
+                )
+                EditField(
+                    label = stringResource(R.string.song_field_date),
+                    value = date,
+                    onValueChange = { date = it },
+                    keyboardType = KeyboardType.Number,
                 )
                 EditField(
                     label = stringResource(R.string.song_field_composer),

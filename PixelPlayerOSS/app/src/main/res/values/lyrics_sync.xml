@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 phase 3.2: the lyrics sync editor -->
+    <string name="lyrics_menu_sync_editor">Sync lyrics</string>
+    <string name="lyrics_sync_title">Sync lyrics</string>
+    <string name="lyrics_sync_hint">Play the song and tap Stamp line when each line begins.</string>
+    <string name="lyrics_sync_stamp">Stamp line</string>
+    <string name="lyrics_sync_undo">Undo last</string>
+    <string name="lyrics_sync_preview">Preview</string>
+    <string name="lyrics_sync_edit">Edit</string>
+    <string name="lyrics_sync_save">Save</string>
+    <string name="lyrics_sync_close">Close</string>
+    <string name="lyrics_sync_restart">Start over</string>
+    <string name="lyrics_sync_all_stamped">Every line is stamped</string>
+    <string name="lyrics_sync_nudge_earlier">−0.1 s</string>
+    <string name="lyrics_sync_nudge_later">+0.1 s</string>
+    <string name="lyrics_sync_back_5">−5 s</string>
+    <string name="lyrics_sync_forward_5">+5 s</string>
+    <string name="lyrics_sync_play">Play</string>
+    <string name="lyrics_sync_pause">Pause</string>
+    <string name="lyrics_sync_discard_title">Leave without saving?</string>
+    <string name="lyrics_sync_discard_message">The times you set will be lost.</string>
+    <string name="lyrics_sync_discard">Discard</string>
+    <string name="lyrics_sync_keep_editing">Keep editing</string>
+    <plurals name="lyrics_sync_remaining">
+        <item quantity="one">%1$d line left to stamp</item>
+        <item quantity="other">%1$d lines left to stamp</item>
+    </plurals>
+    <!-- B56 phase 3.4: how the lyrics show in the full player -->
+    <string name="lyrics_mode_title">Lyrics in the player</string>
+    <string name="lyrics_mode_desc">Where the lyrics show while a song plays.</string>
+    <string name="lyrics_mode_over_cover">Over the cover</string>
+    <string name="lyrics_mode_full_page">Full page</string>
+    <string name="lyrics_mode_off">Off</string>
+    <string name="lyrics_mode_over_cover_hint">Two lines under the cover, and the Lyrics page</string>
+    <string name="lyrics_mode_full_page_hint">Only the Lyrics page</string>
+    <string name="lyrics_mode_off_hint">No lyrics in the player</string>
+</resources>

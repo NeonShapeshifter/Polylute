@@ -104,13 +104,15 @@ fun SettingsScreen(
                                 DapQuickDeviceControls(
                                     state = deviceControlState,
                                     onBrightnessChanged = { percent ->
-                                        applyDapWindowBrightness(context, percent)
+                                        applyDapWindowBrightness(context, percent, com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.isVisible(com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.Entry.ROOT_BRIGHTNESS, mode.product))
                                         deviceControlViewModel.setBrightnessPercent(percent)
                                     },
                                     onVolumeChanged = deviceControlViewModel::setMediaVolume,
+                                    showBattery = com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.isVisible(com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.Entry.ROOT_BATTERY, mode.product),
+                                    showBrightness = com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.isVisible(com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.Entry.ROOT_BRIGHTNESS, mode.product),
                                     onDigitalGainChanged = deviceControlViewModel::setDigitalGainPercent,
                                     // F-05: the "never" notice leads to the page that owns the timeout.
-                                    onReviewScreenTimeout = if (!com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.showScreenTimeout(mode.product)) null else ({
+                                    onReviewScreenTimeout = if (!com.lostf1sh.pixelplayeross.presentation.settings.ModeSurfacePolicy.showDeviceCategory(mode.product)) null else ({
                                         navController.navigateSafely(
                                             Screen.SettingsCategory.createRoute(SettingsCategory.DEVICE.id)
                                         )

@@ -372,7 +372,9 @@ class ListeningStatsTracker @Inject constructor(
         accumulateRealtimeListening(session, nowRealtime)
         val listened = session.accumulatedListeningMs.coerceAtLeast(0L)
         val reason = resolveEndReason(endReason, nowRealtime)
-        if (listened >= MIN_SESSION_LISTEN_MS) {
+        val countsForRecents = com.lostf1sh.pixelplayeross.data.stats.RecentListenRule.counts(listened, session.totalDurationMs)
+        // Persist short listening time for Stats as before, including a complete track shorter than five seconds.
+        if (listened >= MIN_SESSION_LISTEN_MS || countsForRecents) {
             val fragments = fragmentsOf(session, reason, nowEpoch)
             val timestamp = fragments.last().timestamp
             val songId = session.songId
@@ -384,7 +386,7 @@ class ListeningStatsTracker @Inject constructor(
                 libraryItemId = session.libraryItemId.takeIf { it.isNotBlank() },
                 identityResolvedFromLocator = false,
             )
-            _playbackHistory.update { current ->
+            if (countsForRecents) _playbackHistory.update { current ->
                 (listOf(historyEntry) + current).take(MAX_INTERNAL_PLAYBACK_HISTORY_ITEMS)
             }
             persistPlayback(

@@ -39,6 +39,9 @@ class GlassField(val size: Int, val argb: IntArray, val band: GlassBand, val mov
 
     private val sortedLuminance: FloatArray by lazy(LazyThreadSafetyMode.NONE) { FloatArray(argb.size) { GlassLuma.luminance(argb[it]) }.also { it.sort() } }
 
+    /** B56-7.1: three to five colours of the field (the cover's own, in the theme's band): what the live background's blobs are painted with. */
+    val palette: List<Color> by lazy(LazyThreadSafetyMode.NONE) { CoverColours.palette(argb, size, size) }
+
     /** The relative luminance that [p] (0..1) of the cells are at or below: the 90th percentile is what the ink's contrast is held at. */
     fun luminanceAt(p: Float): Float = percentileOf(sortedLuminance, p)
 

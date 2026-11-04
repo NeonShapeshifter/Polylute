@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="song_field_date">Año / fecha</string>
+    <string name="batch_edit_saved_failed" tools:ignore="PluralsCandidate">%1$d guardadas / %2$d con error: %3$s</string>
+    <string name="edit_album_menu_item">Editar datos del álbum</string>
+    <string name="edit_album_title">Editar álbum</string>
+    <string name="edit_album_section_album">Álbum</string>
+    <string name="edit_album_section_tracks">Pistas</string>
+    <string name="edit_album_track_number_short">N.º</string>
+    <string name="edit_album_disc_number_short">Disco</string>
+    <string name="edit_album_save">Guardar álbum</string>
+    <string name="edit_album_saving_progress" tools:ignore="PluralsCandidate">Guardando %1$d de %2$d</string>
+    <string name="edit_album_cover">Portada</string>
+    <string name="edit_album_cover_replace">Elegir portada</string>
+    <string name="edit_album_cover_remove">Quitar portada</string>
+    <string name="edit_album_cover_keep">Conservar portada</string>
+    <string name="edit_album_fill">Rellenar desde MusicBrainz</string>
+    <string name="edit_album_fill_searching">Buscando en MusicBrainz…</string>
+    <string name="edit_album_fill_pick">¿Cuál es la edición de este álbum?</string>
+    <string name="edit_album_fill_release_line" tools:ignore="PluralsCandidate">%1$s · %2$s · %3$d pistas</string>
+    <string name="edit_album_fill_no_match">MusicBrainz no tiene nada que cambiar aquí.</string>
+    <string name="edit_album_fill_failed">No se pudo conectar con MusicBrainz. %1$s</string>
+    <string name="edit_album_fill_diff_hint">Marca lo que quieres tomar. No se escribe nada hasta que guardes el álbum.</string>
+    <string name="edit_album_fill_apply">Usar lo marcado</string>
+    <string name="edit_album_fill_check_all">Todo</string>
+    <string name="edit_album_fill_check_none">Nada</string>
+    <string name="edit_album_fill_close">Cerrar</string>
+    <string name="edit_album_fill_change">%1$s → %2$s</string>
+</resources>

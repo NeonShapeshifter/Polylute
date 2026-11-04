@@ -139,7 +139,8 @@ class SongTechnicalIdentityTest {
         )
 
         assertEquals("EAC3", identity.format)
-        assertEquals("EAC3 · 48 kHz", identity.canonical)
+        // B57 2.6 changes this on purpose: the player's rate is no longer a source (it can be the output's, a Bluetooth or USB sink); the file's header and the library are
+        assertEquals("EAC3", identity.canonical)
     }
 
     @Test

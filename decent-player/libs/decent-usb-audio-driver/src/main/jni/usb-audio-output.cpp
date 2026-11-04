@@ -1011,11 +1011,11 @@ void usbRequestDacRecovery(int step) { g_manualRecoveryStep.store(step == 1 || s
 int usbTakeManualDacRecovery() { return g_manualRecoveryStep.exchange(0, std::memory_order_relaxed); }
 
 /** Either watch calls the DAC locked up: share the counters, log and Mark noise policy event. */
-static void announceDacLock(UsbAudioContext *ctx, const char *why, double fpmf, double ppm, int64_t heldMs, int64_t readings, int64_t lateReaps) {
+static void announceDacLock(UsbAudioContext *ctx, const char *why, double fpmf, double ppm, int64_t heldMs, int64_t readings, int64_t lateReaps, bool rateChangeHold = false) {
     g_dacLocksSeen.fetch_add(1, std::memory_order_relaxed);
     reportUsbGlitch(USB_GLITCH_DAC_LOCKED,
-                    "why=%s feedback=%.4f (%.1f Hz) %+.0f ppm heldMs=%lld railedMs=%lld readings=%lld reapSlow=%lld policy=%s rate=%d stream=%lld",
-                    why, fpmf, fpmf * ctx->plan.intervalsPerSecond, ppm, (long long)heldMs,
+                    "why=%s%s feedback=%.4f (%.1f Hz) %+.0f ppm heldMs=%lld railedMs=%lld readings=%lld reapSlow=%lld policy=%s rate=%d stream=%lld",
+                    why, rateChangeHold ? " hold=rate-change" : "", fpmf, fpmf * ctx->plan.intervalsPerSecond, ppm, (long long)heldMs,
                     (long long)usbDacLockRailedMs(&ctx->dacLock, monotonicMs()), (long long)readings, (long long)lateReaps,
                     usbFeedbackPolicyName(usbFeedbackPolicy()), ctx->sampleRate, (long long)ctx->streamSeq);
     notePolicyEvent(ctx, USB_POLICY_DAC_LOCKED, why, fpmf, ppm);
@@ -1030,7 +1030,7 @@ static void observeDacLock(UsbAudioContext *ctx, double fpmf, const UsbFeedbackE
         announceDacLock(ctx, "rail", fpmf, lock.ppm, lock.railedMs, lock.readings, lock.lateReaps);
     } else if (feedback.kind == USB_FEEDBACK_EVENT_STUCK && !ctx->dacLock.locked) {
         // A rail has its own, shorter hold. Do not announce a second lock for that same frozen rail.
-        announceDacLock(ctx, "stuck", feedback.fpmf, feedback.ppm, feedback.heldMs, feedback.readings, ctx->dacLock.lateReaps);
+        announceDacLock(ctx, "stuck", feedback.fpmf, feedback.ppm, feedback.heldMs, feedback.readings, ctx->dacLock.lateReaps, feedback.rateChangeHold);
     }
     g_dacLockedNow.store(ctx->dacLock.locked || ctx->feedbackWatch.stuck ? 1 : 0, std::memory_order_relaxed);
 }
@@ -2242,12 +2242,18 @@ static void armStartOfAudio(UsbAudioContext *ctx, const char *why) {
 
 JNIEXPORT jboolean JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(
-        JNIEnv *, jobject, jlong h) {
+        JNIEnv *, jobject, jlong h, jint previousRate) {
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
     if (!ctx) return JNI_FALSE;
     ctx->running.store(true);
     // A started stream has seen no feedback yet: an episode of the one before is over (B10).
     endFeedbackWatch(ctx);
+    ctx->feedbackWatch.rateChangeStart = previousRate > 0 && previousRate != ctx->sampleRate;
+    ctx->feedbackWatch.streamStartMs = monotonicMs();
+    if (ctx->feedbackWatch.rateChangeStart) {
+        LOGI("Start: rate change %d → %d, stuck hold %d ms for the first %d ms",
+             previousRate, ctx->sampleRate, USB_FEEDBACK_RATE_CHANGE_STUCK_MS, USB_FEEDBACK_RATE_CHANGE_WINDOW_MS);
+    }
     usbDacRecoveryPolicyReset(&ctx->dacPolicy);   // B47-A5: a new stream starts with all its recovery steps unused
     ctx->framesWritten = 0;
     ctx->lastSubmitMs = 0;

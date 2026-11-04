@@ -22,6 +22,8 @@ data class GenreArtist(
     val name: String,
     val songCount: Int,
     val albumCount: Int,
+    /** B56-5: plays of their songs in this genre, as the listening ledger counts them (the tie-break of the genre page's top artists). */
+    val plays: Int = 0,
 )
 
 /**
@@ -57,7 +59,7 @@ internal object GenreBrowse {
         }
         .sortedWith(compareBy<GenreAlbum> { it.title.lowercase() }.thenBy { it.artist.lowercase() }.thenBy { it.albumId })
 
-    fun artists(songs: List<Song>): List<GenreArtist> = songs
+    fun artists(songs: List<Song>, plays: Map<String, Int> = emptyMap()): List<GenreArtist> = songs
         .groupBy { it.primaryArtist.id }
         .map { (artistId, group) ->
             GenreArtist(
@@ -65,7 +67,17 @@ internal object GenreBrowse {
                 name = group.first().primaryArtist.name,
                 songCount = group.size,
                 albumCount = group.map { it.albumId }.distinct().size,
+                plays = group.sumOf { plays[it.id] ?: 0 },
             )
         }
         .sortedWith(compareBy<GenreArtist> { it.name.lowercase() }.thenBy { it.artistId })
+
+    /** B56-5: the genre page's top artists: the most songs in the genre, ties by plays, then by name; [limit] of them. */
+    fun topArtists(artists: List<GenreArtist>, limit: Int = 12): List<GenreArtist> = artists
+        .sortedWith(compareByDescending<GenreArtist> { it.songCount }.thenByDescending { it.plays }.thenBy { it.name.lowercase() }.thenBy { it.artistId })
+        .take(limit)
+
+    /** B56-5: the genre page's albums: the most songs in the genre first, then by name. */
+    fun albumsRanked(albums: List<GenreAlbum>): List<GenreAlbum> = albums
+        .sortedWith(compareByDescending<GenreAlbum> { it.songCount }.thenBy { it.title.lowercase() }.thenBy { it.artist.lowercase() }.thenBy { it.albumId })
 }

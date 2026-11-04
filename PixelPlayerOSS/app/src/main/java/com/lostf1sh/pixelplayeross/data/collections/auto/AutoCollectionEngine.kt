@@ -296,13 +296,12 @@ object AutoCollectionEngine {
         AutoCollectionId.FORGOTTEN_FAVORITES to 3,
     )
 
-    /** The second list Home shows ("Tu mix de hoy"): the same blend, leaning on rediscovery and the unexplored, and never repeating the first. */
+    /** Suggestions use discovery and rediscovery, never the current rotation. */
     private val yoursShares = listOf(
-        AutoCollectionId.ON_REPEAT to 12,
-        AutoCollectionId.REDISCOVER to 14,
-        AutoCollectionId.NEW_UNEXPLORED to 16,
-        AutoCollectionId.DEEP_CUTS to 14,
-        AutoCollectionId.FORGOTTEN_FAVORITES to 4,
+        AutoCollectionId.NEW_UNEXPLORED to 15,
+        AutoCollectionId.DEEP_CUTS to 20,
+        AutoCollectionId.NEVER_PLAYED to 15,
+        AutoCollectionId.REDISCOVER to 10,
     )
 
     /**
@@ -320,12 +319,15 @@ object AutoCollectionEngine {
         epochDay: Long,
         yours: Boolean = false,
         excluding: Set<String> = emptySet(),
+        generation: Int = 0,
     ): AutoCollection {
         val shares = if (yours) yoursShares else dailyShares
         val size = if (yours) YOUR_MIX_SIZE else DAILY_SIZE
-        val seedBase = (if (yours) "yours" else "daily") + ":" + epochDay
+        val seedBase = (if (yours) "yours" else "daily") + ":" + epochDay + if (generation == 0) "" else ":$generation"
         val taken = LinkedHashMap<AutoCollectionId, MutableList<CatalogItem>>()
-        val chosen = HashSet<String>(excluding)
+        val chosen = HashSet<String>(excluding).apply {
+            if (yours) addAll(sources[AutoCollectionId.ON_REPEAT]?.items.orEmpty().map { it.identity })
+        }
         var shortfall = 0
 
         for ((id, share) in shares) {
@@ -337,7 +339,9 @@ object AutoCollectionEngine {
         }
         // What a short source could not fill goes to the others that have more, in the order they take turns.
         if (shortfall > 0) {
-            for ((id, _) in shares) {
+            val fill = if (yours) listOf(AutoCollectionId.DEEP_CUTS, AutoCollectionId.NEVER_PLAYED, AutoCollectionId.REDISCOVER)
+                else shares.map { it.first }
+            for (id in fill) {
                 if (shortfall <= 0) break
                 val more = sources[id]?.items.orEmpty().filter { it.identity !in chosen }
                 val extra = seededPick(more, shortfall, "$seedBase:${id.key}:more")
@@ -346,8 +350,8 @@ object AutoCollectionEngine {
                 shortfall -= extra.size
             }
         }
-        // Still short: the most played tracks of all, which every history has.
-        if (shortfall > 0) {
+        // The Daily Mix keeps its familiar fill. Suggestions never fall back to most played.
+        if (shortfall > 0 && !yours) {
             val familiar = ledger.catalog.items
                 .mapNotNull { item -> ledger.stats(item.identity)?.takeIf { it.plays > 0 }?.let { item to it } }
                 .filter { it.first.identity !in chosen }
@@ -367,7 +371,8 @@ object AutoCollectionEngine {
             ledger.isEmpty -> EmptyReason.NO_HISTORY
             else -> EmptyReason.NOTHING_MATCHES
         }
-        return AutoCollection(AutoCollectionId.DAILY_MIX, items, emptyReason = reason)
+        return AutoCollection(AutoCollectionId.DAILY_MIX, items, emptyReason = reason,
+            sourceCounts = taken.mapValues { (_, picked) -> picked.count { candidate -> items.any { it.identity == candidate.identity } } })
     }
 
     // --- helpers ----------------------------------------------------------------------------------------------

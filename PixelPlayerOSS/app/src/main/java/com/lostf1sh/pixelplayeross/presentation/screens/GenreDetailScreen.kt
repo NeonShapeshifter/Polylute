@@ -108,6 +108,12 @@ fun GenreDetailScreen(
     val playlistUiState by playlistViewModel.uiState.collectAsStateWithLifecycle()
     val customGenres by playerViewModel.customGenres.collectAsStateWithLifecycle()
     val customGenreIcons by playerViewModel.customGenreIcons.collectAsStateWithLifecycle()
+    // B56-5.1: the top artists' pictures, from the artists the library already holds
+    val allArtists by playerViewModel.artistsFlow.collectAsStateWithLifecycle()
+    val artistImages = remember(allArtists, uiState.artists) {
+        val wanted = uiState.artists.map { it.artistId }.toSet()
+        allArtists.filter { it.id in wanted }.associate { it.id to it.effectiveImageUrl }
+    }
 
     val genreDisplayName = remember(uiState.genre, decodedGenreId) {
         uiState.genre?.name ?: decodedGenreId
@@ -156,6 +162,13 @@ fun GenreDetailScreen(
         onMoreSong = { song -> showSongOptionsSheet = song },
         onChangeImage = { imagePicker.launch("image/*") },
         onRemoveImage = viewModel::removeCustomImage,
+        onOpenAlbum = { albumId ->
+            navController.navigateSafelyReplacing(route = Screen.AlbumDetail.createRoute(albumId), patternToPop = Screen.AlbumDetail.route)
+        },
+        onOpenArtist = { artistId ->
+            navController.navigateSafelyReplacing(route = Screen.ArtistDetail.createRoute(artistId), patternToPop = Screen.ArtistDetail.route)
+        },
+        artistImages = artistImages,
     )
 
     QuickFillDialog(
@@ -224,10 +237,11 @@ fun GenreDetailScreen(
                 }
                 showSongOptionsSheet = null
             },
-            onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+            onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                 playerViewModel.editSongMetadata(
                     song, newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics,
                     newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate,
+                    newDate = newDate
                 )
             },
             removeFromListTrigger = { viewModel.reload() }
@@ -271,7 +285,16 @@ internal fun GenrePage(
     onMoreSong: (Song) -> Unit,
     onChangeImage: () -> Unit = {},
     onRemoveImage: () -> Unit = {},
+    /** B56-5.1: the albums and the top artists open their pages. */
+    onOpenAlbum: (Long) -> Unit = {},
+    onOpenArtist: (Long) -> Unit = {},
+    /** The top artists' pictures, by artist id. */
+    artistImages: Map<Long, String?> = emptyMap(),
+    /** True opens on the full song list ("All songs") instead of the overview. */
+    startOnAllSongs: Boolean = false,
 ) {
+    // B56-5.1: the page is an overview (top artists, albums) and one row, "All songs (N)", opens the song list; Back from the list returns to the overview
+    var showAllSongs by androidx.compose.runtime.saveable.rememberSaveable(state.genre?.id) { mutableStateOf(startOnAllSongs) }
     val playLabel = stringResource(R.string.presentation_batch_b_play_it)
     val shuffleLabel = stringResource(R.string.shortcut_shuffle_short)
     val showing = state.songs.isNotEmpty()
@@ -282,7 +305,7 @@ internal fun GenrePage(
     val density = LocalDensity.current
     val barHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + BackRowHeight
     val barPx = with(density) { barHeight.toPx() }
-    DapBackScaffold(Modifier.fillMaxSize(), onBack = onBack, overHeaderArt = true) {
+    DapBackScaffold(Modifier.fillMaxSize(), onBack = { if (showAllSongs && !startOnAllSongs) showAllSongs = false else onBack() }, overHeaderArt = true) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -332,16 +355,26 @@ internal fun GenrePage(
                             )
                         }
                     }
-                    items(state.songs, key = { it.id }, contentType = { "song" }) { song ->
-                        DapMediaRow(
-                            title = songTitleLabel(song),
-                            subtitle = songArtistLabel(song),
-                            state = if (currentSongId == song.id) DapRowState.Current else DapRowState.Normal,
-                            leading = { RowCover(song.albumArtUriString, song.title) },
-                            trailing = { DapOverflowButton(onClick = { onMoreSong(song) }) },
-                            onClick = { onPlaySong(song) },
-                            modifier = Modifier.padding(horizontal = DapSpacing.Gutter),
+                    if (!showAllSongs) {
+                        genreOverviewItems(
+                            state = state,
+                            artistImages = artistImages,
+                            onOpenArtist = onOpenArtist,
+                            onOpenAlbum = onOpenAlbum,
+                            onAllSongs = { showAllSongs = true },
                         )
+                    } else {
+                        items(state.songs, key = { it.id }, contentType = { "song" }) { song ->
+                            DapMediaRow(
+                                title = songTitleLabel(song),
+                                subtitle = songArtistLabel(song),
+                                state = if (currentSongId == song.id) DapRowState.Current else DapRowState.Normal,
+                                leading = { RowCover(song.albumArtUriString, song.title) },
+                                trailing = { DapOverflowButton(onClick = { onMoreSong(song) }) },
+                                onClick = { onPlaySong(song) },
+                                modifier = Modifier.padding(horizontal = DapSpacing.Gutter),
+                            )
+                        }
                     }
                 }
             }
@@ -359,17 +392,17 @@ internal fun GenrePage(
         var imageMenu by remember { mutableStateOf(false) }
         Box(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(horizontal = DapSpacing.Md, vertical = DapSpacing.Xs)) {
             DapOverflowButton(onClick = { imageMenu = true })
-            androidx.compose.material3.DropdownMenu(expanded = imageMenu, onDismissRequest = { imageMenu = false }) {
-                androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(stringResource(R.string.genre_change_image)) },
+            com.lostf1sh.pixelplayeross.ui.ds.DapMenu(expanded = imageMenu, onDismissRequest = { imageMenu = false }) {
+                com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem(
+                    text = stringResource(R.string.genre_change_image),
                     onClick = {
                         imageMenu = false
                         onChangeImage()
                     },
                 )
                 if (state.genre?.imagePath != null) {
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { Text(stringResource(R.string.genre_remove_image)) },
+                    com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem(
+                        text = stringResource(R.string.genre_remove_image),
                         onClick = {
                             imageMenu = false
                             onRemoveImage()

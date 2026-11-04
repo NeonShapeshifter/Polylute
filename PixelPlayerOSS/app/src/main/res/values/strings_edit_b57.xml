@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="song_field_date">Year / date</string>
+    <string name="batch_edit_saved_failed" tools:ignore="PluralsCandidate">%1$d saved / %2$d failed: %3$s</string>
+    <string name="edit_album_menu_item">Edit album info</string>
+    <string name="edit_album_title">Edit album</string>
+    <string name="edit_album_section_album">Album</string>
+    <string name="edit_album_section_tracks">Tracks</string>
+    <string name="edit_album_track_number_short">No.</string>
+    <string name="edit_album_disc_number_short">Disc</string>
+    <string name="edit_album_save">Save album</string>
+    <string name="edit_album_saving_progress" tools:ignore="PluralsCandidate">Saving %1$d of %2$d</string>
+    <string name="edit_album_cover">Cover</string>
+    <string name="edit_album_cover_replace">Choose cover</string>
+    <string name="edit_album_cover_remove">Remove cover</string>
+    <string name="edit_album_cover_keep">Keep cover</string>
+    <string name="edit_album_fill">Fill from MusicBrainz</string>
+    <string name="edit_album_fill_searching">Looking it up on MusicBrainz…</string>
+    <string name="edit_album_fill_pick">Which release is this album?</string>
+    <string name="edit_album_fill_release_line" tools:ignore="PluralsCandidate">%1$s · %2$s · %3$d tracks</string>
+    <string name="edit_album_fill_no_match">MusicBrainz has nothing to change here.</string>
+    <string name="edit_album_fill_failed">Could not reach MusicBrainz. %1$s</string>
+    <string name="edit_album_fill_diff_hint">Check what to take. Nothing is written until you save the album.</string>
+    <string name="edit_album_fill_apply">Use checked</string>
+    <string name="edit_album_fill_check_all">All</string>
+    <string name="edit_album_fill_check_none">None</string>
+    <string name="edit_album_fill_close">Close</string>
+    <string name="edit_album_fill_change">%1$s → %2$s</string>
+</resources>

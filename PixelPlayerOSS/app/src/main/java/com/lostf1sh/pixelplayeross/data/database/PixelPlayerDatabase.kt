@@ -10,6 +10,9 @@ import timber.log.Timber
         com.lostf1sh.pixelplayeross.data.offline.InfoDiscovery::class,
         com.lostf1sh.pixelplayeross.data.offline.InfoScope::class,
         com.lostf1sh.pixelplayeross.data.offline.InfoQueue::class,
+        com.lostf1sh.pixelplayeross.data.offline.InfoScopeState::class,
+        com.lostf1sh.pixelplayeross.data.offline.InfoUndo::class,
+        com.lostf1sh.pixelplayeross.data.offline.InfoUndoItem::class,
         com.lostf1sh.pixelplayeross.data.offline.InfoArtistMember::class,
         GenreImageEntity::class,
         AlbumArtThemeEntity::class,
@@ -25,13 +28,14 @@ import timber.log.Timber
         LibraryItemOverrideEntity::class,
         FavoritesEntity::class,
         LyricsEntity::class,
+        SongComposerEntity::class,
         PlaylistEntity::class,
         PlaylistSongEntity::class,
         AudioBookmarkEntity::class,
         com.lostf1sh.pixelplayeross.data.collections.SmartCollectionEntity::class,
         com.lostf1sh.pixelplayeross.data.collections.SmartCollectionRuleEntity::class
     ],
-    version = 15,
+    version = 17,
     exportSchema = true
 )
 abstract class PixelPlayerDatabase : RoomDatabase() {

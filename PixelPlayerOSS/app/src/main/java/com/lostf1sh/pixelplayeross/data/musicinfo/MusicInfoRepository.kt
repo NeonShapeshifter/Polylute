@@ -50,7 +50,14 @@ class MusicInfoRepository @Inject constructor(
     private val http = MusicInfoHttp(baseClient)
     val service = MusicInfoService(
         cache = cache,
-        brainz = MusicBrainzClient(http),
+        brainz = MusicBrainzClient(http, taggedId = { kind, name, artist ->
+            when (kind) {
+                "artist" -> musicDao.taggedArtistId(name)
+                "release" -> musicDao.taggedReleaseId(name, artist.orEmpty())
+                "release-group" -> musicDao.taggedReleaseGroupId(name, artist.orEmpty())
+                else -> null
+            }
+        }),
         coverArt = CoverArtArchiveClient(http),
         wikidata = WikidataClient(http),
         commons = CommonsClient(http),
@@ -223,6 +230,11 @@ class MusicInfoRepository @Inject constructor(
             }
             InfoKind.LYRICS -> Unit
         }
+        _coverVersion.update { it + 1 }
+    }
+
+    suspend fun deleteLegacyEntry(id: String) = withContext(Dispatchers.IO) {
+        cache.removeSavedEntry(id)?.let { musicDao.clearArtistImagesUnder(it.absolutePath) }
         _coverVersion.update { it + 1 }
     }
 

@@ -82,6 +82,9 @@ object DapRadius {
     /** Sheets only. */
     val SheetTop = 20.dp
 
+    /** B56: the overflow menu's container (`DapMenu`): soft corners, not the square of a rectangular surface. */
+    val Menu = 24.dp
+
     /** Play button, switches. */
     val Full = 1000.dp
 }

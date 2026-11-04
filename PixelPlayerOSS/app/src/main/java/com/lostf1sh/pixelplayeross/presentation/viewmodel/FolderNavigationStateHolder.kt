@@ -13,6 +13,14 @@ import kotlinx.coroutines.launch
 
 @ViewModelScoped
 class FolderNavigationStateHolder @Inject constructor() {
+    /** DataStore emits this value for unrelated preference writes too. Only a real view change leaves the folder. */
+    fun setFoldersFlatListState(flat: Boolean, updateUiState: (((PlayerUiState) -> PlayerUiState) -> Unit)) {
+        updateUiState { state ->
+            if(state.foldersFlatList == flat) state
+            else state.copy(foldersFlatList=flat,currentFolder=null,currentFolderPath=null)
+        }
+    }
+
     fun setFoldersPlaylistViewState(
         isPlaylistView: Boolean,
         updateUiState: (((PlayerUiState) -> PlayerUiState) -> Unit)
@@ -38,7 +46,7 @@ class FolderNavigationStateHolder @Inject constructor() {
         val storageRootPath = getUiState().folderSourceRootPath.ifBlank {
             Environment.getExternalStorageDirectory().path
         }
-        if (path == storageRootPath) {
+        if (path == storageRootPath && getUiState().musicFolders.none { it.path == path }) {
             updateUiState {
                 it.copy(
                     currentFolderPath = null,
@@ -67,28 +75,10 @@ class FolderNavigationStateHolder @Inject constructor() {
     ) {
         val state = getUiState()
         val currentFolder = state.currentFolder ?: return
-        val parentPath = File(currentFolder.path).parent
-        val sourceRoot = state.folderSourceRootPath.ifBlank {
-            Environment.getExternalStorageDirectory().path
-        }
-        if (parentPath == null || parentPath == sourceRoot) {
-            updateUiState {
-                it.copy(
-                    currentFolderPath = null,
-                    currentFolder = null
-                )
-            }
-            return
-        }
-
-        val parentFolder = findFolder(parentPath, state.musicFolders)
-        updateUiState {
-            it.copy(
-                currentFolderPath = parentPath,
-                currentFolder = parentFolder
-            )
-        }
-        onFolderChanged(parentPath)
+        val chain = com.lostf1sh.pixelplayeross.presentation.screens.folderBreadcrumb(state.musicFolders, currentFolder.path)
+        val parent = if (state.foldersFlatList) null else chain.dropLast(1).lastOrNull()
+        updateUiState { it.copy(currentFolderPath = parent?.path, currentFolder = parent) }
+        parent?.let { onFolderChanged(it.path) }
     }
 
     fun hydrateCurrentFolderSongsIfNeeded(

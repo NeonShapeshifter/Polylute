@@ -2,14 +2,12 @@ package com.lostf1sh.pixelplayeross.data.repository
 
 import android.app.Application
 import android.content.Context
-import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import com.lostf1sh.pixelplayeross.data.database.PixelPlayerDatabase
 import java.io.File
 import org.json.JSONObject
 import org.junit.Test
@@ -56,12 +54,54 @@ class B44Fix2GenreMigrationTest {
         helper.close()
         val migration = Class.forName("com.lostf1sh.pixelplayeross.data.database.MigrationsKt")
             .getMethod("getMIGRATION_14_15").invoke(null) as Migration
-        val upgraded = Room.databaseBuilder(context, PixelPlayerDatabase::class.java, name).addMigrations(migration).build()
+        // This test pins 14 -> 15, independently of the application's newer Room version.
+        val upgraded = FrameworkSQLiteOpenHelperFactory().create(SupportSQLiteOpenHelper.Configuration.builder(context).name(name)
+            .callback(object : SupportSQLiteOpenHelper.Callback(15) {
+                override fun onCreate(db: SupportSQLiteDatabase) = error("The schema-14 fixture must exist")
+                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                    assertThat(oldVersion).isEqualTo(14)
+                    assertThat(newVersion).isEqualTo(15)
+                    migration.migrate(db)
+                }
+            }).build())
         try {
-            val sqlite = upgraded.openHelper.writableDatabase
+            val sqlite = upgraded.writableDatabase
             assertThat(sqlite.version).isEqualTo(15)
             for ((table, data) in previous) assertThat(rows(sqlite, table)).isEqualTo(data)
             assertThat(rows(sqlite, "genre_images")).isEmpty()
+            val target = JSONObject(File("schemas/com.lostf1sh.pixelplayeross.data.database.PixelPlayerDatabase/15.json").readText())
+                .getJSONObject("database").getJSONArray("entities")
+            for (i in 0 until target.length()) {
+                val entity = target.getJSONObject(i)
+                val table = entity.getString("tableName")
+                if (entity.has("ftsVersion")) {
+                    fun normalized(sql: String) = sql.replace(Regex("(?i)IF NOT EXISTS"), "")
+                        .replace(Regex("""[\s`"]+"""), "").lowercase()
+                    val actualSql = sqlite.query("SELECT sql FROM sqlite_master WHERE name = ?", arrayOf(table)).use { cursor ->
+                        check(cursor.moveToFirst()); cursor.getString(0)
+                    }
+                    val expectedSql = entity.getString("createSql").replace('$' + "{TABLE_NAME}", table)
+                    assertThat(normalized(actualSql)).isEqualTo(normalized(expectedSql))
+                    continue
+                }
+                val fields = entity.getJSONArray("fields")
+                val expected = (0 until fields.length()).map { n ->
+                    val field = fields.getJSONObject(n)
+                    Triple(field.getString("columnName"), field.getString("affinity"), field.optBoolean("notNull", false))
+                }.toSet()
+                val actual = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
+                    buildSet { while(cursor.moveToNext()) add(Triple(cursor.getString(1),cursor.getString(2),cursor.getInt(3) != 0)) }
+                }
+                assertThat(actual).isEqualTo(expected)
+                val indices = entity.optJSONArray("indices") ?: org.json.JSONArray()
+                val expectedIndices = (0 until indices.length()).map { n ->
+                    indices.getJSONObject(n).let { it.getString("name") to it.optBoolean("unique", false) }
+                }.toSet()
+                val actualIndices = sqlite.query("PRAGMA index_list(`$table`)").use { cursor ->
+                    buildSet { while(cursor.moveToNext()) if(!cursor.getString(1).startsWith("sqlite_autoindex")) add(cursor.getString(1) to (cursor.getInt(2) != 0)) }
+                }
+                assertThat(actualIndices).isEqualTo(expectedIndices)
+            }
             println("B44-fix2 HOST migration 14 -> 15 preserved ${previous.size} tables with one row each")
         } finally {
             upgraded.close()

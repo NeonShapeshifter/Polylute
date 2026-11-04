@@ -7,7 +7,7 @@
     <string name="playlists_hide">Dölj</string>
     <string name="playlists_show">Visa</string>
     <string name="playlists_collection_options">Alternativ för %1$s</string>
-    <string name="collection_name_daily_mix">Dagens mix</string>
+    <string name="collection_name_daily_mix">Daglig mix</string>
     <string name="collection_name_on_repeat">På repeat</string>
     <string name="collection_name_rediscover">Återupptäck</string>
     <string name="collection_name_forgotten_favorites">Bortglömda favoriter</string>

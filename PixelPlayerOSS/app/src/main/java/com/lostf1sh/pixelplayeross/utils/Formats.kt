@@ -60,3 +60,22 @@ fun formatSongCountLabel(count: Int): String =
         count,
         count,
     )
+
+/** Home's compact duration uses the active locale and resource-owned units. */
+fun formatListeningDurationCompact(milliseconds: Long, resources: android.content.res.Resources): String {
+    val seconds=TimeUnit.MILLISECONDS.toSeconds(milliseconds.coerceAtLeast(0))
+    val minutes=seconds/60
+    val hours=minutes/60
+    val id=when {
+        hours>0 && minutes%60>0 -> com.lostf1sh.pixelplayeross.R.string.listening_duration_hours_minutes
+        hours>0 -> com.lostf1sh.pixelplayeross.R.string.listening_duration_hours
+        minutes>0 -> com.lostf1sh.pixelplayeross.R.string.listening_duration_minutes
+        else -> com.lostf1sh.pixelplayeross.R.string.listening_duration_seconds
+    }
+    return when {
+        hours>0 && minutes%60>0 -> resources.getString(id,hours,minutes%60)
+        hours>0 -> resources.getString(id,hours)
+        minutes>0 -> resources.getString(id,minutes)
+        else -> resources.getString(id,seconds)
+    }
+}

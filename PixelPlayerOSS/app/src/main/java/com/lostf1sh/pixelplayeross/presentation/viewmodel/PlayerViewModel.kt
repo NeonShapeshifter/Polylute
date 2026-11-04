@@ -37,6 +37,13 @@ import androidx.media3.session.SessionToken
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.lostf1sh.pixelplayeross.data.lyrics.AndroidLyricsStorage
+import com.lostf1sh.pixelplayeross.data.lyrics.LyricsFileSaver
+import com.lostf1sh.pixelplayeross.data.lyrics.LyricsWriteReason
+import com.lostf1sh.pixelplayeross.data.lyrics.LyricsSaveResult
+import com.lostf1sh.pixelplayeross.data.lyrics.lyricsWriteReason
+import com.lostf1sh.pixelplayeross.data.repository.FolderVolumes
+import com.lostf1sh.pixelplayeross.data.lyrics.messageRes
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.EotStateHolder
 import com.lostf1sh.pixelplayeross.data.database.AlbumArtThemeDao
@@ -242,8 +249,29 @@ private data class PendingMetadataEdit(
     val discNumber: Int?,
     val replayGainTrackGainDb: String?,
     val replayGainAlbumGainDb: String?,
-    val coverArtUpdate: CoverArtUpdate?
+    val coverArtUpdate: CoverArtUpdate?,
+    val date: String? = null,
 )
+
+/**
+ * B57 1.3: what the album editor changes on one track: the three fields that differ per track. The album-level fields (album, album artist, year,
+ * genre, cover) ride on the batch itself.
+ */
+data class AlbumTrackEdit(val title: String, val trackNumber: Int, val discNumber: Int?)
+
+/** The title, track and disc a batch writes to [song]: the track's own values when the album editor gave it some, else the batch's, else what the song has. */
+internal fun resolveBatchTrackFields(own: AlbumTrackEdit?, batchTitle: String?, batchTrack: Int?, batchDisc: Int?, song: Song): Triple<String, Int, Int?> = Triple(
+    own?.title ?: batchTitle ?: song.title,
+    own?.trackNumber ?: batchTrack ?: song.trackNumber,
+    if (own != null) own.discNumber else batchDisc ?: song.discNumber,
+)
+
+/** The reasons a batch reports after "N failed:": the first two distinct non-blank ones, or null when none was given. */
+internal fun summariseBatchFailures(reasons: List<String>): String? =
+    reasons.filter { it.isNotBlank() }.distinct().take(2).joinToString("; ").takeIf { it.isNotEmpty() }
+
+/** B57 1.3: where a multi-song or whole-album save is: [done] of [total] tracks written, [failed] of those refused. Null while nothing is being saved. */
+data class MetadataBatchProgress(val done: Int, val total: Int, val failed: Int)
 
 private data class PendingBatchMetadataEdit(
     val songs: List<Song>,
@@ -261,12 +289,18 @@ private data class PendingBatchMetadataEdit(
     val coverArtUpdate: CoverArtUpdate?,
     val previousSuccess: Int = 0,
     val previousFailure: Int = 0,
+    val date: String? = null,
+    val perTrack: Map<String, AlbumTrackEdit> = emptyMap(),
+    val failureReasons: List<String> = emptyList(),
+    val totalSongs: Int = songs.size,
 )
 
 private data class PendingLyricsSave(
     val song: Song,
     val lyrics: Lyrics,
-    val preferSynced: Boolean
+    val preferSynced: Boolean,
+    /** B56-3.2: the sync editor's save also stores the lyrics in the database, whether or not the file could be written. */
+    val alsoStore: Boolean = false,
 )
 
 private data class ResolvedAlbumSelection(
@@ -349,6 +383,11 @@ class PlayerViewModel @Inject constructor(
     /** B25-S3: the position read from the player now, for a surface that has no collector of [currentPlaybackPosition]. */
     fun samplePlaybackPositionNow(): Long = playbackStateHolder.samplePlaybackPositionNow()
     val playbackHistory = listeningStatsTracker.playbackHistory
+    val homeMixes = dailyMixStateHolder.homeMixes
+    fun refreshSuggestionsPreview(): kotlinx.coroutines.Job = dailyMixStateHolder.refreshSuggestionsPreview()
+    fun refreshLibraryFromHome() {
+        viewModelScope.launch { if (!syncManager.isSyncing.first()) syncManager.forceRefresh() }
+    }
 
     private val lyricsLoadCallback = object : LyricsLoadCallback {
         override fun onLoadingStarted(requestId: Long, songId: String) {
@@ -572,9 +611,14 @@ class PlayerViewModel @Inject constructor(
             initialValue = false
         )
 
-    /** B41: two lines of synced lyrics under the cover (Appearance, Player). Off: the player reads no lyrics for it. */
-    val lyricsUnderCover: StateFlow<Boolean> = userPreferencesRepository.lyricsUnderCoverFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_LYRICS_UNDER_COVER)
+    /** B56-3.4: how the lyrics show in the full player (Appearance, Player; the player's lyrics button). Over the cover is the only mode that reads lines for the player page. */
+    val lyricsMode: StateFlow<com.lostf1sh.pixelplayeross.data.preferences.LyricsMode> = userPreferencesRepository.lyricsModeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_LYRICS_MODE)
+
+    /** B56-3.4: the player's lyrics button changes the mode in place. */
+    fun setLyricsMode(mode: com.lostf1sh.pixelplayeross.data.preferences.LyricsMode) {
+        viewModelScope.launch { userPreferencesRepository.setLyricsMode(mode) }
+    }
 
     val immersiveLyricsEnabled: StateFlow<Boolean> = userPreferencesRepository.immersiveLyricsEnabledFlow
         .stateIn(
@@ -665,9 +709,10 @@ class PlayerViewModel @Inject constructor(
     )
     val deletePermissionRequest: SharedFlow<android.content.IntentSender> = _deletePermissionRequest.asSharedFlow()
 
+    private val writePermissionRouter = WritePermissionRouter()
+    private var pendingLyricsWriteSave: PendingLyricsSave? = null
     private var pendingMetadataEdit: PendingMetadataEdit? = null
     private var pendingBatchMetadataEdit: PendingBatchMetadataEdit? = null
-    private var pendingLyricsSave: PendingLyricsSave? = null
     private data class Android10Consent(val retry: suspend () -> Unit, val declined: suspend () -> Unit)
     private var pendingAndroid10Delete: Android10Consent? = null
 
@@ -678,6 +723,10 @@ class PlayerViewModel @Inject constructor(
     val albumNavigationRequests = _albumNavigationRequests.asSharedFlow()
     private val _artistNavigationRequests = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     val artistNavigationRequests = _artistNavigationRequests.asSharedFlow()
+    /** B56-4: the full player's title was tapped: the Library, on Songs, scrolled to that song (the song's id). */
+    private val _songLocateNavigationRequests = MutableSharedFlow<SongLocateRequest>(extraBufferCapacity = 1)
+    val songLocateNavigationRequests = _songLocateNavigationRequests.asSharedFlow()
+    private var songLocateNavigationJob: Job? = null
     private val _searchNavDoubleTapEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val searchNavDoubleTapEvents = _searchNavDoubleTapEvents.asSharedFlow()
     
@@ -1404,8 +1453,8 @@ class PlayerViewModel @Inject constructor(
         val isImmersiveTemporarilyDisabled: Boolean = false,
         val isBluetoothEnabled: Boolean = false,
         val bluetoothName: String? = null,
-        /** B41: two lines of synced lyrics under the cover. */
-        val lyricsUnderCover: Boolean = true,
+        /** B56-3.4: how the lyrics show in the full player. */
+        val lyricsMode: com.lostf1sh.pixelplayeross.data.preferences.LyricsMode = com.lostf1sh.pixelplayeross.data.preferences.LyricsMode.DEFAULT,
         val showBookmarkButton: Boolean = true,
     )
 
@@ -1431,9 +1480,9 @@ class PlayerViewModel @Inject constructor(
         immersiveLyricsTimeout,
         isImmersiveTemporarilyDisabled,
         bluetoothSlice,
-        lyricsUnderCover
-    ) { immersive: Boolean, immersiveTimeout: Long, immersiveDisabled: Boolean, bt: BluetoothSlice, underCover: Boolean ->
-        FullPlayerSlicePart2(immersive, immersiveTimeout, immersiveDisabled, bt.enabled, bt.name, underCover)
+        lyricsMode
+    ) { immersive: Boolean, immersiveTimeout: Long, immersiveDisabled: Boolean, bt: BluetoothSlice, mode: com.lostf1sh.pixelplayeross.data.preferences.LyricsMode ->
+        FullPlayerSlicePart2(immersive, immersiveTimeout, immersiveDisabled, bt.enabled, bt.name, mode)
     }
 
     private data class FullPlayerSlicePart1(
@@ -1450,7 +1499,7 @@ class PlayerViewModel @Inject constructor(
         val isImmersiveTemporarilyDisabled: Boolean,
         val isBluetoothEnabled: Boolean,
         val bluetoothName: String?,
-        val lyricsUnderCover: Boolean
+        val lyricsMode: com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
     )
 
     val fullPlayerSlice: StateFlow<FullPlayerSlice> = combine(
@@ -1469,7 +1518,7 @@ class PlayerViewModel @Inject constructor(
             isImmersiveTemporarilyDisabled = p2.isImmersiveTemporarilyDisabled,
             isBluetoothEnabled = p2.isBluetoothEnabled,
             bluetoothName = p2.bluetoothName,
-            lyricsUnderCover = p2.lyricsUnderCover,
+            lyricsMode = p2.lyricsMode,
             showBookmarkButton = bookmark,
         )
     }
@@ -1745,10 +1794,12 @@ class PlayerViewModel @Inject constructor(
     private data class FolderSourceState(
         val source: FolderSource,
         val rootPath: String,
-        val isSdCardAvailable: Boolean
+        val isSdCardAvailable: Boolean,
+        val showSwitch: Boolean,
+        val volumes: FolderVolumes
     )
 
-    private fun resolveFolderSourceState(preferredSource: FolderSource): FolderSourceState {
+    private fun resolveFolderSourceState(preferredSource: FolderSource, preferredRoot: String): FolderSourceState {
         val storages = StorageUtils.getAvailableStorages(context)
         val internalPath = storages
             .firstOrNull { it.storageType == StorageType.INTERNAL }
@@ -1759,19 +1810,20 @@ class PlayerViewModel @Inject constructor(
             ?.path
             ?.path
 
-        val effectiveSource = if (!ENABLE_FOLDERS_SOURCE_SWITCHING) {
-            FolderSource.INTERNAL
-        } else if (preferredSource == FolderSource.SD_CARD && sdPath == null) {
-            FolderSource.INTERNAL
-        } else {
-            preferredSource
+        val paths = libraryStateHolder.allSongs.value.map { java.io.File(it.path).parent.orEmpty() }
+        val volumes = FolderVolumes.resolve(paths, internalPath, sdPath)
+        val effectiveSource = when {
+            preferredSource == FolderSource.SD_CARD && volumes.sdRoots.isNotEmpty() -> FolderSource.SD_CARD
+            volumes.hasInternal -> FolderSource.INTERNAL
+            volumes.sdRoots.isNotEmpty() -> FolderSource.SD_CARD
+            else -> FolderSource.INTERNAL
         }
-
-        val resolvedRootPath = if (effectiveSource == FolderSource.SD_CARD) sdPath!! else internalPath
         return FolderSourceState(
             source = effectiveSource,
-            rootPath = resolvedRootPath,
-            isSdCardAvailable = sdPath != null
+            rootPath = if (effectiveSource == FolderSource.SD_CARD) (preferredRoot.takeIf { it in volumes.sdRoots } ?: volumes.sdRoots.sorted().first()) else internalPath,
+            isSdCardAvailable = volumes.sdRoots.isNotEmpty(),
+            showSwitch = volumes.showSwitch,
+            volumes = volumes
         )
     }
 
@@ -1802,6 +1854,12 @@ class PlayerViewModel @Inject constructor(
             }
 
             viewModelScope.launch {
+                userPreferencesRepository.foldersFlatListFlow.collect { flat ->
+                    folderNavigationStateHolder.setFoldersFlatListState(flat) { mutation -> _playerUiState.update(mutation) }
+                }
+            }
+
+            viewModelScope.launch {
                 userPreferencesRepository.isFoldersPlaylistViewFlow.collect { isPlaylistView ->
                     folderNavigationStateHolder.setFoldersPlaylistViewState(
                         isPlaylistView = isPlaylistView,
@@ -1811,11 +1869,12 @@ class PlayerViewModel @Inject constructor(
             }
 
             viewModelScope.launch {
-                userPreferencesRepository.foldersSourceFlow.collect { preferredSource ->
-                    val resolved = resolveFolderSourceState(preferredSource)
-                    if (resolved.source != preferredSource) {
-                        userPreferencesRepository.setFoldersSource(resolved.source)
-                    }
+                combine(
+                    userPreferencesRepository.foldersSourceFlow,
+                    userPreferencesRepository.foldersVolumeRootFlow,
+                    libraryStateHolder.allSongs
+                ) { source, root, _ -> source to root }.collect { (preferredSource, preferredRoot) ->
+                    val resolved = resolveFolderSourceState(preferredSource, preferredRoot)
 
                     _playerUiState.update { currentState ->
                         val sourceChanged = currentState.folderSource != resolved.source ||
@@ -1824,6 +1883,9 @@ class PlayerViewModel @Inject constructor(
                             folderSource = resolved.source,
                             folderSourceRootPath = resolved.rootPath,
                             isSdCardAvailable = resolved.isSdCardAvailable,
+                            showFolderSourceSwitch = resolved.showSwitch,
+                            folderVolumeRoots = resolved.volumes.roots.toImmutableList(),
+                            internalFolderRootPath = resolved.volumes.internalRoot,
                             currentFolderPath = if (sourceChanged) null else currentState.currentFolderPath,
                             currentFolder = if (sourceChanged) null else currentState.currentFolder
                         )
@@ -2483,6 +2545,24 @@ class PlayerViewModel @Inject constructor(
             }
 
             _albumNavigationRequests.emit(albumId)
+        }
+    }
+
+    /**
+     * B56-4: tapping the song's title in the full player closes the player and shows the song in Library > Songs, as the artist and the album already open their pages.
+     * One request per tap, for the song that is playing now: the same locate every other page uses ([requestLibraryLocate], B32-fix1), taken by the Songs tab.
+     */
+    fun triggerLocateInLibraryFromPlayer(songId: String) {
+        if (songId.isBlank()) return
+        if (songLocateNavigationJob?.isActive == true) return
+        songLocateNavigationJob = viewModelScope.launch {
+            collapsePlayerSheet()
+            withTimeoutOrNull(900) {
+                awaitSheetState(PlayerSheetState.COLLAPSED)
+                awaitPlayerCollapse()
+            }
+            val albumId = playbackStateHolder.stablePlayerState.value.currentSong?.takeIf { it.id == songId }?.albumId ?: 0L
+            _songLocateNavigationRequests.emit(SongLocateRequest(songId, albumId))
         }
     }
 
@@ -4760,6 +4840,20 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    fun setFolderVolume(root: String) {
+        val source = if (root == _playerUiState.value.internalFolderRootPath) FolderSource.INTERNAL else FolderSource.SD_CARD
+        viewModelScope.launch { userPreferencesRepository.setFoldersVolumeRoot(root, source) }
+    }
+
+    fun setFolderQuery(query: String) { _playerUiState.update { it.copy(folderQuery=query) } }
+
+    fun setFoldersFlatList(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setFoldersPlaylistView(false)
+            userPreferencesRepository.setFoldersFlatList(enabled)
+        }
+    }
+
     fun setFoldersSource(source: FolderSource) {
         if (!ENABLE_FOLDERS_SOURCE_SWITCHING) return
         viewModelScope.launch {
@@ -5022,9 +5116,13 @@ class PlayerViewModel @Inject constructor(
         discNumber: Int?,
         replayGainTrackGainDb: String?,
         replayGainAlbumGainDb: String?,
-        coverArtUpdate: CoverArtUpdate?
+        coverArtUpdate: CoverArtUpdate?,
+        date: String? = null,
+        perTrack: Map<String, AlbumTrackEdit> = emptyMap(),
     ) {
+        if (writePermissionRouter.isPending) return
         viewModelScope.launch {
+            batchCoverSkipped = 0
             val localSongsNeedingPermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 songs.mapNotNull { song ->
                     song.id.toLongOrNull()?.takeIf { it > 0 }?.let { song to it }
@@ -5046,22 +5144,25 @@ class PlayerViewModel @Inject constructor(
                         .createWriteRequestIntentSender(context, uris)
 
                     if (intentSender != null) {
-                        pendingBatchMetadataEdit = PendingBatchMetadataEdit(
-                            songs = songs,
-                            title = title,
-                            artist = artist,
-                            album = album,
-                            albumArtist = albumArtist,
-                            composer = composer,
-                            genre = genre,
-                            lyrics = lyrics,
-                            trackNumber = trackNumber,
-                            discNumber = discNumber,
-                            replayGainTrackGainDb = replayGainTrackGainDb,
-                            replayGainAlbumGainDb = replayGainAlbumGainDb,
-                            coverArtUpdate = coverArtUpdate
-                        )
-                        _writePermissionRequest.emit(intentSender)
+                        requestWritePermission(WritePermissionOwner.BATCH_METADATA, intentSender) {
+                            pendingBatchMetadataEdit = PendingBatchMetadataEdit(
+                                songs = songs,
+                                title = title,
+                                artist = artist,
+                                album = album,
+                                albumArtist = albumArtist,
+                                composer = composer,
+                                genre = genre,
+                                lyrics = lyrics,
+                                trackNumber = trackNumber,
+                                discNumber = discNumber,
+                                replayGainTrackGainDb = replayGainTrackGainDb,
+                                replayGainAlbumGainDb = replayGainAlbumGainDb,
+                                coverArtUpdate = coverArtUpdate,
+                                date = date,
+                                perTrack = perTrack,
+                            )
+                        }
                         return@launch
                     }
                 }
@@ -5069,10 +5170,43 @@ class PlayerViewModel @Inject constructor(
 
             performBatchMetadataEdit(
                 songs, title, artist, album, albumArtist, composer, genre, lyrics,
-                trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate
+                trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate,
+                date = date, perTrack = perTrack,
             )
         }
     }
+
+    /** B57 4.3: each album's total length in ms, for the album cards' data line. */
+    val albumDurationsMs: StateFlow<Map<Long, Long>> by lazy {
+        musicRepository.getAlbumDurationsMs().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    }
+
+    private val _batchEditProgress = MutableStateFlow<MetadataBatchProgress?>(null)
+
+    /** B57 1.3: progress of the multi-song / whole-album save in flight, or null. One indicator for the whole save. */
+    val batchEditProgress: StateFlow<MetadataBatchProgress?> = _batchEditProgress.asStateFlow()
+
+    /**
+     * B57 1.3: saves a whole album with one action: the album-level fields once ([album], [albumArtist], [date], [genre], [coverArtUpdate]) and the per-track
+     * fields from [tracks]. One write request for every file (Android 11+), one progress indicator, one result: "12 saved / 1 failed: why".
+     * Every track is written by [SongMetadataEditor.editSongMetadata], the same function a single-song edit uses.
+     */
+    fun saveAlbumMetadata(
+        songs: List<Song>,
+        album: String,
+        albumArtist: String,
+        date: String?,
+        genre: String,
+        tracks: Map<String, AlbumTrackEdit>,
+        coverArtUpdate: CoverArtUpdate?,
+    ) = saveBatchMetadata(
+        songs = songs, title = null, artist = null, album = album, albumArtist = albumArtist, composer = null, genre = genre, lyrics = null,
+        trackNumber = null, discNumber = null, replayGainTrackGainDb = null, replayGainAlbumGainDb = null, coverArtUpdate = coverArtUpdate,
+        date = date, perTrack = tracks,
+    )
+
+    /** B57-fix1 5.2: how many files of the batch in flight were saved without the cover (kept across the write-permission round trip). */
+    private var batchCoverSkipped = 0
 
     private suspend fun performBatchMetadataEdit(
         songs: List<Song>,
@@ -5090,41 +5224,51 @@ class PlayerViewModel @Inject constructor(
         coverArtUpdate: CoverArtUpdate?,
         previousSuccess: Int = 0,
         previousFailure: Int = 0,
+        date: String? = null,
+        perTrack: Map<String, AlbumTrackEdit> = emptyMap(),
+        previousFailureReasons: List<String> = emptyList(),
+        totalSongs: Int = songs.size + previousSuccess + previousFailure,
     ) {
         var successCount = previousSuccess
         var failureCount = previousFailure
+        val failureReasons = previousFailureReasons.toMutableList()
         val previousAlbumArts = mutableSetOf<String?>()
+        _batchEditProgress.value = MetadataBatchProgress(done = successCount + failureCount, total = totalSongs, failed = failureCount)
 
         songs.forEachIndexed { index, song ->
             previousAlbumArts.add(song.albumArtUriString)
+            val (resolvedTitle, resolvedTrack, resolvedDisc) = resolveBatchTrackFields(perTrack[song.id], title, trackNumber, discNumber, song)
 
             val result = metadataEditStateHolder.saveMetadata(
                 song = song,
-                newTitle = title ?: song.title,
+                newTitle = resolvedTitle,
                 newArtist = artist ?: song.displayArtist,
                 newAlbum = album ?: song.album,
                 newAlbumArtist = albumArtist ?: (song.albumArtist ?: ""),
                 newComposer = composer ?: "",
                 newGenre = genre ?: (song.genre ?: ""),
                 newLyrics = lyrics ?: (song.lyrics ?: ""),
-                newTrackNumber = trackNumber ?: song.trackNumber,
-                newDiscNumber = discNumber ?: song.discNumber,
+                newTrackNumber = resolvedTrack,
+                newDiscNumber = resolvedDisc,
                 newReplayGainTrackGainDb = replayGainTrackGainDb,
                 newReplayGainAlbumGainDb = replayGainAlbumGainDb,
-                coverArtUpdate = coverArtUpdate
+                coverArtUpdate = coverArtUpdate,
+                newDate = date,
             )
 
             result.permissionIntentSender?.let { sender ->
-                pendingBatchMetadataEdit = PendingBatchMetadataEdit(
-                    songs.drop(index), title, artist, album, albumArtist, composer, genre, lyrics,
-                    trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate,
-                    successCount, failureCount,
-                )
-                _writePermissionRequest.emit(sender)
+                requestWritePermission(WritePermissionOwner.BATCH_METADATA, sender) {
+                    pendingBatchMetadataEdit = PendingBatchMetadataEdit(
+                        songs.drop(index), title, artist, album, albumArtist, composer, genre, lyrics,
+                        trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate,
+                        successCount, failureCount, date, perTrack, failureReasons.toList(), totalSongs,
+                    )
+                }
                 return
             }
             if (result.success && result.updatedSong != null) {
                 successCount++
+                if (result.coverNote != null) batchCoverSkipped++
                 val updatedSong = result.updatedSong
                 val refreshedAlbumArtUri = result.updatedAlbumArtUri
 
@@ -5167,8 +5311,11 @@ class PlayerViewModel @Inject constructor(
                 }
             } else {
                 failureCount++
+                failureReasons += result.errorMessage?.takeIf { it.isNotBlank() } ?: result.error?.name.orEmpty()
             }
+            _batchEditProgress.value = MetadataBatchProgress(done = successCount + failureCount, total = totalSongs, failed = failureCount)
         }
+        _batchEditProgress.value = null
 
         if (coverArtUpdate != null) {
             previousAlbumArts.forEach { previousArt ->
@@ -5194,11 +5341,16 @@ class PlayerViewModel @Inject constructor(
 
         multiSelectionStateHolder.clearSelection()
 
-        val message = when {
+        val baseMessage = when {
             failureCount == 0 -> context.getString(R.string.batch_edit_success, successCount)
-            successCount == 0 -> context.getString(R.string.batch_edit_failed)
-            else -> context.getString(R.string.batch_edit_partial_success, successCount, songs.size + previousSuccess + previousFailure)
+            // B57 1.3: one result that says how many and why: "12 saved / 1 failed: <reason>".
+            else -> context.getString(
+                R.string.batch_edit_saved_failed, successCount, failureCount,
+                summariseBatchFailures(failureReasons) ?: context.getString(R.string.batch_edit_failed)
+            )
         }
+        // B57-fix1 5.2: files saved without the cover are counted in the same single result.
+        val message = if (batchCoverSkipped > 0) "$baseMessage ${context.getString(R.string.batch_edit_cover_skipped, batchCoverSkipped)}" else baseMessage
         _toastEvents.emit(message)
     }
 
@@ -5216,7 +5368,9 @@ class PlayerViewModel @Inject constructor(
         newReplayGainTrackGainDb: String? = null,
         newReplayGainAlbumGainDb: String? = null,
         coverArtUpdate: CoverArtUpdate?,
+        newDate: String? = null,
     ) {
+        if (writePermissionRouter.isPending) return
         viewModelScope.launch {
             Timber.tag("PlayerViewModel").e("METADATA_EDIT_VM: Starting editSongMetadata via Holder")
 
@@ -5225,34 +5379,52 @@ class PlayerViewModel @Inject constructor(
                 val intentSender = com.lostf1sh.pixelplayeross.utils.MediaStorePermissionHelper
                     .createWriteRequestForSong(context, songId)
                 if (intentSender != null) {
-                    pendingMetadataEdit = PendingMetadataEdit(
-                        song = song,
-                        title = newTitle,
-                        artist = newArtist,
-                        album = newAlbum,
-                        albumArtist = newAlbumArtist,
-                        composer = newComposer,
-                        genre = newGenre,
-                        lyrics = newLyrics,
-                        trackNumber = newTrackNumber,
-                        discNumber = newDiscNumber,
-                        replayGainTrackGainDb = newReplayGainTrackGainDb,
-                        replayGainAlbumGainDb = newReplayGainAlbumGainDb,
-                        coverArtUpdate = coverArtUpdate
-                    )
-                    _writePermissionRequest.emit(intentSender)
+                    requestWritePermission(WritePermissionOwner.METADATA, intentSender) {
+                        pendingMetadataEdit = PendingMetadataEdit(
+                            song = song,
+                            title = newTitle,
+                            artist = newArtist,
+                            album = newAlbum,
+                            albumArtist = newAlbumArtist,
+                            composer = newComposer,
+                            genre = newGenre,
+                            lyrics = newLyrics,
+                            trackNumber = newTrackNumber,
+                            discNumber = newDiscNumber,
+                            replayGainTrackGainDb = newReplayGainTrackGainDb,
+                            replayGainAlbumGainDb = newReplayGainAlbumGainDb,
+                            coverArtUpdate = coverArtUpdate,
+                            date = newDate,
+                        )
+                    }
                     return@launch
                 }
             }
 
             performMetadataEdit(song, newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics,
-                newTrackNumber, newDiscNumber, newReplayGainTrackGainDb, newReplayGainAlbumGainDb, coverArtUpdate)
+                newTrackNumber, newDiscNumber, newReplayGainTrackGainDb, newReplayGainAlbumGainDb, coverArtUpdate, newDate)
         }
+    }
+
+    private suspend fun requestWritePermission(
+        owner: WritePermissionOwner, sender: android.content.IntentSender, storePending: () -> Unit
+    ) {
+        if (!writePermissionRouter.claim(owner)) return
+        storePending()
+        _writePermissionRequest.emit(sender)
     }
 
     /** Called from the UI after the user approves or denies the MediaStore write permission. */
     fun onWritePermissionResult(granted: Boolean) {
-        val batchMetadata = pendingBatchMetadataEdit
+        val owner = writePermissionRouter.take() ?: return
+        if (owner == WritePermissionOwner.LYRICS) {
+            val lyrics = pendingLyricsWriteSave ?: return
+            pendingLyricsWriteSave = null
+            performLyricsSave(lyrics.song, lyrics.lyrics, lyrics.preferSynced, afterWriteAccess = true,
+                declinedReason = if (granted) null else LyricsWriteReason.FILE_READ_ONLY, alsoStore = lyrics.alsoStore)
+            return
+        }
+        val batchMetadata = if (owner == WritePermissionOwner.BATCH_METADATA) pendingBatchMetadataEdit else null
         if (batchMetadata != null) {
             pendingBatchMetadataEdit = null
             if (!granted) {
@@ -5278,12 +5450,16 @@ class PlayerViewModel @Inject constructor(
                     batchMetadata.coverArtUpdate,
                     batchMetadata.previousSuccess,
                     batchMetadata.previousFailure,
+                    batchMetadata.date,
+                    batchMetadata.perTrack,
+                    batchMetadata.failureReasons,
+                    batchMetadata.totalSongs,
                 )
             }
             return
         }
 
-        val batchGenre = pendingBatchGenreEdit
+        val batchGenre = if (owner == WritePermissionOwner.BATCH_GENRE) pendingBatchGenreEdit else null
         if (batchGenre != null) {
             pendingBatchGenreEdit = null
             if (!granted) {
@@ -5296,19 +5472,7 @@ class PlayerViewModel @Inject constructor(
             return
         }
 
-        val pendingLyrics = pendingLyricsSave
-        if (pendingLyrics != null) {
-            pendingLyricsSave = null
-            if (!granted) {
-                viewModelScope.launch {
-                    _toastEvents.emit(context.getString(R.string.player_permission_denied_save_lyrics))
-                }
-                return
-            }
-            performLyricsSave(pendingLyrics.song, pendingLyrics.lyrics, pendingLyrics.preferSynced)
-            return
-        }
-
+        if (owner != WritePermissionOwner.METADATA) return
         val pending = pendingMetadataEdit ?: return
         pendingMetadataEdit = null
         if (!granted) {
@@ -5322,52 +5486,105 @@ class PlayerViewModel @Inject constructor(
                 pending.song, pending.title, pending.artist, pending.album,
                 pending.albumArtist, pending.composer, pending.genre, pending.lyrics,
                 pending.trackNumber, pending.discNumber,
-                pending.replayGainTrackGainDb, pending.replayGainAlbumGainDb, pending.coverArtUpdate
+                pending.replayGainTrackGainDb, pending.replayGainAlbumGainDb, pending.coverArtUpdate, pending.date
             )
         }
     }
 
+    private val lyricsStorage by lazy { AndroidLyricsStorage(context) }
+    private val lyricsFileSaver by lazy { LyricsFileSaver(lyricsStorage) }
+    private val lyricsFileCommitLock by lazy {
+        com.lostf1sh.pixelplayeross.data.musicinfo.DeletedDownloads(java.io.File(
+            java.io.File(context.filesDir, com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository.FOLDER),
+            com.lostf1sh.pixelplayeross.data.musicinfo.DeletedDownloads.FILE_NAME))
+    }
+    private val downloadedLyricsFiles by lazy {
+        com.lostf1sh.pixelplayeross.data.lyrics.DownloadedLyricsFiles(lyricsStorage, java.io.File(context.filesDir, "lyrics-sidecars.json"))
+    }
+    private val _lyricsFolderRequest = MutableStateFlow(false)
+    val lyricsFolderRequest = _lyricsFolderRequest.asStateFlow()
+    @Volatile private var pendingLyricsFolderSave: PendingLyricsSave? = null
+    private var lyricsSaveJob: Job? = null
+
     fun saveLyricsToFile(song: Song, lyrics: Lyrics, preferSynced: Boolean) {
-        val lrcContent = LyricsUtils.toLrcString(lyrics, preferSynced)
-        if (lrcContent.isEmpty()) {
-            viewModelScope.launch { _toastEvents.emit(context.getString(R.string.no_lyrics_to_save)) }
-            return
-        }
-
-        val songFile = java.io.File(song.path)
-        val lrcFile = java.io.File(songFile.parentFile, "${songFile.nameWithoutExtension}.lrc")
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && lrcFile.exists() && !lrcFile.canWrite()) {
-            val uri = com.lostf1sh.pixelplayeross.utils.MediaStorePermissionHelper.getMediaStoreUri(context, lrcFile.absolutePath)
-            if (uri != null) {
-                val intentSender = com.lostf1sh.pixelplayeross.utils.MediaStorePermissionHelper.createWriteRequestIntentSender(context, listOf(uri))
-                if (intentSender != null) {
-                    pendingLyricsSave = PendingLyricsSave(song, lyrics, preferSynced)
-                    viewModelScope.launch { _writePermissionRequest.emit(intentSender) }
-                    return
-                }
-            }
-        }
-
+        if (pendingLyricsFolderSave != null || writePermissionRouter.isPending || lyricsSaveJob?.isActive == true) return
         performLyricsSave(song, lyrics, preferSynced)
     }
 
-    private fun performLyricsSave(song: Song, lyrics: Lyrics, preferSynced: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val songFile = java.io.File(song.path)
-                val lrcFile = java.io.File(songFile.parentFile, "${songFile.nameWithoutExtension}.lrc")
-                val lrcContent = LyricsUtils.toLrcString(lyrics, preferSynced)
+    /**
+     * B56-3.2: the sync editor's save. The timed lines go to the `.lrc` beside the audio by the same saver as every other lyrics save (Android 10 by path, a removable
+     * card through its folder grant, else the app's own copy) and **also** to the database, so that what plays is what was just synced even when the audio file carries
+     * plain lyrics of its own. The audio file is never touched.
+     */
+    fun saveSyncedLyrics(song: Song, lyrics: Lyrics) {
+        if (pendingLyricsFolderSave != null || writePermissionRouter.isPending || lyricsSaveJob?.isActive == true) return
+        performLyricsSave(song, lyrics, preferSynced = true, alsoStore = true)
+    }
 
-                lrcFile.writeText(lrcContent, Charsets.UTF_8)
-                _toastEvents.emit(context.getString(R.string.lyrics_saved_successfully))
-                
-                if (playbackStateHolder.stablePlayerState.value.currentSong?.id == song.id) {
-                    loadLyricsForCurrentSong()
+    fun onLyricsFolderResult(uri: android.net.Uri?, flags: Int = 0) {
+        val pending = pendingLyricsFolderSave ?: return
+        pendingLyricsFolderSave = null
+        _lyricsFolderRequest.value = false
+        lyricsSaveJob = viewModelScope.launch(Dispatchers.IO) {
+            val reason = if (uri == null) LyricsWriteReason.PERMISSION else try {
+                lyricsStorage.keepTree(uri, flags, pending.song.path)
+                null
+            } catch (error: Exception) {
+                lyricsWriteReason(error)
+            }
+            performLyricsSave(pending.song, pending.lyrics, pending.preferSynced, afterPicker = true, declinedReason = reason, alsoStore = pending.alsoStore)
+        }
+    }
+
+    private fun performLyricsSave(
+        song: Song, lyrics: Lyrics, preferSynced: Boolean,
+        afterPicker: Boolean = false,
+        declinedReason: LyricsWriteReason? = null,
+        afterWriteAccess: Boolean = false,
+        alsoStore: Boolean = false,
+    ) {
+        lyricsSaveJob = viewModelScope.launch(Dispatchers.IO) {
+            val content = LyricsUtils.toLrcString(lyrics, preferSynced)
+            if (content.isEmpty()) {
+                _toastEvents.emit(context.getString(R.string.no_lyrics_to_save))
+                return@launch
+            }
+            try {
+                val result = lyricsFileCommitLock.withCommitLock {
+                    val saved = lyricsFileSaver.save(song.path, content, afterPicker, declinedReason, afterWriteAccess) {
+                        val id = song.id.toLongOrNull() ?: error("Song is not in the library")
+                        musicRepository.updateLyrics(id, content)
+                    }
+                    if (saved is LyricsSaveResult.FileSaved) {
+                        downloadedLyricsFiles.forget(song)
+                        if (alsoStore) song.id.toLongOrNull()?.let { musicRepository.updateLyrics(it, content) }
+                    }
+                    saved
                 }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to save lyrics to file")
-                _toastEvents.emit(context.getString(R.string.lyrics_save_failed))
+                when (result) {
+                    is LyricsSaveResult.NeedsWriteAccess -> {
+                        requestWritePermission(WritePermissionOwner.LYRICS, result.sender) {
+                            pendingLyricsWriteSave = PendingLyricsSave(song, lyrics, preferSynced, alsoStore)
+                        }
+                    }
+                    is LyricsSaveResult.NeedsFolder -> {
+                        pendingLyricsFolderSave = PendingLyricsSave(song, lyrics, preferSynced, alsoStore)
+                        _lyricsFolderRequest.value = true
+                    }
+                    is LyricsSaveResult.SavedInApp -> {
+                        _toastEvents.emit(context.getString(R.string.lyrics_saved_in_app, context.getString(result.reason.messageRes())))
+                        if (stablePlayerState.value.currentSong?.id == song.id) loadLyricsForCurrentSong()
+                    }
+                    LyricsSaveResult.FileSaved -> {
+                        _toastEvents.emit(context.getString(R.string.lyrics_saved_successfully))
+                        if (stablePlayerState.value.currentSong?.id == song.id) loadLyricsForCurrentSong()
+                    }
+                }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                Timber.e(error, "Could not save lyrics in Polylute")
+                _toastEvents.emit(context.getString(R.string.lyrics_local_save_failed,
+                    context.getString(lyricsWriteReason(error).messageRes())))
             }
         }
     }
@@ -5386,6 +5603,7 @@ class PlayerViewModel @Inject constructor(
         newReplayGainTrackGainDb: String?,
         newReplayGainAlbumGainDb: String?,
         coverArtUpdate: CoverArtUpdate?,
+        newDate: String? = null,
     ) {
         val previousAlbumArt = song.albumArtUriString
 
@@ -5402,13 +5620,15 @@ class PlayerViewModel @Inject constructor(
             newDiscNumber = newDiscNumber,
             newReplayGainTrackGainDb = newReplayGainTrackGainDb,
             newReplayGainAlbumGainDb = newReplayGainAlbumGainDb,
-            coverArtUpdate = coverArtUpdate
+            coverArtUpdate = coverArtUpdate,
+            newDate = newDate,
         )
 
         result.permissionIntentSender?.let { sender ->
-            pendingMetadataEdit = PendingMetadataEdit(song, newTitle, newArtist, newAlbum, newAlbumArtist, newComposer,
-                newGenre, newLyrics, newTrackNumber, newDiscNumber, newReplayGainTrackGainDb, newReplayGainAlbumGainDb, coverArtUpdate)
-            _writePermissionRequest.emit(sender)
+            requestWritePermission(WritePermissionOwner.METADATA, sender) {
+                pendingMetadataEdit = PendingMetadataEdit(song, newTitle, newArtist, newAlbum, newAlbumArtist, newComposer,
+                    newGenre, newLyrics, newTrackNumber, newDiscNumber, newReplayGainTrackGainDb, newReplayGainAlbumGainDb, coverArtUpdate, newDate)
+            }
             return
         }
 
@@ -5469,13 +5689,25 @@ class PlayerViewModel @Inject constructor(
                 }
             }
 
-            _toastEvents.emit(context.getString(R.string.metadata_updated_successfully))
+            // B57-fix1 5.2: a cover that could not be written is said, never a plain "updated".
+            _toastEvents.emit(
+                result.coverNote?.let { context.getString(R.string.metadata_saved_without_cover, coverNoteReason(it)) }
+                    ?: context.getString(R.string.metadata_updated_successfully)
+            )
         } else {
             val errorMessage = result.getUserFriendlyErrorMessage()
             Timber.tag("PlayerViewModel").e("METADATA_EDIT_VM: Failed - ${result.error}: $errorMessage")
             _toastEvents.emit(errorMessage)
         }
     }
+
+    private fun coverNoteReason(note: com.lostf1sh.pixelplayeross.data.media.CoverNote): String = context.getString(
+        when (note) {
+            com.lostf1sh.pixelplayeross.data.media.CoverNote.NOT_SUPPORTED -> R.string.cover_skip_not_supported
+            com.lostf1sh.pixelplayeross.data.media.CoverNote.WRITER_REFUSED -> R.string.cover_skip_writer_refused
+            com.lostf1sh.pixelplayeross.data.media.CoverNote.UNREADABLE_IMAGE -> R.string.cover_skip_unreadable
+        }
+    )
 
     private fun invalidateCoverArtCaches(vararg uriStrings: String?) {
         imageCacheManager.invalidateCoverArtCaches(*uriStrings)
@@ -5628,7 +5860,7 @@ class PlayerViewModel @Inject constructor(
     private var pendingBatchGenreEdit: Pair<List<Song>, String>? = null
 
     fun batchEditGenre(songs: List<Song>, newGenre: String) {
-        if (songs.isEmpty()) return
+        if (songs.isEmpty() || writePermissionRouter.isPending) return
 
         viewModelScope.launch {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -5641,8 +5873,9 @@ class PlayerViewModel @Inject constructor(
                     val intentSender = com.lostf1sh.pixelplayeross.utils.MediaStorePermissionHelper
                         .createWriteRequestIntentSender(context, uris)
                     if (intentSender != null) {
-                        pendingBatchGenreEdit = songs to newGenre
-                        _writePermissionRequest.emit(intentSender)
+                        requestWritePermission(WritePermissionOwner.BATCH_GENRE, intentSender) {
+                            pendingBatchGenreEdit = songs to newGenre
+                        }
                         return@launch
                     }
                 }
@@ -5750,7 +5983,10 @@ internal fun Song.withRepositoryHydration(repositorySong: Song): Song {
     if (id != repositorySong.id) return this
 
     val hydratedArtworkUri = when {
+        repositorySong.albumArtUriString.isNullOrBlank() && LocalArtworkUri.isLocalArtworkUri(albumArtUriString) -> null
         repositorySong.albumArtUriString.isNullOrBlank() -> albumArtUriString
+        LocalArtworkUri.extractCacheBustToken(repositorySong.albumArtUriString) != null &&
+            LocalArtworkUri.extractCacheBustToken(repositorySong.albumArtUriString) != LocalArtworkUri.extractCacheBustToken(albumArtUriString) -> repositorySong.albumArtUriString
         albumArtUriString.isNullOrBlank() -> repositorySong.albumArtUriString
         areEquivalentArtworkUrisForSong(id, albumArtUriString, repositorySong.albumArtUriString) ->
             albumArtUriString

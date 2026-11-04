@@ -33,11 +33,11 @@ import androidx.lifecycle.LifecycleEventObserver
  * @param onStep called after each step, on the main thread; a test counts them.
  */
 @Composable
-fun GlassTicker(clock: GlassClock, running: Boolean, onStep: () -> Unit = {}) {
+fun GlassTicker(clock: GlassClock, running: Boolean, onStep: () -> Unit = {}, minFrameNanos: Long = 0L) {
     val latestOnStep = rememberUpdatedState(onStep)
-    LaunchedEffect(running) {
+    LaunchedEffect(running, minFrameNanos) {
         if (!running) return@LaunchedEffect
-        clock.runOnFrames { latestOnStep.value() }
+        clock.runOnFrames(minFrameNanos) { latestOnStep.value() }
     }
 }
 
@@ -45,14 +45,19 @@ fun GlassTicker(clock: GlassClock, running: Boolean, onStep: () -> Unit = {}) {
  * Steps this clock on every frame of the coroutine's frame clock, by the time since the frame before, until it is cancelled. The write is made
  * inside the frame's own callback, so it is drawn in that same frame.
  */
-internal suspend fun GlassClock.runOnFrames(onStep: () -> Unit = {}): Nothing {
+internal suspend fun GlassClock.runOnFrames(minFrameNanos: Long = 0L, onStep: () -> Unit = {}): Nothing {
     var last = withFrameNanos { it }
     while (true) {
+        var stepped = false
         withFrameNanos { frameNanos ->
-            advance(GlassMotionPolicy.stepSeconds(frameNanos - last))
-            last = frameNanos
+            // B56-7.1: a capped clock (the live background, 30 a second) waits until a frame is [minFrameNanos] old, and then takes the time that really passed
+            if (frameNanos - last >= minFrameNanos) {
+                step(GlassMotionPolicy.stepSeconds(frameNanos - last))
+                last = frameNanos
+                stepped = true
+            }
         }
-        onStep()
+        if (stepped) onStep()
     }
 }
 

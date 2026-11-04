@@ -108,6 +108,10 @@ fun LibraryAlbumsTab(
 ) {
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
+    val albumDurations by playerViewModel.albumDurationsMs.collectAsStateWithLifecycle()
+    // B57 4.2: the prefetch asks for the size the cell will ask for, so the prefetched image is the one the cell uses
+    val prefetchSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forColumns(2, 32.dp, 14.dp)
+    val listPrefetchSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(com.lostf1sh.pixelplayeross.ui.ds.DapSizes.ThumbRow)
     val listFlinging = rememberFlingState(listState, listState.interactionSource)
     val gridFlinging = rememberFlingState(gridState, gridState.interactionSource)
     val context = LocalContext.current
@@ -178,7 +182,7 @@ fun LibraryAlbumsTab(
                                 album?.albumArtUriString?.let { uri ->
                                     val request = ImageRequest.Builder(context)
                                         .data(uri)
-                                        .size(Size(256, 256))
+                                        .size(listPrefetchSize)
                                         .build()
                                     imageLoader.enqueue(request)
                                 }
@@ -207,7 +211,7 @@ fun LibraryAlbumsTab(
                                 album?.albumArtUriString?.let { uri ->
                                     val request = ImageRequest.Builder(context)
                                         .data(uri)
-                                        .size(Size(256, 256))
+                                        .size(prefetchSize)
                                         .build()
                                     imageLoader.enqueue(request)
                                 }
@@ -465,7 +469,8 @@ fun LibraryAlbumsTab(
                                             isSelected = selectedAlbumIds.contains(album.id),
                                             selectionIndex = getSelectionIndex(album.id),
                                             onLongPress = rememberedOnLongPress,
-                                            onSelectionToggle = rememberedOnSelectionToggle
+                                            onSelectionToggle = rememberedOnSelectionToggle,
+                                            durationMs = albumDurations[album.id] ?: 0L
                                         )
                                     } else {
                                         AlbumGridItemRedesigned(

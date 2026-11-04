@@ -137,6 +137,10 @@ fun CoverGlassHost(
     lockSurfaceVisible: Boolean,
     lockCovers: Boolean,
     modifier: Modifier = Modifier,
+    /** B56-7.1: Still, Gentle (today's) or Lively. Still is the same as [movingBackgroundOn] false. */
+    backgroundMotion: com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion = com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.GENTLE,
+    /** A bottom sheet is open over the player: the live background holds still (a sheet has its own still copy of the glass). */
+    sheetOpen: Boolean = SheetPresence.anyOpen,
     onFieldDrawn: () -> Unit = {},
     environment: GlassEnvironment = rememberGlassEnvironment(),
     /** Called after each step of the glass (once per display frame while it moves); a test counts them. */
@@ -160,7 +164,11 @@ fun CoverGlassHost(
             systemAnimationsAllowed = animationsAllowed,
         )
     )
-    GlassTicker(scene.clock, running = moving, onStep = onStep)
+    scene.clock.motion = backgroundMotion
+    // the live blobs (Android 13+) are stricter than the classic glass: still under the DAP lock screen and under a sheet; and stepped at 30 a second
+    val live = LiveBlobs.available() && backgroundMotion.moves && scene.canMove
+    val running = moving && (!live || LiveBackgroundPolicy.shouldRun(backgroundMotion.moves, android.os.Build.VERSION.SDK_INT, moving, lockSurfaceVisible, sheetOpen))
+    GlassTicker(scene.clock, running = running, onStep = onStep, minFrameNanos = if (live) LiveBlobs.FRAME_NANOS else 0L)
     // Under a lock screen that covers it the app's glass is not seen: it is not drawn at all (the lock screen draws its own, in step).
     if (!lockCovers) {
         CoverGlassBackdrop(scene.crossfade, scene.clock, scene.base, expansion = playerExpansion, modifier = modifier, onFieldDrawn = onFieldDrawn)

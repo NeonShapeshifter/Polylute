@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_recent_artists">Recent artists</string>
+    <string name="home_suggested_albums">Suggested albums</string>
+    <string name="home_suggestions_library_caption">Latest additions to your library</string>
+    <string name="listening_duration_hours_minutes">%1$dh %2$02dm</string>
+    <string name="listening_duration_hours">%1$dh</string>
+    <string name="listening_duration_minutes">%1$dm</string>
+    <string name="listening_duration_seconds">%1$ds</string>
+    <string name="home_suggestions_empty_body">More suggestions will appear as your library and listening history grow.</string>
+</resources>

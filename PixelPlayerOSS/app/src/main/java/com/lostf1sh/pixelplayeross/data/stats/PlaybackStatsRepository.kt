@@ -197,6 +197,39 @@ class PlaybackStatsRepository @Inject constructor(
     }
 
     /**
+     * Rewrites the identity that events name: every event whose `libraryItemId` is a key of [moves] now names the value (B57 1.2).
+     *
+     * For the one-time repair of items an old edit orphaned: the plays were heard for a track that is now a different item. Events that
+     * name nothing are left alone (they resolve through their locator, which is the live item's). The write waits for the writers, like
+     * [withHistoryIdentities], and the file is replaced as a whole, so a refused write leaves the previous history intact.
+     * Returns how many events changed.
+     */
+    suspend fun reassignIdentities(moves: Map<String, String>): Int {
+        if (moves.isEmpty()) return 0
+        val changed = writeGate.withLock {
+            withContext(Dispatchers.IO) {
+                synchronized(fileLock) {
+                    val events = loadLocked()
+                    var count = 0
+                    val rewritten = events.map { event ->
+                        val target = event.libraryItemId?.let(moves::get)
+                        if (target != null && target != event.libraryItemId) {
+                            count++
+                            event.copy(libraryItemId = target)
+                        } else {
+                            event
+                        }
+                    }
+                    if (count > 0 && !rewriteLocked(rewritten)) throw PlaybackHistoryWriteException()
+                    count
+                }
+            }
+        }
+        if (changed > 0) notifyStatsChanged()
+        return changed
+    }
+
+    /**
      * The events after the first [count] of [knownEpoch], or all of them when the history was replaced since.
      * Reads the file once per process; after that it is served from memory and an appended event is one list entry.
      */

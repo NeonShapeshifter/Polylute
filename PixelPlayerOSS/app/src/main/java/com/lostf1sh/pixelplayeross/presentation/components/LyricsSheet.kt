@@ -36,6 +36,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -69,6 +70,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.animation.core.Animatable
 import kotlinx.coroutines.launch
 import androidx.compose.animation.core.animateFloatAsState
+import com.lostf1sh.pixelplayeross.ui.ds.DapLyricsImmersive
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import kotlinx.coroutines.delay
@@ -115,6 +117,8 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import com.lostf1sh.pixelplayeross.utils.MultiLangRomanizer
+import com.lostf1sh.pixelplayeross.data.lyrics.LrcSyncState
+import com.lostf1sh.pixelplayeross.ui.ds.DapLyricsHighlight
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import com.lostf1sh.pixelplayeross.ui.ds.DapIcon
@@ -237,6 +241,8 @@ fun LyricsSheet(
      */
     externalLyricsEnabled: Boolean,
     modifier: Modifier = Modifier,
+    /** B56-3.2: the sync editor's save (the `.lrc` and the database). */
+    onSaveSyncedLyrics: (Song, Lyrics) -> Unit = { _, _ -> },
     highlightZoneFraction: Float = 0.08f,
     highlightOffsetDp: Dp = 32.dp,
     autoscrollAnimationSpec: AnimationSpec<Float>? = null
@@ -334,8 +340,10 @@ fun LyricsSheet(
     // `isPlaying` is a key so the single owner re-evaluates, and releases, on every play/pause.
     // B42-fix1: ... and not under the DAP lock screen, which is drawn over the open player: the same rule as the window flag's.
     val lockSurfaceShowing = com.lostf1sh.pixelplayeross.presentation.lockscreen.LocalLockSurfaceShowing.current
-    DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, lifecycleOwner) {
+    val dapMode = com.lostf1sh.pixelplayeross.presentation.LocalDapMode.current
+    DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, dapMode, lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) view.keepScreenOn = false
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && keepScreenOn) {
                 keepScreenOn = false
                 coroutineScope.launch {
@@ -346,9 +354,7 @@ fun LyricsSheet(
             }
         }
 
-        if (DapDeviceControlPolicy.shouldKeepScreenOnForLyrics(keepScreenOn, isPlaying, lockSurfaceShowing)) {
-            view.keepScreenOn = true
-        }
+        view.keepScreenOn = DapDeviceControlPolicy.shouldKeepScreenOnForLyrics(keepScreenOn, isPlaying, lockSurfaceShowing, dapMode)
 
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
@@ -390,6 +396,8 @@ fun LyricsSheet(
     val interactions = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST) }
     val touchGate = remember { ImmersiveTouchGate() }
     var showMoreSheet by remember { mutableStateOf(false) }
+    // B56-3.2: the sync editor, while it is open (null otherwise): it takes the page
+    var syncEditor by remember(currentSong?.id) { mutableStateOf<LrcSyncState?>(null) }
     val moreSheetState = rememberModalSheetState(
         skipPartiallyExpanded = true
     )
@@ -551,7 +559,45 @@ fun LyricsSheet(
         )
     }
 
-    
+    val editing = syncEditor
+    val editingSong = currentSong
+    if (editing != null && editingSong != null) {
+        val previewListState = rememberLazyListState()
+        LyricsSyncEditor(
+            state = editing,
+            onStateChange = { syncEditor = it },
+            positionProvider = { playbackPositionFlow.value },
+            isPlaying = isPlaying,
+            onPlayPause = onPlayPause,
+            onSeekTo = onSeekTo,
+            onSave = {
+                editing.toLyrics()?.let { timed ->
+                    onSaveSyncedLyrics(editingSong, timed)
+                    syncEditor = editing.saved()
+                }
+            },
+            onClose = { syncEditor = null },
+            previewContent = { timed ->
+                val timedLines = remember(timed) { timed.synced.orEmpty().toImmutableList() }
+                SyncedLyricsList(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                    contentPadding = PaddingValues(top = DapSpacing.Sm, bottom = 24.dp),
+                    lines = timedLines,
+                    listState = previewListState,
+                    playbackPositionFlow = playbackPositionFlow,
+                    lyricsSyncOffset = 0,
+                    accentColor = lyricHighlightColor,
+                    textStyle = scaledTextStyle,
+                    onLineClick = { line -> onSeekTo(line.time.toLong()) },
+                    highlightZoneFraction = highlightZoneFraction,
+                    highlightOffsetDp = highlightOffsetDp,
+                    autoscrollAnimationSpec = resolvedAutoscrollSpec,
+                )
+            },
+            modifier = modifier,
+        )
+        return
+    }
 
     Scaffold(
         // B42-fix1: the lyrics are a page of the player's pager. The pager owns every horizontal gesture on it (a swipe changes the page and the
@@ -562,35 +608,22 @@ fun LyricsSheet(
             // B40-F5: every touch on the page is "the listener is here", before the lines or the controls see it (Initial pass, nothing
             // consumed): a scroll of the lyrics, a press on the bar, a finger resting still. The first touch of a folded page unfolds it, and
             // remembers that it did, so its tap does not also seek.
-            .pointerInput(touchGate) {
-                awaitPointerEventScope {
-                    var lastRestartMs = Long.MIN_VALUE
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val changes = event.changes
-                        val down = changes.any { it.changedToDown() }
-                        if (down) {
-                            touchGate.touchBegan(immersive = immersiveMode)
-                            lastRestartMs = changes.maxOf { it.uptimeMillis }
-                            resetImmersiveTimer()
-                        } else if (changes.any { it.changedToUp() }) {
-                            resetImmersiveTimer()
-                        } else {
-                            val now = changes.maxOf { it.uptimeMillis }
-                            if (now - lastRestartMs >= ImmersiveLyricsPolicy.MOVE_RESTART_INTERVAL_MS) {
-                                lastRestartMs = now
-                                resetImmersiveTimer()
-                            }
-                        }
-                        if (changes.none { it.pressed }) touchGate.touchEnded()
-                    }
-                }
-            },
+            .immersiveTouchRestart(touchGate, isImmersive = { immersiveMode }, restart = { resetImmersiveTimer() }),
         // B42-fix1: over the cover glass the page is the player's glass itself, not a fill of its own
         containerColor = if (Dap.glass != null) Color.Transparent else containerColor,
         contentColor = contentColor,
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize()) {
+            // B57 2.7: while immersive the background is dimmed a little so the text stands out (one token: DapLyricsImmersive.DimAlpha); a tap anywhere brings
+            // the controls back, so there is no separate button for it any more.
+            val immersiveDim by animateFloatAsState(
+                targetValue = if (immersiveMode) DapLyricsImmersive.DimAlpha else 0f,
+                animationSpec = tween(DapLyricsImmersive.DimMs),
+                label = "immersiveDim",
+            )
+            if (immersiveDim > 0f) {
+                Box(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black.copy(alpha = immersiveDim)) })
+            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -602,10 +635,9 @@ fun LyricsSheet(
                     position = (playbackPositionFlow.value + lyricsSyncOffset).coerceAtLeast(0L)
                 ).coerceAtLeast(0)
             }
-            val syncedListState = rememberLazyListState(
-                initialFirstVisibleItemIndex = initialSyncedLineIndex
-            )
-            val staticListState = rememberLazyListState()
+            // B57 2.3: the lists belong to the song. A new song starts at the top at once, in its first frame; before, the list kept the old song's scroll and jumped
+            // (animated) only when the new song's first synced line arrived.
+            val (syncedListState, staticListState) = rememberLyricsListStates(currentSong?.id, initialSyncedLineIndex)
 
             Box(
                 modifier = Modifier
@@ -845,36 +877,11 @@ fun LyricsSheet(
                     },
                     canReset = lyrics != null,
                     onResetLyrics = resetLyricsForCurrentSong,
-                )
-            }
-        }
-
-       AnimatedVisibility(
-            visible = immersiveMode,
-            enter = fadeIn() + slideInVertically { it / 2 },
-            exit = fadeOut() + slideOutVertically { it / 2 },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp)
-        ) {
-            // A squared accent control rather than a filled circular Material button; same action,
-            // same size, same content description.
-            val showControlsLabel = stringResource(R.string.cd_show_controls)
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(DapRadius.Surface))
-                    .background(accentColor)
-                    .clickable(onClick = { resetImmersiveTimer() })
-                    .semantics {
-                        contentDescription = showControlsLabel
+                    canSync = LrcSyncState.forLyrics(lyrics) != null,
+                    onSyncLyrics = {
+                        showMoreSheet = false
+                        syncEditor = LrcSyncState.forLyrics(lyrics)
                     },
-                contentAlignment = Alignment.Center
-            ) {
-                DapIcon(
-                    kind = DapIconKind.ChevronUp,
-                    tint = onAccentColor,
-                    size = 18.dp,
                 )
             }
         }
@@ -1145,7 +1152,18 @@ fun LyricLineRow(
     val isCurrentLine by remember(line.time, lineEndTime) {
         derivedStateOf { positionProvider() in line.time.toLong()..<lineEndTime }
     }
-    val unhighlightedColor = dimmedLyricInk(alpha = 0.45f, onGlass = Dap.tertiaryText)
+    // B56-3.3: a line already sung keeps the page's dim ink (it is what every line but the current one used to wear); a line still to come is a step stronger, so
+    // what is ahead stays readable and what has been sung recedes
+    val isReadLine by remember(lineEndTime) { derivedStateOf { positionProvider() >= lineEndTime } }
+    val readColor = dimmedLyricInk(alpha = 0.45f, onGlass = Dap.tertiaryText)
+    val unreadColor = dimmedLyricInk(alpha = 0.7f, onGlass = Dap.secondaryText)
+    val unhighlightedColor = if (isReadLine) readColor else unreadColor
+    // and the line being sung lies on a soft tonal backdrop of its own ink, which keeps it apart from any cover
+    val backdropColor by animateColorAsState(
+        targetValue = if (isCurrentLine) accentColor.copy(alpha = DapLyricsHighlight.ActiveBackdropAlpha) else Color.Transparent,
+        animationSpec = tween(durationMillis = 250),
+        label = "lineBackdrop"
+    )
     val lineColor by animateColorAsState(
         targetValue = if (isCurrentLine) accentColor else unhighlightedColor,
         animationSpec = if (useAnimatedLyrics) spring(
@@ -1263,6 +1281,18 @@ fun LyricLineRow(
         Column(
             modifier = animatedModifier
                 .fillMaxWidth()
+                // B56-3.3: the backdrop is drawn behind the line, a little wider than it (the line's own layout does not move), and read at draw time
+                .drawBehind {
+                    if (backdropColor.alpha > 0f) {
+                        val bleed = DapLyricsHighlight.ActiveBackdropBleed.toPx()
+                        drawRoundRect(
+                            color = backdropColor,
+                            topLeft = androidx.compose.ui.geometry.Offset(-bleed, 0f),
+                            size = androidx.compose.ui.geometry.Size(size.width + 2 * bleed, size.height),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(DapLyricsHighlight.ActiveBackdropRadius.toPx()),
+                        )
+                    }
+                }
                 .clip(RoundedCornerShape(12.dp))
                 .clickable { onClick() }
                 .padding(vertical = verticalPadding, horizontal = 2.dp),
@@ -1320,6 +1350,18 @@ fun LyricLineRow(
         Column(
             modifier = animatedModifier
                 .fillMaxWidth()
+                // B56-3.3: the backdrop is drawn behind the line, a little wider than it (the line's own layout does not move), and read at draw time
+                .drawBehind {
+                    if (backdropColor.alpha > 0f) {
+                        val bleed = DapLyricsHighlight.ActiveBackdropBleed.toPx()
+                        drawRoundRect(
+                            color = backdropColor,
+                            topLeft = androidx.compose.ui.geometry.Offset(-bleed, 0f),
+                            size = androidx.compose.ui.geometry.Size(size.width + 2 * bleed, size.height),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(DapLyricsHighlight.ActiveBackdropRadius.toPx()),
+                        )
+                    }
+                }
                 .clip(RoundedCornerShape(12.dp))
                 .clickable { onClick() }
                 .padding(vertical = verticalPadding, horizontal = 2.dp),
@@ -1827,3 +1869,45 @@ internal fun resolveCurrentLineIndex(
         position in line.time.toLong()..<lineEndTime
     }?.index ?: -1
 }
+
+/**
+ * B57 2.7: every touch on the lyrics page is "the listener is here", before the lines or the controls see it (Initial pass, nothing consumed): a scroll of the lyrics,
+ * a press on the bar, a finger resting still, **a tap anywhere**. The first touch of a folded page unfolds it ([touchGate] remembers that it did, so its tap does not also seek).
+ * This is what makes the arrow button that used to bring the controls back unnecessary.
+ */
+internal fun Modifier.immersiveTouchRestart(touchGate: ImmersiveTouchGate, isImmersive: () -> Boolean, restart: () -> Unit): Modifier = pointerInput(touchGate) {
+    awaitPointerEventScope {
+        var lastRestartMs = Long.MIN_VALUE
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val changes = event.changes
+            val down = changes.any { it.changedToDown() }
+            if (down) {
+                touchGate.touchBegan(immersive = isImmersive())
+                lastRestartMs = changes.maxOf { it.uptimeMillis }
+                restart()
+            } else if (changes.any { it.changedToUp() }) {
+                restart()
+            } else {
+                val now = changes.maxOf { it.uptimeMillis }
+                if (now - lastRestartMs >= ImmersiveLyricsPolicy.MOVE_RESTART_INTERVAL_MS) {
+                    lastRestartMs = now
+                    restart()
+                }
+            }
+            if (changes.none { it.pressed }) touchGate.touchEnded()
+        }
+    }
+}
+
+/**
+ * B57 2.3: the synced and the plain lists' scroll states, **per song**. Keyed on [songId], a song change builds fresh states, so the new song's lyrics are at the top in the
+ * first frame (a synced list starts at [initialSyncedIndex], which is the first line for a song that has just begun).
+ */
+@Composable
+internal fun rememberLyricsListStates(songId: String?, initialSyncedIndex: Int): Pair<LazyListState, LazyListState> =
+    androidx.compose.runtime.key(songId) {
+        val synced = rememberLazyListState(initialFirstVisibleItemIndex = initialSyncedIndex)
+        val plain = rememberLazyListState()
+        synced to plain
+    }

@@ -37,8 +37,8 @@
     <string name="dap_timeout_2_minutes">2 minutos</string>
     <string name="dap_timeout_5_minutes">5 minutos</string>
     <string name="dap_timeout_10_minutes">10 minutos</string>
-    <string name="dap_timeout_never_while_playing">Nunca mientras reproduce</string>
-    <string name="dap_timeout_never_while_playing_desc">Mantiene la pantalla encendida solo durante reproducción activa. Pausar o detener restaura el apagado normal.</string>
+    <string name="dap_timeout_never_while_playing">Nunca mientras escuchas, en cualquier página</string>
+    <string name="dap_timeout_never_while_playing_desc">En modo DAP mantiene encendida cualquier página de Polylute mientras escuchas. En modo app decide Android. El bloqueo DAP tiene siempre 30 s de espera sin tocarlo.</string>
     <string name="dap_write_settings_required">Android exige autorización única para cambiar el tiempo de apagado del sistema.</string>
     <string name="dap_timeout_system_never_title">La pantalla nunca se apaga sola</string>
     <string name="dap_timeout_system_never_body">El tiempo de apagado de Android está en \u00abnunca\u00bb. La pantalla sigue encendida hasta que pulses el botón de encendido, no aparece el bloqueo y el dispositivo no entra en reposo. La reproducción no se ve afectada.</string>

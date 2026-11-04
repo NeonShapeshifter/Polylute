@@ -266,8 +266,8 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapIcon
 import com.lostf1sh.pixelplayeross.ui.ds.DapIconKind
 import com.lostf1sh.pixelplayeross.ui.ds.DapPrimaryButton
 import com.lostf1sh.pixelplayeross.ui.ds.DapRadius
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenu
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem
 import com.lostf1sh.pixelplayeross.ui.ds.DapOverflowButton
 import com.lostf1sh.pixelplayeross.ui.ds.DapScreenTitle
 import com.lostf1sh.pixelplayeross.ui.ds.DapSecondaryButton
@@ -293,7 +293,6 @@ private val LibraryTabTransitionSpec = tween<Float>(
     easing = FastOutSlowInEasing
 )
 private const val MAX_ALBUM_MULTI_SELECTION = 6
-private const val ENABLE_FOLDERS_SOURCE_TOGGLE = true
 private const val ENABLE_FOLDERS_STORAGE_FILTER = false
 private const val FOLDER_NAVIGATION_ROOT_KEY = "__folder_root__"
 private const val FOLDER_NAVIGATION_FORWARD = 1
@@ -307,6 +306,10 @@ private data class LibraryScreenPlayerProjection(
     val folderSourceRootPath: String = "",
     val folderSource: FolderSource = FolderSource.INTERNAL,
     val isFoldersPlaylistView: Boolean = false,
+    val foldersFlatList: Boolean = false,
+    val folderVolumeRoots: ImmutableList<String> = persistentListOf(),
+    val internalFolderRootPath: String = "",
+    val showFolderSourceSwitch: Boolean = false,
     val currentStorageFilter: StorageFilter = StorageFilter.ALL,
     val currentSongSortOption: SortOption = SortOption.SongTitleAZ,
     val currentAlbumSortOption: SortOption = SortOption.AlbumTitleAZ,
@@ -318,15 +321,21 @@ private data class LibraryScreenPlayerProjection(
     val musicFolders: ImmutableList<MusicFolder> = persistentListOf(),
     val isLoadingLibraryCategories: Boolean = true,
     val isSyncingLibrary: Boolean = false,
-    val isLoadingInitialSongs: Boolean = true
+    val isLoadingInitialSongs: Boolean = true,
+    val folderQuery: String = ""
 )
 
 private fun PlayerUiState.toLibraryScreenProjection(): LibraryScreenPlayerProjection =
     LibraryScreenPlayerProjection(
         currentFolder = currentFolder,
+        folderQuery = folderQuery,
         folderSourceRootPath = folderSourceRootPath,
         folderSource = folderSource,
         isFoldersPlaylistView = isFoldersPlaylistView,
+        foldersFlatList = foldersFlatList,
+        showFolderSourceSwitch = showFolderSourceSwitch,
+        folderVolumeRoots = folderVolumeRoots,
+        internalFolderRootPath = internalFolderRootPath,
         currentStorageFilter = currentStorageFilter,
         currentSongSortOption = currentSongSortOption,
         currentAlbumSortOption = currentAlbumSortOption,
@@ -830,10 +839,9 @@ fun LibraryScreen(
                             onClick = { showLibraryMenu = true },
                             description = stringResource(R.string.library_menu_options),
                         )
-                        DropdownMenu(
+                        DapMenu(
                             expanded = showLibraryMenu,
                             onDismissRequest = { showLibraryMenu = false },
-                            containerColor = Dap.surfaceRaised
                         ) {
                             LibraryMenuItem(
                                 label = stringResource(R.string.audio_bookmarks_cd_open)
@@ -1096,7 +1104,9 @@ fun LibraryScreen(
                                     folderRootPath = playerUiState.folderSourceRootPath.ifBlank {
                                         Environment.getExternalStorageDirectory().path
                                     },
-                                    folderRootLabel = stringResource(playerUiState.folderSource.displayNameRes()),
+                                    folderRootLabel = if (playerUiState.folderSource == FolderSource.SD_CARD) folderVolumeLabel(context,playerUiState.folderSourceRootPath,stringResource(playerUiState.folderSource.displayNameRes()))
+                                        else stringResource(playerUiState.folderSource.displayNameRes()),
+                                    folderTree = playerUiState.musicFolders,
                                     onFolderClick = { playerViewModel.navigateToFolder(it) },
                                     onNavigateBack = { playerViewModel.navigateBackFolder() },
                                     showStorageFilterButton = currentTabId == LibraryTabId.SONGS ||
@@ -1180,53 +1190,7 @@ fun LibraryScreen(
                                         }
                                     }
                                 } else null,
-                                sourceToggleContent = if (isFoldersTab && ENABLE_FOLDERS_SOURCE_TOGGLE) {
-                                    {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            val isSdAvailable = playerUiState.isSdCardAvailable
-                                            val accent = LocalDapAccent.current
-                                            ToggleSegmentButton(
-                                                modifier = Modifier.weight(1f),
-                                                active = playerUiState.folderSource == FolderSource.INTERNAL,
-                                                activeColor = accent,
-                                                inactiveColor = Dap.surfaceRaised,
-                                                activeContentColor = Dap.onFill,
-                                                inactiveContentColor = Dap.secondaryText,
-                                                activeCornerRadius = DapRadius.Surface,
-                                                onClick = { playerViewModel.setFoldersSource(FolderSource.INTERNAL) },
-                                                text = stringResource(R.string.presentation_batch_d_storage_internal)
-                                            )
-                                            ToggleSegmentButton(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .alpha(if (isSdAvailable) 1f else 0.5f),
-                                                active = playerUiState.folderSource == FolderSource.SD_CARD,
-                                                activeColor = accent,
-                                                inactiveColor = Dap.surfaceRaised,
-                                                activeContentColor = Dap.onFill,
-                                                inactiveContentColor = Dap.secondaryText,
-                                                activeCornerRadius = DapRadius.Surface,
-                                                onClick = {
-                                                    if (isSdAvailable) {
-                                                        playerViewModel.setFoldersSource(FolderSource.SD_CARD)
-                                                    }
-                                                },
-                                                text = stringResource(R.string.presentation_batch_d_storage_sd_card)
-                                            )
-                                        }
-                                        if (!playerUiState.isSdCardAvailable) {
-                                            Text(
-                                                text = stringResource(R.string.presentation_batch_d_sd_card_unavailable),
-                                                style = DapType.Note,
-                                                color = Dap.tertiaryText,
-                                                modifier = Modifier.padding(top = 8.dp, start = 2.dp)
-                                            )
-                                        }
-                                    }
-                                } else null
+                                sourceToggleContent = null
                             )
                         }
 
@@ -1437,6 +1401,17 @@ fun LibraryScreen(
                                             },
                                             onMoreOptionsClick = stableOnMoreOptionsClick,
                                             isPlaylistView = playerUiState.isFoldersPlaylistView,
+                                            flatList = playerUiState.foldersFlatList,
+                                            onFlatListChange = playerViewModel::setFoldersFlatList,
+                                            showSourceSwitch = playerUiState.showFolderSourceSwitch,
+                                            source = playerUiState.folderSource,
+                                            onSourceChange = playerViewModel::setFoldersSource,
+                                            query = playerUiState.folderQuery,
+                                            onQueryChange = playerViewModel::setFolderQuery,
+                                            volumeRoots = playerUiState.folderVolumeRoots,
+                                            selectedVolumeRoot = playerUiState.folderSourceRootPath,
+                                            internalVolumeRoot = playerUiState.internalFolderRootPath,
+                                            onVolumeChange = playerViewModel::setFolderVolume,
                                             currentSortOption = playerUiState.currentFolderSortOption,
                                             isRefreshing = isRefreshing,
                                             onRefresh = onRefresh,
@@ -1629,7 +1604,7 @@ fun LibraryScreen(
                     }
                     showSongInfoBottomSheet = false
                 },
-                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                     playerViewModel.editSongMetadata(
                         currentSong,
                         newTitle,
@@ -1643,7 +1618,8 @@ fun LibraryScreen(
                         newDiscNumber,
                         replayGainTrackGainDb,
                         replayGainAlbumGainDb,
-                        coverArtUpdate
+                        coverArtUpdate,
+                        newDate = newDate
                     )
                 },
                 // Nothing to wire: every list this sheet opens from is a paging list over Room, so
@@ -1886,7 +1862,7 @@ fun LibraryScreen(
             visible = showBatchEditSheet,
             songs = selectedSongs,
             onDismiss = { showBatchEditSheet = false },
-            onSave = { songs, title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+            onSave = { songs, title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, date, coverArtUpdate ->
                 playerViewModel.saveBatchMetadata(
                     songs = songs,
                     title = title,
@@ -1900,7 +1876,8 @@ fun LibraryScreen(
                     discNumber = discNumber,
                     replayGainTrackGainDb = replayGainTrackGainDb,
                     replayGainAlbumGainDb = replayGainAlbumGainDb,
-                    coverArtUpdate = coverArtUpdate
+                    coverArtUpdate = coverArtUpdate,
+                    date = date,
                 )
             }
         )
@@ -2334,270 +2311,309 @@ fun LibraryFoldersTab(
     onRegisterLocateCurrentSongAction: ((() -> Unit)?) -> Unit = {},
     pendingLocatePath: String? = null,
     onClearPendingLocate: () -> Unit = {},
-    onRequestCrossFolderLocate: (String) -> Unit = {}
+    onRequestCrossFolderLocate: (String) -> Unit = {},
+    flatList: Boolean = false,
+    onFlatListChange: (Boolean) -> Unit = {},
+    showSourceSwitch: Boolean = false,
+    source: FolderSource = FolderSource.INTERNAL,
+    onSourceChange: (FolderSource) -> Unit = {},
+    volumeRoots: List<String> = emptyList(),
+    selectedVolumeRoot: String = "",
+    internalVolumeRoot: String = "",
+    onVolumeChange: (String) -> Unit = {},
+    query: String? = null,
+    onQueryChange: (String) -> Unit = {}
 ) {
 
 
-    AnimatedContent(
-        targetState = Pair(isPlaylistView, currentFolder?.path ?: FOLDER_NAVIGATION_ROOT_KEY),
-        label = "FolderNavigation",
-        modifier = Modifier.fillMaxSize(),
-        transitionSpec = {
-            val direction = resolveFolderNavigationDirection(
-                initialPath = initialState.second.takeUnless { it == FOLDER_NAVIGATION_ROOT_KEY },
-                targetPath = targetState.second.takeUnless { it == FOLDER_NAVIGATION_ROOT_KEY }
-            )
-            val slideIn = slideInHorizontally { width ->
-                if (direction == FOLDER_NAVIGATION_FORWARD) width else -width
-            } + fadeIn()
-            val slideOut = slideOutHorizontally { width ->
-                if (direction == FOLDER_NAVIGATION_FORWARD) -width else width
-            } + fadeOut()
+    var localFolderQuery by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    val folderQuery = query ?: localFolderQuery
+    val pathStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    var actionFolder by remember { mutableStateOf<MusicFolder?>(null) }
+    actionFolder?.let { folder ->
+        FolderActionsSheet(
+            folder = folder,
+            onOpen = { actionFolder = null; onFolderClick(folder.path) },
+            onActions = { actionFolder = null; onFolderAsPlaylistClick(folder) },
+            onDismiss = { actionFolder = null }
+        )
+    }
+    Column(Modifier.fillMaxSize()) {
+        FolderTabControls(flatList, onFlatListChange, showSourceSwitch, source, onSourceChange, folderQuery, { localFolderQuery = it; onQueryChange(it) }, volumeRoots, selectedVolumeRoot, internalVolumeRoot, onVolumeChange)
+        AnimatedContent(
+            targetState = Pair(isPlaylistView, currentFolder?.path ?: FOLDER_NAVIGATION_ROOT_KEY),
+            label = "FolderNavigation",
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = {
+                val direction = resolveFolderNavigationDirection(
+                    initialPath = initialState.second.takeUnless { it == FOLDER_NAVIGATION_ROOT_KEY },
+                    targetPath = targetState.second.takeUnless { it == FOLDER_NAVIGATION_ROOT_KEY }
+                )
+                val slideIn = slideInHorizontally { width ->
+                    if (direction == FOLDER_NAVIGATION_FORWARD) width else -width
+                } + fadeIn()
+                val slideOut = slideOutHorizontally { width ->
+                    if (direction == FOLDER_NAVIGATION_FORWARD) -width else width
+                } + fadeOut()
 
-            slideIn.togetherWith(slideOut)
-        }
-    ) { (playlistMode, targetPath) ->
-        val listState = rememberLazyListState()
-        val coroutineScope = rememberCoroutineScope()
-        val visibilityCallback by rememberUpdatedState(onLocateCurrentSongVisibilityChanged)
-        val registerActionCallback by rememberUpdatedState(onRegisterLocateCurrentSongAction)
-        var lastHandledFolderSortKey by remember { mutableStateOf(currentSortOption.storageKey) }
-        var pendingFolderSortScrollReset by remember { mutableStateOf(false) }
-
-        val flattenedFolders = remember(folders, currentSortOption) {
-            sortMusicFoldersByOption(flattenFolders(folders), currentSortOption)
-        }
-
-        val isRoot = targetPath == FOLDER_NAVIGATION_ROOT_KEY
-        val activeFolder = if (isRoot) null else currentFolder
-        val showPlaylistCards = playlistMode && activeFolder == null
-        val itemsToShow = remember(activeFolder, folders, flattenedFolders, currentSortOption) {
-            when {
-                showPlaylistCards -> flattenedFolders
-                activeFolder != null -> sortMusicFoldersByOption(activeFolder.subFolders, currentSortOption)
-                else -> sortMusicFoldersByOption(folders, currentSortOption)
+                slideIn.togetherWith(slideOut)
             }
-        }.toImmutableList()
+        ) { (playlistMode, targetPath) ->
+            pathStates.SaveableStateProvider("$playlistMode:$flatList:$targetPath") {
+                val listState = rememberLazyListState()
+                val coroutineScope = rememberCoroutineScope()
+                val visibilityCallback by rememberUpdatedState(onLocateCurrentSongVisibilityChanged)
+                val registerActionCallback by rememberUpdatedState(onRegisterLocateCurrentSongAction)
+                var lastHandledFolderSortKey by remember { mutableStateOf(currentSortOption.storageKey) }
+                var pendingFolderSortScrollReset by remember { mutableStateOf(false) }
 
-        val songsToShow = remember(activeFolder, currentSortOption) {
-            sortSongsForFolderView(activeFolder?.songs ?: emptyList(), currentSortOption)
-        }.toImmutableList()
-        val currentSong = stablePlayerState.currentSong
-        val currentSongId = currentSong?.id
-        val currentSongIndexInSongs = remember(songsToShow, currentSongId) {
-            currentSongId?.let { songId -> songsToShow.indexOfFirst { it.id == songId } } ?: -1
-        }
-        val currentSongListIndex = remember(itemsToShow.size, currentSongIndexInSongs) {
-            if (currentSongIndexInSongs < 0) -1 else itemsToShow.size + currentSongIndexInSongs
-        }
-        val songInCurrentFolder = currentSongIndexInSongs >= 0
-        val currentSongParentPath: String? = remember(currentSong?.path) {
-            currentSong?.path
-                ?.takeIf { it.startsWith("/") }
-                ?.let { File(it).parentFile?.absolutePath }
-        }
-        val canCrossFolderLocate = remember(
-            playlistMode,
-            songInCurrentFolder,
-            currentSongParentPath,
-            currentFolder?.path
-        ) {
-            !playlistMode &&
-                !songInCurrentFolder &&
-                currentSongParentPath != null &&
-                currentSongParentPath != currentFolder?.path
-        }
-        val locateCurrentSongAction: (() -> Unit)? = remember(
-            songInCurrentFolder,
-            canCrossFolderLocate,
-            currentSongListIndex,
-            listState,
-            currentSongParentPath
-        ) {
-            when {
-                songInCurrentFolder -> {
-                    {
-                        coroutineScope.launch {
-                            listState.animateScrollToItem(currentSongListIndex)
+                val flattenedFolders = remember(folders, currentSortOption, folderQuery) {
+                    sortMusicFoldersByOption(flattenFolders(folders).map { it.copy(name = File(it.path).name) }, currentSortOption)
+                        .filter { it.name.contains(folderQuery, true) || folderRelativePath(it).contains(folderQuery, true) }
+                }
+
+                val isRoot = targetPath == FOLDER_NAVIGATION_ROOT_KEY
+                // Both destinations stay composed during the transition. Each must keep its own folder data,
+                // or the outgoing parent measures the child's shorter list and saves a clamped scroll position.
+                val activeFolder = remember(folders, targetPath, currentFolder) {
+                    if (isRoot) null else folderBreadcrumb(folders, targetPath).lastOrNull()
+                        ?: currentFolder?.takeIf { it.path == targetPath }
+                }
+                val showPlaylistCards = playlistMode && !flatList && activeFolder == null
+                val itemsToShow = remember(activeFolder, folders, flattenedFolders, currentSortOption, flatList, folderQuery) {
+                    when {
+                        showPlaylistCards || (flatList && activeFolder == null) -> flattenedFolders
+                        flatList -> emptyList()
+                        activeFolder != null -> sortMusicFoldersByOption(activeFolder.subFolders, currentSortOption)
+                        else -> sortMusicFoldersByOption(folders, currentSortOption)
+                    }.filter { it.name.contains(folderQuery, true) || folderRelativePath(it).contains(folderQuery, true) }
+                }.toImmutableList()
+
+                val songsToShow = remember(activeFolder, currentSortOption, folderQuery) {
+                    sortSongsForFolderView(activeFolder?.songs ?: emptyList(), currentSortOption).filter {
+                        it.title.contains(folderQuery,true) || it.artist.contains(folderQuery,true) || it.album.contains(folderQuery,true) || it.path.contains(folderQuery,true)
+                    }
+                }.toImmutableList()
+                val currentSong = stablePlayerState.currentSong
+                val currentSongId = currentSong?.id
+                val currentSongIndexInSongs = remember(songsToShow, currentSongId) {
+                    currentSongId?.let { songId -> songsToShow.indexOfFirst { it.id == songId } } ?: -1
+                }
+                val currentSongListIndex = remember(itemsToShow.size, currentSongIndexInSongs) {
+                    if (currentSongIndexInSongs < 0) -1 else itemsToShow.size + currentSongIndexInSongs
+                }
+                val songInCurrentFolder = currentSongIndexInSongs >= 0
+                val currentSongParentPath: String? = remember(currentSong?.path) {
+                    currentSong?.path
+                        ?.takeIf { it.startsWith("/") }
+                        ?.let { File(it).parentFile?.absolutePath }
+                }
+                val canCrossFolderLocate = remember(
+                    playlistMode,
+                    songInCurrentFolder,
+                    currentSongParentPath,
+                    currentFolder?.path
+                ) {
+                    !playlistMode &&
+                        !songInCurrentFolder &&
+                        currentSongParentPath != null &&
+                        currentSongParentPath != currentFolder?.path
+                }
+                val locateCurrentSongAction: (() -> Unit)? = remember(
+                    songInCurrentFolder,
+                    canCrossFolderLocate,
+                    currentSongListIndex,
+                    listState,
+                    currentSongParentPath
+                ) {
+                    when {
+                        songInCurrentFolder -> {
+                            {
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem(currentSongListIndex)
+                                }
+                            }
+                        }
+                        canCrossFolderLocate && currentSongParentPath != null -> {
+                            { onRequestCrossFolderLocate(currentSongParentPath) }
+                        }
+                        else -> null
+                    }
+                }
+
+                LaunchedEffect(locateCurrentSongAction) {
+                    registerActionCallback(locateCurrentSongAction)
+                }
+
+                LaunchedEffect(currentSortOption) {
+                    val currentSortKey = currentSortOption.storageKey
+                    if (currentSortKey == lastHandledFolderSortKey) return@LaunchedEffect
+                    lastHandledFolderSortKey = currentSortKey
+                    pendingFolderSortScrollReset = true
+                    listState.scrollToItem(0)
+                }
+
+                LaunchedEffect(itemsToShow, songsToShow, pendingFolderSortScrollReset) {
+                    if (!pendingFolderSortScrollReset) return@LaunchedEffect
+                    listState.scrollToItem(0)
+                    pendingFolderSortScrollReset = false
+                }
+
+                LaunchedEffect(
+                    currentFolder?.path,
+                    pendingLocatePath,
+                    currentSongListIndex,
+                    songsToShow
+                ) {
+                    val pending = pendingLocatePath ?: return@LaunchedEffect
+                    if (currentFolder?.path != pending) return@LaunchedEffect
+                    if (currentSongListIndex < 0) return@LaunchedEffect
+                    listState.animateScrollToItem(currentSongListIndex)
+                    onClearPendingLocate()
+                }
+
+                LaunchedEffect(currentSongListIndex, itemsToShow, songsToShow, listState, canCrossFolderLocate) {
+                    if (canCrossFolderLocate) {
+                        visibilityCallback(true)
+                        return@LaunchedEffect
+                    }
+                    if (currentSongListIndex < 0 || songsToShow.isEmpty()) {
+                        visibilityCallback(false)
+                        return@LaunchedEffect
+                    }
+
+                    snapshotFlow {
+                        val visibleItems = listState.layoutInfo.visibleItemsInfo
+                        if (visibleItems.isEmpty()) {
+                            false
+                        } else {
+                            currentSongListIndex in visibleItems.first().index..visibleItems.last().index
                         }
                     }
+                        .distinctUntilChanged()
+                        .collect { isVisible ->
+                            visibilityCallback(!isVisible)
+                        }
                 }
-                canCrossFolderLocate && currentSongParentPath != null -> {
-                    { onRequestCrossFolderLocate(currentSongParentPath) }
-                }
-                else -> null
-            }
-        }
 
-        LaunchedEffect(locateCurrentSongAction) {
-            registerActionCallback(locateCurrentSongAction)
-        }
-
-        LaunchedEffect(currentSortOption) {
-            val currentSortKey = currentSortOption.storageKey
-            if (currentSortKey == lastHandledFolderSortKey) return@LaunchedEffect
-            lastHandledFolderSortKey = currentSortKey
-            pendingFolderSortScrollReset = true
-            listState.scrollToItem(0)
-        }
-
-        LaunchedEffect(itemsToShow, songsToShow, pendingFolderSortScrollReset) {
-            if (!pendingFolderSortScrollReset) return@LaunchedEffect
-            listState.scrollToItem(0)
-            pendingFolderSortScrollReset = false
-        }
-
-        LaunchedEffect(
-            currentFolder?.path,
-            pendingLocatePath,
-            currentSongListIndex,
-            songsToShow
-        ) {
-            val pending = pendingLocatePath ?: return@LaunchedEffect
-            if (currentFolder?.path != pending) return@LaunchedEffect
-            if (currentSongListIndex < 0) return@LaunchedEffect
-            listState.animateScrollToItem(currentSongListIndex)
-            onClearPendingLocate()
-        }
-
-        LaunchedEffect(currentSongListIndex, itemsToShow, songsToShow, listState, canCrossFolderLocate) {
-            if (canCrossFolderLocate) {
-                visibilityCallback(true)
-                return@LaunchedEffect
-            }
-            if (currentSongListIndex < 0 || songsToShow.isEmpty()) {
-                visibilityCallback(false)
-                return@LaunchedEffect
-            }
-
-            snapshotFlow {
-                val visibleItems = listState.layoutInfo.visibleItemsInfo
-                if (visibleItems.isEmpty()) {
-                    false
-                } else {
-                    currentSongListIndex in visibleItems.first().index..visibleItems.last().index
-                }
-            }
-                .distinctUntilChanged()
-                .collect { isVisible ->
-                    visibilityCallback(!isVisible)
-                }
-        }
-
-        DisposableEffect(Unit) {
-            onDispose {
-                visibilityCallback(false)
-                registerActionCallback(null)
-            }
-        }
-
-        val shouldShowLoading = isLoading && itemsToShow.isEmpty() && songsToShow.isEmpty() && isRoot
-
-        Column(modifier = Modifier.fillMaxSize()) {
-            when {
-                shouldShowLoading -> {
-                    // Static skeletons in bg/2; no spinner, no container.
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        DapSkeletonList(count = 5, showArt = true)
+                DisposableEffect(Unit) {
+                    onDispose {
+                        visibilityCallback(false)
+                        registerActionCallback(null)
                     }
                 }
 
-                itemsToShow.isEmpty() && songsToShow.isEmpty() -> {
-                    LibraryExpressiveEmptyState(
-                        tabId = LibraryTabId.FOLDERS,
-                        storageFilter = StorageFilter.ALL,
-                        bottomBarHeight = bottomBarHeight
-                    )
-                }
+                val shouldShowLoading = isLoading && itemsToShow.isEmpty() && songsToShow.isEmpty() && isRoot
 
-                else -> {
-                    val foldersPullToRefreshState = rememberPullToRefreshState()
-                    PullToRefreshBox(
-                        isRefreshing = isRefreshing,
-                        onRefresh = onRefresh,
-                        state = foldersPullToRefreshState,
-                        modifier = Modifier.fillMaxSize(),
-                        indicator = {
-                            PullToRefreshDefaults.LoadingIndicator(
-                                state = foldersPullToRefreshState,
-                                isRefreshing = isRefreshing,
-                                modifier = Modifier.align(Alignment.TopCenter)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    when {
+                        shouldShowLoading -> {
+                            // Static skeletons in bg/2; no spinner, no container.
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                DapSkeletonList(count = 5, showArt = true)
+                            }
+                        }
+
+                        itemsToShow.isEmpty() && songsToShow.isEmpty() -> {
+                            LibraryExpressiveEmptyState(
+                                tabId = LibraryTabId.FOLDERS,
+                                storageFilter = StorageFilter.ALL,
+                                bottomBarHeight = bottomBarHeight
                             )
                         }
-                    ) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .symmetricSidePadding(horizontal = 12.dp)
-                                    .fillMaxSize()
-                                    .clip(
-                                        RoundedCornerShape(
-                                            topStart = 26.dp,
-                                            topEnd = 26.dp,
-                                            bottomStart = PlayerSheetCollapsedCornerRadius,
-                                            bottomEnd = PlayerSheetCollapsedCornerRadius
-                                        )
-                                    ),
-                                state = listState,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                contentPadding = PaddingValues(
-                                    bottom = bottomBarHeight + LocalDapPlayerShelfHeight.current + extraBottomGap,
-                                    top = 0.dp                            )
-                            ) {
-                                if (showPlaylistCards) {
-                                    items(itemsToShow, key = { it.path }, contentType = { "folder_card" }) { folder ->
-                                        FolderPlaylistItem(
-                                            folder = folder,
-                                            onClick = { onFolderAsPlaylistClick(folder) }
-                                        )
-                                    }
-                                } else {
-                                    items(itemsToShow, key = { it.path }, contentType = { "folder_list" }) { folder ->
-                                        FolderListItem(
-                                            folder = folder,
-                                            onClick = { onFolderClick(folder.path) }
-                                        )
-                                    }
-                                }
 
-                                items(songsToShow, key = { it.id }, contentType = { "song" }) { song ->
-                                    EnhancedSongListItem(
-                                        song = song,
-                                        isPlaying = stablePlayerState.currentSong?.id == song.id && stablePlayerState.isPlaying,
-                                        isCurrentSong = stablePlayerState.currentSong?.id == song.id,
-                                        onMoreOptionsClick = { onMoreOptionsClick(song) },
-                                        isSelected = selectedSongIds.contains(song.id),
-                                        selectionIndex = if (isSelectionMode) getSelectionIndex(song.id) else null,
-                                        isSelectionMode = isSelectionMode,
-                                        onLongPress = { onSongLongPress(song) },
-                                        onClick = {
-                                            if (isSelectionMode) {
-                                                onSongSelectionToggle(song)
-                                            } else {
-                                                onPlaySong(song, songsToShow)
+                        else -> {
+                            val foldersPullToRefreshState = rememberPullToRefreshState()
+                            PullToRefreshBox(
+                                isRefreshing = isRefreshing,
+                                onRefresh = onRefresh,
+                                state = foldersPullToRefreshState,
+                                modifier = Modifier.fillMaxSize(),
+                                indicator = {
+                                    PullToRefreshDefaults.LoadingIndicator(
+                                        state = foldersPullToRefreshState,
+                                        isRefreshing = isRefreshing,
+                                        modifier = Modifier.align(Alignment.TopCenter)
+                                    )
+                                }
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    LazyColumn(
+                                        modifier = Modifier
+                                            .symmetricSidePadding(horizontal = 12.dp)
+                                            .fillMaxSize()
+                                            .clip(
+                                                RoundedCornerShape(
+                                                    topStart = 26.dp,
+                                                    topEnd = 26.dp,
+                                                    bottomStart = PlayerSheetCollapsedCornerRadius,
+                                                    bottomEnd = PlayerSheetCollapsedCornerRadius
+                                                )
+                                            ),
+                                        state = listState,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        contentPadding = PaddingValues(
+                                            bottom = bottomBarHeight + LocalDapPlayerShelfHeight.current + extraBottomGap,
+                                            top = 0.dp                            )
+                                    ) {
+                                        if (showPlaylistCards) {
+                                            items(itemsToShow, key = { it.path }, contentType = { "folder_card" }) { folder ->
+                                                FolderPlaylistItem(
+                                                    folder = folder,
+                                                    onClick = { onFolderAsPlaylistClick(folder) }
+                                                )
+                                            }
+                                        } else {
+                                            items(itemsToShow, key = { it.path }, contentType = { "folder_list" }) { folder ->
+                                                FolderListItem(
+                                                    folder = folder,
+                                                    onClick = { onFolderClick(folder.path) },
+                                                    onLongClick = { actionFolder = folder },
+                                                    showPath = flatList
+                                                )
                                             }
                                         }
+
+                                        items(songsToShow, key = { it.id }, contentType = { "song" }) { song ->
+                                            EnhancedSongListItem(
+                                                song = song,
+                                                isPlaying = stablePlayerState.currentSong?.id == song.id && stablePlayerState.isPlaying,
+                                                isCurrentSong = stablePlayerState.currentSong?.id == song.id,
+                                                onMoreOptionsClick = { onMoreOptionsClick(song) },
+                                                isSelected = selectedSongIds.contains(song.id),
+                                                selectionIndex = if (isSelectionMode) getSelectionIndex(song.id) else null,
+                                                isSelectionMode = isSelectionMode,
+                                                onLongPress = { onSongLongPress(song) },
+                                                onClick = {
+                                                    if (isSelectionMode) {
+                                                        onSongSelectionToggle(song)
+                                                    } else {
+                                                        onPlaySong(song, songsToShow)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    val bottomPadding = if (stablePlayerState.currentSong != null && stablePlayerState.currentSong != Song.emptySong())
+                                        bottomBarHeight + LocalDapPlayerShelfHeight.current + 16.dp
+                                    else
+                                        bottomBarHeight + 16.dp
+
+                                    ExpressiveScrollBar(
+                                        contentEndMargin = 12.dp,
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .padding(end = 4.dp, top = 16.dp, bottom = bottomPadding),
+                                        listState = listState
                                     )
                                 }
                             }
-
-                            val bottomPadding = if (stablePlayerState.currentSong != null && stablePlayerState.currentSong != Song.emptySong())
-                                bottomBarHeight + LocalDapPlayerShelfHeight.current + 16.dp
-                            else
-                                bottomBarHeight + 16.dp
-
-                            ExpressiveScrollBar(
-                                contentEndMargin = 12.dp,
-                                modifier = Modifier
-                                    .align(Alignment.CenterEnd)
-                                    .padding(end = 4.dp, top = 16.dp, bottom = bottomPadding),
-                                listState = listState
-                            )
                         }
                     }
+
                 }
             }
-
         }
     }
 }
@@ -2623,12 +2639,14 @@ fun FolderPlaylistItem(folder: MusicFolder, onClick: () -> Unit) {
 }
 
 @Composable
-fun FolderListItem(folder: MusicFolder, onClick: () -> Unit) {
+fun FolderListItem(folder: MusicFolder, onClick: () -> Unit, onLongClick: () -> Unit = {}, showPath: Boolean = false) {
     Column(Modifier.fillMaxWidth()) {
         DapAlbumRow(
             title = folder.name,
-            subtitle = formatSongCountLabel(folder.totalSongCount),
+            subtitle = if (showPath) folderRelativePath(folder) else formatSongCountLabel(folder.totalSongCount),
+            trailing = if (showPath) ({ Text(formatSongCountLabel(folder.songs.size), style = DapType.Note, color = Dap.secondaryText) }) else null,
             onClick = onClick,
+            onLongClick = onLongClick,
             artwork = {
                 DapArtworkPlaceholder(modifier = Modifier.fillMaxSize())
             }
@@ -2637,15 +2655,17 @@ fun FolderListItem(folder: MusicFolder, onClick: () -> Unit) {
     }
 }
 
-private fun flattenFolders(folders: List<MusicFolder>): List<MusicFolder> {
+internal fun flattenFolders(folders: List<MusicFolder>): List<MusicFolder> {
     return folders.flatMap { folder ->
         val current = if (folder.songs.isNotEmpty()) listOf(folder) else emptyList()
         current + flattenFolders(folder.subFolders)
     }
 }
 
-private fun sortMusicFoldersByOption(folders: List<MusicFolder>, sortOption: SortOption): List<MusicFolder> {
+internal fun sortMusicFoldersByOption(folders: List<MusicFolder>, sortOption: SortOption): List<MusicFolder> {
     return when (sortOption) {
+        SortOption.FolderPathAZ -> folders.sortedBy { folderRelativePath(it).lowercase(java.util.Locale.ROOT) }
+        SortOption.FolderPathZA -> folders.sortedByDescending { folderRelativePath(it).lowercase(java.util.Locale.ROOT) }
         SortOption.FolderNameAZ -> folders.sortedWith(
             compareBy<MusicFolder> { it.name.lowercase() }
                 .thenBy { it.path }
@@ -2711,7 +2731,9 @@ fun AlbumGridItemRedesigned(
     isSelected: Boolean = false,
     selectionIndex: Int? = null,
     onLongPress: () -> Unit = {},
-    onSelectionToggle: () -> Unit = {}
+    onSelectionToggle: () -> Unit = {},
+    /** B57 4.3: the album's total length from the songs in the database; 0 = unknown, and the data line leaves it out. */
+    durationMs: Long = 0L,
 ) {
     // `albumColorSchemePairFlow` stays in the signature for its callers, but the grid cell paints
     // no artwork-derived tint: in this system the artwork is the only colour a cell carries.
@@ -2737,10 +2759,9 @@ fun AlbumGridItemRedesigned(
                 // The artist is dropped rather than replaced when the album names none: the line
                 // still has the track count to carry, and "Unknown album artist · 3 songs" would
                 // spend the row's one glance on a fact that isn't one.
-                subtitle = listOfNotNull(
-                    albumArtistLabel(album),
-                    formatSongCountLabel(album.songCount),
-                ).joinToString(" · "),
+                // B57 4.3: three lines, the album name big, the artist a little smaller, and the data ("year · N songs · duration") smallest and dimmest
+                subtitle = albumArtistLabel(album),
+                detail = com.lostf1sh.pixelplayeross.utils.albumInfoLine(album.year, album.songCount, durationMs),
                 artwork = { AlbumArtwork(album.albumArtUriString, albumTitleLabel(album)) },
                 onClick = {
                     if (isSelectionMode) {
@@ -2843,7 +2864,7 @@ fun AlbumListItem(
                     albumArtistLabel(album),
                     formatSongCountLabel(album.songCount),
                 ).joinToString(" · "),
-                artwork = { AlbumArtwork(album.albumArtUriString, albumTitleLabel(album)) },
+                artwork = { AlbumArtwork(album.albumArtUriString, albumTitleLabel(album), com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(DapSizes.ThumbRow)) },
                 trailing = if (isSelectionMode && isSelected) {
                     {
                         Text(
@@ -2872,7 +2893,7 @@ fun AlbumListItem(
 
 /** Square album art at whatever size the row gave it, with a static placeholder behind it. */
 @Composable
-private fun AlbumArtwork(uriString: String?, title: String) {
+private fun AlbumArtwork(uriString: String?, title: String, request: Size = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forColumns(2, 32.dp, 14.dp)) {
     if (uriString.isNullOrEmpty()) {
         DapArtworkPlaceholder(modifier = Modifier.fillMaxSize())
         return
@@ -2882,7 +2903,8 @@ private fun AlbumArtwork(uriString: String?, title: String) {
         model = uriString,
         contentDescription = stringResource(R.string.cd_album_art_for_title, title),
         contentScale = ContentScale.Crop,
-        targetSize = Size(256, 256),
+        // B57 4.2: the real size of the cell, in pixels (dp x density, capped), not a fixed 256
+        targetSize = request,
         modifier = Modifier.fillMaxSize(),
         onState = { state ->
             isLoadingImage = state is AsyncImagePainter.State.Loading
@@ -2915,22 +2937,11 @@ private fun SkeletonBar(fraction: Float, height: Dp) {
  * `iconRotation` is kept for callers that still animate one.
  */
 /**
- * One row in the Library overflow. Plain words on bg/2, 48 dp tall, no icons and no fills.
+ * One row in the Library overflow: a `DapMenuItem` (B56).
  */
 @Composable
 private fun LibraryMenuItem(label: String, onClick: () -> Unit) {
-    DropdownMenuItem(
-        text = {
-            Text(
-                text = label,
-                style = DapType.CaptionMedium,
-                color = Dap.primaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        onClick = onClick
-    )
+    DapMenuItem(text = label, onClick = onClick)
 }
 
 /**
@@ -3026,6 +3037,7 @@ private fun DapLibraryActionRow(
     currentFolder: MusicFolder? = null,
     folderRootPath: String = "",
     folderRootLabel: String = "",
+    folderTree: List<MusicFolder> = emptyList(),
     onFolderClick: (String) -> Unit = {},
     onNavigateBack: () -> Unit = {},
     showStorageFilterButton: Boolean = false,
@@ -3041,13 +3053,19 @@ private fun DapLibraryActionRow(
         verticalArrangement = Arrangement.spacedBy(DapSpacing.Xs)
     ) {
         if (isFoldersTab) {
-            DapFolderBreadcrumbs(
-                currentFolder = currentFolder,
-                rootPath = folderRootPath,
-                rootLabel = folderRootLabel,
-                onFolderClick = onFolderClick,
-                onNavigateBack = onNavigateBack
-            )
+            Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    DapFolderBreadcrumbs(
+                        currentFolder = currentFolder,
+                        rootPath = folderRootPath,
+                        rootLabel = folderRootLabel,
+                        tree = folderTree,
+                        onFolderClick = onFolderClick,
+                        onNavigateBack = onNavigateBack
+                    )
+                }
+                if (showSortButton) DapLibrarySortAction(option = currentSortOption, onClick = onSortClick)
+            }
         } else {
             // One quiet line of content controls. Shuffle is a word here, not a filled button:
             // the list below it is the subject of the screen, not this row.
@@ -3116,28 +3134,13 @@ private fun DapFolderBreadcrumbs(
     currentFolder: MusicFolder?,
     rootPath: String,
     rootLabel: String,
+    tree: List<MusicFolder> = emptyList(),
     onFolderClick: (String) -> Unit,
     onNavigateBack: () -> Unit
 ) {
     val rowState = rememberLazyListState()
-    val pathSegments = remember(currentFolder?.path, rootPath, rootLabel) {
-        val path = currentFolder?.path ?: rootPath
-        val normalizedRoot = rootPath.removeSuffix("/")
-        val normalizedPath = path.removeSuffix("/")
-        val relativePath = normalizedPath
-            .removePrefix(normalizedRoot)
-            .removePrefix("/")
-
-        if (!normalizedPath.startsWith(normalizedRoot) || relativePath.isEmpty() || normalizedPath == normalizedRoot) {
-            listOf(rootLabel to rootPath)
-        } else {
-            listOf(rootLabel to rootPath) + relativePath.split("/").scan("") { acc, segment ->
-                "$acc/$segment"
-            }.drop(1).map {
-                val file = File(rootPath, it)
-                file.name to file.path
-            }
-        }
+    val pathSegments = remember(currentFolder?.path, rootPath, rootLabel, tree) {
+        listOf(rootLabel to rootPath) + folderBreadcrumb(tree, currentFolder?.path).map { it.name to it.path }
     }
 
     LaunchedEffect(pathSegments.size) {

@@ -68,6 +68,8 @@ class AutoCollection(
     /** For the high-resolution collection: when the audio facts it learns from begin (ms), and how many of its tracks come from the library's own metadata. */
     val sinceMs: Long? = null,
     val fromLibrary: Int = 0,
+    /** Diagnostic attribution of the final mix, after exclusions and fill. */
+    val sourceCounts: Map<AutoCollectionId, Int> = emptyMap(),
 ) {
     val isEmpty: Boolean get() = items.isEmpty()
 }

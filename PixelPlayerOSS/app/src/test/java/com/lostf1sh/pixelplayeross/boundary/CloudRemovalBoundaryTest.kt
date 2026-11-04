@@ -201,7 +201,11 @@ class CloudRemovalBoundaryTest {
         // that persists a match the user accepted - and persisting a result into the local
         // database is not the same as running a lookup. The trigger is the ViewModel behind
         // Track Details, and the assertion below is that nothing else is one.
-        val offenders = STARTUP_AND_INDEXING.filter { "musicbrainz" in Project.text(it).lowercase() }
+        // B52 reads existing MusicBrainz tags locally. These two symbols carry data; clients and lookups remain forbidden.
+        val offenders = STARTUP_AND_INDEXING.filter { path ->
+            val code = Project.text(path).replace(Regex("\\b(readMusicBrainzIds|musicBrainzIds|MusicBrainzIds)\\b"), "localTags")
+            "musicbrainz" in code.lowercase()
+        }
 
         assertThat(offenders).isEmpty()
     }

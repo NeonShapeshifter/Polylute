@@ -18,7 +18,6 @@
     <string name="action_reset">Restablecer</string>
     <string name="action_share">Compartir</string>
     <string name="album_cover_for">Portada de %1$s</string>
-    <string name="album_detail_meta_line">%1$s · %2$s</string>
     <string name="audio_bookmarks_cd_open">Marcadores de audio</string>
     <string name="audio_bookmarks_back_to_top">Volver arriba</string>
     <string name="audio_bookmarks_clear_filter">Borrar filtro</string>
@@ -62,8 +61,8 @@
     <string name="error_share_song_format">No se pudo compartir la canción: %1$s</string>
     <string name="genre_quick_fill">Rellenar género rápido</string>
     <string name="home_empty_placeholder_refresh">Actualizar</string>
-    <string name="home_empty_placeholder_title">Aun no hay datos para mostrar</string>
-    <string name="home_daily_mix_title">Mix diario</string>
+    <string name="home_empty_placeholder_title">Aún no hay canciones</string>
+    <string name="home_daily_mix_title">@string/collection_name_daily_mix</string>
     <string name="nav_error_genre_id_missing">Error: falta el ID del género</string>
     <string name="no_genres_available">No hay géneros disponibles.</string>
     <string name="path_delimiters_toolbar_title">Delimitadores</string>
@@ -93,13 +92,13 @@
     <string name="word_delimiter_toast_reset">Delimitadores de palabra restablecidos</string>
     <string name="word_delimiters_screen_title">Delimitadores de palabra</string>
     <string name="crash_report_share_subject">Informe de fallo de Polylute</string>
-    <string name="home_empty_placeholder_subtitle">Tu mezcla aparecerá aquí cuando Polylute encuentre canciones o sincronice una fuente.</string>
+    <string name="home_empty_placeholder_subtitle">Actualiza tu biblioteca para encontrar tu música.</string>
     <string name="about_licenses_title">Licencias y avisos de código abierto</string>
     <string name="about_licenses_subtitle">La licencia de Polylute, componentes de terceros y fuentes incluidas</string>
     <string name="about_licenses_gpl">Licencia de Polylute (GNU GPL v3)</string>
     <string name="about_licenses_third_party">Componentes de terceros</string>
     <string name="about_licenses_fonts">Fuentes incluidas</string>
     <string name="about_licenses_unavailable">No se han podido leer los archivos de licencias en esta compilación.</string>
-    <string name="home_your_mix_queue_name">Tu mix</string>
-    <string name="home_your_mix_heading">Tu mix de hoy</string>
+    <string name="home_your_mix_queue_name">@string/home_your_mix_heading</string>
+    <string name="home_your_mix_heading">Sugerencias</string>
 </resources>

@@ -61,7 +61,8 @@ import kotlin.math.min
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], application = android.app.Application::class, qualifiers = "w360dp-h805dp-xhdpi")
+// B56-7.1: these measure the classic glass (before Android 13): from 13 a moving background is live AGSL blobs, which Robolectric cannot draw (Still renders as the classic layers: B56StillGlassRenderTest)
+@Config(sdk = [32], application = android.app.Application::class, qualifiers = "w360dp-h805dp-xhdpi")
 class B42Fix3SurfacesTest {
     @get:Rule
     val compose = createComposeRule()
@@ -163,10 +164,11 @@ class B42Fix3SurfacesTest {
         when (page) {
             Page.HOME -> {
                 add("the strip under the status bar", B42Fix3Pages.TAG_STRIP, margin = 0f, fromTop = 6f)
-                // every tile: the clickable rows of the section, where nothing but the pill's own surface is in the top of them
+                // B55 tiles are taller and the full-width heading is now clickable.
+                // Sample each tile's empty top strip, excluding the now-clickable full-width heading.
                 val tiles = compose.onAllNodes(hasClickAction() and hasAnyAncestor(hasTestTag(B42Fix3Pages.TAG_TILES))).fetchSemanticsNodes()
                 val d = density()
-                tiles.filter { it.boundsInRoot.width > 100f * d && it.boundsInRoot.height < 80f * d }.forEachIndexed { i, node ->
+                tiles.filter { it.boundsInRoot.width in (100f * d)..(200f * d) && it.boundsInRoot.height in (80f * d)..(110f * d) }.forEachIndexed { i, node ->
                     val r = node.boundsInRoot
                     out += Surface("tile $i", r, topStrip(r, 6f, 3f))
                 }
@@ -225,7 +227,10 @@ class B42Fix3SurfacesTest {
             // The mini player deliberately occupies a flat, opaque shelf after the HONOR review.
             val mini = rectOf(B42Fix3Pages.TAG_MINI)
             val miniFraction = mini.width * mini.height / (screen.width * screen.height)
-            assertThat(flat).isAtMost(miniFraction + 0.002f)
+            // B57 3.1: Home's Recently played is a carousel of covers now, and this fixture's songs have no artwork, so each card's cover area is an empty placeholder (a flat
+            // square). The carousel's own region is allowed for on Home; everything else is still held to "no slab".
+            val carouselFraction = if (page == Page.HOME) rectOf("recent-carousel").let { it.width * it.height / (screen.width * screen.height) } else 0f
+            assertThat(flat).isAtMost(miniFraction + carouselFraction + 0.002f)
             val miniFill = median(screen, topStrip(mini, 100f, 4f))
             val mean = Fix3Stage(cover, mode).field!!.mean
             val expectedMini = androidx.compose.ui.graphics.lerp(mean, graphite.background, GlassScrim.SHEET_ALPHA)

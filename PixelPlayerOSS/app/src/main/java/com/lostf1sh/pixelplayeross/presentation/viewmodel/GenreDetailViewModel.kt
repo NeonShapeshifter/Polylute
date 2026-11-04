@@ -41,6 +41,8 @@ class GenreDetailViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val dispatchers: DispatcherProvider,
     private val genreImages: com.lostf1sh.pixelplayeross.data.repository.GenreImageRepository,
+    /** B56-5: plays, for the tie-break of the top artists. */
+    private val ledgers: com.lostf1sh.pixelplayeross.data.stats.LedgerProvider,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GenreDetailUiState())
@@ -51,12 +53,7 @@ class GenreDetailViewModel @Inject constructor(
     init {
         savedStateHandle.get<String>("genreId")?.let { genreId ->
             val decodedGenreId = java.net.URLDecoder.decode(genreId, "UTF-8")
-            viewModelScope.launch {
-                genreImages.observe(decodedGenreId).collect { path ->
-                    customImagePath = path
-                    _uiState.update { it.copy(genre = it.genre?.copy(imagePath = path)) }
-                }
-            }
+            observeImage(decodedGenreId)
             loadGenreDetails(decodedGenreId)
         } ?: run {
             _uiState.update { it.copy(error = "Genre ID not found", isLoadingGenreName = false, isLoadingSongs = false) }
@@ -75,6 +72,19 @@ class GenreDetailViewModel @Inject constructor(
         }
     }
 
+    private var imageJob: kotlinx.coroutines.Job? = null
+
+    /** The genre's chosen image, followed under [key]: the route's id first, the merged genre's own id once it is known (B56-5). */
+    private fun observeImage(key: String) {
+        imageJob?.cancel()
+        imageJob = viewModelScope.launch {
+            genreImages.observe(key).collect { path ->
+                customImagePath = path
+                _uiState.update { it.copy(genre = it.genre?.copy(imagePath = path)) }
+            }
+        }
+    }
+
     fun setCustomImage(source: android.net.Uri) = changeImage { key ->
         check(genreImages.setImage(key, source) != null) { "Could not copy genre image" }
     }
@@ -89,7 +99,7 @@ class GenreDetailViewModel @Inject constructor(
         val id = savedStateHandle.get<String>("genreId") ?: return
         viewModelScope.launch {
             try {
-                action(java.net.URLDecoder.decode(id, "UTF-8"))
+                action(_uiState.value.genre?.id ?: java.net.URLDecoder.decode(id, "UTF-8"))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -97,6 +107,21 @@ class GenreDetailViewModel @Inject constructor(
                 _uiState.update { it.copy(imageError = true) }
             }
         }
+    }
+
+    /** A genre by its id, its name or any spelling of it: "hip-hop" from a Stats row opens the merged Hip Hop (B56-5). */
+    private fun findGenre(genres: List<Genre>, idOrName: String): Genre? =
+        genres.find { it.id.equals(idOrName, ignoreCase = true) }
+            ?: genres.find { com.lostf1sh.pixelplayeross.data.model.GenreNames.key(it.name) == com.lostf1sh.pixelplayeross.data.model.GenreNames.key(idOrName) }
+
+    /** Plays of each song as the listening ledger counts them, by locator (the song's id); nothing when the ledger cannot be read. */
+    private suspend fun playsBySong(): Map<String, Int> = try {
+        val ledger = ledgers.ledger()
+        ledger.catalog.items.mapNotNull { item -> ledger.stats(item.identity)?.plays?.takeIf { it > 0 }?.let { item.locator to it } }.toMap()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failed: Exception) {
+        emptyMap()
     }
 
     private data class ProcessingResult(
@@ -113,16 +138,17 @@ class GenreDetailViewModel @Inject constructor(
             try {
                 val initialGenre = withContext(dispatchers.default) {
                     val genres = musicRepository.getGenres().first()
-                    genres.find { it.id.equals(genreId, ignoreCase = true) }
+                    findGenre(genres, genreId)
                 }
 
                 if (initialGenre != null) {
+                    if (!initialGenre.id.equals(genreId, ignoreCase = true)) observeImage(initialGenre.id)
                     _uiState.update { it.copy(genre = initialGenre.copy(imagePath = customImagePath), isLoadingGenreName = false) }
                 }
 
                 val result = withContext(dispatchers.default) {
                     val genres = musicRepository.getGenres().first()
-                    val genre = initialGenre ?: genres.find { it.id.equals(genreId, ignoreCase = true) }
+                    val genre = initialGenre ?: findGenre(genres, genreId)
                         ?: Genre(
                             id = genreId,
                             name = genreId.replace("_", " ").replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
@@ -135,7 +161,7 @@ class GenreDetailViewModel @Inject constructor(
                         genre = genre,
                         songs = SourceOrder.genrePage(songs),
                         albums = GenreBrowse.albums(songs),
-                        artists = GenreBrowse.artists(songs),
+                        artists = GenreBrowse.artists(songs, playsBySong()),
                     )
                 }
 

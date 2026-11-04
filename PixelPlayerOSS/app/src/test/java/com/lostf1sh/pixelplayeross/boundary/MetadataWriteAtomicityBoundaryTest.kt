@@ -38,14 +38,17 @@ class MetadataWriteAtomicityBoundaryTest {
     fun `every file write goes through the copy-and-replace path`() {
         val edit = body("suspend fun editSongMetadata(")
         assertThat(edit).doesNotContain("runPipeline(finalFilePath)")
-        assertThat(edit).contains("writeMetadataViaExtensionSwap(finalFilePath, effectiveExtension, runPipeline)")
+        // B57-fix1 changes this on purpose: each writer is tried in turn, each on its own fresh copy of the original, and a copy that does not carry the original's audio replaces nothing
+        assertThat(edit).contains("writeMetadataViaExtensionSwap(finalFilePath, effectiveExtension, writerFor(writer))")
+        assertThat(editor).contains("AudioPayloadGuard.sameAudio(originalFile, tempFile, correctExtension)")
     }
 
     @Test
-    fun `a high-resolution FLAC declined by TagLib is not reported as written`() {
+    fun `a writer that wrote nothing is never reported as having written`() {
+        // B57-fix1 5.3 changes this on purpose: TagLib no longer declines high-resolution FLAC (the host probe shows it writes it safely, and the audio guard is the net under it), so there is no
+        // declined file left to report. What the test keeps from AUD-034: nothing is reported written before anything was written.
         val tagLib = body("private fun updateFileMetadataWithTagLib(")
-        val skip = tagLib.substringAfter("is FlacAnalysisResult.Problematic ->").substringBefore("else ->")
-        assertThat(skip).doesNotContain("return true")
-        assertThat(skip).contains("return false")
+        assertThat(tagLib).doesNotContain("FlacAnalysisResult")
+        assertThat(tagLib.substringBefore("TagLib.savePropertyMap")).doesNotContain("return true")
     }
 }

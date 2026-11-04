@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.settings
 
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.test.assertCountEquals
@@ -57,7 +58,7 @@ class B42Fix3AppearanceThemeRowTest {
         override fun onThemeChoiceChange(choice: com.lostf1sh.pixelplayeross.ui.theme.DapAppearanceChoice) {}
         override fun onOpenPaletteStyle() {}
         override fun onCoverGlassMovingChange(value: Boolean) {}
-        override fun onLyricsUnderCoverChange(value: Boolean) {}
+        override fun onLyricsModeChange(value: LyricsMode) {}
         override fun onImmersiveLyricsEnabledChange(value: Boolean) {}
         override fun onImmersiveLyricsTimeoutChange(value: Long) {}
         override fun onLyricsAlignmentChange(value: String) {}
@@ -133,15 +134,15 @@ class B42Fix3AppearanceThemeRowTest {
     }
 
     @Test
-    fun the_moving_background_switch_is_for_cover_glass_only() {
+    fun the_background_motion_row_is_for_cover_glass_only() {
         show(AppColorSource.COVER_GLASS)
-        assertEquals(1, count(s(R.string.setcat_moving_background_title)))
+        assertEquals(1, count(s(R.string.setcat_background_motion_title)))
     }
 
     @Test
-    fun the_moving_background_switch_is_not_offered_for_from_album_art_which_does_not_move() {
+    fun the_background_motion_row_is_not_offered_for_from_album_art_which_does_not_move() {
         show(AppColorSource.ALBUM_ART)
-        assertEquals(0, count(s(R.string.setcat_moving_background_title)))
+        assertEquals(0, count(s(R.string.setcat_background_motion_title)))
     }
 
     // ── three languages ─────────────────────────────────────────────────────────────────────────────

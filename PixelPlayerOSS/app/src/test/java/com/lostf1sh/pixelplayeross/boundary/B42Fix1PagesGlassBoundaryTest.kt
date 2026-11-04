@@ -98,7 +98,18 @@ class B42Fix1PagesGlassBoundaryTest {
     @Test
     fun `no kind of window opens over the player that this audit did not see`() {
         assertThat(callsOf("BasicAlertDialog")).isEqualTo(mapOf("presentation/components/PlaylistContainer.kt" to 1))
-        assertThat(callsOf("Popup")).isEqualTo(mapOf("presentation/components/ModalInputBridge.kt" to 1))
+        assertThat(callsOf("Popup")).isEqualTo(mapOf(
+            "presentation/components/ModalInputBridge.kt" to 1,
+            "presentation/components/MusicInfoPageFeedback.kt" to 1,
+            "presentation/settings/MusicInfoSettingsSection.kt" to 1,
+            // B56 (#42): the one overflow menu. It replaces seven Material DropdownMenus, which opened the same kind of window unseen by this audit.
+            "ui/ds/DapMenu.kt" to 1,
+        ))
+        for (path in listOf("presentation/components/MusicInfoPageFeedback.kt", "presentation/settings/MusicInfoSettingsSection.kt")) {
+            assertThat(code(path)).contains("PopupProperties(focusable = false)")
+        }
+        // the overflow menu is the one popup that takes focus: a tap outside and system Back dismiss it, and it is as big as its options
+        assertThat(code("ui/ds/DapMenu.kt")).contains("PopupProperties(focusable = true)")
         // the Back indicator is a small arrow, not a page
         val bridge = code("presentation/components/ModalInputBridge.kt")
         assertThat(bridge).contains("PopupProperties(focusable = false)")

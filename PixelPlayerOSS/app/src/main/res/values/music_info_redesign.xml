@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="info_entry_settings_sub">Entire library. Find what’s there, choose, and keep it for offline use.</string>
+    <plurals name="info_scope_library">
+        <item quantity="one">Entire library · %1$d song</item>
+        <item quantity="other">Entire library · %1$d songs</item>
+    </plurals>
+    <string name="info_scope_album">Album · %1$s</string>
+    <string name="info_scope_artist">Artist · %1$s</string>
+    <plurals name="info_scope_selection">
+        <item quantity="one">%1$d song selected</item>
+        <item quantity="other">%1$d songs selected</item>
+    </plurals>
+    <string name="info_step_find">Find</string>
+    <string name="info_step_choose">Choose</string>
+    <string name="info_step_download">Download</string>
+    <string name="info_find_again">Find again</string>
+    <string name="info_wifi_only">Wi-Fi only</string>
+    <string name="info_runs_in_background">You can close this: it keeps going in the background.</string>
+    <string name="info_preparing">Preparing the list…</string>
+    <string name="info_preparing_note">You can already choose from earlier results.</string>
+    <string name="info_find_queued">Will search when it’s ready</string>
+    <string name="info_searching">Searching</string>
+    <string name="info_choose_while_searching">You can choose while it searches. What you open or play is looked up first.</string>
+    <string name="info_checked_today">Checked today</string>
+    <plurals name="info_checked_days_ago">
+        <item quantity="one">Checked %1$d day ago</item>
+        <item quantity="other">Checked %1$d days ago</item>
+    </plurals>
+    <string name="info_up_to_date">up to date</string>
+    <string name="info_result_available">Available</string>
+    <string name="info_result_local">Already in your files</string>
+    <string name="info_result_missing">Not found</string>
+    <string name="info_result_failed">Couldn’t check</string>
+    <string name="info_could_not_check_hint">Usually the connection or a source that’s down.</string>
+    <string name="info_retry_n">Retry %1$d</string>
+    <string name="info_empty_title">No songs here</string>
+    <string name="info_empty_body">Add music to your library, then come back to find its info.</string>
+    <plurals name="info_kinds_selected">
+        <item quantity="one">%1$d of %2$d kind</item>
+        <item quantity="other">%1$d of %2$d kinds</item>
+    </plurals>
+    <string name="info_kind_available">%1$d of %2$d</string>
+    <plurals name="info_kind_chosen">
+        <item quantity="one">%1$d of %2$d chosen</item>
+        <item quantity="other">%1$d of %2$d chosen</item>
+    </plurals>
+    <plurals name="info_kind_saved">
+        <item quantity="one">%1$d saved</item>
+        <item quantity="other">%1$d saved</item>
+    </plurals>
+    <plurals name="info_kind_queued">
+        <item quantity="one">%1$d queued</item>
+        <item quantity="other">%1$d queued</item>
+    </plurals>
+    <string name="info_kind_to_save">%1$d to save</string>
+    <string name="info_no_size">no size given</string>
+    <string name="info_no_size_note">Sources don’t give a size for lyrics and text; they take very little space.</string>
+    <string name="info_choose_by_group">Choose by artist or album</string>
+    <string name="info_by_group_title">By artist or album</string>
+    <string name="info_back_to_summary">Back to summary</string>
+    <plurals name="info_artists_count">
+        <item quantity="one">%1$d artist</item>
+        <item quantity="other">%1$d artists</item>
+    </plurals>
+    <plurals name="info_group_chosen">
+        <item quantity="one">%1$d of %2$d chosen</item>
+        <item quantity="other">%1$d of %2$d chosen</item>
+    </plurals>
+    <string name="info_group_select_all">Choose all of %1$s</string>
+    <string name="info_nothing_available">Nothing available</string>
+    <string name="info_no_match">Nothing matches “%1$s”</string>
+    <string name="info_no_match_hint">Search by artist or album name. Lyrics are inside each album.</string>
+    <string name="info_clear_search">Clear search</string>
+    <string name="info_item_photo">Artist photo</string>
+    <string name="info_item_bio">Biography</string>
+    <string name="info_item_cover">Cover</string>
+    <string name="info_item_album_desc">Album description</string>
+    <string name="info_item_lyrics">Lyrics · %1$s</string>
+    <string name="info_queued">Queued</string>
+    <string name="info_downloading_item">Downloading…</string>
+    <string name="info_will_retry">Will retry in %1$s</string>
+    <string name="info_deleted_by_you">Deleted by you · available</string>
+    <string name="info_at_least">at least %1$s</string>
+    <string name="info_new_and_saved">%1$s · %2$s</string>
+    <string name="info_downloading">Downloading</string>
+    <string name="info_paused">Paused</string>
+    <string name="info_paused_note">Nothing downloads until you resume. Finding keeps going.</string>
+    <string name="info_waiting_wifi">Waiting for Wi-Fi</string>
+    <string name="info_waiting_wifi_note">Continues when you connect to Wi-Fi. It never uses mobile data.</string>
+    <string name="info_offline">No internet connection</string>
+    <string name="info_offline_note">Continues on its own when you’re back online.</string>
+    <string name="info_source_wait">%1$s asked us to wait · %2$s in %3$d s</string>
+    <string name="info_source_wait_note">Everything else continues. Nothing to do.</string>
+    <string name="info_source_down">%1$s isn’t responding. It retries on its own, less often each time.</string>
+    <string name="info_queue_global">Includes items requested from other screens.</string>
+    <string name="info_done">Done</string>
+    <plurals name="info_done_note">
+        <item quantity="one">%1$d saved on this phone: %2$s. It works offline now.</item>
+        <item quantity="other">%1$d saved on this phone: %2$s. They work offline now.</item>
+    </plurals>
+    <string name="info_ok">OK</string>
+    <string name="info_error_find">Couldn’t start finding.</string>
+    <string name="info_error_select">Couldn’t save your choice.</string>
+    <string name="info_error_delete">Couldn’t delete.</string>
+    <string name="info_error_pause">Couldn’t pause.</string>
+    <string name="info_error_resume">Couldn’t resume.</string>
+    <string name="info_choice_kept">Your choice is still saved.</string>
+    <string name="info_retry">Retry</string>
+    <string name="music_info_refreshing">Updating info…</string>
+    <string name="music_info_refreshed">Info updated</string>
+    <string name="music_info_refresh_failed">Couldn’t update. Check your connection.</string>
+    <string name="music_info_delete_failed">Couldn’t delete the info.</string>
+    <string name="info_deleting">Deleting %1$d…</string>
+    <plurals name="info_deleted_undo">
+        <item quantity="one">Deleted %1$d. It won’t download again on its own.</item>
+        <item quantity="other">Deleted %1$d. They won’t download again on their own.</item>
+    </plurals>
+    <string name="music_info_deleted_page">Deleted the info for “%1$s”.</string>
+    <string name="info_undo">Undo</string>
+    <string name="setcat_music_info_nothing_saved">Nothing saved</string>
+    <string name="setcat_delete_confirm_title">Delete all downloaded info?</string>
+    <string name="setcat_delete_confirm_what">Downloaded photos, covers, biographies, descriptions and lyrics: %1$s.</string>
+    <string name="setcat_delete_confirm_local">Anything already in your music files stays.</string>
+    <string name="setcat_delete_confirm_lasting">It won’t download again until you ask.</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_delete">Delete</string>
+    <string name="setcat_music_info_auto">Automatic when you open albums and artists</string>
+    <string name="setcat_lyrics_pointer">Online lyrics are turned on in Settings › Lyrics.</string>
+    <string name="music_info_read_more">Read more</string>
+    <string name="music_info_source_line">From Wikipedia · %1$s</string>
+    <string name="credits_group_text">Text</string>
+    <string name="credits_group_photo">Artist photo</string>
+    <string name="credits_group_id">Identification</string>
+    <string name="credits_musicbrainz_id">Artist and album identified with MusicBrainz.</string>
+    <string name="music_info_read_less">Read less</string>
+    <string name="info_download_n">Download %1$d</string>
+    <string name="info_cancel">Cancel</string>
+    <string name="info_cancel_note">Cancel empties the pending queue. Saved items stay. Finding keeps going.</string>
+    <plurals name="info_cancelled_undo">
+        <item quantity="one">Cancelled %1$d. Already saved items stay.</item>
+        <item quantity="other">Cancelled %1$d. Already saved items stay.</item>
+    </plurals>
+    <string name="info_error_cancel">Couldn’t cancel.</string>
+    <string name="info_error_undo">Couldn’t undo.</string>
+    <string name="info_step_done">done</string>
+    <string name="info_step_current">current step</string>
+    <string name="info_step_pending">pending</string>
+    <string name="info_expanded">Expanded</string>
+    <string name="info_collapsed">Collapsed</string>
+    <string name="info_available_pending">%1$s · %2$s</string>
+    <string name="info_so_far">so far</string>
+    <string name="info_none_chosen">nothing chosen</string>
+    <plurals name="info_retrying_count">
+        <item quantity="one">%1$d will retry</item>
+        <item quantity="other">%1$d will retry</item>
+    </plurals>
+    <string name="info_size_not_given">size not given</string>
+    <string name="info_find_waiting_wifi_note">Finding continues when you connect to Wi-Fi. It never uses mobile data.</string>
+    <string name="info_find_offline_note">Continues on its own when you’re back online. You can already choose from earlier results.</string>
+    <string name="info_seconds">%1$d s</string>
+    <string name="info_minutes">%1$d min</string>
+    <string name="info_scope_counts">%1$s · %2$s · %3$s</string>
+    <string name="music_info_source_musicbrainz">From MusicBrainz · CC0</string>
+    <string name="music_info_from_source">From %1$s</string>
+    <string name="info_deleting_all">Deleting downloaded info…</string>
+    <string name="info_undone">Undone</string>
+    <plurals name="info_new_count">
+        <item quantity="one">%1$d new</item>
+        <item quantity="other">%1$d new</item>
+    </plurals>
+    <plurals name="info_available_count">
+        <item quantity="one">%1$d available</item>
+        <item quantity="other">%1$d available</item>
+    </plurals>
+    <plurals name="info_remaining_count">
+        <item quantity="one">%1$d left</item>
+        <item quantity="other">%1$d left</item>
+    </plurals>
+    <plurals name="info_albums_count">
+        <item quantity="one">%1$d album</item>
+        <item quantity="other">%1$d albums</item>
+    </plurals>
+    <plurals name="info_songs_count">
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
+    </plurals>
+    <plurals name="info_saved_count">
+        <item quantity="one">%1$d saved</item>
+        <item quantity="other">%1$d saved</item>
+    </plurals>
+    <string name="info_clear_selection">Clear selection</string>
+    <string name="info_all_saved">All saved</string>
+    <string name="info_downloading_finishes">This download will finish</string>
+    <plurals name="info_saved_chosen">
+        <item quantity="one">%1$d saved item chosen</item>
+        <item quantity="other">%1$d saved items chosen</item>
+    </plurals>
+    <plurals name="info_on_phone">
+        <item quantity="one">%1$d on the phone</item>
+        <item quantity="other">%1$d on the phone</item>
+    </plurals>
+    <plurals name="info_plain_on_phone">
+        <item quantity="one">%1$d without timing</item>
+        <item quantity="other">%1$d without timing</item>
+    </plurals>
+    <plurals name="info_shared_items">
+        <item quantity="one">%1$d shared with others</item>
+        <item quantity="other">%1$d shared with others</item>
+    </plurals>
+    <plurals name="info_cleared_undo">
+        <item quantity="one">Selection cleared</item>
+        <item quantity="other">Selection cleared</item>
+    </plurals>
+    <string name="info_remove_from_queue">Remove from queue</string>
+</resources>

@@ -69,7 +69,7 @@ class MusicInfoCache(
             val tmp = File(dir, "$INDEX.tmp")
             tmp.writeText(JSONObject().put("entries", entries).toString())
             if (!tmp.renameTo(indexFile())) { indexFile().writeText(tmp.readText()); tmp.delete() }
-        }
+        }.getOrThrow()
     }
 
     fun get(kind: Kind, key: String): Hit? = synchronized(lock) {
@@ -80,7 +80,7 @@ class MusicInfoCache(
         Hit(entry.file?.let { File(dir, it) }, entry.meta)
     }
 
-    data class SavedEntry(val id: String, val kind: Kind, val meta: String?)
+    data class SavedEntry(val id: String, val kind: Kind, val meta: String?, val bytes: Long = 0)
 
     /** A single read-only pass. Catalog refresh must not touch LRU times or register claims. */
     fun savedEntries(): List<SavedEntry> = synchronized(lock) {
@@ -88,7 +88,18 @@ class MusicInfoCache(
         index.values.filter { entry ->
             entry.missingUntilMs == 0L &&
                 (entry.kind == Kind.ABOUT || entry.file?.let { File(dir, it).isFile } == true)
-        }.map { SavedEntry(it.name, it.kind, it.meta) }
+        }.map { SavedEntry(it.name, it.kind, it.meta, it.bytes) }
+    }
+
+    /** Removes one already identified legacy entry while retaining durable suppression marks. */
+    fun removeSavedEntry(id: String): File? = synchronized(lock) {
+        load()
+        val entry = index[id] ?: return@synchronized null
+        val file = entry.file?.let { File(dir, it) }
+        if (file != null) check(!file.exists() || file.delete()) { "Could not delete downloaded image" }
+        index.remove(id)
+        try { save() } catch (error: Exception) { index[id] = entry; throw error }
+        file
     }
 
     /** Constant-size checks also notice removed files or a replaced cache directory. */
@@ -180,11 +191,15 @@ class MusicInfoCache(
     fun remove(kind: Kind, key: String): File? = synchronized(lock) {
         load()
         val name = id(kind, key)
-        val entry = index.remove(name)
+        val entry = index[name]
         val file = entry?.file?.let { File(dir, it) }
         // Includes superseded revisions kept until a replacement was on screen.
-        dir.listFiles()?.filter { it.name.startsWith("$name-") || it.name.startsWith("$name.") }?.forEach { it.delete() }
-        save(); file
+        dir.listFiles()?.filter { it.name.startsWith("$name-") || it.name.startsWith("$name.") }?.forEach {
+            check(!it.exists() || it.delete()) { "Could not delete downloaded image ${it.name}" }
+        }
+        index.remove(name)
+        try { save() } catch (error: Exception) { if (entry != null) index[name] = entry; throw error }
+        file
     }
 
     fun descriptionLanguages(): Set<String> = synchronized(lock) {

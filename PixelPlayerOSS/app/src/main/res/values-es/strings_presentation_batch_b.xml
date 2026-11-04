@@ -24,7 +24,7 @@
     <string name="presentation_batch_b_playlist_empty_smart_body">Todavía no hay canciones que coincidan con esta regla inteligente.</string>
     <string name="presentation_batch_b_playlist_empty_title">Esta lista de reproducción está vacía.</string>
     <string name="presentation_batch_b_playlist_options_title">Opciones de la lista</string>
-    <string name="presentation_batch_b_queue_recently_played">Reproducidas recientemente</string>
+    <string name="presentation_batch_b_queue_recently_played">@string/presentation_batch_b_recently_played_title</string>
     <string name="presentation_batch_b_quick_fill">Relleno rápido</string>
     <string name="presentation_batch_b_quick_fill_choose_genre">Elegir género</string>
     <string name="presentation_batch_b_quick_fill_select_songs">Seleccionar canciones</string>

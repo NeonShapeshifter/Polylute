@@ -81,6 +81,43 @@ object CoverColours {
         return if (firstColor.luminance() >= secondColor.luminance()) Duo(firstColor, secondColor) else Duo(secondColor, firstColor)
     }
 
+    /**
+     * B56 phase 7.1: the cover's three to five strongest distinct colours, for the live background's blobs (the same buckets and weights as [pick]): the heaviest first, each next one
+     * the heaviest that is not near any already taken, and fewer than [min] distinct colours are made up to [min] with deeper shades of the first. At most [max].
+     */
+    fun palette(pixels: IntArray, width: Int, height: Int, min: Int = 3, max: Int = 5): List<Color> {
+        val n = min(pixels.size, width * height)
+        if (n <= 0) return List(min) { Color(0xFF808080) }
+        val buckets = HashMap<Int, Bucket>()
+        for (i in 0 until n) {
+            val p = pixels[i]
+            val rr = (p shr 16) and 0xFF
+            val gg = (p shr 8) and 0xFF
+            val bb = p and 0xFF
+            val hsl = AlbumArtColors.Hsl.of(Color(rr / 255f, gg / 255f, bb / 255f))
+            val neutral = hsl.s < 0.15f || hsl.l < 0.08f || hsl.l > 0.95f
+            val id = if (neutral) 1000 + (hsl.l * (GREY_BINS - 0.001f)).toInt() else
+                ((hsl.h / (360f / HUE_BINS)).toInt() % HUE_BINS) * 10 + (if (hsl.s < 0.45f) 0 else 1) * 3 + (if (hsl.l < 0.3f) 0 else if (hsl.l < 0.62f) 1 else 2)
+            val bucket = buckets.getOrPut(id) { Bucket(id, neutral) }
+            bucket.count++; bucket.r += rr; bucket.g += gg; bucket.b += bb
+        }
+        fun vividness(b: Bucket): Float {
+            val hsl = AlbumArtColors.Hsl.of(b.color)
+            return (1f + 2.5f * hsl.s) * (if (hsl.l in 0.2f..0.8f) 1f else 0.6f)
+        }
+        val ranked = buckets.values.sortedWith(compareByDescending<Bucket> { it.count * (if (it.neutral) NEUTRAL_SECOND else vividness(it)) }.thenBy { it.id })
+        val taken = ArrayList<Color>()
+        for (bucket in ranked) {
+            if (taken.size >= max) break
+            if (bucket.count < MIN_SECOND_SHARE * n / 2 && taken.size >= min) continue
+            val colour = bucket.color
+            if (taken.none { !distinct(it, colour) }) taken += colour
+        }
+        var shade = taken.firstOrNull() ?: Color(0xFF808080)
+        while (taken.size < min) { shade = shade(shade); taken += shade }
+        return taken
+    }
+
     /** Another hue, or clearly another lightness, and not nearly the same colour: what "distinct" means for the second colour. */
     internal fun distinct(a: Color, b: Color): Boolean {
         val dr = a.red - b.red

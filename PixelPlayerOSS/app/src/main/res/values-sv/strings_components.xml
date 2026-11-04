@@ -5,7 +5,6 @@
     <string name="widget_album_art_placeholder">Platshållare för albumomslag</string>
     <string name="cd_album_art_of">Albumomslag för %1$s</string>
     <string name="cd_album_art_placeholder">Platshållare för %1$s</string>
-    <string name="cd_show_controls">Visa kontroller</string>
     <string name="cd_favorite">Favorit</string>
     <string name="cd_play">Spela</string>
     <string name="cd_pause">Pausa</string>
@@ -34,7 +33,7 @@
     <string name="edit_song_group_replaygain">ReplayGain</string>
     <string name="edit_song_find_lyrics">Sök låttext online</string>
     <string name="edit_song_toolbar_title">Redigera låt</string>
-    <string name="cd_show_metadata_info">Visa information</string>
+    <string name="cd_show_metadata_info">Erkännanden och licenser</string>
     <string name="song_field_track_number">Spårnummer</string>
     <string name="song_field_disc_number">Skivnummer</string>
     <string name="song_field_replaygain_track_db">ReplayGain för spår (dB)</string>

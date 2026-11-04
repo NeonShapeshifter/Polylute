@@ -120,8 +120,8 @@ internal fun resolveDragTargetIndex(
 /**
  * The letter of the section a title falls in while the scrollbar is dragged (B29-L8).
  *
- * The lists are ordered by SQLite's `COLLATE NOCASE`: symbols first (`!`, `"`, `#`, `$`, `.`), then digits, then A to Z, with
- * anything that is not plain ASCII after Z. The label has to be where the list is, so:
+ * The lists are ordered by SQLite's `COLLATE NOCASE` (symbols first (`!`, `"`, `#`, `$`, `.`), then digits, then A to Z, anything not plain ASCII after Z) and, since B57-fix1, the Albums list by
+ * `COLLATE UNICODE` (the same, but `Á` is with `A`, `Ø` with `O`, `ß` with `S`). The label has to be where the list is, so:
  *
  *  - a letter is its capital, and a letter with a mark on it is its base letter (`Á` goes under `A`, `ñ` under `N`);
  *  - a digit **or any symbol** (`!!!!!!!`, `$`, `#`, a quote, an emoji) is `#`: the old rule skipped the symbol and labelled the
@@ -135,10 +135,24 @@ internal fun extractFastScrollGlyph(value: String?): String? {
     if (text.isEmpty()) return null
     val codePoint = text.codePointAt(0)
     if (!Character.isLetter(codePoint)) return "#"
-    val base = java.text.Normalizer.normalize(String(Character.toChars(codePoint)), java.text.Normalizer.Form.NFD)
-        .codePointAt(0)
-    return String(Character.toChars(base)).uppercase(java.util.Locale.ROOT)
+    // B57.5 1: the Albums list is ordered by `COLLATE UNICODE` ("Á" with "A"), which also files under a base letter the letters Unicode does not take apart: the ligatures and expansions
+    // (Æ, Œ, ß, Ĳ, Ǳ) by their compatibility form, the stroke letters (Ø, Ł, Đ, Ð, Ħ) by [STROKE_AND_LIGATURE_BASE]. The label is the letter the row sits in, so it follows.
+    val decomposed = java.text.Normalizer.normalize(String(Character.toChars(codePoint)), java.text.Normalizer.Form.NFKD).codePointAt(0)
+    val base = STROKE_AND_LIGATURE_BASE[decomposed] ?: decomposed
+    return String(Character.toChars(base)).uppercase(java.util.Locale.ROOT).let { String(Character.toChars(it.codePointAt(0))) }
 }
+
+/** Letters the collation files under a base letter that normalization alone does not give: `Æ`→A, `Œ`→O, `ß`→S, and the stroke letters `Ø`→O, `Ł`→L, `Đ`/`Ð`→D, `Ħ`→H (either case). */
+private val STROKE_AND_LIGATURE_BASE: Map<Int, Int> = mapOf(
+    'Æ'.code to 'A'.code, 'æ'.code to 'A'.code,
+    'Œ'.code to 'O'.code, 'œ'.code to 'O'.code,
+    'ß'.code to 'S'.code, 'ẞ'.code to 'S'.code,
+    'Ø'.code to 'O'.code, 'ø'.code to 'O'.code,
+    'Ł'.code to 'L'.code, 'ł'.code to 'L'.code,
+    'Đ'.code to 'D'.code, 'đ'.code to 'D'.code,
+    'Ð'.code to 'D'.code, 'ð'.code to 'D'.code,
+    'Ħ'.code to 'H'.code, 'ħ'.code to 'H'.code,
+)
 
 /** A release year as its own label, for the sorts that order by it; none when the year is unknown. */
 internal fun fastScrollYearLabel(year: Int): String? = year.takeIf { it in 1000..9999 }?.toString()

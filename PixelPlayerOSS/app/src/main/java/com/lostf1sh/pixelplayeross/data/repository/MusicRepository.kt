@@ -128,6 +128,9 @@ interface MusicRepository {
         minTracks: Int = 1
     ): Flow<List<Album>>
 
+    /** B57 4.3: each album's total length in ms (album id to the sum of its songs'), from the songs already in the database. Empty by default. */
+    fun getAlbumDurationsMs(): Flow<Map<Long, Long>> = kotlinx.coroutines.flow.flowOf(emptyMap())
+
     /**
      * Returns the filtered list of artists.
      * @return Flow that emits a complete list of Artist objects.
@@ -229,6 +232,12 @@ interface MusicRepository {
     suspend fun searchPlaylists(query: String): List<Playlist>
     fun searchAll(query: String, filterType: SearchFilterType): Flow<List<SearchResultItem>>
 
+    /** B56-6: the composers whose name contains [query], from the COMPOSER tags (a tag with several people is split like artists are). */
+    fun searchComposers(query: String): Flow<List<com.lostf1sh.pixelplayeross.data.media.ComposerResult>> = kotlinx.coroutines.flow.flowOf(emptyList())
+
+    /** B56-6: the songs that credit the composer [name], in title order. The queue of a composer's page is this list. */
+    fun getSongsByComposer(name: String): Flow<List<Song>> = kotlinx.coroutines.flow.flowOf(emptyList())
+
     suspend fun addSearchHistoryItem(query: String)
     suspend fun getRecentSearchHistory(limit: Int): List<SearchHistoryItem>
     suspend fun deleteSearchHistoryItemByQuery(query: String)
@@ -272,6 +281,9 @@ interface MusicRepository {
      */
     fun getSong(songId: String): Flow<Song?>
     fun getArtistById(artistId: Long): Flow<Artist?>
+    fun observeArtistsForHome(artistIds: List<Long>): Flow<List<Artist>> =
+        if (artistIds.isEmpty()) kotlinx.coroutines.flow.flowOf(emptyList()) else
+            kotlinx.coroutines.flow.combine(artistIds.map(::getArtistById)) { it.filterNotNull() }
     suspend fun getArtistIdByName(name: String): Long?
     fun getArtistsForSong(songId: Long): Flow<List<Artist>>
 

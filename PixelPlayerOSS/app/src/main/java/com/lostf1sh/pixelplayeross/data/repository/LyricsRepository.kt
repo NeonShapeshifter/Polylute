@@ -4,11 +4,22 @@ import com.lostf1sh.pixelplayeross.data.model.Lyrics
 import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.model.Song
 
+/** B56-3.1: what the phone already has for a song's lyrics: nothing, lines with no timing, or lines with timing. */
+enum class LocalLyricsTiming { NONE, PLAIN, SYNCED }
+
 interface LyricsRepository {
     /** Discovery reads local sources and remote answers without persisting them as lyrics. */
     suspend fun hasLocalLyrics(song: Song): Boolean = false
+
+    /**
+     * B56-3.1: the same question as [hasLocalLyrics], told by timing. A repository that cannot say counts what it has as timed, so the downloader treats
+     * it as it always did.
+     */
+    suspend fun localLyricsTiming(song: Song): LocalLyricsTiming =
+        if (hasLocalLyrics(song)) LocalLyricsTiming.SYNCED else LocalLyricsTiming.NONE
     suspend fun discoverLyrics(song: Song): String? = null
     suspend fun saveDiscoveredLyrics(song: Song, raw: String): Boolean = false
+    suspend fun downloadedSidecarIdentities(): Set<String> = emptySet()
 
     /**
      * Returns already-persisted lyrics without performing any network request.

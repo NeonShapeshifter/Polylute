@@ -622,11 +622,11 @@ private fun String.capitalizeFirstLetter(): String {
 
 object LyricsUtils {
 
-    private val LRC_LINE_REGEX = Pattern.compile("^\\[(\\d{2}):(\\d{2})[.:](\\d{2,3})](.*)$")
+    private val LRC_LINE_REGEX = Pattern.compile("^\\[(\\d{2,3}):(\\d{2})[.:](\\d{2,3})](.*)$")
     private val LRC_WORD_REGEX = Pattern.compile("<(\\d{2}):(\\d{2})[.:](\\d{2,3})>([^<]*)")
     private val LRC_WORD_TAG_REGEX = Regex("<\\d{2}:\\d{2}[.:]\\d{2,3}>")
     private val LRC_WORD_SPLIT_REGEX = Regex("(?=<\\d{2}:\\d{2}[.:]\\d{2,3}>)")
-    private val LRC_TIMESTAMP_TAG_REGEX = Regex("\\[\\d{1,2}:\\d{2}(?:[.:]\\d{1,3})?]")
+    private val LRC_TIMESTAMP_TAG_REGEX = Regex("\\[\\d{1,3}:\\d{2}(?:[.:]\\d{1,3})?]")
     private val TRANSLATION_CREDIT_REGEX = Regex("^\\s*by\\s*[:：].+", RegexOption.IGNORE_CASE)
     private val LRC_METADATA_PATTERN = Pattern.compile("^\\[[a-zA-Z]+:.*]$")
 

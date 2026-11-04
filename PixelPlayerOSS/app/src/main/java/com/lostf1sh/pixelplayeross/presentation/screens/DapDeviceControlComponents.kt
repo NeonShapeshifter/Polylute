@@ -71,32 +71,36 @@ fun DapQuickDeviceControls(
     onDigitalGainChanged: (Int) -> Unit = {},
     /** F-05: opens the page that owns the screen timeout. Null hides the "never" notice. */
     onReviewScreenTimeout: (() -> Unit)? = null,
+    showBattery: Boolean = true,
+    showBrightness: Boolean = true,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         DapGroup(title = stringResource(R.string.dap_controls_title)) {
             Column(modifier = Modifier.padding(top = DapSpacing.Md)) {
-                DapLevelControl(
-                    title = stringResource(R.string.dap_brightness_title),
-                    primary = DapVolumeChannel(
-                        label = stringResource(R.string.dap_brightness_title),
-                        fraction = (state.brightnessPercent - 5) / 95f,
-                        valueText = "${state.brightnessPercent}%",
-                        onChange = { fraction ->
-                            val percent = 5 + (fraction * 95f).roundToInt()
-                            if (percent != state.brightnessPercent) onBrightnessChanged(percent)
+                if (showBrightness) {
+                    DapLevelControl(
+                        title = stringResource(R.string.dap_brightness_title),
+                        primary = DapVolumeChannel(
+                            label = stringResource(R.string.dap_brightness_title),
+                            fraction = (state.brightnessPercent - 5) / 95f,
+                            valueText = "${state.brightnessPercent}%",
+                            onChange = { fraction ->
+                                val percent = 5 + (fraction * 95f).roundToInt()
+                                if (percent != state.brightnessPercent) onBrightnessChanged(percent)
+                            },
+                        ),
+                        leading = {
+                            Icon(
+                                Icons.Rounded.Brightness6,
+                                contentDescription = null,
+                                tint = Dap.secondaryText,
+                                modifier = Modifier.size(18.dp),
+                            )
                         },
-                    ),
-                    leading = {
-                        Icon(
-                            Icons.Rounded.Brightness6,
-                            contentDescription = null,
-                            tint = Dap.secondaryText,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    },
-                )
+                    )
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                }
 
                 // F-05: on the appliance, a system timeout of "never" is said where the controls
                 // are, once, with a way to the page that changes it. It changes nothing by itself.
@@ -111,27 +115,29 @@ fun DapQuickDeviceControls(
 
                 DapVolumeBlock(state, onVolumeChanged, onDigitalGainChanged)
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                if (showBattery) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
-                DapControlHeader(
-                    icon = { Icon(Icons.Rounded.BatteryChargingFull, null) },
-                    title = stringResource(R.string.dap_battery_title),
-                    value = "${state.batteryPercent}%",
-                )
-                Text(
-                    text = buildString {
-                        append(
-                            stringResource(
-                                if (state.batteryCharging) R.string.dap_battery_charging
-                                else R.string.dap_battery_not_charging
+                    DapControlHeader(
+                        icon = { Icon(Icons.Rounded.BatteryChargingFull, null) },
+                        title = stringResource(R.string.dap_battery_title),
+                        value = "${state.batteryPercent}%",
+                    )
+                    Text(
+                        text = buildString {
+                            append(
+                                stringResource(
+                                    if (state.batteryCharging) R.string.dap_battery_charging
+                                    else R.string.dap_battery_not_charging
+                                )
                             )
-                        )
-                        append(" · ")
-                        append(dapBatteryPlugLabel(state.batteryPlug))
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                            append(" · ")
+                            append(dapBatteryPlugLabel(state.batteryPlug))
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -640,13 +646,11 @@ private fun timeoutOptions(): List<Pair<Long, Int>> = listOf(
     DAP_SCREEN_TIMEOUT_NEVER_WHILE_PLAYING to R.string.dap_timeout_never_while_playing,
 )
 
-fun applyDapWindowBrightness(context: Context, percent: Int) {
+fun applyDapWindowBrightness(context: Context, percent: Int, dapMode: Boolean) {
     var current: Context? = context
     while (current is ContextWrapper) {
         if (current is Activity) {
-            val attributes = current.window.attributes
-            attributes.screenBrightness = percent.coerceIn(5, 100) / 100f
-            current.window.attributes = attributes
+            com.lostf1sh.pixelplayeross.presentation.viewmodel.DapWindowBrightness.apply(current.window,percent,dapMode)
             return
         }
         current = current.baseContext

@@ -1,0 +1,1 @@
+Animated covers in the full player; stamp and save synced lyrics; edit album and track info with MusicBrainz suggestions. Browse composers and genres, with refreshed Home suggestions, menus and backgrounds. Clearer music-info downloads, selection and Undo. Improved folder artwork and lyrics saving, DAP screen policies, and frozen DAC feedback detection after rate changes.

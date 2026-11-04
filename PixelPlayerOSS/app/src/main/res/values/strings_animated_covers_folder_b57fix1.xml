@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="setcat_animated_covers_folder_title">Animated covers folder</string>
+    <string name="setcat_animated_covers_folder_change">Change</string>
+    <string name="setcat_animated_covers_folder_remove_title">Remove folder</string>
+    <string name="setcat_animated_covers_folder_remove_desc">Polylute stops reading it and Animated covers turn off.</string>
+</resources>

@@ -7,7 +7,7 @@
     <string name="playlists_hide">Hide</string>
     <string name="playlists_show">Show</string>
     <string name="playlists_collection_options">Options for %1$s</string>
-    <string name="collection_name_daily_mix">Daily mix</string>
+    <string name="collection_name_daily_mix">Daily Mix</string>
     <string name="collection_name_on_repeat">On repeat</string>
     <string name="collection_name_rediscover">Rediscover</string>
     <string name="collection_name_forgotten_favorites">Forgotten favorites</string>

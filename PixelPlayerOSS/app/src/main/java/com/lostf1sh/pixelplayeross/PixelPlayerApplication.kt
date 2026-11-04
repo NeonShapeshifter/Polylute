@@ -85,6 +85,12 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
     lateinit var brokenLyricsCleanup: dagger.Lazy<com.lostf1sh.pixelplayeross.data.startup.BrokenLyricsCleanup>
 
     @Inject
+    lateinit var orphanedIdentityRepair: dagger.Lazy<com.lostf1sh.pixelplayeross.data.identity.OrphanedIdentityRepair>
+
+    @Inject
+    lateinit var composerBackfillRunner: dagger.Lazy<com.lostf1sh.pixelplayeross.data.media.ComposerBackfillRunner>
+
+    @Inject
     lateinit var startupMusicInfo: dagger.Lazy<com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoRepository>
 
     @Inject
@@ -154,6 +160,10 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
             runCatching { musicInfoDownloads.get().initialize() }
                 .onFailure { Timber.tag("MusicInfo").w(it, "Queue migration will retry next start") }
             runCatching { brokenLyricsCleanup.get().runOnce() }.onFailure { Timber.tag("LyricsRepair").w(it, "Lyrics cleanup will retry next start") }
+            // B57 1.2: gives back the state of items an edit made before 1.3 left dormant; once, never while music plays, only on unambiguous evidence.
+            runCatching { orphanedIdentityRepair.get().runOnce() }.onFailure { Timber.tag("IdentityRepair").w(it, "Identity repair will retry next start") }
+            // B57 4.5: the rest of the composers, in the background, until every song has been read
+            runCatching { composerBackfillRunner.get().start(startupScope) }.onFailure { Timber.tag("ComposerBackfill").w(it, "Composer fill will retry next start") }
             // Retire the legacy crossfade-duration preference before anything can read a
             // transition duration, so no screen and no playback path can observe the old key.
             runCatching { userPreferencesRepository.get().migrateLegacyCrossfadeDurationIfNeeded() }

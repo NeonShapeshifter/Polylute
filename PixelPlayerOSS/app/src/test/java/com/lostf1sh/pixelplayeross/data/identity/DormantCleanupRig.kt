@@ -52,6 +52,9 @@ internal class DormantCleanupRig : AutoCloseable {
     }
 
     init {
+        // These scan fixtures contain synthetic bytes. Native metadata belongs to the reader's own tests.
+        io.mockk.mockkObject(com.lostf1sh.pixelplayeross.data.media.AudioMetadataReader)
+        io.mockk.every { com.lostf1sh.pixelplayeross.data.media.AudioMetadataReader.readMusicBrainzIds(any()) } returns com.lostf1sh.pixelplayeross.data.model.MusicBrainzIds()
         shadowOf(context as Application).grantPermissions(Manifest.permission.READ_MEDIA_AUDIO)
         db = Room.inMemoryDatabaseBuilder(context, PixelPlayerDatabase::class.java)
             .addCallback(PixelPlayerDatabase.createRuntimeArtifactsCallback()).allowMainThreadQueries().build()
@@ -62,6 +65,7 @@ internal class DormantCleanupRig : AutoCloseable {
     }
 
     override fun close() {
+        io.mockk.unmockkObject(com.lostf1sh.pixelplayeross.data.media.AudioMetadataReader)
         db.close()
         media.sql.close()
     }

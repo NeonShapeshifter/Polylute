@@ -35,6 +35,7 @@ fun SortOption.methodLabelRes(): Int = when (this) {
     SortOption.AlbumDateAdded -> R.string.sort_method_date_added
     SortOption.AlbumSizeAsc -> R.string.sort_method_song_count
     SortOption.AlbumSizeDesc -> R.string.sort_method_song_count
+    SortOption.ArtistDateAdded -> R.string.sort_method_date_added
     SortOption.ArtistNameAZ -> R.string.sort_method_name
     SortOption.ArtistNameZA -> R.string.sort_method_name
     SortOption.ArtistNumSongsDesc -> R.string.sort_method_number_of_songs
@@ -51,6 +52,7 @@ fun SortOption.methodLabelRes(): Int = when (this) {
     SortOption.LikedSongAlbumDesc -> R.string.sort_method_album
     SortOption.LikedSongDateLiked -> R.string.sort_method_date_liked
     SortOption.LikedSongDateLikedAsc -> R.string.sort_method_date_liked
+    SortOption.FolderPathAZ, SortOption.FolderPathZA -> R.string.folders_path
     SortOption.FolderNameAZ -> R.string.sort_method_name
     SortOption.FolderNameZA -> R.string.sort_method_name
     SortOption.FolderSongCountAsc -> R.string.sort_method_song_count

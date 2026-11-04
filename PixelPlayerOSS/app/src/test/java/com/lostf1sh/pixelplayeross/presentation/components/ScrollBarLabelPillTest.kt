@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
@@ -121,8 +122,10 @@ class ScrollBarLabelPillTest {
         return n
     }
 
+    // B57.5 3 changes this on purpose: the label is no longer a 32 dp pill beside the thumb but a bubble above the finger (56 dp since the owner's test of 11-04) (see B575ScrollBubbleTest for where it is). What F5 was about stays:
+    // the glyph is drawn with a width of its own, in a round disc that is not squeezed to the scroll bar's 9 dp box.
     @Test
-    fun `holding the thumb over the I rows shows a letter I in a round pill of 32 dp`() {
+    fun `holding the thumb over the I rows shows a letter I in a round bubble of 56 dp`() {
         val state = show()
         dragToTheMiddle()
         B29Renders.saveFix1(compose, "F5-letter-pill-I-720x1610")
@@ -133,13 +136,17 @@ class ScrollBarLabelPillTest {
         assertThat(glyph.width).isAtLeast(6f)
         assertThat(glyph.height).isAtLeast(10f)
 
+        val disc = compose.onNodeWithTag(ScrollBubble.TAG).fetchSemanticsNode().boundsInRoot
+        // 56 dp at 2 px per dp is 112 px, round (not a 18 px capsule)
+        assertThat(disc.width).isWithin(2f).of(112f)
+        assertThat(disc.height).isWithin(2f).of(112f)
+
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-        val cx = glyph.center.x.toInt()
-        val cy = glyph.center.y.toInt()
-        // 32 dp at 2 px per dp is 64 px: a chord 18 px above the centre is ~52 px, the column through the centre ~64 px.
-        // The scrollbar's own box is 9 dp (18 px) wide, which is what the pill used to be.
-        assertThat(span(bitmap, cx, cy - 18, dx = 1, dy = 0)).isAtLeast(40)
-        assertThat(span(bitmap, cx - 16, cy, dx = 0, dy = 1)).isAtLeast(50)
+        val cx = disc.center.x.toInt()
+        val cy = disc.center.y.toInt()
+        // the glyph is in the middle; the chord 40 px above the centre (from 25 px left of it) and the column 40 px left of the centre are the disc's own colour for most of the disc
+        assertThat(span(bitmap, cx - 25, cy - 40, dx = 1, dy = 0)).isAtLeast(50)
+        assertThat(span(bitmap, cx - 40, cy, dx = 0, dy = 1)).isAtLeast(50)
     }
 
     @Test

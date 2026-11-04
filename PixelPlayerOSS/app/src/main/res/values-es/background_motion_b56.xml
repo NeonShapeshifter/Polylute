@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 fase 7.1: cuánto se mueve el fondo del reproductor -->
+    <string name="setcat_background_motion_title">Movimiento del fondo</string>
+    <string name="setcat_background_motion_desc">Qué tan rápido y qué tan lejos se mueve el fondo del reproductor. Solo con el reproductor completo abierto y una canción sonando.</string>
+    <string name="setcat_background_motion_desc_classic">Qué tan rápido y qué tan lejos se mueve el fondo. Antes de Android 13 es el vidrio a la deriva de siempre; solo con el reproductor completo abierto y una canción sonando.</string>
+    <string name="background_motion_still">Quieto</string>
+    <string name="background_motion_gentle">Suave</string>
+    <string name="background_motion_lively">Intenso</string>
+</resources>

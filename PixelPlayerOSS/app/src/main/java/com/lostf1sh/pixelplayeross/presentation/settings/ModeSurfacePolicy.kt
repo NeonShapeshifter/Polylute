@@ -29,6 +29,10 @@ object ModeSurfacePolicy {
     }
 
     enum class Entry(val scope: Scope, val reason: String) {
+        ROOT_BATTERY(Scope.DAP_ONLY, "battery is a device readout for the DAP; an ordinary phone already owns its battery UI"),
+        ROOT_BRIGHTNESS(Scope.DAP_ONLY, "only the DAP controls its own display; App mode follows the system brightness"),
+        APPEARANCE_DAP_LOCK_SCREEN(Scope.DAP_ONLY, "the playback lock surface exists only while Polylute has a DAP home role"),
+
         // The Device page.
         DEVICE_SCREEN_TIMEOUT(Scope.DAP_ONLY, "needs WRITE_SETTINGS to change the phone's own screen-off time: on a phone with its own launcher that is Android's setting, and the app asking for a system-wide permission to do it is the wrong ask"),
 
@@ -64,8 +68,8 @@ object ModeSurfacePolicy {
      */
     fun inDapMode(product: ProductModeState): Boolean = product.level != null || product.isDeviceOwner
 
-    /** The Device page's screen-off setting: at every DAP level, never in App mode. A Device Owner that is not home is App mode here. */
-    fun showScreenTimeout(product: ProductModeState): Boolean = product.level != null
+    /** The whole Device category: at every DAP level, never in App mode. A Device Owner that is not home is App mode here. */
+    fun showDeviceCategory(product: ProductModeState): Boolean = product.level != null
 
     /** Maintenance's two DAP readouts, from what its own device-owner reading says. */
     fun showMaintenanceDapStatus(isDeviceOwner: Boolean, isPolyluteHome: Boolean): Boolean = isDeviceOwner || isPolyluteHome

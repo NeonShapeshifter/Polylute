@@ -51,16 +51,23 @@ class AutoCollectionsState(
     }
 }
 
-/** The two lists Home shows: the mix of the day, and "Tu mix de hoy" (the same blend, leaning on rediscovery, never repeating the first). */
-class HomeMixes(val isReady: Boolean, val daily: List<CatalogItem>, val yours: List<CatalogItem>) {
-    companion object {
-        val Initial = HomeMixes(false, emptyList(), emptyList())
-    }
+/** Home owns Suggestions; only Daily Mix and the automatic collections belong in Playlists. */
+class HomeMixes(
+    val isReady: Boolean, val daily: List<CatalogItem>, val yours: List<CatalogItem>,
+    val epochDay: Long = 0, val preview: List<CatalogItem> = yours.take(3),
+    val suggestedAlbums: List<com.lostf1sh.pixelplayeross.data.model.Album> = emptyList(),
+    val fallback: Boolean = false, val generation: Int = 0, val previewGeneration: Int = 0, val dailyHidden: Boolean = false,
+) {
+    companion object { val Initial = HomeMixes(false, emptyList(), emptyList()) }
 }
 
-/** The mix of the day as it was made: the identities of both lists and the local day they are for. */
+/** Same preference key and durable library identities. Optional fields read old snapshots safely. */
 @Serializable
-internal data class AutoMixSnapshot(val epochDay: Long, val daily: List<String>, val yours: List<String>)
+internal data class AutoMixSnapshot(
+    val epochDay: Long, val daily: List<String>, val yours: List<String>, val generation: Int = 0,
+    val preview: List<String> = emptyList(), val previewGeneration: Int = 0,
+    val albums: List<String> = emptyList(), val homeRevision: Int = 0, val fallback: Boolean = false,
+)
 
 /**
  * The automatic collections, built from the ledger and kept for the screens (B28).
@@ -81,7 +88,7 @@ internal data class AutoMixSnapshot(val epochDay: Long, val daily: List<String>,
  * Its list is saved with the local day it was made for. A rebuild during the same day (a sync, a favourite) gives the saved list back,
  * without the tracks that have left the library and without new ones; the next day's is made from the seed of that day.
  *
- * The saved list may be empty, and that is a mix like any other: the listener swiped out every track, or the library holds none of
+ * The saved list may be empty, and that is a mix like any other: its files were deleted, or the library holds none of
  * them for the moment. Having no snapshot for today is what makes a new mix, never an empty one (R28-05).
  *
  * ## Hidden is the only thing a collection can be
@@ -102,11 +109,13 @@ class AutoCollectionRepository @Inject constructor(
     internal var clock: () -> Long = System::currentTimeMillis
     internal var zone: () -> ZoneId = ZoneId::systemDefault
 
-    private class Built(
+    private data class Built(
         val collections: List<AutoCollection>,
         val yours: List<CatalogItem>,
         val atMs: Long,
         val epochDay: Long,
+        val snapshot: AutoMixSnapshot,
+        val albums: List<com.lostf1sh.pixelplayeross.data.model.Album>,
     )
 
     private val built = MutableStateFlow<Built?>(null)
@@ -120,9 +129,12 @@ class AutoCollectionRepository @Inject constructor(
         )
     }.stateIn(scope, SharingStarted.Eagerly, AutoCollectionsState.Initial)
 
-    val homeMixes: StateFlow<HomeMixes> = built.map { b ->
+    val homeMixes: StateFlow<HomeMixes> = combine(built, preferences.hiddenAutoCollectionsFlow) { b, hidden ->
         if (b == null) HomeMixes.Initial
-        else HomeMixes(true, b.collections.firstOrNull { it.id == AutoCollectionId.DAILY_MIX }?.items.orEmpty(), b.yours)
+        else HomeMixes(true,
+            if (AutoCollectionId.DAILY_MIX.key in hidden) emptyList() else b.collections.firstOrNull { it.id == AutoCollectionId.DAILY_MIX }?.items.orEmpty(),
+            b.yours, b.epochDay, b.snapshot.preview.mapNotNull { id -> b.yours.firstOrNull { it.identity == id } },
+            b.albums, b.snapshot.fallback, b.snapshot.generation, b.snapshot.previewGeneration, AutoCollectionId.DAILY_MIX.key in hidden)
     }.stateIn(scope, SharingStarted.Eagerly, HomeMixes.Initial)
 
     init {
@@ -140,7 +152,7 @@ class AutoCollectionRepository @Inject constructor(
     val builtAtMs: Long get() = built.value?.atMs ?: 0L
 
     /**
-     * The listener took a track out of today's mix (a swipe on Home). It is out for the rest of the day, in the list and in the saved mix,
+     * A deleted file is taken out of today's mix. It is out for the rest of the day, in the list and in the saved mix,
      * and the next day's is made without it having been taken out.
      */
     suspend fun removeFromDailyMix(locator: String): Unit = buildMutex.withLock {
@@ -151,8 +163,9 @@ class AutoCollectionRepository @Inject constructor(
         val updated = current.collections.map {
             if (it.id == AutoCollectionId.DAILY_MIX) AutoCollection(AutoCollectionId.DAILY_MIX, kept, emptyReason = if (kept.isEmpty()) EmptyReason.NOTHING_MATCHES else null) else it
         }
-        built.value = Built(updated, current.yours, current.atMs, current.epochDay)
-        saveSnapshot(AutoMixSnapshot(current.epochDay, kept.map { it.identity }, current.yours.map { it.identity }))
+        val snapshot = current.snapshot.copy(daily = kept.map { it.identity })
+        built.value = current.copy(collections = updated, snapshot = snapshot)
+        saveSnapshot(snapshot)
     }
 
     fun hide(id: AutoCollectionId) {
@@ -182,47 +195,69 @@ class AutoCollectionRepository @Inject constructor(
     }
 
     /** Rebuilds them now. A build already running finishes first. */
-    suspend fun refresh(reason: String): Unit = buildMutex.withLock {
+    suspend fun refresh(reason: String, regenerate: Boolean = false): Unit = buildMutex.withLock {
         val now = clock()
         val zone = zone()
-        runCatching { withContext(dispatchers.default) { build(now, zone) } }
+        runCatching { withContext(dispatchers.default) { build(now, zone, regenerate) } }
             .onSuccess { built.value = it }
             .onFailure { Timber.tag("AutoCollections").e(it, "Failed to build the automatic collections (%s)", reason) }
     }
 
-    private suspend fun build(now: Long, zone: ZoneId): Built {
+    /** Refresh the three covers only. The day's Suggestions and the Daily Mix are not rebuilt. */
+    suspend fun refreshSuggestionsPreview(): Unit = buildMutex.withLock {
+        val current = built.value ?: return@withLock
+        val count = current.snapshot.previewGeneration + 1
+        val ids = current.yours.map { it.identity }
+        val preview = suggestionPreview(ids, suggestionSeed("preview:${current.epochDay}:$count"), current.snapshot.preview)
+        val snapshot = current.snapshot.copy(preview = preview, previewGeneration = count)
+        built.value = current.copy(snapshot = snapshot)
+        saveSnapshot(snapshot)
+    }
+
+    private suspend fun build(now: Long, zone: ZoneId, regenerate: Boolean): Built {
         val ledger = ledgers.ledger()
         val order = withContext(dispatchers.io) { libraryOrder() }
         val others = AutoCollectionEngine.compute(ledger, now, zone, order)
         val epochDay = localEpochDay(now, zone)
-
-        // A snapshot for today is the mix of today even when nothing in it is left to show; only the lack of one makes a new mix.
-        val saved = readSnapshot()?.takeIf { it.epochDay == epochDay }
-        val dailyCollection: AutoCollection
-        val yours: List<CatalogItem>
-        if (saved != null) {
-            val savedDaily = saved.daily.mapNotNull { ledger.catalog.item(it) }
-            dailyCollection = AutoCollection(
-                AutoCollectionId.DAILY_MIX, savedDaily,
-                emptyReason = if (savedDaily.isEmpty()) EmptyReason.NOTHING_MATCHES else null,
-            )
-            yours = saved.yours.mapNotNull { ledger.catalog.item(it) }
-        } else {
-            val dailyMix = AutoCollectionEngine.dailyMix(ledger, others, epochDay)
-            val yoursMix = AutoCollectionEngine.dailyMix(
-                ledger, others, epochDay, yours = true, excluding = dailyMix.items.mapTo(HashSet()) { it.identity },
-            )
-            dailyCollection = dailyMix
-            yours = yoursMix.items
-            if (dailyMix.items.isNotEmpty()) {
-                saveSnapshot(AutoMixSnapshot(epochDay, dailyMix.items.map { it.identity }, yours.map { it.identity }))
-            }
+        val previous = readSnapshot()
+        val saved = previous?.takeIf { it.epochDay == epochDay }
+        val generation = (saved?.generation ?: 0) + if (regenerate) 1 else 0
+        val daily = if (saved != null && !regenerate) {
+            val items = saved.daily.mapNotNull { ledger.catalog.item(it) }
+            AutoCollection(AutoCollectionId.DAILY_MIX, items, emptyReason = if(items.isEmpty()) EmptyReason.NOTHING_MATCHES else null)
+        } else AutoCollectionEngine.dailyMix(ledger, others, epochDay, generation = generation)
+        val reuseSuggestions = saved?.homeRevision == HOME_REVISION && !regenerate
+        val fallback = if (reuseSuggestions) saved!!.fallback else ledger.isEmpty
+        val excluded = daily.items.mapTo(hashSetOf()) { it.identity }
+        val yours = when {
+            reuseSuggestions -> saved!!.yours.mapNotNull { ledger.catalog.item(it) }.filter { it.identity !in excluded }
+            // No history has an honest newest-added list, capped at 48, under Suggestions.
+            fallback -> ledger.catalog.items.filter { it.identity !in excluded }
+                .sortedWith(compareByDescending<CatalogItem> { it.song.dateAdded }.thenBy { it.identity }).take(48)
+            else -> AutoCollectionEngine.dailyMix(ledger, others, epochDay, yours = true, excluding = excluded).items
         }
+        // Choose once for the day, including across library scans and explicit Daily regeneration.
+        // An empty first catalog can fill after import; unavailable albums keep their saved ids.
+        val retainedAlbumIds = saved?.takeIf { it.homeRevision == HOME_REVISION }?.albums?.takeIf { it.isNotEmpty() }
+        val albums = if (retainedAlbumIds != null) {
+            retainedAlbumIds.mapNotNull { key -> ledger.catalog.tracksByAlbum[key]?.let(::suggestedAlbum) }
+        } else SuggestedAlbums.build(ledger, now, epochDay, others[AutoCollectionId.ON_REPEAT]?.items.orEmpty().mapTo(hashSetOf()) { it.identity }).albums
+        val ids = yours.map { it.identity }
+        val keptPreview = if(reuseSuggestions) saved!!.preview else emptyList()
+        val previewGeneration = saved?.previewGeneration ?: 0
+        val preview = if (reuseSuggestions && (keptPreview.isNotEmpty() || saved!!.yours.isEmpty())) keptPreview else suggestionPreview(
+            ids, suggestionSeed("preview:$epochDay:$generation:$previewGeneration"), previous?.preview.orEmpty())
+        // Availability is a projection. A removed SD card must not erase its identities from today's saved lists.
+        val dailyIds = if(saved != null && !regenerate) saved.daily else daily.items.map { it.identity }
+        val yoursIds = if(reuseSuggestions) saved!!.yours else ids
+        val albumIds = retainedAlbumIds ?: albums.map { it.id.toString() }
+        val snapshot = AutoMixSnapshot(epochDay,dailyIds,yoursIds,generation,preview,previewGeneration,albumIds,HOME_REVISION,fallback)
+        saveSnapshot(snapshot)
         val ordered = buildList {
-            add(dailyCollection)
+            add(daily)
             AutoCollectionId.entries.filter { it != AutoCollectionId.DAILY_MIX }.forEach { id -> others[id]?.let(::add) }
         }
-        return Built(ordered, yours, now, epochDay)
+        return Built(ordered,yours,now,epochDay,snapshot,albums)
     }
 
     /** The locators of the library in the order the Songs list shows them (its saved sort), for the collections that follow it. */
@@ -240,6 +275,8 @@ class AutoCollectionRepository @Inject constructor(
     }.getOrNull()
 
     private suspend fun saveSnapshot(snapshot: AutoMixSnapshot) {
+        // A clock or zone moving backwards must not replace the snapshot of a later day.
+        if ((readSnapshot()?.epochDay ?: Long.MIN_VALUE) > snapshot.epochDay) return
         runCatching { preferences.saveAutoMixSnapshotJson(json.encodeToString(AutoMixSnapshot.serializer(), snapshot)) }
             .onFailure { Timber.tag("AutoCollections").w(it, "Could not save the mix of the day") }
     }
@@ -248,6 +285,7 @@ class AutoCollectionRepository @Inject constructor(
         /** A screen that opens and finds the collections older than this builds them again. */
         val STALE_AFTER_MS: Long = TimeUnit.MINUTES.toMillis(15)
 
+        private const val HOME_REVISION = 1
         private const val LIBRARY_DEBOUNCE_MS = 5_000L
         private val json = Json { ignoreUnknownKeys = true }
 

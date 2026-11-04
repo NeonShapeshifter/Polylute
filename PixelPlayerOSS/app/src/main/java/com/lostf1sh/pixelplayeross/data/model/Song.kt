@@ -43,6 +43,7 @@ data class Song(
     val mimeType: String?,
     val bitrate: Int?,
     val sampleRate: Int?,
+    val musicBrainzIds: MusicBrainzIds = MusicBrainzIds(),
 ) : Parcelable {
     /**
      * Returns the display string for artists.

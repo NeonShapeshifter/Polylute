@@ -303,7 +303,7 @@ internal fun UnifiedPlayerSongInfoLayer(
                 onNavigateToGenre = { onNavigateToGenre(liveSong) },
                 onViewTrackDetails = onShowTrackDetails ?: { secondaryView = SecondaryView.TRACK_DETAILS },
                 onViewCredits = { secondaryView = SecondaryView.CREDITS },
-                onEditSong = { title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+                onEditSong = { title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                     playerViewModel.editSongMetadata(
                         liveSong,
                         title,
@@ -317,7 +317,8 @@ internal fun UnifiedPlayerSongInfoLayer(
                         discNumber,
                         replayGainTrackGainDb,
                         replayGainAlbumGainDb,
-                        coverArtUpdate
+                        coverArtUpdate,
+                        newDate = newDate
                     )
                     onDismissSongInfo()
                 },

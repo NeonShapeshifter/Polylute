@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 fas 7.1: hur mycket spelarens bakgrund rör sig -->
+    <string name="setcat_background_motion_title">Bakgrundsrörelse</string>
+    <string name="setcat_background_motion_desc">Hur snabbt och hur långt spelarens bakgrund rör sig. Bara när hela spelaren är öppen och en låt spelas.</string>
+    <string name="setcat_background_motion_desc_classic">Hur snabbt och hur långt bakgrunden rör sig. Före Android 13 är det det klassiska glidande glaset; bara när hela spelaren är öppen och en låt spelas.</string>
+    <string name="background_motion_still">Stilla</string>
+    <string name="background_motion_gentle">Mjuk</string>
+    <string name="background_motion_lively">Livlig</string>
+</resources>

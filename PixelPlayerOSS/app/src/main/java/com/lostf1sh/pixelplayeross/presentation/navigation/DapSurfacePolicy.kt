@@ -49,6 +49,7 @@ object DapSurfacePolicy {
         Screen.AutoCollection.route,
         Screen.SmartCollections.route,
         Screen.RecentlyPlayed.route,
+        Screen.Suggestions.route,
         Screen.Stats.route,
         Screen.AudioBookmarks.route,
         Screen.AudioBookmarkFolder.route,

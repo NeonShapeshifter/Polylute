@@ -37,12 +37,12 @@ class LyricsChromeContractTest {
     fun `keep screen on has exactly one lifecycle observer path`() {
         // Guard against a vacuous pass: the mechanism must still exist.
         // B11-2 added `isPlaying` to the keys: the one owner now also releases the screen on pause.
-        assertThat(sheet).contains("DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, lifecycleOwner)")
+        assertThat(sheet).contains("DisposableEffect(keepScreenOn, isPlaying, lockSurfaceShowing, dapMode, lifecycleOwner)")
 
         // The block was written twice, identically. Both copies keyed on the same pair, so they
         // were created and disposed together and both registered a LifecycleObserver on the same
         // owner: two observers per ON_STOP, two DataStore writes, two competing view owners.
-        val effects = Regex("""DisposableEffect\(keepScreenOn, isPlaying, lockSurfaceShowing, lifecycleOwner\)""").findAll(sheet).count()
+        val effects = Regex("""DisposableEffect\(keepScreenOn, isPlaying, lockSurfaceShowing, dapMode, lifecycleOwner\)""").findAll(sheet).count()
         assertThat(effects).isEqualTo(1)
 
         val observers = Regex("""lifecycleOwner\.lifecycle\.addObserver\(""").findAll(sheet).count()

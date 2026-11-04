@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 fase 6: compositores en la búsqueda -->
+    <string name="search_results_composers">Compositores</string>
+    <string name="search_filter_composers">Compositores</string>
+    <string name="composer_empty">Ninguna canción acredita a este compositor.</string>
+</resources>

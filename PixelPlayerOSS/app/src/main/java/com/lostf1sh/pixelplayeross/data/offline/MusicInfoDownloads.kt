@@ -10,6 +10,10 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.musicinfo.*
 import com.lostf1sh.pixelplayeross.data.network.DownloadOwner
 import com.lostf1sh.pixelplayeross.data.network.RemoteOutcome
+import com.lostf1sh.pixelplayeross.data.network.DownloadCommitGuard
+import com.lostf1sh.pixelplayeross.data.network.SourceWait
+import com.lostf1sh.pixelplayeross.data.network.SourceWaits
+import com.lostf1sh.pixelplayeross.data.repository.LocalLyricsTiming
 import com.lostf1sh.pixelplayeross.data.repository.LyricsRepository
 import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
@@ -48,6 +52,9 @@ class MusicInfoDownloads @Inject constructor(
 ) {
     val dao get() = database.musicInfoDiscoveryDao()
     private val control = Mutex()
+    private val undoController = MusicInfoUndo(context, database, info, lyrics, music, control) { enqueueDownloads() }
+    val network = infoNetworkState(context)
+    val sourceWaits = SourceWaits.waits
     internal val lastOpenSteps = linkedMapOf<String, Double>()
 
     private inline fun <T> catalogStep(name: String, block: () -> T): T {
@@ -124,6 +131,8 @@ class MusicInfoDownloads @Inject constructor(
                 work.cancelUniqueWork("offline-music-downloads").result.get()
                 dao.legacyDropped()
             }
+            if (dao.hasInterruptedDownloads()) dao.recoverInterruptedDownloads()
+            undoController.recover()
             initialized = true
         }
     }
@@ -143,6 +152,7 @@ class MusicInfoDownloads @Inject constructor(
             lastOpenSteps.clear()
             catalogStep("initialize") { initialize() }
             val scope = scopeKey(ids, artistFilter)
+            if (!dao.hasScopeState(scope)) dao.initScopeState(InfoScopeState(scope))
             val revision = catalogStep("revisionChecks") { openRevision() }
             if (completedRevisions[scope] == revision && (scope in emptyScopes || dao.hasScope(scope))) return@withLock scope
 
@@ -152,7 +162,7 @@ class MusicInfoDownloads @Inject constructor(
             }
             val libraryFingerprint = catalogStep("libraryFingerprint") { libraryFingerprint(songs) }
             val savedInfo = catalogStep("savedInfoSnapshot") { info.service.savedSnapshot() }
-            val savedLyrics = catalogStep("savedLyrics") { database.lyricsDao().downloadedLyricsIdentities().toSet() }
+            val savedLyrics = catalogStep("savedLyrics") { database.lyricsDao().downloadedLyricsIdentities().toSet() + lyrics.downloadedSidecarIdentities() }
             val deleted = catalogStep("deletedMarks") { info.deletedDownloads.snapshot() }
             val savedFingerprint = catalogStep("savedFingerprint") { digest(listOf(
                 savedInfo.fingerprint(),
@@ -174,15 +184,17 @@ class MusicInfoDownloads @Inject constructor(
             }
             val songsById = songs.associateBy { it.id }
             val changed = dao.scopeRows(scope).mapNotNull { row ->
-                val saved = !deleted.contains(row.key) &&
+                val suppressed = deleted.contains(row.key)
+                val saved = !suppressed &&
                     isSaved(row, songsById[row.songId], savedInfo, savedLyrics)
-                if (saved == row.saved) null else row to saved
+                if (saved == row.saved && suppressed == row.deletedByUser) null else Triple(row, saved, suppressed)
             }
             if (changed.isNotEmpty()) {
                 database.withTransaction {
-                    for ((row, saved) in changed) {
+                    for ((row, saved, suppressed) in changed) {
                         // A download completed after the snapshot must win over this import.
                         dao.saved(row.key, saved, row.downloadState)
+                        dao.deletedMark(row.key, suppressed, row.downloadEpoch)
                     }
                 }
             }
@@ -217,13 +229,17 @@ class MusicInfoDownloads @Inject constructor(
             if (changedMetadata.isNotEmpty()) dao.updateCatalog(changedMetadata)
             dao.clearScopeAssets(scope)
             dao.clearScopeArtists(scope)
+            dao.clearScopeArtists("credits:$scope")
             dao.addScope(members.map { InfoScope(scope, it.itemKey) }.distinct())
             dao.addArtistMembers(members)
+            // Keep contributors outside an artist filter as metadata, without adding visible groups.
+            if (artistFilter != null) dao.addArtistMembers(artistMembers("credits:$scope", songs, rows.map { it.key }.toSet(), null))
             dao.prioritize(scope)
         }
     }
 
-    private fun libraryFingerprint(songs: List<Song>): String = digest(songs.sortedBy { it.id }.flatMap { song ->
+    // Rebuild B52 stamps once so existing artist scopes gain the contributor metadata too.
+    private fun libraryFingerprint(songs: List<Song>): String = digest(listOf("contributor-membership-v2") + songs.sortedBy { it.id }.flatMap { song ->
         listOf(song.id, song.libraryItemId, song.title, song.artist, song.album, song.albumArtist.orEmpty(),
             song.albumId.toString(), song.artists.joinToString("\u0000") { it.name })
     })
@@ -331,7 +347,10 @@ class MusicInfoDownloads @Inject constructor(
     }.flow
 
     suspend fun find(scope: String) = withContext(infoBackground) {
+        if (!dao.hasScopeState(scope)) dao.initScopeState(InfoScopeState(scope))
+        dao.requestedFind(scope)
         dao.find(scope, System.currentTimeMillis() - FRESH_MS, if (scope == "library") 1 else 0)
+        completeDefaultSelections()
         enqueueFind()
     }
 
@@ -359,27 +378,89 @@ class MusicInfoDownloads @Inject constructor(
         }
     }
 
-    suspend fun deleteSelected(scope: String) = withContext(infoBackground) {
+    suspend fun deleteSelected(scope: String): InfoUndo = withContext(infoBackground) { undoController.delete(dao.selectedSaved(scope)) }
+
+    suspend fun deleteKeys(keys: List<String>): InfoUndo = withContext(infoBackground) { undoController.delete(keys.mapNotNull { dao.get(it) }) }
+
+    suspend fun downloadedBytes(): Long = withContext(infoBackground) {
+        info.cache.usedBytes() + database.lyricsDao().downloadedRecords().sumOf { it.bytes }
+    }
+
+    /** Includes cached entries from before the catalog and lyrics whose songs have since left the library. */
+    suspend fun deleteAllDownloaded(): InfoUndo = withContext(infoBackground) {
+        open(null)
+        val catalog = dao.allRows()
+        val covered = catalog.filter { it.saved }.flatMap { DeletedDownloads.cacheIds(it.key) }.toSet()
+        val legacy = info.cache.savedEntries().filter { it.id !in covered }.map { entry ->
+            val kind = when (entry.kind) {
+                MusicInfoCache.Kind.ARTIST_PHOTO -> InfoKind.PHOTO
+                MusicInfoCache.Kind.COVER -> InfoKind.COVER
+                MusicInfoCache.Kind.ABOUT -> InfoKind.BIO
+            }
+            val key = "${entry.kind.prefix}|cache:${entry.id}"
+            InfoDiscovery(key, kind.name, "cache:${entry.id}", "", "", availability = "AVAILABLE", saved = true, sourceBytes = entry.bytes)
+        }
+        val records = database.lyricsDao().downloadedRecords()
+        val orphanLyrics = records.filter { record -> catalog.none { it.key == DownloadKeys.lyrics(record.songId.toString(), record.libraryItemId) } }.map { record ->
+            InfoDiscovery(DownloadKeys.lyrics(record.songId.toString(), record.libraryItemId), InfoKind.LYRICS.name,
+                record.songId.toString(), "", "", songId = record.songId.toString(), availability = "AVAILABLE", saved = true, sourceBytes = record.bytes)
+        }
+        dao.insert(legacy + orphanLyrics)
+        undoController.delete(dao.allRows().filter { it.saved }, downloadedBytes())
+    }
+
+    suspend fun clearSelection(scope: String): InfoUndo = withContext(infoBackground) { undoController.clearSelection(scope) }
+
+    suspend fun cancel(): InfoUndo = withContext(infoBackground) { undoController.cancel() }
+
+    suspend fun allowRequested(keys: List<String>) = withContext(infoBackground) {
         control.withLock {
-            for (row in dao.selectedSaved(scope)) {
-                // The mark serializes with the save commit, including a request already in flight.
-                info.deletedDownloads.mark(listOf(row.key))
-                if (row.kind == InfoKind.LYRICS.name) song(row)?.let { lyrics.deleteDownloadedLyrics(it) }
-                else info.deleteDiscovered(InfoKind.valueOf(row.kind), row.title, row.albumArtist.ifBlank { row.artistName }, row.songId)
-                dao.deleted(row.key)
+            info.deletedDownloads.allow(keys)
+            keys.forEach { dao.allowRefresh(it) }
+        }
+    }
+
+    suspend fun undo(token: String): Boolean = withContext(infoBackground) { undoController.undo(token) }
+
+    suspend fun finishExpiredUndo(now: Long = System.currentTimeMillis()) = withContext(infoBackground) { undoController.finishExpired(now) }
+    suspend fun retryDelete(token: String, now: Long = System.currentTimeMillis()) = withContext(infoBackground) { undoController.retryDelete(token, now) }
+
+    suspend fun done() = withContext(infoBackground) {
+        control.withLock {
+            dao.acknowledgeFinished()
+            if (dao.pendingDownloads().isEmpty()) dao.currentArtist("")
+        }
+    }
+
+    private suspend fun completeDefaultSelections() {
+        val deleted = info.deletedDownloads.snapshot()
+        for (scope in dao.finishedFirstFinds()) {
+            database.withTransaction {
+                dao.scopeRows(scope).filter { deleted.contains(it.key) }.forEach { dao.deletedMark(it.key, true, it.downloadEpoch) }
+                dao.chooseAvailableByDefault(scope)
+                dao.defaultChosen(scope)
             }
         }
     }
 
     internal suspend fun checkOne(row: InfoDiscovery) {
         val started = android.os.SystemClock.elapsedRealtime()
+        // B56-3.1: lyrics already on the phone with no timing are not "local": LRCLIB is asked for a timed version of them, and they count on their own line.
+        var plainOnPhone = false
         val local = when (InfoKind.valueOf(row.kind)) {
             InfoKind.COVER -> {
                 val representative = song(row)
                 val albumSongs = if (representative == null) emptyList() else music.getSongsForAlbum(representative.albumId).first()
                 albumSongs.any { OfflineArtwork.hasLocalCover(context, it) }
             }
-            InfoKind.LYRICS -> song(row)?.let { lyrics.hasLocalLyrics(it) } == true
+            InfoKind.LYRICS -> {
+                val onPhone = song(row)
+                when (onPhone?.let { lyrics.localLyricsTiming(it) } ?: LocalLyricsTiming.NONE) {
+                    LocalLyricsTiming.SYNCED -> true
+                    LocalLyricsTiming.PLAIN -> { plainOnPhone = true; false }
+                    LocalLyricsTiming.NONE -> onPhone != null && lyrics.hasLocalLyrics(onPhone)
+                }
+            }
             else -> false
         }
         if (local) {
@@ -391,43 +472,68 @@ class MusicInfoDownloads @Inject constructor(
             }
             currentCoroutineContext().ensureActive()
             when (result) {
-                is RemoteOutcome.Found -> dao.checked(row.key, "AVAILABLE", result.value.payload, result.value.sourceBytes, System.currentTimeMillis())
-                RemoteOutcome.NotFound -> dao.checked(row.key, "MISSING", null, null, System.currentTimeMillis())
+                // a plain answer is no improvement over the plain lyrics the phone has
+                is RemoteOutcome.Found ->
+                    if (plainOnPhone && !lyricsHaveTiming(result.value.payload)) dao.checked(row.key, LOCAL_PLAIN, null, null, System.currentTimeMillis())
+                    else dao.checked(row.key, "AVAILABLE", result.value.payload, result.value.sourceBytes, System.currentTimeMillis())
+                RemoteOutcome.NotFound ->
+                    dao.checked(row.key, if (plainOnPhone) LOCAL_PLAIN else "MISSING", null, null, System.currentTimeMillis())
                 RemoteOutcome.Failed -> dao.checked(row.key, "FAILED", null, null, System.currentTimeMillis())
             }
         }
         dao.measured(android.os.SystemClock.elapsedRealtime() - started)
+        completeDefaultSelections()
     }
 
     internal suspend fun downloadOne(target: InfoDiscovery) {
-        var row = target
-        if (row.payload == null || row.checkedAt < System.currentTimeMillis() - FRESH_MS) {
-            checkOne(row)
-            row = dao.get(row.key) ?: return
+        val epoch = target.downloadEpoch
+        val sourceWait = if (target.kind == InfoKind.LYRICS.name) SourceWaits.active("LRCLIB") else null
+        if (sourceWait != null) {
+            dao.retry(target.key, target.attempts, sourceWait.retryAt, epoch, sourceWait.source, sourceWait.kind.name)
+            return
         }
-        if (dao.queueOnce()?.paused == true) return
-        dao.currentArtist(row.artistName)
-        val result = RemoteOutcome.lookup {
-            withContext(DownloadOwner("music-info-queue") {}) {
-                val payload = row.payload ?: return@withContext null
-                val saved = if (row.kind == InfoKind.LYRICS.name) {
-                    song(row)?.let { lyrics.saveDiscoveredLyrics(it, payload) } == true
-                } else {
-                    info.service.saveDiscovered(InfoKind.valueOf(row.kind), row.title, row.albumArtist.ifBlank { row.artistName }, payload)
-                }
-                saved.takeIf { it }
+        if (dao.queueOnce()?.paused == true || dao.startDownload(target.key, epoch) == 0) return
+        try {
+            var row = dao.get(target.key) ?: return
+            if (row.payload == null || row.checkedAt < System.currentTimeMillis() - FRESH_MS) {
+                checkOne(row)
+                row = dao.get(row.key) ?: return
             }
-        }
-        currentCoroutineContext().ensureActive()
-        if (dao.queueOnce()?.paused == true) return
-        if (result is RemoteOutcome.Found) {
-            if (row.kind == InfoKind.PHOTO.name) info.updateDiscoveredPhoto(row.title)
-            if (row.kind == InfoKind.COVER.name) row.songId.toLongOrNull()?.let { info.downloadedCoverArrived(it) }
-            dao.downloaded(row.key)
-        } else {
-            val attempts = row.attempts + 1
-            val delay = (30_000L shl (attempts - 1).coerceAtMost(6)).coerceAtMost(30 * 60_000L)
-            dao.retry(row.key, attempts, System.currentTimeMillis() + delay)
+            dao.currentArtist(row.artistName)
+            suspend fun allowed(): Boolean {
+                val current = dao.get(row.key)
+                return current?.downloadEpoch == epoch && current.downloadState == "DOWNLOADING" && dao.queueOnce()?.paused != true
+            }
+            val guard = DownloadCommitGuard(::allowed) { dao.downloaded(row.key, epoch) }
+            var failedSource: SourceWait? = null
+            val result = RemoteOutcome.lookup(onFailure = { failedSource = it }) {
+                withContext(DownloadOwner("music-info-queue") {} + guard) {
+                    val payload = row.payload ?: return@withContext null
+                    val saved = if (row.kind == InfoKind.LYRICS.name) {
+                        song(row)?.let { lyrics.saveDiscoveredLyrics(it, payload) } == true
+                    } else {
+                        info.service.saveDiscovered(InfoKind.valueOf(row.kind), row.title, row.albumArtist.ifBlank { row.artistName }, payload)
+                    }
+                    saved.takeIf { it }
+                }
+            }
+            currentCoroutineContext().ensureActive()
+            if (result is RemoteOutcome.Found) {
+                // Real stores acknowledge inside their commit lock. Also supports already-saved stores and fakes.
+                info.deletedDownloads.withCommitLock { if (allowed()) dao.downloaded(row.key, epoch) }
+                val saved = dao.get(row.key)
+                if (saved?.downloadEpoch == epoch && saved.saved) {
+                    if (row.kind == InfoKind.PHOTO.name) info.updateDiscoveredPhoto(row.title)
+                    if (row.kind == InfoKind.COVER.name) row.songId.toLongOrNull()?.let { info.downloadedCoverArrived(it) }
+                }
+            } else {
+                val attempts = row.attempts + 1
+                val delay = (30_000L shl (attempts - 1).coerceAtMost(6)).coerceAtMost(30 * 60_000L)
+                dao.retry(row.key, attempts, maxOf(System.currentTimeMillis() + delay, failedSource?.retryAt ?: 0),
+                    epoch, failedSource?.source.orEmpty(), failedSource?.kind?.name.orEmpty())
+            }
+        } finally {
+            withContext(NonCancellable) { dao.interruptedDownload(target.key, epoch) }
         }
     }
 
@@ -459,6 +565,13 @@ class MusicInfoDownloads @Inject constructor(
     }
 
     companion object {
+        /** B56-3.1: `InfoDiscovery.availability` of a song whose lyrics are on the phone with no timing and for which LRCLIB has nothing better. */
+        const val LOCAL_PLAIN = "LOCAL_PLAIN"
+
+        /** Whether lyrics text carries timing (`[mm:ss.xx]` lines), as the parser reads it. */
+        internal fun lyricsHaveTiming(raw: String?): Boolean =
+            com.lostf1sh.pixelplayeross.utils.LyricsUtils.parseLyrics(raw).synced?.isNotEmpty() == true
+
         const val FIND_WORK = "music-info-find"
         const val DOWNLOAD_WORK = "music-info-queue"
         const val FRESH_MS = 30L * 24 * 60 * 60 * 1000

@@ -47,6 +47,12 @@ class ThemePreferencesRepository @Inject constructor(
         /** B41: the cover glass drifts in the full player and on the lock screen. Absent = on (it only matters once "Cover glass" is chosen). */
         val COVER_GLASS_MOVING = booleanPreferencesKey("cover_glass_moving_v1")
 
+        /** B56-7.1: with the switch on, "Lively" instead of "Gentle". Absent = gentle. */
+        val COVER_GLASS_LIVELY = booleanPreferencesKey("cover_glass_lively_v1")
+
+        /** B56-7.2: "Animated covers". Absent = the mode's own default ([AnimatedCovers.defaultEnabled]): on in app mode, off on a DAP. */
+        val ANIMATED_COVERS = booleanPreferencesKey("animated_covers_v1")
+
         /**
          * B41-fix1 (B1): the light or dark the listener picked while the cover decides the colours. A key of its own so the explicit theme
          * (`dap_base_theme_v1` and `app_theme_mode`) is never touched by it. Absent = what that pair already says ([CoverThemeChoice.derivedFrom]).
@@ -88,9 +94,44 @@ class ThemePreferencesRepository @Inject constructor(
         preferences[Keys.COVER_GLASS_MOVING] ?: DEFAULT_COVER_GLASS_MOVING
     }
 
-    val playerThemePreferenceFlow: Flow<String> = dataStore.data.map {
-        // Retired in 1.1.1. Preserve the stored key/value for backups; behaviour is always the former default.
-        ThemePreference.ALBUM_ART
+    /** B56-7.1: Lively (true) or Gentle (false) while the background moves. */
+    val coverGlassLivelyFlow: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[Keys.COVER_GLASS_LIVELY] ?: false
+    }
+
+    /** B56-7.2: what the listener chose for "Animated covers", or null while they have not: [AnimatedCovers.effective] reads it with the mode. */
+    val animatedCoversStoredFlow: Flow<Boolean?> = dataStore.data.map { preferences -> preferences[Keys.ANIMATED_COVERS] }
+
+    suspend fun setAnimatedCovers(enabled: Boolean) {
+        dataStore.edit { preferences -> preferences[Keys.ANIMATED_COVERS] = enabled }
+    }
+
+    /** B56-7.1: "Background motion", the two keys read as one choice. */
+    val backgroundMotionFlow: Flow<BackgroundMotion> = dataStore.data.map { preferences ->
+        BackgroundMotion.of(
+            moving = preferences[Keys.COVER_GLASS_MOVING] ?: DEFAULT_COVER_GLASS_MOVING,
+            lively = preferences[Keys.COVER_GLASS_LIVELY] ?: false,
+        )
+    }
+
+    suspend fun setBackgroundMotion(motion: BackgroundMotion) =
+        dataStore.edit { preferences ->
+            preferences[Keys.COVER_GLASS_MOVING] = motion.moves
+            // the level is kept while Still: switching back on returns to what it was, unless the listener picked Gentle or Lively
+            if (motion.moves) preferences[Keys.COVER_GLASS_LIVELY] = motion == BackgroundMotion.LIVELY
+        }
+
+    /**
+     * Whether the full player, the queue and the DAP lock screen wear the **song's** colour or the listener's accent.
+     *
+     * The stored "player theme" key was retired in 1.1.1 (it stays in storage for backups) and this used to return ALBUM_ART always, so the player wore the song's colour
+     * even with Settings > Appearance > App colours on "Theme and accent": a black-and-white cover made the shuffle icon, the seek bar and Play grey under a purple
+     * accent (B57 2.1). It now follows App colours, the one setting that says where the colours come from: "Theme and accent" -> [ThemePreference.DEFAULT] (the listener's
+     * accent); "From album art" and "Cover glass" -> [ThemePreference.ALBUM_ART] (the cover's, as before). Only what `LocalDapAccent` gets in the player changes: the Material
+     * scheme is still never the song's (B42-fix3).
+     */
+    val playerThemePreferenceFlow: Flow<String> = dataStore.data.map { preferences ->
+        if (AppColorSource.normalize(preferences[Keys.APP_COLOR_SOURCE]) == AppColorSource.THEME) ThemePreference.DEFAULT else ThemePreference.ALBUM_ART
     }
 
     val albumArtPaletteStyleFlow: Flow<AlbumArtPaletteStyle> = dataStore.data.map {

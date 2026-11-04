@@ -114,12 +114,99 @@ object AlbumArtUtils {
         "screenshots"
     )
 
+    /** Only a single known library album directly in this non-generic directory is eligible. */
+    internal fun isSingleAlbumFolder(directory: String, albums: List<Pair<Long, String>>): Boolean =
+        shouldTrustDirectoryArtwork(File(directory).name) && albums.isNotEmpty() &&
+            albums.all { it.first > 0 && it.second.isNotBlank() && !it.second.equals("Unknown Album", true) && it.second != "<unknown>" } &&
+            albums.map { it.first }.distinct().size == 1
+
+    internal data class FolderArtworkResult(val uri: String?, val changed: Boolean)
+
+    /** These checks precede candidate discovery and downloaded-cover lookups as well as byte reads. */
+    internal fun needsFolderArtworkRefresh(
+        context: Context, songId: Long, existingUri: String?, eligible: Boolean, enabled: Boolean
+    ): Boolean {
+        val previous = context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE)
+            .getString(songId.toString(), null)
+        if (previous != null) return true
+        if (!eligible || !enabled || (existingUri != null && !LocalArtworkUri.isLocalArtworkUri(existingUri))) return false
+        val cached = getCachedAlbumArtFile(context, songId)
+        return !cached.isFile || cached.length() == 0L
+    }
+
+    /** Reuses the existing JPEG and thumbnail paths. Preferences only record provenance and a source digest. */
+    internal fun refreshFolderArtwork(
+        context: Context, songId: Long, songPath: String, existingUri: String?,
+        eligible: Boolean, enabled: Boolean, downloadedCoverExists: Boolean,
+        readEmbedded: (String) -> ByteArray? = ::extractEmbeddedAlbumArtBytes
+    ): FolderArtworkResult = refreshFolderArtwork(
+        context, songId, songPath, existingUri, eligible, enabled, downloadedCoverExists,
+        FolderArtworkSession(context), readEmbedded
+    )
+
+    @android.annotation.SuppressLint("UseKtx") // commit reports a failed provenance write; KTX discards that result.
+    internal fun refreshFolderArtwork(
+        context: Context, songId: Long, songPath: String, existingUri: String?,
+        eligible: Boolean, enabled: Boolean, downloadedCoverExists: Boolean,
+        session: FolderArtworkSession,
+        readEmbedded: (String) -> ByteArray? = ::extractEmbeddedAlbumArtBytes
+    ): FolderArtworkResult = synchronized(artLockFor(songId)) {
+        val provenance = context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE)
+        val key = songId.toString()
+        val previous = provenance.getString(key, null)
+        val cached = getCachedAlbumArtFile(context, songId)
+        // A user-chosen URI and an already downloaded cover remain authoritative until explicitly refreshed.
+        if (existingUri != null && !LocalArtworkUri.isLocalArtworkUri(existingUri)) {
+            if (previous != null) {
+                clearCacheForSong(context, songId)
+                check(provenance.edit().remove(key).remove("uri_$key").commit()) { "Could not clear folder artwork provenance" }
+            }
+            return@synchronized FolderArtworkResult(existingUri, false)
+        }
+        if (previous == null && (!eligible || !enabled || downloadedCoverExists || (cached.isFile && cached.length() > 0))) {
+            return@synchronized FolderArtworkResult(existingUri, false)
+        }
+        // A previously unexamined song may contain embedded artwork. It wins without reading the folder image.
+        val firstEmbedded = if (previous == null) readEmbedded(songPath)?.takeIf { it.isNotEmpty() } else null
+        val source = if (firstEmbedded == null && eligible && enabled) session.source(songPath) else null
+        val signature = source?.let {
+            val song = File(songPath)
+            "${it.file.absolutePath}|${it.digest}|${song.lastModified()}|${song.length()}"
+        }
+        if (previous != null && previous == signature && cached.isFile && cached.length() > 0) {
+            return@synchronized FolderArtworkResult(provenance.getString("uri_$key", existingUri), false)
+        }
+        if (previous == null && source == null && firstEmbedded == null) return@synchronized FolderArtworkResult(existingUri, false)
+        val embedded = firstEmbedded ?: if (previous != null) readEmbedded(songPath)?.takeIf { it.isNotEmpty() } else null
+        val candidateBytes = if (embedded == null) source?.bytes else null
+        clearCacheForSong(context, songId)
+        val uri = if (embedded != null) {
+            cacheAlbumArtBytes(context, embedded, songId)
+            LocalArtworkUri.buildSongUriWithTimestamp(songId)
+        } else if (candidateBytes != null) {
+            cacheAlbumArtBytes(context, candidateBytes, songId)
+            LocalArtworkUri.buildSongUriWithTimestamp(songId)
+        } else {
+            noArtMarkerFile(context, songId).createNewFile()
+            null
+        }
+        check(provenance.edit().apply {
+            if (embedded == null && candidateBytes != null) {
+                putString(key, signature)
+                putString("uri_$key", uri)
+            } else {
+                remove(key)
+                remove("uri_$key")
+            }
+        }.commit()) { "Could not save folder artwork provenance" }
+        FolderArtworkResult(uri, true)
+    }
+
     /**
      * Main function to get album art for local songs.
      *
-     * Local artwork is intentionally embedded-only. Falling back to folder images such as
-     * cover.jpg/thumb.jpg can pick unrelated Gallery files when music is stored in mixed
-     * directories, and can duplicate the same image across unrelated tracks.
+     * Embedded artwork and the vetted folder artwork installed by the library refresh share
+     * the same cache. Unvetted directory images are never consulted on this hot path.
      */
     fun getAlbumArtUri(
         appContext: Context,

@@ -123,7 +123,8 @@ class B41Fix1PendingProjectionsTest {
     @Test
     fun `the worker asks PendingProjections, and records what it handled only after the evidence was written`() {
         assertTrue(worker.contains("PendingProjections.compute(scannedItems, localSongIds, knownByLocator, handledEvidence.load())"))
-        val written = worker.indexOf("musicDao.updateLibraryItemEvidenceBatch(")
+        // B57 1.1: the end-of-scan evidence write is now conditional on the evidence the scan read (`...BatchGuarded`), so an edit's newer evidence is not overwritten.
+        val written = worker.indexOf("musicDao.updateLibraryItemEvidenceBatchGuarded(")
         val recorded = worker.indexOf("handledEvidence.save(disagreeingEvidence)")
         assertTrue(written in 1 until recorded, "the record is made after the projections and the evidence are written")
         // a failure to record never stops the sync

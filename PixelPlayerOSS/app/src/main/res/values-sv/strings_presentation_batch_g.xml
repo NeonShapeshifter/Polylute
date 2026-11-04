@@ -116,8 +116,8 @@ Omvänt snedstreck (\\) kan användas för att escapa teckenavgränsare.</string
     <string name="presentation_batch_g_file_explorer_empty_folders">Inga undermappar här</string>
     <string name="presentation_batch_g_file_explorer_cd_navigate_up">Navigera uppåt</string>
     <string name="presentation_batch_g_file_explorer_cd_go_root">Gå till roten</string>
-    <string name="presentation_batch_g_daily_mix_queue_name">Daglig mix</string>
-    <string name="presentation_batch_g_daily_mix_see_all">Se hela Daglig mix</string>
+    <string name="presentation_batch_g_daily_mix_queue_name">@string/collection_name_daily_mix</string>
+    <string name="presentation_batch_g_daily_mix_see_all">Visa hela %1$s</string>
     <string name="presentation_batch_g_selection_all">Alla</string>
     <string name="presentation_batch_g_selection_deselect">Avmarkera</string>
     <string name="presentation_batch_g_selection_cd_more">Fler alternativ</string>
@@ -126,11 +126,11 @@ Omvänt snedstreck (\\) kan användas för att escapa teckenavgränsare.</string
     <string name="presentation_batch_g_list_cd_more_for_title">Fler alternativ för %1$s</string>
     <string name="presentation_batch_g_sync_percent">%1$d%%</string>
     <string name="presentation_batch_g_stats_overview_title">Lyssningsstatistik</string>
-    <string name="presentation_batch_g_stats_overview_total_plays">Totalt antal uppspelningar</string>
+    <string name="presentation_batch_g_stats_overview_total_plays">Spelningar</string>
     <string name="presentation_batch_g_stats_overview_avg_per_day">Snitt per dag</string>
     <string name="presentation_batch_g_stats_overview_top_track">Topplåt</string>
     <string name="presentation_batch_g_stats_overview_top_track_line">%1$s • %2$d uppspelningar</string>
-    <string name="presentation_batch_g_recently_played_title">Nyligen spelade</string>
+    <string name="presentation_batch_g_recently_played_title">@string/presentation_batch_b_recently_played_title</string>
     <string name="presentation_batch_g_presets_saved_title">Sparade förinställningar</string>
     <string name="presentation_batch_g_presets_empty">Inga egna förinställningar sparade ännu.</string>
     <string name="presentation_batch_g_presets_cd_unpin">Lossa</string>

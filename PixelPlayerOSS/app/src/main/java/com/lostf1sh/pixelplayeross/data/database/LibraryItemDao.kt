@@ -1,9 +1,11 @@
 package com.lostf1sh.pixelplayeross.data.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -103,4 +105,94 @@ interface LibraryItemDao {
      */
     @Query("DELETE FROM library_items WHERE library_item_id IN (:ids) AND " + PURGEABLE_DORMANT_WHERE)
     suspend fun deletePurgeableDormant(ids: List<String>): Int
+
+    // ── B57 1.2: the one-time repair of items orphaned by an edit made before the editor recorded its evidence ──
+
+    @Query("SELECT library_item_id, stable_key, file_signature, first_seen_at, last_seen_at FROM library_items WHERE state = 'DORMANT'")
+    suspend fun dormantForRepair(): List<RepairDormantRow>
+
+    /** Every locator the item's own user-state rows name (favourite, lyrics, playlist entries, bookmarks, legacy counters); 0 is a non-local row. */
+    @Query(
+        "SELECT songId AS locator FROM favorites WHERE library_item_id = :libraryItemId " +
+            "UNION SELECT songId FROM lyrics WHERE library_item_id = :libraryItemId " +
+            "UNION SELECT CAST(song_id AS INTEGER) FROM playlist_songs WHERE library_item_id = :libraryItemId " +
+            "UNION SELECT CAST(song_id AS INTEGER) FROM audio_bookmarks WHERE library_item_id = :libraryItemId " +
+            "UNION SELECT CAST(song_id AS INTEGER) FROM song_engagements WHERE library_item_id = :libraryItemId"
+    )
+    suspend fun userStateLocators(libraryItemId: String): List<Long>
+
+    /** How many user-state rows hang off the item. */
+    @Query(
+        "SELECT (SELECT COUNT(*) FROM favorites WHERE library_item_id = :libraryItemId) " +
+            "+ (SELECT COUNT(*) FROM lyrics WHERE library_item_id = :libraryItemId) " +
+            "+ (SELECT COUNT(*) FROM library_item_overrides WHERE library_item_id = :libraryItemId) " +
+            "+ (SELECT COUNT(*) FROM song_engagements WHERE library_item_id = :libraryItemId) " +
+            "+ (SELECT COUNT(*) FROM playlist_songs WHERE library_item_id = :libraryItemId) " +
+            "+ (SELECT COUNT(*) FROM audio_bookmarks WHERE library_item_id = :libraryItemId)"
+    )
+    suspend fun userStateRowCount(libraryItemId: String): Int
+
+    /** The ACTIVE items (other than [excluding]) whose projection sits on [locator]. */
+    @Query(
+        "SELECT s.library_item_id AS library_item_id, s.id AS locator, s.duration AS duration, s.file_size AS file_size, " +
+            "li.first_seen_at AS first_seen_at FROM songs s INNER JOIN library_items li ON li.library_item_id = s.library_item_id " +
+            "WHERE s.id = :locator AND li.state = 'ACTIVE' AND s.library_item_id <> :excluding"
+    )
+    suspend fun liveAtLocator(locator: Long, excluding: String): List<RepairLiveRow>
+
+    @Query("UPDATE favorites SET library_item_id = :to WHERE library_item_id = :from")
+    suspend fun moveFavorites(from: String, to: String)
+
+    @Query("UPDATE lyrics SET library_item_id = :to WHERE library_item_id = :from")
+    suspend fun moveLyrics(from: String, to: String)
+
+    @Query("UPDATE library_item_overrides SET library_item_id = :to WHERE library_item_id = :from")
+    suspend fun moveOverrides(from: String, to: String)
+
+    @Query("UPDATE song_engagements SET library_item_id = :to WHERE library_item_id = :from")
+    suspend fun moveEngagements(from: String, to: String)
+
+    @Query("UPDATE playlist_songs SET library_item_id = :to WHERE library_item_id = :from")
+    suspend fun movePlaylistEntries(from: String, to: String)
+
+    @Query("UPDATE audio_bookmarks SET library_item_id = :to WHERE library_item_id = :from")
+    suspend fun moveBookmarks(from: String, to: String)
+
+    @Query("UPDATE songs SET is_favorite = EXISTS (SELECT 1 FROM favorites f WHERE f.library_item_id = :libraryItemId AND f.isFavorite = 1) WHERE library_item_id = :libraryItemId")
+    suspend fun refreshFavouriteCache(libraryItemId: String)
+
+    @Query("DELETE FROM library_items WHERE library_item_id = :libraryItemId AND state = 'DORMANT'")
+    suspend fun deleteDormant(libraryItemId: String): Int
+
+    /**
+     * Moves everything that hangs off the dormant item [from] onto the live item [to], then removes [from], in one transaction.
+     * Only [OrphanedIdentityRepair] calls this, and only for a pair it has proved.
+     */
+    @Transaction
+    suspend fun mergeOrphan(from: String, to: String) {
+        moveFavorites(from, to)
+        moveLyrics(from, to)
+        moveOverrides(from, to)
+        moveEngagements(from, to)
+        movePlaylistEntries(from, to)
+        moveBookmarks(from, to)
+        refreshFavouriteCache(to)
+        deleteDormant(from)
+    }
 }
+
+data class RepairDormantRow(
+    @ColumnInfo(name = "library_item_id") val libraryItemId: String,
+    @ColumnInfo(name = "stable_key") val stableKey: String,
+    @ColumnInfo(name = "file_signature") val fileSignature: String,
+    @ColumnInfo(name = "first_seen_at") val firstSeenAt: Long,
+    @ColumnInfo(name = "last_seen_at") val lastSeenAt: Long,
+)
+
+data class RepairLiveRow(
+    @ColumnInfo(name = "library_item_id") val libraryItemId: String,
+    @ColumnInfo(name = "locator") val locator: Long,
+    @ColumnInfo(name = "duration") val duration: Long,
+    @ColumnInfo(name = "file_size") val fileSize: Long,
+    @ColumnInfo(name = "first_seen_at") val firstSeenAt: Long,
+)

@@ -33,10 +33,22 @@ import androidx.compose.ui.unit.IntSize
 class GlassClock {
     private var seconds by mutableFloatStateOf(0f)
 
+    /**
+     * B56-7.1: how much the background moves (Still, Gentle, Lively): the speed the clock runs at and how far the layers or blobs travel. Set by whoever hosts the glass; Gentle is
+     * today's tuning, so a clock nobody sets behaves as it always did. Read in the draw phase, like the phase.
+     */
+    var motion: com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion by androidx.compose.runtime.mutableStateOf(com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion.GENTLE)
+
     val phase: Float get() = seconds
 
     fun advance(deltaSeconds: Float) {
         seconds = GlassMotion.wrap(seconds + deltaSeconds)
+    }
+
+    /** One step of motion: [deltaSeconds] of real time at the speed of [motion] (nothing for Still). A step is never negative: a held clock keeps its phase and resumes from it. */
+    fun step(deltaSeconds: Float) {
+        val scaled = deltaSeconds.coerceAtLeast(0f) * motion.speed
+        if (scaled > 0f) advance(scaled)
     }
 
     /**
@@ -47,6 +59,7 @@ class GlassClock {
     fun frozenCopy(): GlassClock {
         val copy = GlassClock()
         copy.advance(Snapshot.withoutReadObservation { seconds })
+        copy.motion = Snapshot.withoutReadObservation { motion }
         return copy
     }
 }
@@ -169,7 +182,14 @@ fun GlassFieldLayers(
     alpha: () -> Float = { 1f },
 ) {
     val image = remember(field) { field.toBitmap() }
+    // B56-7.1: on Android 13 and later a moving background is the live blobs over the still field; before it, the classic drifting layers (scaled by the motion setting)
+    val live = field.moves && clock.motion.moves && LiveBlobs.available()
     Box(modifier.fillMaxSize().graphicsLayer { this.alpha = alpha() }) {
+        if (live && android.os.Build.VERSION.SDK_INT >= 33) {
+            Box(Modifier.fillMaxSize().drawBehind { onFieldDrawn(); drawImage(image = image, dstSize = IntSize(size.width.toInt(), size.height.toInt()), filterQuality = FilterQuality.Low) })
+            LiveBlobsLayer(field, clock)
+            return@Box
+        }
         for (index in 0 until (if (field.moves) GlassMotion.LAYERS else 1)) {
             Box(
                 Modifier
@@ -179,7 +199,7 @@ fun GlassFieldLayers(
                             Modifier
                         } else {
                             Modifier.graphicsLayer {
-                                val layer = GlassMotion.layer(clock.phase, index)
+                                val layer = GlassMotion.layer(clock.phase, index, travel = clock.motion.travel)
                                 scaleX = if (layer.mirrored) -layer.scale else layer.scale
                                 scaleY = layer.scale
                                 rotationZ = layer.rotationDegrees

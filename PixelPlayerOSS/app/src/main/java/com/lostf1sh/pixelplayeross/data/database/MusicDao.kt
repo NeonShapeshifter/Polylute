@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.lostf1sh.pixelplayeross.data.identity.ItemEvidence
 import com.lostf1sh.pixelplayeross.utils.AudioMeta
 import timber.log.Timber
 import kotlinx.coroutines.flow.Flow
@@ -81,6 +82,8 @@ private const val SONG_DETAIL_PROJECTION = """
     songs.mb_recording_id AS mb_recording_id,
     songs.mb_release_id AS mb_release_id,
     songs.mb_artist_id AS mb_artist_id,
+    songs.mb_release_group_id AS mb_release_group_id,
+    songs.mb_album_artist_id AS mb_album_artist_id,
     songs.album_grouping_key AS album_grouping_key,
     songs.artist_grouping_key AS artist_grouping_key,
     CASE WHEN length(CAST(songs.genres_json AS BLOB)) <= 200000 THEN songs.genres_json ELSE NULL END AS genres_json,
@@ -127,6 +130,8 @@ private const val SONG_LIST_PROJECTION = """
     songs.mb_recording_id AS mb_recording_id,
     songs.mb_release_id AS mb_release_id,
     songs.mb_artist_id AS mb_artist_id,
+    songs.mb_release_group_id AS mb_release_group_id,
+    songs.mb_album_artist_id AS mb_album_artist_id,
     songs.album_grouping_key AS album_grouping_key,
     songs.artist_grouping_key AS artist_grouping_key,
     CASE WHEN length(CAST(songs.genres_json AS BLOB)) <= 200000 THEN songs.genres_json ELSE NULL END AS genres_json,
@@ -173,6 +178,8 @@ private const val SONG_STORAGE_PROJECTION = """
     songs.mb_recording_id AS mb_recording_id,
     songs.mb_release_id AS mb_release_id,
     songs.mb_artist_id AS mb_artist_id,
+    songs.mb_release_group_id AS mb_release_group_id,
+    songs.mb_album_artist_id AS mb_album_artist_id,
     songs.album_grouping_key AS album_grouping_key,
     songs.artist_grouping_key AS artist_grouping_key,
     CASE WHEN length(CAST(songs.genres_json AS BLOB)) <= 200000 THEN songs.genres_json ELSE NULL END AS genres_json,
@@ -241,6 +248,14 @@ data class MusicBrainzCurrentState(
 
 @Dao
 interface MusicDao {
+    @Query("SELECT CASE WHEN s.album_artist = :name COLLATE NOCASE AND s.mb_album_artist_id IS NOT NULL THEN s.mb_album_artist_id ELSE s.mb_artist_id END FROM songs s WHERE ((s.artist_name = :name COLLATE NOCASE OR EXISTS (SELECT 1 FROM song_artist_cross_ref x JOIN artists a ON a.id = x.artist_id WHERE x.song_id = s.id AND x.is_primary = 1 AND a.name = :name COLLATE NOCASE)) AND s.mb_artist_id IS NOT NULL) OR (s.album_artist = :name COLLATE NOCASE AND s.mb_album_artist_id IS NOT NULL) LIMIT 1")
+    suspend fun taggedArtistId(name: String): String?
+
+    @Query("SELECT mb_release_id FROM songs WHERE album_name = :album COLLATE NOCASE AND (album_artist = :artist COLLATE NOCASE OR artist_name = :artist COLLATE NOCASE) AND mb_release_id IS NOT NULL LIMIT 1")
+    suspend fun taggedReleaseId(album: String, artist: String): String?
+
+    @Query("SELECT mb_release_group_id FROM songs WHERE album_name = :album COLLATE NOCASE AND (album_artist = :artist COLLATE NOCASE OR artist_name = :artist COLLATE NOCASE) AND mb_release_group_id IS NOT NULL LIMIT 1")
+    suspend fun taggedReleaseGroupId(album: String, artist: String): String?
 
     @Query("SELECT * FROM genre_images")
     fun observeGenreImages(): Flow<List<GenreImageEntity>>
@@ -579,6 +594,146 @@ interface MusicDao {
     suspend fun updateLibraryItemEvidenceBatch(items: List<LibraryItemEntity>) {
         items.forEach { updateLibraryItemEvidence(it.libraryItemId, it.stableKey, it.fileSignature) }
     }
+
+    /**
+     * Records new evidence only if the item still holds the evidence the caller read (B57 1.1).
+     *
+     * A scan reads an item's evidence at the start and writes its refresh at the end. In between the
+     * metadata editor may have parked the item and committed the evidence of the file it just wrote;
+     * an unconditional write would put the scan's older reading back over it. Returns the rows changed
+     * (0 = the evidence moved underneath the caller, which is the editor's to keep).
+     */
+    @Query(
+        "UPDATE library_items SET stable_key = :stableKey, file_signature = :fileSignature " +
+            "WHERE library_item_id = :libraryItemId AND stable_key = :expectedStableKey " +
+            "AND file_signature = :expectedFileSignature"
+    )
+    suspend fun updateLibraryItemEvidenceIfUnchanged(
+        libraryItemId: String,
+        expectedStableKey: String,
+        expectedFileSignature: String,
+        stableKey: String,
+        fileSignature: String,
+    ): Int
+
+    /** [updateLibraryItemEvidenceBatch] for items whose evidence was read earlier: each is written only if it still holds [expected]. */
+    @Transaction
+    suspend fun updateLibraryItemEvidenceBatchGuarded(
+        items: List<LibraryItemEntity>,
+        expected: Map<String, ItemEvidence>,
+    ) {
+        // An item can be listed twice (its refreshed evidence and its re-read projection): the last one
+        // wins, as it did when every write was unconditional.
+        items.associateBy { it.libraryItemId }.values.forEach { item ->
+            val before = expected[item.libraryItemId]
+            if (before == null) {
+                updateLibraryItemEvidence(item.libraryItemId, item.stableKey, item.fileSignature)
+            } else {
+                updateLibraryItemEvidenceIfUnchanged(
+                    libraryItemId = item.libraryItemId,
+                    expectedStableKey = before.stableKey,
+                    expectedFileSignature = before.fileSignature,
+                    stableKey = item.stableKey,
+                    fileSignature = item.fileSignature,
+                )
+            }
+        }
+    }
+
+    /** The item a song row projects, the evidence stored for it and the projection's recorded size, or null when the row has no item (B57 1.1). */
+    @Query(
+        "SELECT li.library_item_id AS library_item_id, li.stable_key AS stable_key, li.file_signature AS file_signature, " +
+            "s.file_size AS file_size FROM songs s INNER JOIN library_items li ON li.library_item_id = s.library_item_id " +
+            "WHERE s.id = :songId"
+    )
+    suspend fun evidenceRowForSong(songId: Long): EvidenceRow?
+
+    @Query("UPDATE songs SET file_size = :fileSize WHERE id = :songId")
+    suspend fun setSongFileSize(songId: Long, fileSize: Long)
+
+    /**
+     * Before the metadata editor touches a file: reads the item's evidence and sets it to "none".
+     *
+     * That is the guarantee behind a half-finished edit. If the process dies, or the commit after the
+     * write fails, the item is left with no evidence, and the resolver already keeps an item whose
+     * evidence is empty (the next scan fills it in) instead of reading the new tags and size as a
+     * reused number. "No evidence" has two halves: the item's `stable_key` / `file_signature`, and the
+     * projection's `file_size`, because the scan derives an empty signature from the projection's size
+     * and a stale size would bring the old evidence back. If this call itself fails the editor never
+     * writes the file.
+     */
+    @Transaction
+    suspend fun parkEvidenceForSong(songId: Long): EvidenceRow? {
+        val row = evidenceRowForSong(songId) ?: return null
+        updateLibraryItemEvidence(row.libraryItemId, "", "")
+        setSongFileSize(songId, 0L)
+        return row
+    }
+
+    /** The write failed with the file as it was: everything [parkEvidenceForSong] blanked goes back. */
+    @Transaction
+    suspend fun restoreEvidenceForSong(songId: Long, row: EvidenceRow) {
+        updateLibraryItemEvidence(row.libraryItemId, row.stableKey, row.fileSignature)
+        setSongFileSize(songId, row.fileSize)
+    }
+
+    @Query(
+        "UPDATE songs SET stable_key = CASE WHEN :stableKey = '' THEN stable_key ELSE :stableKey END, " +
+            "file_size = CASE WHEN :fileSize > 0 THEN :fileSize ELSE file_size END WHERE id = :songId"
+    )
+    suspend fun updateSongEvidenceColumns(songId: Long, stableKey: String, fileSize: Long)
+
+    /**
+     * The `songs` row, the artist links and the item's evidence in one transaction (B57 1.1).
+     *
+     * [evidence] is what a scan would read from the file as the edit left it, or [ItemEvidence.NONE]
+     * when the editor could not confirm it, in which case the item stays "no evidence" and the next
+     * scan records it.
+     */
+    @Transaction
+    suspend fun commitEditedSongMetadata(
+        songId: Long,
+        title: String,
+        artist: String,
+        artistId: Long,
+        artistsJson: String?,
+        album: String,
+        genre: String?,
+        trackNumber: Int,
+        discNumber: Int?,
+        artistsToEnsure: List<ArtistEntity>,
+        crossRefs: List<SongArtistCrossRef>,
+        libraryItemId: String?,
+        evidence: ItemEvidence,
+        fileSize: Long,
+        year: Int?,
+    ) {
+        updateSongMetadataAndArtistLinks(
+            songId = songId,
+            title = title,
+            artist = artist,
+            artistId = artistId,
+            artistsJson = artistsJson,
+            album = album,
+            genre = genre,
+            trackNumber = trackNumber,
+            discNumber = discNumber,
+            artistsToEnsure = artistsToEnsure,
+            crossRefs = crossRefs,
+        )
+        if (libraryItemId != null) {
+            updateLibraryItemEvidence(libraryItemId, evidence.stableKey, evidence.fileSignature)
+        }
+        updateSongEvidenceColumns(songId, evidence.stableKey, fileSize)
+        if (year != null) updateSongYear(songId, year)
+    }
+
+    /** B57 4.3: every album's total length from the songs already in the database: one grouped query, no file is read. */
+    @Query("SELECT album_id AS albumId, SUM(duration) AS totalMs FROM songs WHERE source_type = 0 GROUP BY album_id")
+    fun albumDurations(): Flow<List<AlbumDurationRow>>
+
+    @Query("UPDATE songs SET year = :year WHERE id = :songId")
+    suspend fun updateSongYear(songId: Long, year: Int)
 
     /**
      * The dormant transition — which **removes the stale projection**.
@@ -1521,10 +1676,10 @@ interface MusicDao {
             albums.is_compilation
         HAVING COUNT(songs.id) >= :minTracks
         ORDER BY
-            CASE WHEN :sortOrder = 'album_title_az' THEN albums.title END COLLATE NOCASE ASC,
-            CASE WHEN :sortOrder = 'album_title_za' THEN albums.title END COLLATE NOCASE DESC,
-            CASE WHEN :sortOrder = 'album_artist' THEN COALESCE(NULLIF(TRIM(albums.album_artist), ''), albums.artist_name) END COLLATE NOCASE ASC,
-            CASE WHEN :sortOrder = 'album_artist_desc' THEN COALESCE(NULLIF(TRIM(albums.album_artist), ''), albums.artist_name) END COLLATE NOCASE DESC,
+            CASE WHEN :sortOrder = 'album_title_az' THEN albums.title END COLLATE UNICODE ASC,
+            CASE WHEN :sortOrder = 'album_title_za' THEN albums.title END COLLATE UNICODE DESC,
+            CASE WHEN :sortOrder = 'album_artist' THEN COALESCE(NULLIF(TRIM(albums.album_artist), ''), albums.artist_name) END COLLATE UNICODE ASC,
+            CASE WHEN :sortOrder = 'album_artist_desc' THEN COALESCE(NULLIF(TRIM(albums.album_artist), ''), albums.artist_name) END COLLATE UNICODE DESC,
             CASE WHEN :sortOrder = 'album_release_year' THEN albums.year END DESC,
             CASE WHEN :sortOrder = 'album_release_year_asc' THEN albums.year END ASC,
             CASE WHEN :sortOrder = 'album_date_added' THEN albums.date_added END DESC,
@@ -1582,10 +1737,10 @@ interface MusicDao {
             albums.is_compilation
         HAVING COUNT(songs.id) >= :minTracks
         ORDER BY
-            CASE WHEN :sortOrder = 'album_title_az' THEN albums.title END COLLATE NOCASE ASC,
-            CASE WHEN :sortOrder = 'album_title_za' THEN albums.title END COLLATE NOCASE DESC,
-            CASE WHEN :sortOrder = 'album_artist' THEN COALESCE(NULLIF(TRIM(albums.album_artist), ''), albums.artist_name) END COLLATE NOCASE ASC,
-            CASE WHEN :sortOrder = 'album_artist_desc' THEN COALESCE(NULLIF(TRIM(albums.album_artist), ''), albums.artist_name) END COLLATE NOCASE DESC,
+            CASE WHEN :sortOrder = 'album_title_az' THEN albums.title END COLLATE UNICODE ASC,
+            CASE WHEN :sortOrder = 'album_title_za' THEN albums.title END COLLATE UNICODE DESC,
+            CASE WHEN :sortOrder = 'album_artist' THEN COALESCE(NULLIF(TRIM(albums.album_artist), ''), albums.artist_name) END COLLATE UNICODE ASC,
+            CASE WHEN :sortOrder = 'album_artist_desc' THEN COALESCE(NULLIF(TRIM(albums.album_artist), ''), albums.artist_name) END COLLATE UNICODE DESC,
             CASE WHEN :sortOrder = 'album_release_year' THEN albums.year END DESC,
             CASE WHEN :sortOrder = 'album_release_year_asc' THEN albums.year END ASC,
             CASE WHEN :sortOrder = 'album_date_added' THEN albums.date_added END DESC,
@@ -1628,6 +1783,13 @@ interface MusicDao {
         LIMIT 1
     """)
     fun getAlbumById(albumId: Long): Flow<AlbumEntity?>
+
+    /**
+     * B57.5 2.1: the folders an album's songs are in, with how many songs each holds, from the paths already in the library (no file walk). The animated cover is looked for in these
+     * folders (the one with the most songs of the album wins). Plain, not suspending: the caller is the animated-cover finder, already off the main thread, and asks once per album.
+     */
+    @Query("SELECT parent_directory_path AS folder, COUNT(*) AS songCount FROM songs WHERE album_id = :albumId AND source_type = 0 GROUP BY parent_directory_path")
+    fun getAlbumFolderCounts(albumId: Long): List<AlbumFolderCount>
 
     @Query("""
         SELECT
@@ -1794,6 +1956,7 @@ interface MusicDao {
         ORDER BY
             CASE WHEN :sortOrder = 'artist_name_az' THEN artists.name END COLLATE NOCASE ASC,
             CASE WHEN :sortOrder = 'artist_name_za' THEN artists.name END COLLATE NOCASE DESC,
+            CASE WHEN :sortOrder = 'artist_date_added' THEN MAX(songs.date_added) END DESC,
             CASE WHEN :sortOrder = 'artist_num_songs_desc' THEN track_count END DESC,
             CASE WHEN :sortOrder = 'artist_num_songs_asc' THEN track_count END ASC,
             artists.name COLLATE NOCASE ASC,
@@ -1834,6 +1997,7 @@ interface MusicDao {
         ORDER BY
             CASE WHEN :sortOrder = 'artist_name_az' THEN artists.name END COLLATE NOCASE ASC,
             CASE WHEN :sortOrder = 'artist_name_za' THEN artists.name END COLLATE NOCASE DESC,
+            CASE WHEN :sortOrder = 'artist_date_added' THEN MAX(songs.date_added) END DESC,
             CASE WHEN :sortOrder = 'artist_num_songs_desc' THEN track_count END DESC,
             CASE WHEN :sortOrder = 'artist_num_songs_asc' THEN track_count END ASC,
             artists.name COLLATE NOCASE ASC,
@@ -1868,6 +2032,7 @@ interface MusicDao {
         ORDER BY
             CASE WHEN :sortOrder = 'artist_name_az' THEN artists.name END COLLATE NOCASE ASC,
             CASE WHEN :sortOrder = 'artist_name_za' THEN artists.name END COLLATE NOCASE DESC,
+            CASE WHEN :sortOrder = 'artist_date_added' THEN MAX(songs.date_added) END DESC,
             CASE WHEN :sortOrder = 'artist_num_songs_desc' THEN track_count END DESC,
             CASE WHEN :sortOrder = 'artist_num_songs_asc' THEN track_count END ASC,
             artists.name COLLATE NOCASE ASC,
@@ -1888,6 +2053,10 @@ interface MusicDao {
      */
     @Query("SELECT * FROM artists ORDER BY name ASC")
     fun getAllArtistsRaw(): Flow<List<ArtistEntity>>
+
+    /** Home asks for at most ten existing artist rows, including their saved/custom images. */
+    @Query("SELECT * FROM artists WHERE id IN (:artistIds)")
+    fun observeArtistsForHome(artistIds: List<Long>): Flow<List<ArtistEntity>>
 
     @Query("SELECT * FROM artists WHERE id = :artistId")
     fun getArtistById(artistId: Long): Flow<ArtistEntity?>
@@ -2015,6 +2184,63 @@ interface MusicDao {
         allowedParentDirs: List<String>,
         applyDirectoryFilter: Boolean
     ): Flow<List<SongEntity>>
+
+    // B56-5: the songs whose tag value is one of [values] exactly: the tag values that make up one merged genre (`GenreGroup.rawValues`).
+    @Query("""
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
+        WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
+        AND genre IN (:values)
+        ORDER BY title ASC
+    """)
+    fun getSongsByGenreValues(
+        values: List<String>,
+        allowedParentDirs: List<String>,
+        applyDirectoryFilter: Boolean
+    ): Flow<List<SongEntity>>
+
+    /** B56-5: a genre's stored image follows the genre when merging changes its id (never over an image the new id already has). */
+    @Query("UPDATE OR IGNORE genre_images SET genre_key = :to WHERE genre_key = :from")
+    suspend fun moveGenreImage(from: String, to: String)
+
+    // ── B56 phase 6: composers ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertComposers(rows: List<SongComposerEntity>)
+
+    @Query("DELETE FROM song_composers WHERE song_id IN (:songIds)")
+    suspend fun forgetComposers(songIds: List<Long>)
+
+    /** Songs whose composer has not been read yet (no row), with their files, in id order. */
+    @Query("""
+        SELECT songs.id AS songId, songs.file_path AS path FROM songs
+        LEFT JOIN song_composers ON song_composers.song_id = songs.id
+        WHERE song_composers.song_id IS NULL AND songs.id > 0
+        ORDER BY songs.id ASC LIMIT :limit
+    """)
+    suspend fun songsNeedingComposer(limit: Int): List<ComposerBackfillRow>
+
+    @Query("SELECT COUNT(*) FROM songs LEFT JOIN song_composers ON song_composers.song_id = songs.id WHERE song_composers.song_id IS NULL AND songs.id > 0")
+    suspend fun countSongsNeedingComposer(): Int
+
+    /** The composer tag values that contain [query] (case-insensitive for plain letters), with how many songs carry each. */
+    @Query("""
+        SELECT song_composers.composer AS composer, COUNT(*) AS songCount FROM song_composers
+        JOIN songs ON songs.id = song_composers.song_id
+        WHERE song_composers.composer != '' AND song_composers.composer LIKE '%' || :query || '%'
+        AND (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
+        GROUP BY song_composers.composer
+    """)
+    fun searchComposerValues(query: String, allowedParentDirs: List<String>, applyDirectoryFilter: Boolean): Flow<List<ComposerCountRow>>
+
+    /** The songs whose composer tag is one of [values] exactly. */
+    @Query("""
+        SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
+        JOIN song_composers ON song_composers.song_id = songs.id
+        WHERE song_composers.composer IN (:values)
+        AND (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
+        ORDER BY songs.title ASC
+    """)
+    fun getSongsByComposerValues(values: List<String>, allowedParentDirs: List<String>, applyDirectoryFilter: Boolean): Flow<List<SongEntity>>
 
     @Query("SELECT genre, COUNT(*) AS songCount FROM songs WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs)) GROUP BY genre")
     fun getGenreCounts(allowedParentDirs: List<String>, applyDirectoryFilter: Boolean): Flow<List<GenreCountRow>>
@@ -2169,6 +2395,9 @@ interface MusicDao {
 
     @Query("UPDATE songs SET album_art_uri_string = :albumArtUri WHERE id = :songId")
     suspend fun updateSongAlbumArt(songId: Long, albumArtUri: String?)
+
+    @Query("UPDATE albums SET album_art_uri_string = (SELECT s.album_art_uri_string FROM songs s WHERE s.album_id = albums.id AND s.album_art_uri_string IS NOT NULL ORDER BY s.id LIMIT 1) WHERE id IN (:albumIds)")
+    suspend fun refreshAlbumArtwork(albumIds: List<Long>)
 
     // --- B11-fix FIX-3: library repair -----------------------------------------------------------
     //
@@ -2564,3 +2793,9 @@ interface MusicDao {
         const val SONG_BATCH_SIZE = 500
     }
 }
+
+/** One album's id and the sum of its songs' lengths in milliseconds. */
+data class AlbumDurationRow(val albumId: Long, val totalMs: Long)
+
+/** B57.5 2.1: a folder that holds [songCount] songs of one album ([MusicDao.getAlbumFolderCounts]). */
+data class AlbumFolderCount(val folder: String, val songCount: Int)

@@ -113,7 +113,7 @@ class DacLevelGuardTest {
         assertThat(sequence).contains("OpenLevelCheck.UNVERIFIED")
         assertThat(sink).contains("streamingSequence.reconfigure(sampleRate, altSetting")
         // and it still runs after the alt and before the stream starts
-        assertThat(sink.indexOf("streamingSequence.reconfigure(")).isLessThan(sink.indexOf("if (!stream.start())"))
+        assertThat(sink.indexOf("streamingSequence.reconfigure(")).isLessThan(sink.indexOf("if (!stream.start("))
         val device = File(
             "../../decent-player/libs/decent-usb-audio-driver/src/main/kotlin/com/decent/usbaudio/UsbAudioDevice.kt"
         ).readText().replace("\r\n", "\n")

@@ -239,9 +239,7 @@ fun MultiSelectionBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     item {
-                        androidx.compose.material3.TextButton(onClick = { showOfflineDownloads = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.offline_download_title))
-                        }
+                        MusicInfoSelectionEntry { showOfflineDownloads = true }
                     }
                     item {
                         Row(

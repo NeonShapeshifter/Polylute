@@ -18,7 +18,8 @@ class B41Fix1GlassStepCostTest {
     @Test
     fun `the layers' lambdas ask for their own layer, not the list of all three`() {
         val lambda = backdrop.substringAfter("Modifier.graphicsLayer {\n").substringBefore("this.alpha = layer.alpha")
-        assertThat(lambda).contains("GlassMotion.layer(clock.phase, index)")
+        // B56-7.1: it also hands the motion setting's travel to its own layer (Gentle is 1, today's)
+        assertThat(lambda).contains("GlassMotion.layer(clock.phase, index, travel = clock.motion.travel)")
         assertThat(lambda).doesNotContain("GlassMotion.layers(")
         assertThat(backdrop).doesNotContain("GlassMotion.layers(")
     }

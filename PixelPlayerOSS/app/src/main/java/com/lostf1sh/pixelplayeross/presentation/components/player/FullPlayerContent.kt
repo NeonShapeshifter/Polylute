@@ -159,7 +159,8 @@ fun FullPlayerContent(
             isFavorite = isFavorite,
             lyricsProvider = lyricsProvider,
             lyricsResolveCompletedProvider = lyricsResolveCompletedProvider,
-            underCover = fullPlayerSlice.lyricsUnderCover,
+            underCover = fullPlayerSlice.lyricsMode.showsLinesOnPlayer,
+            mode = fullPlayerSlice.lyricsMode,
         ),
         isLandscape = isLandscapeNow(),
     )

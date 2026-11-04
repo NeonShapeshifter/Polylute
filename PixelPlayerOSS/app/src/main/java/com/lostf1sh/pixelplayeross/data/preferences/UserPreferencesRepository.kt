@@ -112,8 +112,8 @@ const val DEFAULT_SHOW_QUEUE_HISTORY = false
  */
 const val DEFAULT_DAP_LOCK_SCREEN_ENABLED = false
 
-/** B41: two lines of synced lyrics under the cover in the full player. */
-const val DEFAULT_LYRICS_UNDER_COVER = true
+/** B56-3.4: how the lyrics show in the full player (replaces B41's on/off "under the cover"). */
+val DEFAULT_LYRICS_MODE = LyricsMode.DEFAULT
 
 /** B39-A7: "Share the DAC with other apps" (Resonance only). Off: Polylute keeps the DAC, as it always did. */
 const val DEFAULT_DAC_SHARE_ENABLED = false
@@ -247,6 +247,9 @@ constructor(
         val LIBRARY_TABS_HIDDEN = stringPreferencesKey("library_tabs_hidden")
         val IS_FOLDER_FILTER_ACTIVE = booleanPreferencesKey("is_folder_filter_active")
         val IS_FOLDERS_PLAYLIST_VIEW = booleanPreferencesKey("is_folders_playlist_view")
+        val FOLDERS_VOLUME_ROOT = stringPreferencesKey("folders_volume_root")
+        val FOLDERS_FLAT_LIST = booleanPreferencesKey("folders_flat_list")
+        val FOLDER_COVERS_ENABLED = booleanPreferencesKey("folder_covers_enabled")
         val FOLDERS_SOURCE = stringPreferencesKey("folders_source")
         val FOLDER_BACK_GESTURE_NAVIGATION = booleanPreferencesKey("folder_back_gesture_navigation")
 
@@ -346,8 +349,10 @@ constructor(
         val ALBUM_ART_CACHE_LIMIT_MB = intPreferencesKey("album_art_cache_limit_mb")
         val TAP_BACKGROUND_CLOSES_PLAYER = booleanPreferencesKey("tap_background_closes_player")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
-        /** B41: two lines of synced lyrics under the cover in the full player. Absent = on. */
+        /** B41: two lines of synced lyrics under the cover in the full player. Absent = on. Since B56 read only while [LYRICS_MODE] is absent. */
         val LYRICS_UNDER_COVER = booleanPreferencesKey("lyrics_under_cover_v1")
+        /** B56-3.4: [LyricsMode.storageKey]. Absent = what the old [LYRICS_UNDER_COVER] says. */
+        val LYRICS_MODE = stringPreferencesKey("lyrics_mode_v1")
         val IMMERSIVE_LYRICS_ENABLED = booleanPreferencesKey("immersive_lyrics_enabled")
         val IMMERSIVE_LYRICS_TIMEOUT = longPreferencesKey("immersive_lyrics_timeout")
         val USE_ANIMATED_LYRICS = booleanPreferencesKey("use_animated_lyrics")
@@ -870,15 +875,19 @@ constructor(
                 ImmersiveLyrics.effective(preferences[PreferencesKeys.IMMERSIVE_LYRICS_ENABLED] ?: false)
             }
 
-    /** B41: "Lyrics under the cover" (Appearance, Player): on unless the listener turned it off. */
-    val lyricsUnderCoverFlow: Flow<Boolean> =
+    /**
+     * B56-3.4: how the lyrics show in the player (Appearance, Player; and the player's lyrics button). The old boolean is the one-time read: while the new key does not
+     * exist yet, true is "Over the cover" and false is "Full page"; the first choice writes the new key and the old one is never read again.
+     */
+    val lyricsModeFlow: Flow<LyricsMode> =
             dataStore.data.map { preferences ->
-                preferences[PreferencesKeys.LYRICS_UNDER_COVER] ?: DEFAULT_LYRICS_UNDER_COVER
+                LyricsMode.fromStorageKey(preferences[PreferencesKeys.LYRICS_MODE])
+                    ?: LyricsMode.fromLegacyBoolean(preferences[PreferencesKeys.LYRICS_UNDER_COVER])
             }
 
-    suspend fun setLyricsUnderCover(enabled: Boolean) {
+    suspend fun setLyricsMode(mode: LyricsMode) {
         dataStore.edit { preferences ->
-            preferences[PreferencesKeys.LYRICS_UNDER_COVER] = enabled
+            preferences[PreferencesKeys.LYRICS_MODE] = mode.storageKey
         }
     }
 
@@ -1846,6 +1855,24 @@ constructor(
         .map { preferences ->
             preferences[PreferencesKeys.IS_FOLDERS_PLAYLIST_VIEW] ?: false
         }
+
+    val foldersVolumeRootFlow: Flow<String> = dataStore.data.map { it[PreferencesKeys.FOLDERS_VOLUME_ROOT] ?: "" }
+    suspend fun setFoldersVolumeRoot(root: String, source: FolderSource) {
+        dataStore.edit {
+            it[PreferencesKeys.FOLDERS_VOLUME_ROOT] = root
+            it[PreferencesKeys.FOLDERS_SOURCE] = source.storageKey
+        }
+    }
+
+    val foldersFlatListFlow: Flow<Boolean> = dataStore.data.map { it[PreferencesKeys.FOLDERS_FLAT_LIST] ?: false }
+    suspend fun setFoldersFlatList(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.FOLDERS_FLAT_LIST] = enabled }
+    }
+
+    val folderCoversEnabledFlow: Flow<Boolean> = dataStore.data.map { it[PreferencesKeys.FOLDER_COVERS_ENABLED] ?: true }
+    suspend fun setFolderCoversEnabled(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.FOLDER_COVERS_ENABLED] = enabled }
+    }
 
     val foldersSourceFlow: Flow<FolderSource> = dataStore.data
         .map { preferences ->

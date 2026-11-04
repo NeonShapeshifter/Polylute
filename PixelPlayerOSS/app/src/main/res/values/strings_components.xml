@@ -5,7 +5,6 @@
     <string name="widget_album_art_placeholder">Album art placeholder</string>
     <string name="cd_album_art_of">Album art of %1$s</string>
     <string name="cd_album_art_placeholder">%1$s placeholder</string>
-    <string name="cd_show_controls">Show controls</string>
     <string name="cd_favorite">Favorite</string>
     <string name="cd_play">Play</string>
     <string name="cd_pause">Pause</string>
@@ -39,7 +38,7 @@
     <string name="edit_song_group_replaygain">ReplayGain</string>
     <string name="edit_song_find_lyrics">Search lyrics online</string>
     <string name="edit_song_toolbar_title">Edit song</string>
-    <string name="cd_show_metadata_info">Show information</string>
+    <string name="cd_show_metadata_info">Credits and licences</string>
     <string name="song_field_track_number">Track number</string>
     <string name="song_field_disc_number">Disc number</string>
     <string name="song_field_replaygain_track_db">ReplayGain track (dB)</string>

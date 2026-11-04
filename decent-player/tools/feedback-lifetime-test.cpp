@@ -50,7 +50,7 @@
 extern "C" {
 JNIEXPORT jlong JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
     JNIEnv *, jobject, jint, jint, jint, jint, jint, jint, jint, jint, jint, jint);
-JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(JNIEnv *, jobject, jlong);
+JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(JNIEnv *, jobject, jlong, jint previousRate = 0);
 JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStop(JNIEnv *, jobject, jlong);
 JNIEXPORT jint JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeDrainUrbs(JNIEnv *, jobject, jlong);
 JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioDestroy(JNIEnv *, jobject, jlong);

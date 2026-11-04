@@ -49,9 +49,11 @@ class GlassSheetBoundaryTest {
         "presentation/components/ReorderTabsSheet.kt" to 1,
         "presentation/components/SongInfoBottomSheet.kt" to 1,
         "presentation/components/SongPickerBottomSheet.kt" to 1,
+        "presentation/components/subcomps/LyricsModeSheet.kt" to 1,
         "presentation/components/subcomps/LyricsOptionsSheet.kt" to 1,
         "presentation/components/TimerOptionsBottomSheet.kt" to 1,
         "presentation/screens/AudioBookmarksScreen.kt" to 1,
+        "presentation/screens/FolderTabControls.kt" to 1,
         "presentation/screens/DacEqualizerScreen.kt" to 2,
         "presentation/screens/LibraryScreen.kt" to 1,
         "presentation/screens/PlaylistDetailScreen.kt" to 1,
@@ -67,10 +69,10 @@ class GlassSheetBoundaryTest {
     }
 
     @Test
-    fun `the bottom sheets are exactly these nineteen, in these files`() {
+    fun `the bottom sheets are exactly these twenty-one, in these files`() {
         val actual = callsOf("GlassModalBottomSheet").filterKeys { it != "presentation/components/GlassModalBottomSheet.kt" }
         assertThat(actual).isEqualTo(bottomSheets)
-        assertThat(actual.values.sum()).isEqualTo(19)
+        assertThat(actual.values.sum()).isEqualTo(21)
     }
 
     @Test
@@ -123,6 +125,7 @@ class GlassSheetBoundaryTest {
     private val leftOut = mapOf(
         "presentation/components/EditSongSheet.kt" to 2,               // the tag editor, and the cover cropper inside it (a tool over a picture)
         "presentation/components/EditMultipleSongsSheet.kt" to 1,      // the batch tag editor
+        "presentation/components/EditAlbumSheet.kt" to 1,              // B57 1.3: the whole-album tag editor, a full-screen dialog like the two above
         "presentation/screens/CreatePlaylistScreen.kt" to 2,           // create and edit a playlist
         "presentation/components/BackupModuleSelectionDialog.kt" to 1, // choose what a restore brings back
         "presentation/settings/BackupDialogs.kt" to 2,                 // the backup's export and import pages
@@ -130,6 +133,8 @@ class GlassSheetBoundaryTest {
 
     /** Small dialogs: a card over a dimmed app, opaque and tinted by the cover, as it was. */
     private val small = mapOf(
+        "presentation/components/MusicInfoAbout.kt" to 1,
+        "presentation/settings/MusicInfoSettingsSection.kt" to 1,
         "presentation/components/PlaylistCreationDialogs.kt" to 2,
         "presentation/settings/BackupTransferProgress.kt" to 1,
         "presentation/components/subcomps/FetchLyricsDialog.kt" to 1,

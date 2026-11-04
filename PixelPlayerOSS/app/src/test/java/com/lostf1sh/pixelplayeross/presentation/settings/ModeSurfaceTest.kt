@@ -49,8 +49,8 @@ class ModeSurfaceTest {
 
     @Test
     fun `the screen-off setting is hidden in App mode and stays at every DAP level`() {
-        for (appLike in listOf(app, appOwnedByDap, setupRequired)) assertThat(ModeSurfacePolicy.showScreenTimeout(appLike)).isFalse()
-        for (dap in dapLevels) assertThat(ModeSurfacePolicy.showScreenTimeout(dap)).isTrue()
+        for (appLike in listOf(app, appOwnedByDap, setupRequired)) assertThat(ModeSurfacePolicy.showDeviceCategory(appLike)).isFalse()
+        for (dap in dapLevels) assertThat(ModeSurfacePolicy.showDeviceCategory(dap)).isTrue()
         for (appLike in listOf(app, appOwnedByDap, setupRequired)) assertThat(ModeSurfacePolicy.isVisible(Entry.DEVICE_SCREEN_TIMEOUT, appLike)).isFalse()
         for (dap in dapLevels) assertThat(ModeSurfacePolicy.isVisible(Entry.DEVICE_SCREEN_TIMEOUT, dap)).isTrue()
     }
@@ -109,21 +109,15 @@ class ModeSurfaceTest {
     }
 
     @Test
-    fun `the Device page has no Screen section in App mode and has it in a DAP level`() {
-        compose.setContent {
-            DeviceSettingsScreen(DeviceSettingsState(DeviceControlUiState(), showScreenTimeout = ModeSurfacePolicy.showScreenTimeout(app)), noDeviceActions)
-        }
-        compose.onAllNodesWithText(s(R.string.setcat_device_screen)).assertCountEquals(0)
-        compose.onAllNodesWithText(s(R.string.dap_screen_timeout_title)).assertCountEquals(0)
-        // the rest of the page is untouched
-        compose.onNodeWithText(s(R.string.setcat_device_connectivity)).assertExists()
-        compose.onNodeWithText(s(R.string.setcat_device_storage)).assertExists()
+    fun `App mode has no reachable Device category`() {
+        assertThat(SettingsSurfacePolicy.visibleCategories(app)).doesNotContain(com.lostf1sh.pixelplayeross.presentation.model.SettingsCategory.DEVICE)
+        assertThat(ModeSurfacePolicy.showDeviceCategory(app)).isFalse()
     }
 
     @Test
     fun `the Device page draws the Screen section at the Dedicated level`() {
         compose.setContent {
-            DeviceSettingsScreen(DeviceSettingsState(DeviceControlUiState(), showScreenTimeout = ModeSurfacePolicy.showScreenTimeout(dedicated)), noDeviceActions)
+            DeviceSettingsScreen(DeviceSettingsState(DeviceControlUiState()), noDeviceActions)
         }
         compose.onNodeWithText(s(R.string.setcat_device_screen)).assertExists()
         compose.onNodeWithText(s(R.string.dap_screen_timeout_title)).assertExists()

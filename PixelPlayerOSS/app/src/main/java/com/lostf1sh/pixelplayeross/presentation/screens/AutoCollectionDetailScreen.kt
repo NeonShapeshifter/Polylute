@@ -16,8 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenu
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -145,10 +145,11 @@ fun AutoCollectionDetailScreen(
                 }
                 showSongInfoSheet = false
             },
-            onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate ->
+            onEditSong = { newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics, newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, newDate, coverArtUpdate ->
                 playerViewModel.editSongMetadata(
                     song, newTitle, newArtist, newAlbum, newAlbumArtist, newComposer, newGenre, newLyrics,
                     newTrackNumber, newDiscNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArtUpdate,
+                    newDate = newDate
                 )
             },
             // After a file is deleted from the device the library changes and the collections are rebuilt; only the mix of the
@@ -235,9 +236,9 @@ internal fun CollectionPage(
                                     onClick = { menuOpen = true },
                                     description = stringResource(R.string.playlists_collection_options, name),
                                 )
-                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.playlists_hide)) },
+                                DapMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DapMenuItem(
+                                        text = stringResource(R.string.playlists_hide),
                                         onClick = {
                                             menuOpen = false
                                             onHide()

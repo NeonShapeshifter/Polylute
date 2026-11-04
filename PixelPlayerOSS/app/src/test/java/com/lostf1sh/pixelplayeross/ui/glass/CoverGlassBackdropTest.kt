@@ -132,7 +132,9 @@ class CoverGlassBackdropTest {
         return Run(clock.phase - start, ticks)
     }
 
+    // B56-7.1: this is the classic glass (before Android 13). From Android 13 the moving background is the live blobs, stepped at thirty a second (B56BackgroundMotionTest).
     @Test
+    @Config(sdk = [32])
     fun `in the full player, while a song plays, it moves on every frame the display draws`() {
         val run = host()
         // the test's display draws a frame every 16 ms: 62 to 63 a second
@@ -143,7 +145,9 @@ class CoverGlassBackdropTest {
         assertThat(run.ticks).isAtLeast(2 * 58)
     }
 
+    // B56-7.1: the classic glass moves on the lock screen as it always did; the live blobs of Android 13 and later hold still there (spec 7.1; B56BackgroundMotionTest)
     @Test
+    @Config(sdk = [32])
     fun `on the lock screen, while a song plays, it moves too`() {
         val run = host(expansion = 0f, lockVisible = true)
         assertThat(run.phase).isWithin(0.2f).of(2f)

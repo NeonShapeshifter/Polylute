@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.settings
 
+import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,7 +56,7 @@ open class B41AppearancePageRenderTest {
         override fun onThemeChoiceChange(choice: DapAppearanceChoice) {}
         override fun onOpenPaletteStyle() {}
         override fun onCoverGlassMovingChange(value: Boolean) {}
-        override fun onLyricsUnderCoverChange(value: Boolean) {}
+        override fun onLyricsModeChange(value: LyricsMode) {}
         override fun onImmersiveLyricsEnabledChange(value: Boolean) {}
         override fun onImmersiveLyricsTimeoutChange(value: Long) {}
         override fun onLyricsAlignmentChange(value: String) {}

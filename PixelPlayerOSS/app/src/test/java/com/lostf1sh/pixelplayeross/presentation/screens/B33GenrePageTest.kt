@@ -17,6 +17,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -125,6 +127,8 @@ open class B33GenrePageTest {
                             title = title, state = state, currentSongId = currentSongId, isUnknownGenre = isUnknown,
                             onBack = { calls += "back" }, onRetry = { calls += "retry" }, onPlay = { calls += "play" }, onShuffle = { calls += "shuffle" },
                             onQuickFill = { calls += "quickFill" }, onPlaySong = { played += it.id }, onMoreSong = { calls += "more:${it.id}" },
+                            // B56-5.1: the song list is behind the page's "All songs (N)" row now; these tests are about that list
+                            startOnAllSongs = true,
                         )
                     }
                 }
@@ -237,7 +241,7 @@ open class B33GenrePageTest {
         every { repository.getGenres() } returns flowOf(listOf(hipHop))
         every { repository.getMusicByGenre("Hip Hop") } returns flowOf(all.shuffled(java.util.Random(5)))
         val viewModel = GenreDetailViewModel(
-            repository, androidx.lifecycle.SavedStateHandle(mapOf("genreId" to "hip_hop")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true),
+            repository, androidx.lifecycle.SavedStateHandle(mapOf("genreId" to "hip_hop")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true),
         )
         val queued = mutableListOf<List<Song>>()
         val firstSongs = mutableListOf<Song>()
@@ -248,6 +252,7 @@ open class B33GenrePageTest {
         every { player.favoriteSongIds } returns MutableStateFlow(emptySet())
         every { player.customGenres } returns MutableStateFlow(emptySet())
         every { player.customGenreIcons } returns MutableStateFlow(emptyMap())
+        every { player.artistsFlow } returns MutableStateFlow(kotlinx.collections.immutable.persistentListOf())
         every { player.playSongs(any(), any(), any(), any(), any()) } answers {
             queued += firstArg<List<Song>>(); firstSongs += secondArg<Song>()
         }
@@ -269,6 +274,10 @@ open class B33GenrePageTest {
                 }
             }
         }
+        compose.waitForIdle()
+        // B56-5.1: the page is an overview now; the list this test is about opens from its "All songs (N)" row
+        compose.onNode(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).performScrollToNode(androidx.compose.ui.test.hasTestTag(GenreOverviewTags.AllSongs))
+        compose.onNodeWithTag(GenreOverviewTags.AllSongs).performClick()
         compose.waitForIdle()
         val expected = SourceOrder.genrePage(all)
         assertThat(titlesInOrder(all)).isEqualTo(expected.map { it.title })

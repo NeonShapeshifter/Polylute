@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Device Owner APIs are used narrowly; no legacy destructive admin policy is requested. -->
-    <uses-policies />
+    <!-- The DAP lock surface sleeps after 30 seconds without touch, including with keyguard disabled. -->
+    <uses-policies><force-lock /></uses-policies>
 </device-admin>

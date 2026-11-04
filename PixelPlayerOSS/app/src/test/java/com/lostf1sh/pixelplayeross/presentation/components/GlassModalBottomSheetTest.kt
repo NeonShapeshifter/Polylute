@@ -54,7 +54,8 @@ import org.robolectric.annotation.GraphicsMode
 @OptIn(ExperimentalMaterial3Api::class)
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], application = android.app.Application::class, qualifiers = "w360dp-h805dp-xhdpi")
+// B56-7.1: these measure the classic glass (before Android 13): from 13 a moving background is live AGSL blobs, which Robolectric cannot draw (Still renders as the classic layers: B56StillGlassRenderTest)
+@Config(sdk = [32], application = android.app.Application::class, qualifiers = "w360dp-h805dp-xhdpi")
 class GlassModalBottomSheetTest {
     @get:Rule
     val compose = createComposeRule()

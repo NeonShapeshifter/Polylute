@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B56 fase 5: la página del género y la pestaña Géneros -->
+    <string name="genre_other_header">Otros</string>
+    <string name="genre_top_artists_header">Artistas principales</string>
+    <string name="genre_albums_header">Álbumes</string>
+    <string name="genre_all_songs">Todas las canciones (%1$d)</string>
+</resources>

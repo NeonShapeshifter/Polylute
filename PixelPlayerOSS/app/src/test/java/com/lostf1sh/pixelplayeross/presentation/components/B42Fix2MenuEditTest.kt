@@ -68,7 +68,7 @@ class B42Fix2MenuEditTest {
                             song = song, isFavorite = false, onToggleFavorite = {}, onDismiss = {}, onPlaySong = {}, onAddToQueue = {}, onAddNextToQueue = {},
                             onAddToPlayList = {}, onDeleteFromDevice = { _, _, _ -> }, onNavigateToAlbum = {}, onNavigateToArtist = {}, onNavigateToGenre = {},
                             onViewTrackDetails = {}, onViewCredits = {},
-                            onEditSong = { title, _, _, _, _, _, _, _, _, _, _, _ -> saved += song.id to title },
+                            onEditSong = { title, _, _, _, _, _, _, _, _, _, _, _, _ -> saved += song.id to title },
                             removeFromListTrigger = {}, songInfoViewModel = vm, presentation = SongOptionsPresentation.PAGE,
                         )
                     }

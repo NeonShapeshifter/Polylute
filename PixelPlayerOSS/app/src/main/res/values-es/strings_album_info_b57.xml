@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="album_duration_minutes">%1$d min</string>
+    <string name="album_duration_hours_minutes">%1$d h %2$d min</string>
+</resources>

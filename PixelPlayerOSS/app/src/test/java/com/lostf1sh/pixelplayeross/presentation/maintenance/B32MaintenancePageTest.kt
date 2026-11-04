@@ -52,7 +52,7 @@ class B32MaintenancePageTest {
     val compose = createComposeRule()
 
     private val context get() = ApplicationProvider.getApplicationContext<android.content.Context>()
-    private fun s(id: Int) = context.getString(id)
+    private fun s(id: Int) = if (id == R.string.setcat_force_daily_mix_title) context.getString(id, context.getString(R.string.collection_name_daily_mix)) else context.getString(id)
 
     private val calls = mutableListOf<String>()
 
@@ -174,7 +174,7 @@ class B32MaintenancePageTest {
         show(offersTestCrash = false)
         scrollTo(s(R.string.setcat_force_palette_title))
         listOf(R.string.setcat_force_daily_mix_title, R.string.setcat_force_stats_title, R.string.setcat_force_palette_title)
-            .forEach { compose.onNodeWithText(s(it)).assertExists() }
+            .forEach { compose.onAllNodesWithText(s(it))[0].assertExists() }
         compose.onAllNodesWithText(s(R.string.setcat_trigger_crash_title)).assertCountEquals(0)
     }
 

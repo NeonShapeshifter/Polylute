@@ -26,6 +26,10 @@ data class PlayerUiState(
     val isFiltering: Boolean = false,
     val currentFolder: MusicFolder? = null,
     val currentFolderPath: String? = null,
+    val foldersFlatList: Boolean = false,
+    val folderVolumeRoots: ImmutableList<String> = persistentListOf(),
+    val internalFolderRootPath: String = "",
+    val showFolderSourceSwitch: Boolean = false,
     val folderSource: FolderSource = FolderSource.INTERNAL,
     val folderSourceRootPath: String = "",
     val isSdCardAvailable: Boolean = false,
@@ -51,5 +55,6 @@ data class PlayerUiState(
     val lastRemovedQueueSong: Song? = null,
     val lastRemovedQueueIndex: Int = -1,
     /** Where the removed song was in the queue as listed (play order, B17-H1); -1 when unknown. */
-    val lastRemovedQueuePosition: Int = -1
+    val lastRemovedQueuePosition: Int = -1,
+    val folderQuery: String = ""
 )

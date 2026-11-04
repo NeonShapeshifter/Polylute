@@ -12,26 +12,25 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 
 /**
- * F-05: "never while playing" is a window flag held only while a song plays and the player is in
- * front. It must disappear on pause, and a finite mode or "follow system" never holds it at all.
+ * B55: "never while playing" is a window flag held on every DAP page outside the lock surface. It must disappear on pause, and a finite mode or "follow system" never holds it at all.
  */
 class DapDeviceControlPolicyKeepScreenOnTest {
 
     private val never = DAP_SCREEN_TIMEOUT_NEVER_WHILE_PLAYING
 
     @Test
-    fun `held while playing with the player in front`() {
-        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never, isPlaying = true, playerVisible = true)).isTrue()
+    fun `held while playing in DAP on any page`() {
+        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never, isPlaying = true, dapMode = true)).isTrue()
     }
 
     @Test
     fun `released on pause`() {
-        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never, isPlaying = false, playerVisible = true)).isFalse()
+        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never, isPlaying = false, dapMode = true)).isFalse()
     }
 
     @Test
-    fun `not held for a page that is not the player, even while music plays`() {
-        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never, isPlaying = true, playerVisible = false)).isFalse()
+    fun `not held in App mode even while music plays`() {
+        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never, isPlaying = true, dapMode = false)).isFalse()
     }
 
     @Test
@@ -60,32 +59,32 @@ class DapDeviceControlPolicyKeepScreenOnTest {
     private fun appliedFlag(steps: (
         timeoutMode: MutableStateFlow<Long>,
         isPlaying: MutableStateFlow<Boolean>,
-        sheetExpanded: MutableStateFlow<Boolean>,
+        dapMode: MutableStateFlow<Boolean>,
         lockShowing: MutableStateFlow<Boolean>,
     ) -> Unit): List<Boolean> = runBlocking {
         val mode = MutableStateFlow(never)
         val playing = MutableStateFlow(false)
-        val expanded = MutableStateFlow(false)
+        val dap = MutableStateFlow(false)
         val lock = MutableStateFlow(false)
         val seen = mutableListOf<Boolean>()
         val job = launch(Dispatchers.Unconfined) {
-            DapDeviceControlPolicy.keepScreenOnFlow(mode, playing, expanded, lock).toList(seen)
+            DapDeviceControlPolicy.keepScreenOnFlow(mode, playing, dap, lock).toList(seen)
         }
-        steps(mode, playing, expanded, lock)
+        steps(mode, playing, dap, lock)
         job.cancel()
         seen
     }
 
     @Test
     fun `playing with the player open holds the flag`() {
-        val seen = appliedFlag { _, playing, expanded, _ -> expanded.value = true; playing.value = true }
+        val seen = appliedFlag { _, playing, dap, _ -> dap.value = true; playing.value = true }
         assertThat(seen.last()).isTrue()
     }
 
     @Test
     fun `the DAP lock screen over the open player releases the flag, and unlocking holds it again`() {
-        val seen = appliedFlag { _, playing, expanded, lock ->
-            expanded.value = true
+        val seen = appliedFlag { _, playing, dap, lock ->
+            dap.value = true
             playing.value = true
             lock.value = true   // the listener pressed the power button: the lock screen is drawn over the player
             lock.value = false  // and swiped it away: the open player is in front again
@@ -96,8 +95,8 @@ class DapDeviceControlPolicyKeepScreenOnTest {
 
     @Test
     fun `a pause releases the flag whether or not the lock screen is up`() {
-        val seen = appliedFlag { _, playing, expanded, lock ->
-            expanded.value = true
+        val seen = appliedFlag { _, playing, dap, lock ->
+            dap.value = true
             playing.value = true
             playing.value = false
             lock.value = true
@@ -108,9 +107,9 @@ class DapDeviceControlPolicyKeepScreenOnTest {
 
     @Test
     fun `playing starts under the lock screen without ever holding the flag`() {
-        val seen = appliedFlag { _, playing, expanded, lock ->
+        val seen = appliedFlag { _, playing, dap, lock ->
             lock.value = true
-            expanded.value = true
+            dap.value = true
             playing.value = true
         }
         assertThat(seen.any { it }).isFalse()
@@ -118,9 +117,9 @@ class DapDeviceControlPolicyKeepScreenOnTest {
 
     @Test
     fun `another timeout mode holds nothing with or without the lock screen`() {
-        val seen = appliedFlag { mode, playing, expanded, lock ->
+        val seen = appliedFlag { mode, playing, dap, lock ->
             mode.value = 60_000L
-            expanded.value = true
+            dap.value = true
             playing.value = true
             lock.value = true
             lock.value = false
@@ -129,11 +128,11 @@ class DapDeviceControlPolicyKeepScreenOnTest {
     }
 
     @Test
-    fun `the player is in front only when its sheet is open and no lock screen is over it`() {
-        assertThat(DapDeviceControlPolicy.playerVisibleToListener(sheetExpanded = true, lockSurfaceShowing = false)).isTrue()
-        assertThat(DapDeviceControlPolicy.playerVisibleToListener(sheetExpanded = true, lockSurfaceShowing = true)).isFalse()
-        assertThat(DapDeviceControlPolicy.playerVisibleToListener(sheetExpanded = false, lockSurfaceShowing = false)).isFalse()
-        assertThat(DapDeviceControlPolicy.playerVisibleToListener(sheetExpanded = false, lockSurfaceShowing = true)).isFalse()
+    fun `DAP pages hold the display outside the lock surface while App mode never does`() {
+        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never,true,true,false)).isTrue()
+        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never,true,true,true)).isFalse()
+        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never,true,false,false)).isFalse()
+        assertThat(DapDeviceControlPolicy.shouldKeepScreenOn(never,true,false,true)).isFalse()
     }
 
     @Test

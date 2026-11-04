@@ -45,6 +45,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class, qualifiers = "w411dp-h900dp-xxhdpi")
 class PlayerLyricsLinesTest {
+    // B57 2.2: `Shown` also carries the words of the line being sung and when it ends, so these tests compare the two lines of text the player shows, as they always did.
+    private fun plain(lyrics: com.lostf1sh.pixelplayeross.data.model.Lyrics?, positionMs: Long, offsetMs: Int) =
+        CoverLyricsLines.at(lyrics, positionMs, offsetMs)?.let { CoverLyricsLines.Shown(it.current, it.next) }
+
 
     @get:Rule
     val compose = createComposeRule()
@@ -64,30 +68,30 @@ class PlayerLyricsLinesTest {
     @Test
     fun `the lines follow the position, line after line`() {
         // before the first line nothing is being sung: the first line is the one to come
-        assertEquals(CoverLyricsLines.Shown(null, "Abre la puerta, bebé"), CoverLyricsLines.at(song, 0L, 0))
-        assertEquals(CoverLyricsLines.Shown("Abre la puerta, bebé", "que estoy afuera"), CoverLyricsLines.at(song, 1_000L, 0))
-        assertEquals(CoverLyricsLines.Shown("Abre la puerta, bebé", "que estoy afuera"), CoverLyricsLines.at(song, 4_999L, 0))
-        assertEquals(CoverLyricsLines.Shown("que estoy afuera", "Estás grande ya"), CoverLyricsLines.at(song, 5_000L, 0))
+        assertEquals(CoverLyricsLines.Shown(null, "Abre la puerta, bebé"), plain(song, 0L, 0))
+        assertEquals(CoverLyricsLines.Shown("Abre la puerta, bebé", "que estoy afuera"), plain(song, 1_000L, 0))
+        assertEquals(CoverLyricsLines.Shown("Abre la puerta, bebé", "que estoy afuera"), plain(song, 4_999L, 0))
+        assertEquals(CoverLyricsLines.Shown("que estoy afuera", "Estás grande ya"), plain(song, 5_000L, 0))
         // the last line has nothing after it
-        assertEquals(CoverLyricsLines.Shown("Estás grande ya", null), CoverLyricsLines.at(song, 60_000L, 0))
+        assertEquals(CoverLyricsLines.Shown("Estás grande ya", null), plain(song, 60_000L, 0))
     }
 
     @Test
     fun `an instrumental gap shows nothing being sung and the line that is about to come`() {
         val withGap = synced(1_000 to "first", 5_000 to "", 12_000 to "second", 16_000 to "third")
-        assertEquals(CoverLyricsLines.Shown("first", "second"), CoverLyricsLines.at(withGap, 3_000L, 0))
+        assertEquals(CoverLyricsLines.Shown("first", "second"), plain(withGap, 3_000L, 0))
         // 5 s: the blank line is the gap
-        assertEquals(CoverLyricsLines.Shown(null, "second"), CoverLyricsLines.at(withGap, 5_000L, 0))
-        assertEquals(CoverLyricsLines.Shown(null, "second"), CoverLyricsLines.at(withGap, 11_999L, 0))
+        assertEquals(CoverLyricsLines.Shown(null, "second"), plain(withGap, 5_000L, 0))
+        assertEquals(CoverLyricsLines.Shown(null, "second"), plain(withGap, 11_999L, 0))
         // and it is over when the next line's time comes
-        assertEquals(CoverLyricsLines.Shown("second", "third"), CoverLyricsLines.at(withGap, 12_000L, 0))
+        assertEquals(CoverLyricsLines.Shown("second", "third"), plain(withGap, 12_000L, 0))
     }
 
     @Test
     fun `the song's own sync offset moves the lines`() {
-        assertEquals(CoverLyricsLines.Shown("que estoy afuera", "Estás grande ya"), CoverLyricsLines.at(song, 4_000L, 1_000))
-        assertEquals(CoverLyricsLines.Shown("Abre la puerta, bebé", "que estoy afuera"), CoverLyricsLines.at(song, 4_000L, 0))
-        assertEquals(CoverLyricsLines.Shown(null, "Abre la puerta, bebé"), CoverLyricsLines.at(song, 1_500L, -1_000))
+        assertEquals(CoverLyricsLines.Shown("que estoy afuera", "Estás grande ya"), plain(song, 4_000L, 1_000))
+        assertEquals(CoverLyricsLines.Shown("Abre la puerta, bebé", "que estoy afuera"), plain(song, 4_000L, 0))
+        assertEquals(CoverLyricsLines.Shown(null, "Abre la puerta, bebé"), plain(song, 1_500L, -1_000))
     }
 
     @Test

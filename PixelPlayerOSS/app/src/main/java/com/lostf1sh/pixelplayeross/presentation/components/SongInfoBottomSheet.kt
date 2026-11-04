@@ -94,7 +94,7 @@ enum class SongOptionsPresentation { SHEET, PAGE }
 private class SongEditSession(
     val song: Song,
     val save: (
-        String, String, String, String, String, String, String, Int, Int?, String, String, CoverArtUpdate?
+        String, String, String, String, String, String, String, Int, Int?, String, String, String?, CoverArtUpdate?
     ) -> Unit,
 )
 
@@ -134,6 +134,7 @@ fun SongInfoBottomSheet(
         discNumber: Int?,
         replayGainTrackGainDb: String,
         replayGainAlbumGainDb: String,
+        date: String?,
         coverArtUpdate: CoverArtUpdate?
     ) -> Unit,
     removeFromListTrigger: () -> Unit,
@@ -161,9 +162,8 @@ fun SongInfoBottomSheet(
     // with the same number on the details page.
     val audioMetaLabel = remember(audioMeta) {
         val meta = audioMeta ?: return@remember null
-        val formatLabel = AudioMetaUtils.mimeTypeToFormat(meta.mimeType)
-            .takeIf { it != "-" }
-            ?.uppercase(Locale.getDefault())
+        // B57 2.6: a container that can hold two codecs (.ogg, .m4a) says nothing here rather than the container's name
+        val formatLabel = com.lostf1sh.pixelplayeross.data.media.AudioCodec.fromUnambiguousContainerMime(meta.mimeType)?.label
         val parts = buildList {
             meta.sampleRate?.takeIf { it > 0 }?.let { add(formatHz(it)) }
             meta.bitrate?.takeIf { it > 0 }?.let { add(formatKbps(it)) }
@@ -440,7 +440,7 @@ fun SongInfoBottomSheet(
             visible = showEditSheet,
             song = session.song,
             onDismiss = { showEditSheet = false },
-            onSave = { title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, coverArt ->
+            onSave = { title, artist, album, albumArtist, composer, genre, lyrics, trackNumber, discNumber, replayGainTrackGainDb, replayGainAlbumGainDb, date, coverArt ->
                 session.save(
                     title,
                     artist,
@@ -453,6 +453,7 @@ fun SongInfoBottomSheet(
                     discNumber,
                     replayGainTrackGainDb,
                     replayGainAlbumGainDb,
+                    date,
                     coverArt
                 )
                 showEditSheet = false

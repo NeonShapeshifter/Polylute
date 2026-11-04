@@ -35,7 +35,7 @@
 extern "C" {
 JNIEXPORT jlong JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
     JNIEnv *, jobject, jint, jint, jint, jint, jint, jint, jint, jint, jint, jint);
-JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(JNIEnv *, jobject, jlong);
+JNIEXPORT jboolean JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(JNIEnv *, jobject, jlong, jint previousRate = 0);
 JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStop(JNIEnv *, jobject, jlong);
 JNIEXPORT jint JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeDrainUrbs(JNIEnv *, jobject, jlong);
 JNIEXPORT void JNICALL Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioDestroy(JNIEnv *, jobject, jlong);
@@ -545,7 +545,7 @@ extern "C" int __android_log_print(int prio, const char *tag, const char *fmt, .
         g_usb.schedulingLines.push_back(line);
         g_usb.writerLineAtUrb.push_back(g_usb.audioUrbs);   // B48-fix1
     }
-    if (fmt && (strncmp(fmt, "Start: feedback start guard", 27) == 0 || strncmp(fmt, "Prime: ", 7) == 0)) {
+    if (fmt && (strncmp(fmt, "Start: rate change", 18) == 0 || strncmp(fmt, "Start: feedback start guard", 27) == 0 || strncmp(fmt, "Prime: ", 7) == 0)) {
         char line[400];
         va_list copy;
         va_start(copy, fmt);
@@ -637,13 +637,13 @@ jlong createStreamWith(int rate, int slotBits, int maxPacket, int bInterval, int
         nullptr, nullptr, kFakeFd, 1, kEndpointOut, kEndpointFeedback, rate, 2, slotBits, maxPacket, bInterval, feedbackBytes);
 }
 
-jlong createStream(int rate, int slotBits) {
+jlong createStream(int rate, int slotBits, int previousRate = 0) {
 #ifndef B48FIX2_BEFORE
     usbNoteDataAltSet(kFakeFd);
 #endif
 
     const jlong usb = createStreamWith(rate, slotBits, 400, kFakeBInterval, kFakeFeedbackBytes);
-    if (usb == 0 || !Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(nullptr, nullptr, usb)) {
+    if (usb == 0 || !Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(nullptr, nullptr, usb, previousRate)) {
         fprintf(stderr, "stream did not start\n");
         exit(2);
     }
@@ -896,7 +896,7 @@ struct Writer {
         return it->second;
     }
 
-    explicit Writer(int streamRate = kRate, bool nominalFeedback = false) {
+    explicit Writer(int streamRate = kRate, bool nominalFeedback = false, int previousRate = 0) {
         table.GetArrayLength = simGetLength;
         table.GetByteArrayElements = simGetBytes;
         table.ReleaseByteArrayElements = simReleaseBytes;
@@ -905,7 +905,7 @@ struct Writer {
         env.functions = &table;
         g_usb.reset(streamRate, 8);
         if (nominalFeedback) g_usb.feedbackFpmf = streamRate / 8000.0;
-        usb = createStream(streamRate, 32);
+        usb = createStream(streamRate, 32, previousRate);
         ctx = reinterpret_cast<UsbAudioContext *>(usb);
     }
     ~Writer() {
@@ -4291,6 +4291,114 @@ void testStartGuardDefaultOff() {
 }
 
 
+// B50: numeric rate-change starts through fake usbfs, the real writer and tools/sim-clock.h.
+void testRateChangeStuckRecovery() {
+    constexpr int kRate = 48000;
+    constexpr int kPreviousRate = 44100;
+    constexpr int kBlock = 128;
+    constexpr int kShortHoldMs = 1500;
+    constexpr int kWindowMs = 3000;
+    constexpr int kWrongRateMs = 40;
+    constexpr int kRampMs = 900;
+    constexpr int kShortPlateauMs = 1400;
+    constexpr int kLateStartMs = 4000;
+    constexpr int kWindowEdgeStartMs = 2500;
+    constexpr int kReplayMs = 16000;
+    constexpr int kToleranceMs = 10;
+    constexpr double kNominal = 6.0;
+    constexpr double kPreviousFeedback = 5.51245;
+    constexpr double kFrozenValues[] = {6.03491, 6.0199, 6.03992};
+    struct Case { const char *name; int previous; int mode; double frozen; int hold; };
+    // mode 0 freezes, 1 settles after the usual ramp, 2 is a short healthy plateau,
+    // 3 is a longer healthy plateau (the accepted restart cost), 4 freezes after a cached skip.
+    const Case cases[] = {
+        {"changed rate +5819 ppm", kPreviousRate, 0, kFrozenValues[0], kShortHoldMs},
+        {"same rate after recovery", kRate, 0, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
+        {"changed rate +3316 ppm", kPreviousRate, 0, kFrozenValues[1], kShortHoldMs},
+        {"changed rate +6653 ppm", kPreviousRate, 0, kFrozenValues[2], kShortHoldMs},
+        {"first stream after attach", 0, 0, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
+        {"usual ramp settles", kPreviousRate, 1, 0, 0},
+        {"healthy plateau below hold", kPreviousRate, 2, 0, 0},
+        {"healthy plateau above hold costs a restart", kPreviousRate, 3, 0, kShortHoldMs},
+        {"cached skip in changed-rate stream", kPreviousRate, 4, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
+        {"cached skip in first stream", 0, 4, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
+        {"hold crossing start window", kPreviousRate, 5, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
+    };
+    usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+    usbSetDacRecoveryEnabled(true);
+    for (const Case &c : cases) {
+        usbDacRecoveryForgetEpisodes();
+        Writer w(kRate, true, c.previous);
+        const Pcm src = makeNoise(kRate * (kReplayMs / 1000 + 3), 24, 0x50abcdefu);
+        const int64_t t0 = nowUs();
+        const int onsetMs = c.mode == 4 ? kLateStartMs : c.mode == 5 ? kWindowEdgeStartMs : kWrongRateMs;
+        int restarts = 0, next = 0;
+        bool skipped = false;
+        setFeedbackScript([&](int64_t atUs) {
+            FeedbackAnswer a;
+            const int64_t age = (atUs - t0) / 1000;
+            if (restarts > 0) a.fpmf = kNominal;
+            else if (c.mode == 1) a.fpmf = age < kRampMs ? melodyRampAt(age, kNominal) : kNominal;
+            else if (c.mode == 2 || c.mode == 3) a.fpmf = age < (c.mode == 2 ? kShortPlateauMs : kWindowMs) ? kNominal * 1.01 : kNominal;
+            else a.fpmf = age < onsetMs ? (c.mode >= 4 ? kNominal : kPreviousFeedback) : c.frozen;
+            return a;
+        });
+        while (next + kBlock <= src.frames() && nowUs() - t0 < kReplayMs * 1000LL) {
+            if (c.mode == 4 && !skipped && (nowUs() - t0) / 1000 >= kLateStartMs - kRampMs) {
+                CHECK(w.beginSeek() >= 0, "cached skip failed");
+                while (w.fadingOut()) { w.write(src, next, kBlock); next += kBlock; }
+                w.resume();
+                skipped = true;
+            }
+            w.write(src, next, kBlock); next += kBlock;
+            int64_t state[USB_DAC_STATE_COUNT];
+            usbDacLockState(w.ctx, state);
+            if (state[5] == USB_DAC_STEP_INTERFACE || state[5] == USB_DAC_STEP_BUS_RESET) {
+                CHECK(state[5] == USB_DAC_STEP_INTERFACE && restarts == 0, "%s took another step", c.name);
+                runOneStep(w, src, next, (int)state[5], kBlock, [&] { restarts++; });
+            }
+        }
+        int stuck = 0, ok = 0, arms = 0;
+        int64_t detectedMs = -1;
+        for (const auto &line : g_usb.startLines) if (line.find("Start: rate change") != std::string::npos) {
+            arms++;
+            CHECK(line.find("44100 → 48000, stuck hold 1500 ms for the first 3000 ms") != std::string::npos,
+                  "rate-change start line lacks rates, hold or window");
+        }
+        CHECK(arms == (c.previous == kPreviousRate ? 1 : 0), "%s armed %d times", c.name, arms);
+        for (const auto &entry : g_usb.trainLines) {
+            const std::string &line = entry.second;
+            if (line.find("DAC_LOCKED") != std::string::npos) {
+                stuck++;
+                detectedMs = (entry.first - t0) / 1000;
+                const bool shortened = c.hold == kShortHoldMs;
+                CHECK(line.find("why=stuck") != std::string::npos, "%s was classified as a rail", c.name);
+                CHECK((line.find("hold=rate-change") != std::string::npos) == shortened,
+                      "%s wrong hold marker %s", c.name, line.c_str());
+                CHECK(line.find("heldMs=" + std::to_string(c.hold)) != std::string::npos,
+                      "%s wrong hold %s", c.name, line.c_str());
+                printf("B50 %s at=%lldms %s\n", c.name, (long long)detectedMs, line.c_str());
+            }
+            if (line.find("result=ok") != std::string::npos) { ok++; printf("B50 %s %s\n", c.name, line.c_str()); }
+        }
+        CHECK(stuck == (c.hold ? 1 : 0) && restarts == (c.hold ? 1 : 0) && ok == (c.hold ? 1 : 0),
+              "%s locks=%d restarts=%d ok=%d", c.name, stuck, restarts, ok);
+        if (c.hold) {
+            const int expectedMs = (c.mode == 3 ? 0 : onsetMs) + c.hold;
+            CHECK(detectedMs >= expectedMs && detectedMs <= expectedMs + kToleranceMs,
+                  "%s detected at %lld ms expected %d..%d", c.name, (long long)detectedMs, expectedMs, expectedMs + kToleranceMs);
+        }
+        if (c.mode == 1) {
+            bool absurd = false;
+            for (const auto &line : g_usb.feedbackGlitches) absurd = absurd || line.find("why=absurd") != std::string::npos;
+            CHECK(absurd, "usual +2.08 percent ramp did not exercise absurd refusal");
+        }
+        printf("B50 %s arms=%d locks=%d restarts=%d ok=%d detected=%lldms\n",
+               c.name, arms, stuck, restarts, ok, (long long)detectedMs);
+        setFeedbackScript(nullptr);
+    }
+}
+
 // B48-fix4: numeric feedback replay through the real JNI writer, usbfs and virtual clock.
 void testStuckDacRecovery() {
     constexpr int kRate = 48000;
@@ -4540,6 +4648,7 @@ int main(int argc, char **argv) {
     if (only.empty() || only == "startprime") testEveryStartPrimesTheRing();
     if (only.empty() || only == "startguard") testFeedbackStartGuard();
     if (only.empty() || only == "train") testTrainFeedback();
+    if (only.empty() || only == "rate-change") testRateChangeStuckRecovery();
     if (only.empty() || only == "stuck-recovery") testStuckDacRecovery();
     if (only.empty() || only == "pause-keepalive") testPauseKeepalive();
     if (only.empty() || only == "pause-seek-keepalive") testPauseSeekKeepalive();

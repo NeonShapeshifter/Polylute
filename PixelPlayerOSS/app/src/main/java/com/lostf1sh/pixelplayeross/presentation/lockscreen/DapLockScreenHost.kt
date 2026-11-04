@@ -14,6 +14,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -105,6 +108,7 @@ fun DapLockScreenHost(
     // read through one: see `currentSongPresent`.)
     val latestEnabled by rememberUpdatedState(enabled)
     val latestDedicated by rememberUpdatedState(dedicated)
+    val latestVisibleChange by rememberUpdatedState(onSurfaceVisibleChange)
 
     val keyguard = remember(context) {
         context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
@@ -132,7 +136,7 @@ fun DapLockScreenHost(
         publishCover()
     }
     // The signal belongs to this host: when the host goes, the app is released.
-    DisposableEffect(cover) { onDispose { cover?.covered = false } }
+    DisposableEffect(cover) { onDispose { cover?.covered = false; latestVisibleChange(false) } }
 
     /** One line per decision that matters; an ordinary focus change with no cycle behind it stays silent. */
     fun trace(event: String, before: WakeCycleState, detail: String = "") {
@@ -308,7 +312,6 @@ fun DapLockScreenHost(
 
     val displayedSong = song
     val surfaceVisible = machine.shouldShowSurface && displayedSong != null
-    val latestVisibleChange by rememberUpdatedState(onSurfaceVisibleChange)
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val editorRegistry = LocalDapKeyboardRegistry.current
@@ -319,6 +322,24 @@ fun DapLockScreenHost(
             dismissKeyboard(focusManager, keyboard)
         }
         latestVisibleChange(surfaceVisible)
+    }
+    val idleScope = rememberCoroutineScope()
+    val sleep = remember(context) { DapLockScreenSleep(context) }
+    val idleTimer = remember(idleScope, sleep) { LockSurfaceIdleTimer(idleScope) { sleep.sleep() } }
+    DisposableEffect(surfaceVisible, lifecycleOwner, idleTimer, sleep) {
+        fun update() {
+            val active = surfaceVisible && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            if(active) { sleep.begin(); idleTimer.setVisible(true) }
+            else { idleTimer.setVisible(false); sleep.end() }
+        }
+        val observer = LifecycleEventObserver { _, _ -> update() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        update()
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            idleTimer.setVisible(false)
+            sleep.end()
+        }
     }
     if (surfaceVisible && displayedSong != null) {
         DapLockScreen(
@@ -340,7 +361,14 @@ fun DapLockScreenHost(
             onDismiss = {
                 abandon("dismissed")
             },
-            modifier = modifier.fillMaxSize(),
+            modifier = modifier.fillMaxSize().pointerInput(idleTimer) {
+                awaitPointerEventScope {
+                    while(true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if(event.changes.any { it.pressed }) idleTimer.touch()
+                    }
+                }
+            },
         )
     }
 }

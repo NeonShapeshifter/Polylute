@@ -47,7 +47,7 @@ fun DeviceSettingsHost(
     // B39-A5: the screen-off setting is the DAP's: it follows the product mode live (App mode hides it).
     ProductModeLiveEffect(productModeViewModel)
     val mode by productModeViewModel.state.collectAsStateWithLifecycle()
-    if (!ModeSurfacePolicy.showScreenTimeout(mode.product)) return
+    if (!ModeSurfacePolicy.showDeviceCategory(mode.product)) return
     val context = LocalContext.current
     var pendingBluetoothOwnerState by remember { mutableStateOf<Boolean?>(null) }
     val writeSettingsLauncher = rememberLauncherForActivityResult(
@@ -227,7 +227,7 @@ fun DeviceSettingsHost(
     }
 
     DeviceSettingsScreen(
-        state = DeviceSettingsState(deviceControlState, showScreenTimeout = ModeSurfacePolicy.showScreenTimeout(mode.product)),
+        state = DeviceSettingsState(deviceControlState),
         actions = actions,
     )
 }
