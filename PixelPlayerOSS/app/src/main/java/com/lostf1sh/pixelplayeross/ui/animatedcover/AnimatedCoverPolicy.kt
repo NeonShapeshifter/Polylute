@@ -28,18 +28,20 @@ object AnimatedCoverPolicy {
         val systemAnimationsAllowed: Boolean = true,
         /** A song is playing (not paused). */
         val playing: Boolean = false,
+        /** B61 item 5 (#70): "Also on the lock screen": Polylute's own lock screen plays the animated cover too. Off by default. */
+        val lockCoverOn: Boolean = false,
     ) {
         /** Every input on one line, in a fixed order, for the device log (B57.5 2.2): the next test reads why a cover came or went from this. */
         fun describe(): String =
             "enabled=$enabled playerExpanded=$playerExpanded coverPageShowing=$coverPageShowing sheetOpen=$sheetOpen lockSurfaceVisible=$lockSurfaceVisible " +
-                "resumed=$resumed screenInteractive=$screenInteractive systemAnimationsAllowed=$systemAnimationsAllowed playing=$playing"
+                "resumed=$resumed screenInteractive=$screenInteractive systemAnimationsAllowed=$systemAnimationsAllowed playing=$playing lockCoverOn=$lockCoverOn"
     }
 
     /** A decoder may exist: the setting is on and the cover page is the one on screen. Leaving the page or closing the player ends it (the decoder is released). */
-    fun shouldHold(i: Inputs): Boolean = i.enabled && i.playerExpanded && i.coverPageShowing
+    fun shouldHold(i: Inputs): Boolean = i.enabled && ((i.playerExpanded && i.coverPageShowing) || (i.lockCoverOn && i.lockSurfaceVisible))
 
     /** The cover can be seen: the app is in front, the screen is on and the lock screen is not covering it. Not seen for long, a held decoder is let go ([AnimatedCoverController]). */
-    fun visible(i: Inputs): Boolean = i.resumed && i.screenInteractive && !i.lockSurfaceVisible
+    fun visible(i: Inputs): Boolean = i.resumed && i.screenInteractive && (!i.lockSurfaceVisible || i.lockCoverOn)
 
     /** The cover moves: held, seen, no sheet over it, a song playing and animations allowed. Otherwise it holds its frame. */
     fun shouldRun(i: Inputs): Boolean = shouldHold(i) && visible(i) && !i.sheetOpen && i.playing && i.systemAnimationsAllowed

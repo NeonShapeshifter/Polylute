@@ -56,5 +56,6 @@ class SingleProducer(unittest.TestCase):
         properties = (root / "PixelPlayerOSS/gradle.properties").read_text()
         self.assertIn("## 1.2.1\n", changelog)
         self.assertLess(changelog.index("## 1.2.1\n"), changelog.index("## 1.2.0\n"))
-        self.assertIn("APP_VERSION_NAME=1.2.1", properties)
-        self.assertIn("APP_VERSION_CODE=6", properties)
+        # the version itself moves with every release: what holds is that the version being built has its own changelog entry
+        name = next(line.split("=", 1)[1].strip() for line in properties.splitlines() if line.startswith("APP_VERSION_NAME="))
+        self.assertIn(f"## {name}\n", changelog)

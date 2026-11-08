@@ -10,9 +10,39 @@ object LocalArtworkUri {
     ).concatToString()
     private const val HOST_SONG = "song"
     private const val CACHE_BUST_QUERY = "t"
+    private const val SOURCE_SONG_QUERY = "src"
+    private const val ALBUM_COVER_KEY_BASE = 1L shl 40
 
     fun buildSongUri(songId: Long): String = "$SCHEME://$HOST_SONG/$songId"
     fun buildSongUriWithTimestamp(songId: Long): String = buildSongUri(songId) + "?t=${System.currentTimeMillis()}"
+
+    /**
+     * B60 (#82 follow-up): **an album's own cover** has its own entry in the per-song artwork cache, under a reserved negative key (no song has one), so it can never hold a disc's picture
+     * (a disc cover is installed into the cache of its songs). The URI is a song URI of that key: every consumer of local artwork already reads it. `src` (optional) names the song whose
+     * embedded picture is the album's cover when the cache has none yet (the fetcher extracts it then, once; a sync never does).
+     */
+    fun albumCoverKey(albumId: Long): Long = -ALBUM_COVER_KEY_BASE - Math.floorMod(albumId, ALBUM_COVER_KEY_BASE)
+
+    fun isAlbumCoverKey(songId: Long): Boolean = songId <= -ALBUM_COVER_KEY_BASE
+
+    /**
+     * The album id an album-cover key stands for, **only when the album id was below 2^40** (the key keeps its low 40 bits); null when [key] is not an album-cover key. MediaStore album ids on
+     * Android 10+ are 19-digit hashes, for which this is NOT the album id (B61): to find the album of a key, work forward from the albums ([AlbumArtUtils.recordedAlbumCoverKeys]).
+     */
+    fun albumIdOfCoverKey(key: Long): Long? = if (isAlbumCoverKey(key)) -key - ALBUM_COVER_KEY_BASE else null
+
+    /** [stamp] changes when the source changes (the digest of `cover.jpg`, or the song id): the same cover always has the same address, so a sync that changes nothing writes nothing. */
+    fun buildAlbumCoverUri(albumId: Long, stamp: String, sourceSongId: Long? = null): String =
+        buildSongUri(albumCoverKey(albumId)) + "?$CACHE_BUST_QUERY=$stamp" + (sourceSongId?.let { "&$SOURCE_SONG_QUERY=$it" } ?: "")
+
+    /** The song whose embedded picture an album-cover address stands for, or null (a cover file's address, or not an album cover at all). */
+    fun parseAlbumCoverSource(uriString: String?): Long? {
+        if (uriString.isNullOrBlank()) return null
+        val songId = parseSongId(uriString) ?: return null
+        if (!isAlbumCoverKey(songId)) return null
+        return uriString.substringAfter('?', "").split('&')
+            .firstNotNullOfOrNull { entry -> entry.takeIf { it.startsWith("$SOURCE_SONG_QUERY=") }?.substringAfter('=')?.toLongOrNull() }
+    }
 
     fun isLocalArtworkUri(uriString: String?): Boolean {
         return uriString?.let { it.startsWith("$SCHEME://") || it.startsWith("$LEGACY_SCHEME://") } == true

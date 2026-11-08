@@ -115,6 +115,98 @@ object AlbumArtUtils {
     )
 
     /** Only a single known library album directly in this non-generic directory is eligible. */
+    /** B60: the file of the song whose embedded picture an album-cover address stands for ([LocalArtworkUri.parseAlbumCoverSource]); null for any other address. */
+    internal fun albumCoverSourcePath(appContext: Context, uriString: String?): String? =
+        LocalArtworkUri.parseAlbumCoverSource(uriString)?.let { resolveSongMediaStoreInfo(appContext, it)?.path }
+
+    private const val ALBUM_COVER_PREFS = "album_cover_sources"
+
+    /** What the last sync decided for an album that has disc covers: the address its cover goes by (null: it has none of its own). Null result: no decision recorded. */
+    internal class AlbumCoverDecision(val uri: String?)
+
+    /** B60: the recorded decision for [albumId] (a memory read of preferences), for the main sync to write the same address the folder step does. */
+    internal fun recordedAlbumCover(context: Context, albumId: Long): AlbumCoverDecision? {
+        val prefs = context.getSharedPreferences(ALBUM_COVER_PREFS, Context.MODE_PRIVATE)
+        if (!prefs.contains("sig_$albumId")) return null
+        return AlbumCoverDecision(prefs.getString("uri_$albumId", null)?.takeIf { it.isNotEmpty() })
+    }
+
+    /**
+     * B60 review: the cache file under album-cover [key] belongs to an album whose decision is still recorded. The end-of-sync clean ([AlbumArtCacheManager.cleanOrphanedCacheFiles])
+     * deletes every `song_art_<id>` whose id is not a song, and an album-cover key never is one: without this the clean deleted the album's `cover.*` copy at the end of every sync,
+     * right after the folder step had installed it, and the album showed no cover.
+     */
+    internal fun isRecordedAlbumCoverKey(context: Context, key: Long): Boolean = LocalArtworkUri.isAlbumCoverKey(key) && key in recordedAlbumCoverKeys(context)
+
+    /**
+     * B61: the cover keys of every album whose decision is recorded, **computed forward** (each recorded album id through [LocalArtworkUri.albumCoverKey]). B60's review fix found the album
+     * behind a key by inverting it, which is exact only for ids below 2^40; MediaStore album ids on Android 10+ are 19-digit hashes, far above it, and the clean then deleted the album's
+     * cover again. A few hundred preferences entries, read once per clean.
+     */
+    internal fun recordedAlbumCoverKeys(context: Context): Set<Long> =
+        context.getSharedPreferences(ALBUM_COVER_PREFS, Context.MODE_PRIVATE).all.keys
+            .mapNotNull { if (it.startsWith("sig_")) it.removePrefix("sig_").toLongOrNull() else null }
+            .mapTo(HashSet()) { LocalArtworkUri.albumCoverKey(it) }
+
+    /** B60: the album has no disc covers (any more): its recorded decision goes, and so does the cover file made for it. True when there was one. */
+    @android.annotation.SuppressLint("UseKtx")
+    internal fun forgetAlbumCover(context: Context, albumId: Long): Boolean {
+        val prefs = context.getSharedPreferences(ALBUM_COVER_PREFS, Context.MODE_PRIVATE)
+        if (!prefs.contains("sig_$albumId")) return false
+        clearCacheForSong(context, LocalArtworkUri.albumCoverKey(albumId))
+        check(prefs.edit().remove("sig_$albumId").remove("uri_$albumId").commit()) { "Could not forget the album cover for $albumId" }
+        return true
+    }
+
+    /**
+     * B60 (#82 follow-up): **the album's own cover**, for an album whose folder has disc covers. A disc's picture is installed into the artwork of that disc's songs, and the album used to
+     * take the lowest-id song's, so it showed disc 1's. The album's cover is: the folder's `cover.*` ([session]'s source) when there is one; else the embedded picture of the files
+     * (the first song, by id, whose file has one: asked of the headers only, **never extracted here**: the cover is extracted when it is first shown); else none. It is never a `discN.*` file.
+     * Returns the address the album goes by (null: none), and records it; the same sources give the same address, and nothing is written when nothing changed.
+     *
+     * @param songs the album's songs in this folder, by id: id and file path.
+     */
+    @android.annotation.SuppressLint("UseKtx")
+    internal fun chooseAlbumCover(
+        context: Context, albumId: Long, songs: List<Pair<Long, String>>, session: FolderArtworkSession,
+        hasEmbeddedPicture: (String) -> Boolean = EmbeddedPictureProbe::hasPicture,
+    ): String? {
+        val prefs = context.getSharedPreferences(ALBUM_COVER_PREFS, Context.MODE_PRIVATE)
+        val key = LocalArtworkUri.albumCoverKey(albumId)
+        fun record(signature: String, uri: String?) {
+            check(prefs.edit().putString("sig_$albumId", signature).putString("uri_$albumId", uri.orEmpty()).commit()) { "Could not record the album cover for $albumId" }
+        }
+        val folderCover = songs.firstOrNull()?.let { session.source(it.second) }
+        if (folderCover != null) {
+            val signature = "cover|${folderCover.file.absolutePath}|${folderCover.digest}"
+            val uri = LocalArtworkUri.buildAlbumCoverUri(albumId, folderCover.digest.take(12))
+            val cached = getCachedAlbumArtFile(context, key)
+            if (prefs.getString("sig_$albumId", null) == signature && cached.isFile && cached.length() > 0) return uri
+            synchronized(artLockFor(key)) {
+                clearCacheForSong(context, key)
+                cacheAlbumArtBytes(context, folderCover.bytes, key)
+            }
+            record(signature, uri)
+            return uri
+        }
+        val previous = prefs.getString("sig_$albumId", null)
+        val setOfSongs = "${songs.size}|${songs.firstOrNull()?.first}|${songs.lastOrNull()?.first}"
+        // an album that had no picture at all is not probed again until its songs change; one that had a picture is checked again (cheap: one header)
+        if (previous == "none|$setOfSongs") return null
+        val withPicture = songs.firstOrNull { hasEmbeddedPicture(it.second) }
+        if (withPicture == null) {
+            if (previous != null) clearCacheForSong(context, key)
+            record("none|$setOfSongs", null)
+            return null
+        }
+        val signature = "embedded|${withPicture.first}"
+        if (previous != signature) {
+            clearCacheForSong(context, key) // what a cover file left (or an older picture), until the picture is extracted on first show
+            record(signature, LocalArtworkUri.buildAlbumCoverUri(albumId, withPicture.first.toString(), withPicture.first))
+        }
+        return LocalArtworkUri.buildAlbumCoverUri(albumId, withPicture.first.toString(), withPicture.first)
+    }
+
     internal fun isSingleAlbumFolder(directory: String, albums: List<Pair<Long, String>>): Boolean =
         shouldTrustDirectoryArtwork(File(directory).name) && albums.isNotEmpty() &&
             albums.all { it.first > 0 && it.second.isNotBlank() && !it.second.equals("Unknown Album", true) && it.second != "<unknown>" } &&
@@ -134,41 +226,151 @@ object AlbumArtUtils {
         return !cached.isFile || cached.length() == 0L
     }
 
+    /** B61: a folder cover (or a disc's) was installed for this song by an earlier sync, as the provenance preferences say: a memory read. */
+    internal fun hasFolderProvenance(context: Context, songId: Long): Boolean =
+        context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE).contains(songId.toString())
+
+    /** B59 4 (#82): the provenance of a song's cover that came from a disc file (`discN.*`) starts with this; the cover of every other kind starts with a path. */
+    internal const val DISC_PROVENANCE_PREFIX = "disc|"
+
+    /** B59 4: this song's cover is its disc's own file (`disc2.jpg`), as the last sync recorded it. A memory read of the provenance preferences: cheap enough for a list header. */
+    fun hasDiscCover(context: Context, songId: Long): Boolean =
+        context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE).getString(songId.toString(), null)?.startsWith(DISC_PROVENANCE_PREFIX) == true
+
+    /** B59 2 (#80): how many times the folder-cover provenance has been committed to disk (a counter the tests read: one per sync, not one per song). */
+    internal val provenanceCommits = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * B59 2 (#80): the provenance of the folder covers a sync installs, **collected and written once**. Before, every installed or dropped cover was a synchronous
+     * `SharedPreferences.commit()` of its own (4,966 of them in a Full Rescan, a disk write each); now they are noted here and [flush]ed in one commit at the end.
+     */
+    internal class FolderArtworkProvenanceBatch {
+        private val remembered = LinkedHashMap<String, Pair<String, String?>>()
+        private val forgotten = LinkedHashSet<String>()
+
+        fun remember(key: String, signature: String, uri: String?) {
+            forgotten.remove(key)
+            remembered[key] = signature to uri
+        }
+
+        fun forget(key: String) {
+            remembered.remove(key)
+            forgotten += key
+        }
+
+        val isEmpty: Boolean get() = remembered.isEmpty() && forgotten.isEmpty()
+
+        /** One commit for everything noted. False when it could not be written (the next sync finds the same songs and notes them again). */
+        @android.annotation.SuppressLint("UseKtx") // commit reports a failed provenance write; KTX discards that result.
+        fun flush(context: Context): Boolean {
+            if (isEmpty) return true
+            val written = context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE).edit().apply {
+                forgotten.forEach { key -> remove(key); remove("uri_$key") }
+                remembered.forEach { (key, value) ->
+                    putString(key, value.first)
+                    putString("uri_$key", value.second)
+                }
+            }.commit()
+            provenanceCommits.incrementAndGet()
+            if (written) {
+                remembered.clear()
+                forgotten.clear()
+            }
+            return written
+        }
+    }
+
     /** Reuses the existing JPEG and thumbnail paths. Preferences only record provenance and a source digest. */
     internal fun refreshFolderArtwork(
         context: Context, songId: Long, songPath: String, existingUri: String?,
         eligible: Boolean, enabled: Boolean, downloadedCoverExists: Boolean,
-        readEmbedded: (String) -> ByteArray? = ::extractEmbeddedAlbumArtBytes
+        hasEmbeddedPicture: (String) -> Boolean = EmbeddedPictureProbe::hasPicture
     ): FolderArtworkResult = refreshFolderArtwork(
         context, songId, songPath, existingUri, eligible, enabled, downloadedCoverExists,
-        FolderArtworkSession(context), readEmbedded
+        FolderArtworkSession(context), hasEmbeddedPicture
     )
 
+    /**
+     * B59 4 (#82): the cover of one song of an album folder **from its disc's own file** (`discN.jpg` / `.jpeg` / `.png`; or the first frame of `discN.mp4` / `.webp` / `.gif`): more specific
+     * than `cover.*`, and, by the owner's wish, **it wins over the file's embedded picture** too. Only in a folder the folder-cover rules already trust ([isSingleAlbumFolder], passed as
+     * [eligible]) and with folder covers on. A chosen cover (a content address the listener picked) still wins over it. Null: this disc has no file of its own and [refreshFolderArtwork]'s
+     * ordinary rules decide.
+     */
+    @android.annotation.SuppressLint("UseKtx")
+    internal fun installDiscArtwork(
+        context: Context, songId: Long, songPath: String, existingUri: String?, disc: Int,
+        eligible: Boolean, enabled: Boolean, session: FolderArtworkSession, provenanceBatch: FolderArtworkProvenanceBatch? = null
+    ): FolderArtworkResult? = synchronized(artLockFor(songId)) {
+        if (!eligible || !enabled) return@synchronized null
+        if (existingUri != null && !LocalArtworkUri.isLocalArtworkUri(existingUri)) return@synchronized null
+        val source = session.discSource(songPath, disc) ?: return@synchronized null
+        val provenance = context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE)
+        val key = songId.toString()
+        val previous = provenance.getString(key, null)
+        val cached = getCachedAlbumArtFile(context, songId)
+        val song = File(songPath)
+        val signature = "$DISC_PROVENANCE_PREFIX${source.file.absolutePath}|${source.digest}|${song.lastModified()}|${song.length()}"
+        if (previous == signature && cached.isFile && cached.length() > 0) {
+            return@synchronized FolderArtworkResult(provenance.getString("uri_$key", existingUri), false)
+        }
+        val bytes = source.bytes
+        clearCacheForSong(context, songId)
+        cacheAlbumArtBytes(context, bytes, songId)
+        val uri = LocalArtworkUri.buildSongUriWithTimestamp(songId)
+        if (provenanceBatch != null) {
+            provenanceBatch.remember(key, signature, uri)
+        } else {
+            check(provenance.edit().putString(key, signature).putString("uri_$key", uri).commit().also { provenanceCommits.incrementAndGet() }) { "Could not save folder artwork provenance" }
+        }
+        FolderArtworkResult(uri, true)
+    }
+
+    /**
+     * Decides, for one song, whether **a folder image applies**, and installs it when it does. The file's own picture wins over a folder image, and this step **never extracts it**
+     * (B59 2, #80): whether one exists is asked of the file's headers ([hasEmbeddedPicture], see [EmbeddedPictureProbe]) and, when there is one, the folder image is not installed (or
+     * is taken away if it was) and the picture is extracted lazily when the cover is shown, as everywhere else in the scan. [provenanceBatch]: where the provenance is noted instead of
+     * committed song by song (the sync flushes it once); null commits each write at once.
+     */
     @android.annotation.SuppressLint("UseKtx") // commit reports a failed provenance write; KTX discards that result.
     internal fun refreshFolderArtwork(
         context: Context, songId: Long, songPath: String, existingUri: String?,
         eligible: Boolean, enabled: Boolean, downloadedCoverExists: Boolean,
         session: FolderArtworkSession,
-        readEmbedded: (String) -> ByteArray? = ::extractEmbeddedAlbumArtBytes
+        hasEmbeddedPicture: (String) -> Boolean = EmbeddedPictureProbe::hasPicture,
+        provenanceBatch: FolderArtworkProvenanceBatch? = null
     ): FolderArtworkResult = synchronized(artLockFor(songId)) {
         val provenance = context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE)
         val key = songId.toString()
         val previous = provenance.getString(key, null)
         val cached = getCachedAlbumArtFile(context, songId)
+        fun forget() {
+            if (provenanceBatch != null) provenanceBatch.forget(key)
+            else check(provenance.edit().remove(key).remove("uri_$key").commit().also { provenanceCommits.incrementAndGet() }) { "Could not clear folder artwork provenance" }
+        }
+        fun remember(signature: String, uri: String?) {
+            if (provenanceBatch != null) provenanceBatch.remember(key, signature, uri)
+            else check(provenance.edit().putString(key, signature).putString("uri_$key", uri).commit().also { provenanceCommits.incrementAndGet() }) { "Could not save folder artwork provenance" }
+        }
         // A user-chosen URI and an already downloaded cover remain authoritative until explicitly refreshed.
         if (existingUri != null && !LocalArtworkUri.isLocalArtworkUri(existingUri)) {
             if (previous != null) {
                 clearCacheForSong(context, songId)
-                check(provenance.edit().remove(key).remove("uri_$key").commit()) { "Could not clear folder artwork provenance" }
+                forget()
             }
             return@synchronized FolderArtworkResult(existingUri, false)
         }
         if (previous == null && (!eligible || !enabled || downloadedCoverExists || (cached.isFile && cached.length() > 0))) {
             return@synchronized FolderArtworkResult(existingUri, false)
         }
-        // A previously unexamined song may contain embedded artwork. It wins without reading the folder image.
-        val firstEmbedded = if (previous == null) readEmbedded(songPath)?.takeIf { it.isNotEmpty() } else null
-        val source = if (firstEmbedded == null && eligible && enabled) session.source(songPath) else null
+        // The file's own picture wins, and it is only asked about, never read (see above).
+        if (hasEmbeddedPicture(songPath)) {
+            if (previous == null) return@synchronized FolderArtworkResult(existingUri, false)
+            // A folder cover was installed before and the file now has a picture: the folder cover goes, the picture comes back lazily.
+            clearCacheForSong(context, songId)
+            forget()
+            return@synchronized FolderArtworkResult(LocalArtworkUri.buildSongUriWithTimestamp(songId), true)
+        }
+        val source = if (eligible && enabled) session.source(songPath) else null
         val signature = source?.let {
             val song = File(songPath)
             "${it.file.absolutePath}|${it.digest}|${song.lastModified()}|${song.length()}"
@@ -176,29 +378,17 @@ object AlbumArtUtils {
         if (previous != null && previous == signature && cached.isFile && cached.length() > 0) {
             return@synchronized FolderArtworkResult(provenance.getString("uri_$key", existingUri), false)
         }
-        if (previous == null && source == null && firstEmbedded == null) return@synchronized FolderArtworkResult(existingUri, false)
-        val embedded = firstEmbedded ?: if (previous != null) readEmbedded(songPath)?.takeIf { it.isNotEmpty() } else null
-        val candidateBytes = if (embedded == null) source?.bytes else null
+        if (previous == null && source == null) return@synchronized FolderArtworkResult(existingUri, false)
+        val candidateBytes = source?.bytes
         clearCacheForSong(context, songId)
-        val uri = if (embedded != null) {
-            cacheAlbumArtBytes(context, embedded, songId)
-            LocalArtworkUri.buildSongUriWithTimestamp(songId)
-        } else if (candidateBytes != null) {
+        val uri = if (candidateBytes != null) {
             cacheAlbumArtBytes(context, candidateBytes, songId)
             LocalArtworkUri.buildSongUriWithTimestamp(songId)
         } else {
             noArtMarkerFile(context, songId).createNewFile()
             null
         }
-        check(provenance.edit().apply {
-            if (embedded == null && candidateBytes != null) {
-                putString(key, signature)
-                putString("uri_$key", uri)
-            } else {
-                remove(key)
-                remove("uri_$key")
-            }
-        }.commit()) { "Could not save folder artwork provenance" }
+        if (candidateBytes != null && signature != null) remember(signature, uri) else forget()
         FolderArtworkResult(uri, true)
     }
 
@@ -492,7 +682,7 @@ object AlbumArtUtils {
         return when {
             LocalArtworkUri.isLocalArtworkUri(uriString) -> {
                 val songId = LocalArtworkUri.parseSongId(uriString) ?: return null
-                val resolvedPath = resolveSongMediaStoreInfo(appContext, songId)?.path
+                val resolvedPath = albumCoverSourcePath(appContext, uriString) ?: resolveSongMediaStoreInfo(appContext, songId)?.path
                 ensureAlbumArtCachedFile(
                     appContext = appContext,
                     songId = songId,

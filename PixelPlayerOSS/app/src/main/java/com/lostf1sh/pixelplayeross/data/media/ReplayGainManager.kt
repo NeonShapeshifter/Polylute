@@ -134,22 +134,7 @@ class ReplayGainManager @Inject constructor() {
         }
     }
 
-    private fun extractGainValue(propertyMap: Map<String, Array<String>>, keys: List<String>): Float? {
-        for (key in keys) {
-            val rawValue = propertyMap[key]?.firstOrNull() ?: continue
-            return parseGainString(rawValue)
-        }
-        return null
-    }
-
-    /**
-     * Parses a ReplayGain string like "-6.54 dB" or "+3.21 dB" into a Float.
-     * Handles variants with or without "dB" suffix and various whitespace.
-     */
-    private fun parseGainString(raw: String): Float? {
-        val cleaned = raw.trim()
-            .replace(Regex("[dD][bB]"), "")
-            .trim()
-        return cleaned.toFloatOrNull()
-    }
+    /** #79: R128 tags are read as Q7.8 relative to −23 LUFS, and values that are no real correction are ignored ([ReplayGainTags]). */
+    private fun extractGainValue(propertyMap: Map<String, Array<String>>, keys: List<String>): Float? =
+        ReplayGainTags.gainDb(propertyMap, keys)
 }

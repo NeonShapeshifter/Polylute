@@ -60,6 +60,20 @@ object FiioHidReplies {
      */
     fun parseAck(report: ByteArray?, reportId: Int?): FiioReplyParse = parse(report, reportId, acceptSetHead = true)
 
+    /**
+     * B60 (#53): the DAC's answer to a save is `[reportId] 00 EE 00 SEQ` and then nothing (the Melody on 11-06: `07 00 EE 00 89 00 00 …`; the KA15 capture in DevicePEQ shows the
+     * same): the reply counter and no command, length or data. Its sequence number when [report] is exactly that; null for anything else, **the stale `1A` tail
+     * (`07 00 EE 00 03 16 01 F0 E1 EE`) included**, which has the same first bytes and then the leftovers of an earlier reply.
+     */
+    fun bareCounter(report: ByteArray?, reportId: Int?): Int? {
+        if (report == null) return null
+        val offset = if (reportId != null && report.size > 1 && report[0].u() == reportId) 1 else 0
+        if (report.size < offset + 4) return null
+        if (report[offset].u() != 0x00 || report[offset + 1].u() != STOP || report[offset + 2].u() != 0x00) return null
+        if ((offset + 4 until report.size).any { report[it].u() != 0 }) return null
+        return report[offset + 3].u()
+    }
+
     private fun parse(report: ByteArray?, reportId: Int?, acceptSetHead: Boolean): FiioReplyParse {
         if (report == null) return FiioReplyParse.NoAnswer(NoAnswerReason.TIMEOUT)
         if (report.isEmpty()) return FiioReplyParse.NoAnswer(NoAnswerReason.EMPTY)

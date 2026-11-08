@@ -52,6 +52,11 @@ internal class StatsLook(
     val locale: Locale,
     /** B32-Q2: what the rows open (nothing, where it is not wired). */
     val opener: StatsOpener = StatsOpener.None,
+    /**
+     * B58 6 (#74): the photo the library already has for each artist, by the artist's name (trimmed, lower case): the same stored address Home shows, never a lookup. An artist with no
+     * entry here shows its initials.
+     */
+    val artistImages: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -230,7 +235,7 @@ internal fun ArtistRankRow(rank: Int, row: ArtistRow, look: StatsLook) {
         timeMs = row.timeMs,
         mode = look.mode,
         open = look.opener.artist(row.name),
-    ) { InitialsAvatar(row.name.ifBlank { "?" }) }
+    ) { ArtistAvatar(row.name.ifBlank { "?" }, StatsFormat.artistImage(look.artistImages, row.name)) }
 }
 
 @Composable

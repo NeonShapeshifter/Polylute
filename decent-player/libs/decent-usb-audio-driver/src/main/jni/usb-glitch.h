@@ -252,6 +252,32 @@ const char *usbFeedbackPacketName(int verdict);
 #define USB_FEEDBACK_RATE_CHANGE_STUCK_MS 1500
 #define USB_FEEDBACK_RATE_CHANGE_WINDOW_MS 3000
 /**
+ * B59 5 (#46): a rate change whose feedback freezes **far** from nominal does not need the 1 500 ms. 2026-11-02 18:33:59, 44.1 -> 48 kHz: frozen at +5 819 ppm, declared stuck at 1 500 ms
+ * (1 386 identical readings), recovered in 213 ms, and the owner heard the "sh" of those 1.7 s. A value that far off, **identical** for 400 ms inside the rate-change window, is the same
+ * episode (the healthy readings of a DAC that answers its new rate move by tenths of a percent every few milliseconds: a run of identical readings that long, that far out, is not one).
+ * 400 ms is inside the 300-500 ms the log says is enough; [USB_FEEDBACK_RATE_CHANGE_FAR_MIN_READINGS] keeps a slow reaper (fewer than ~600 readings a second) from calling it on too few
+ * (the output sees ~900 a second: 400 ms is ~360). 5 000 ppm is [USB_FEEDBACK_SUSTAINED_PPM], the line the policy already draws between a blip and a plateau. Nearer values keep the 1 500 ms.
+ */
+#define USB_FEEDBACK_RATE_CHANGE_FAR_PPM 5000.0
+/**
+ * ... and **not** a value as far as the healthy plateau: after 96 -> 44.1 kHz a healthy DAC sits at +0.996 % (9 960 ppm) for 3 s and more (B50 accepted one restart for it at 1 500 ms; the
+ * native scenario also pins that a 1.4 s plateau is not restarted), and from an identical run the two cannot be told apart by time, only by value. The stuck values ever seen after a rate
+ * change are +3 316, +5 819 and +6 653 ppm. So the early call is for [5 000, 8 000) ppm (above the largest stuck value seen, under the healthy plateau); at 8 000 ppm and beyond the 1 500 ms stands.
+ */
+#define USB_FEEDBACK_RATE_CHANGE_FAR_MAX_PPM 8000.0
+/**
+ * B61 (item 2): ... and **above** the healthy plateau as well. 2026-11-07 10:12:43, 96 -> 44.1 kHz: frozen at +10 864 ppm (5.5724), declared stuck at 1 500 ms, recovered in 247 ms; the 8 000 ppm
+ * ceiling above left it in the slow band. The healthy plateaus on record sit at +9 070 (the Melody's own request on the fresh stream after that restart, 10:12:44), +9 960 (10-06) and +10 000
+ * (the replay): the frozen one is a single Melody step above them (0.0049 fpmf = ~900 ppm at 44.1 kHz), and from an identical run **they cannot be told apart by time or by shape**, only by value.
+ * So the early call is for [5 000, 8 000) and [10 500, USB_FEEDBACK_ABSURD_PPM) ppm; [8 000, 10 500) (the plateau and a step of margin) keeps the 1 500 ms. 10 500 is +1.05 %, 3.4 % under the
+ * frozen value and 5 % over the largest healthy plateau. Above 20 000 ppm `auto` does not follow the reading at all, so there is nothing to cut short. The cost of a wrong call is one
+ * restart gap (~250 ms) for a healthy plateau that would have been restarted by the 1 500 ms rule anyway (B50 accepted that for plateaus of 1.5 s and more; the only one on record lasted 3 s).
+ * It is a line drawn between two neighbouring Melody steps from one example on each side: a hypothesis to be heard, and the fallback is the 1 500 ms.
+ */
+#define USB_FEEDBACK_RATE_CHANGE_FAR_ABOVE_PPM 10500.0
+#define USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS 400
+#define USB_FEEDBACK_RATE_CHANGE_FAR_MIN_READINGS 250
+/**
  * No reading for this long (a pause: the writer idles and nobody reaps the endpoint) breaks the run.
  * Streaming delivers ~900 a second and a seek's barrier leaves a gap of tens of ms, which does not.
  */
@@ -284,6 +310,20 @@ const char *usbFeedbackPacketName(int verdict);
 // of the note in device-test-2026-10-06.md would have refused every ordinary +0.25 % blip, i.e. most of a healthy
 // DAC's dither: it is not a usable bound.
 #define USB_FEEDBACK_ABSURD_PPM 20000.0
+/**
+ * B59 5 (#39): **mid-stream** the absurd line is lower. 2026-11-02 01:00:14, in the middle of a song at 44.1 kHz, the Melody's own ramp (+2.08 %) was followed for ~170 ms, up to +1.9 %,
+ * before the 2 % line refused it, and the owner heard the step. What a healthy DAC reports mid-stream never went past +0.54 % in the 1 260 sampled lines (the +1.0 % transient is a
+ * **stream start**: 3 s, then gone). So once the readings have been **continuous for 10 s** (no gap of USB_FEEDBACK_GAP_MS: a pause, a new stream, a resume all start the count again, so
+ * a start transient is still followed), anything farther than 7 500 ppm (1.4x the largest healthy reading) is not obeyed: the ramp is refused at ~+0.75 % (~60 ms in) instead of +2 %.
+ */
+// B60 review (HONOR 11-07 00:52-01:01, owner OK): REVERTED to the ordinary line. At 48 kHz the Melody refills its FIFO in routine bursts every ~3 s
+// (6.0000 -> 6.0149 -> 6.0449 -> 6.0499 = +8 321 ppm, then back); 7 500 refused the top of the burst ~170 times, and three times, when the app was
+// sending exactly nominal at that moment, the DAC kept asking (+8.7 %, +17 %) and locked: a ~1.8 s pause each (rail hold 1.5 s + recovery).
+// Owner: a short shh now and then is better than a pause. B60-review/logcat-live-0051.txt.
+// B61: reviewed and kept (80 minutes with 20 000 on 11-07 09:00-10:15, four 48 kHz stretches and a 192 kHz album: no mid-song lock, 22 refusals in all); the native tests that assumed 7 500 now state
+// the rule (`expectTheMelodysRefillBurstIsFollowedAndTheRampIsStillRefusedAtTwoPercent`), and a runaway that does happen is called in 200 ms (USB_DAC_LOCK_RAIL_FAST_MS), not 1 500.
+#define USB_FEEDBACK_MIDSTREAM_ABSURD_PPM 20000.0
+#define USB_FEEDBACK_MIDSTREAM_AFTER_MS 10000
 #define USB_FEEDBACK_SUSTAINED_PPM 5000.0
 #define USB_FEEDBACK_SUSTAINED_MS 5000
 
@@ -376,6 +416,10 @@ typedef struct {
     bool bigRun;
     int64_t bigStartMs;
     int64_t bigLastMs;
+    // B59 5: how long the readings have been continuous (no gap of USB_FEEDBACK_GAP_MS): what makes a reading "mid-stream".
+    bool contStarted;
+    int64_t contStartMs;
+    int64_t contLastMs;
 } UsbFeedbackWatch;
 
 /** A fresh stream: no run, no episode, no healthy history (a new rate must not inherit the old one's). */
@@ -418,11 +462,26 @@ double usbFeedbackPpm(double fpmf, double nominalFpmf);
 //
 // What a healthy Melody shows (every log on record): its nominal with blips of a single reading up to +1.9 %, a plateau of +1.0 % for 3 s at a stream's
 // start, +0.8 % for minutes (Crimen, Ciega Sordomuda), +407 ppm (Miko). Nothing beyond +-2 % for more than a reading. So a feedback beyond +-4.5 % (2.4x the
-// worst healthy reading, 0.9 of the window) that keeps there for USB_DAC_LOCK_RAIL_MS is not a clock: the detector calls it locked up. It needs no audible symptom
+// worst healthy reading, 0.9 of the window) that keeps there for USB_DAC_LOCK_RAIL_FAST_MS (1 500 ms before B61) is not a clock: the detector calls it locked up. It needs no audible symptom
 // and no late completion (those are counted and reported with the line, but the rail alone decides): the lock-up was silent for almost 3 minutes.
 #define USB_DAC_LOCK_RAIL_PPM 45000.0
-/** Long enough that no single reading or glitch can fire it (1 500 readings at ~1 000 a second), short enough that recovery starts in a second and a half. */
-#define USB_DAC_LOCK_RAIL_MS 1500
+/**
+ * B61 (item 2): a rail beyond [USB_DAC_LOCK_RAIL_PPM] is called after **200 ms** once the stream is past its first moment. Device evidence, 2026-11-07 00:52-01:06 (B60-review/logcat-live-0051.txt): eight
+ * rail locks (three at 48 kHz, five at 44.1 kHz) in 14 minutes, each 20-102 s into a stream. Every one began the same way: the Melody's FIFO-refill burst was refused by B59's 7 500 line while the
+ * app was sending nominal, and the DAC's request then climbed in a straight line, ~0.5 frames per microframe per second (+5.08 % at the first reading beyond the window, +8.7 % half a second later,
+ * +17 % at 1.4 s), until the 1 500 ms rail hold fired: ~1.8 s of pause each. None of the eight came back from beyond +4.5 % by itself. What a healthy Melody shows (every log on record, B47) is nothing
+ * beyond +-2 % for more than a reading, and its start ramp reaches +2.08 % for ~170 ms: less than half of the rail line. 200 ms is ~180 consecutive readings (about 900 a second), every one beyond
+ * +4.5 %, with none between them back inside it; the call comes 1.3 s earlier than the 1 500 ms did, and recovery (~250 ms) then starts at once.
+ */
+#define USB_DAC_LOCK_RAIL_FAST_MS 200
+/**
+ * B61: the first moment of a stream (and of one that restarts after a recovery, or resumes after a pause): **no reading in it counts toward the rail**; the 200 ms are counted from the end of it at the
+ * earliest (so a rail from a stream's very first reading is called at 700 ms, not at 1 500 as before B61). A DAC may legitimately report the **previous rate's** value for a few readings when a
+ * stream starts at a new rate (2026-10-31 00:12, 48 kHz after 44.1: 5.51245 = -81 258 ppm for ~40 ms, then the new rate; B48-fix4); 500 ms is 12 times that (and the length of the
+ * start guard of B48). No lock-up on record began inside a stream's first second but the B48-fix2 replay's (a synthetic rail at 300 ms); all eight of the 11-07 ones, and 10-29's, came 20 s or more in.
+ * So this costs nothing seen.
+ */
+#define USB_DAC_LOCK_START_GRACE_MS 500
 /** No reading for this long (a pause) ends the run, like the feedback watch's own gap. */
 #define USB_DAC_LOCK_GAP_MS 500
 
@@ -434,6 +493,10 @@ typedef struct {
     double ppm;            // the latest
     int64_t lateReaps;     // REAP_SLOW events (> 20 ms) since the run began
     bool locked;           // fired for this run
+    // B61: the first reading of this stream, or of the first after a gap in all readings: none that comes before USB_DAC_LOCK_START_GRACE_MS later counts toward a rail. Not cleared by the end of a run.
+    bool haveFirst;
+    int64_t firstMs;
+    int64_t lastAnyMs;
 } UsbDacLockWatch;
 
 typedef struct {
@@ -444,7 +507,7 @@ typedef struct {
 } UsbDacLockEvent;
 
 void usbDacLockReset(UsbDacLockWatch *w);
-/** One feedback reading, [ppm] from nominal, at [nowMs]. True exactly once per run, when it has been beyond the rail for USB_DAC_LOCK_RAIL_MS; [*ev] filled. */
+/** One feedback reading, [ppm] from nominal, at [nowMs]. True exactly once per run, when it has been beyond the rail for USB_DAC_LOCK_RAIL_FAST_MS, counted from the end of the stream's first USB_DAC_LOCK_START_GRACE_MS at the earliest; [*ev] filled. */
 bool usbDacLockObserve(UsbDacLockWatch *w, double ppm, int64_t nowMs, UsbDacLockEvent *ev);
 /** A completion that took longer than usbReapIsSlow allows, while a run is open. */
 void usbDacLockLateReap(UsbDacLockWatch *w);

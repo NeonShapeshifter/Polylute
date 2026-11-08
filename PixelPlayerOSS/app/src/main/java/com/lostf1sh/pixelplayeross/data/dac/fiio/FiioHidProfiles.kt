@@ -59,6 +59,12 @@ data class FiioHidProfile(
      * preset and the bands, which is what it always did.
      */
     val answersEqSwitch: Boolean = true,
+    /**
+     * B60 (#53): the id `GET 16` answers once a band of a **user slot** has been read or written since the last select or save, instead of the slot's own id. Seen on the
+     * Melody on 11-06 (0x0A, on two devices' logs, in a read-only apply and after a band SET); the selection itself does not move. Null where the DAC always names its preset.
+     * See [FiioPresetClaims] for how the app reads it.
+     */
+    val editingPresetId: Int? = null,
 ) {
     val writableSlots: List<FiioSlot> get() = slots.filter { it.writable }
 
@@ -101,7 +107,7 @@ object FiioHidProfiles {
         FiioHidProfile("fiio-ja11", "FiiO JA11", 0x0102, 0x02, null, 5, -12.0, 12.0, 0.1, 10.0,
             supportedFilters = coreFilters, disabledPresetId = 0x04),
         FiioHidProfile("snowsky-melody", "Snowsky Melody", 0x0126, 0x07, null, 10, -12.0, 12.0, 0.1, 10.0,
-            disabledPresetId = 0xF0, slots = melodySlots, appSlotId = 0xA2, answersEqSwitch = false),
+            disabledPresetId = 0xF0, slots = melodySlots, appSlotId = 0xA2, answersEqSwitch = false, editingPresetId = 0x0A),
         FiioHidProfile("snowsky-retro-nano", "Snowsky Retro Nano", null, 0x07, 3, 10, -12.0, 12.0, 0.1, 10.0,
             listOf("RETRO NANO", "SNOWSKY RETRO NANO", "FiiO SNOWSKY RETRO NANO"), disabledPresetId = 0x0B),
     )

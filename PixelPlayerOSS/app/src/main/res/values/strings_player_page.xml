@@ -17,6 +17,11 @@
     <string name="lyrics_menu_sync_sub">Move the lines earlier or later</string>
     <string name="lyrics_menu_sync_earlier">Delay 0.1 s</string>
     <string name="lyrics_menu_sync_later">Advance 0.1 s</string>
+    <string name="lyrics_menu_text_size">Text size</string>
+    <string name="lyrics_menu_size_small">S</string>
+    <string name="lyrics_menu_size_medium">M</string>
+    <string name="lyrics_menu_size_large">L</string>
+    <string name="lyrics_menu_size_extra_large">XL</string>
     <string name="lyrics_menu_alignment">Alignment</string>
     <string name="lyrics_menu_align_left">Left</string>
     <string name="lyrics_menu_align_center">Center</string>

@@ -242,6 +242,7 @@ internal fun PlayerLyricsPage(
         // Display preferences are edited from the lyrics surface too, but they are written
         // through the ViewModel so the repository stays the only writer of these keys.
         onLyricsAlignmentChange = { actions.onLyricsAlignmentChange(it) },
+        onLyricsTextSizeChange = { actions.onLyricsTextSizeChange(it) },
         onShowLyricsTranslationChange = { actions.onShowLyricsTranslationChange(it) },
         onShowLyricsRomanizationChange = { actions.onShowLyricsRomanizationChange(it) },
         onSaveLyricsToFile = actions::onSaveLyricsToFile,

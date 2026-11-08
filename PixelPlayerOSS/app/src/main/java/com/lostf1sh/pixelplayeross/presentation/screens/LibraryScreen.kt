@@ -742,6 +742,12 @@ fun LibraryScreen(
     val floatingActionsGap = if (!showFloatingActions) 16.dp
         else if (fabShowLocate && fabTab != LibraryTabId.FOLDERS) 136.dp else 80.dp
 
+    // B58 5 (#76): the discs fade while a scroll bar is dragged, so the bubble over the list is never under one
+    val floatingDiscAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (com.lostf1sh.pixelplayeross.presentation.components.ScrollDragSignal.dragging) 0f else 1f,
+        animationSpec = androidx.compose.animation.core.tween(com.lostf1sh.pixelplayeross.presentation.components.ScrollDragSignal.FADE_MS),
+        label = "floatingDiscAlpha",
+    )
     Scaffold(
         modifier = Modifier.background(Dap.page),
         containerColor = Dap.page,
@@ -754,7 +760,7 @@ fun LibraryScreen(
                     start = DapSpacing.Md,
                     end = DapSpacing.Md,
                     bottom = bottomBarHeightDp - systemNavBarInset + LocalDapPlayerShelfHeight.current + 8.dp
-                ),
+                ).graphicsLayer { alpha = floatingDiscAlpha },
                 // Play the whole list from the top only where the list *is* the thing to play.
                 // Albums and artists are lists of containers: "play all" there is ambiguous.
                 showPlay = fabTab == LibraryTabId.SONGS || fabTab == LibraryTabId.LIKED,

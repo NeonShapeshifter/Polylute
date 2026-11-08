@@ -3,4 +3,7 @@
     <!-- B56 fase 7.2: portadas animadas -->
     <string name="setcat_animated_covers_title">Portadas animadas</string>
     <string name="setcat_animated_covers_subtitle">En el reproductor completo, reproduce cover.mp4, cover.webp o cover.gif de la carpeta del álbum, sin sonido y en bucle. Las listas, el mini reproductor y la pantalla de bloqueo conservan la portada fija.</string>
+    <!-- B61 item 5 (#70) -->
+    <string name="setcat_animated_covers_lock_title">También en la pantalla de bloqueo</string>
+    <string name="setcat_animated_covers_lock_subtitle">La pantalla de bloqueo de Polylute reproduce la portada animada del álbum mientras suena música y la pantalla está encendida. Desactivado por defecto.</string>
 </resources>

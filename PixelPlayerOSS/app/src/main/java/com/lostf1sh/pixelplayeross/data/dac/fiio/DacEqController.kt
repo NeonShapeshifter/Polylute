@@ -185,7 +185,7 @@ class DacEqController(
     /** One look at [att]'s whole EQ state, not published. */
     private suspend fun readOnce(att: AttachedFiio): DacEqReadout {
         val use = try {
-            access.withSession(att, log) { session -> FiioEqReader.read(session) }
+            access.withSession(att, log) { session -> access.presetClaims.resolve(att, FiioEqReader.read(session), log) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {

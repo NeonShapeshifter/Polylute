@@ -241,6 +241,8 @@ fun LyricsSheet(
      */
     externalLyricsEnabled: Boolean,
     modifier: Modifier = Modifier,
+    /** B58 4 (#78): the lyrics text size the listener picks (one of `LyricsTextSize`'s keys). */
+    onLyricsTextSizeChange: (String) -> Unit = {},
     /** B56-3.2: the sync editor's save (the `.lrc` and the database). */
     onSaveSyncedLyrics: (Song, Lyrics) -> Unit = { _, _ -> },
     highlightZoneFraction: Float = 0.08f,
@@ -285,6 +287,12 @@ fun LyricsSheet(
         context.dataStore.data.map { it[stringPreferencesKey("lyrics_alignment")] ?: "left" }
     }
     val lyricsAlignment by lyricsAlignmentFlow.collectAsStateWithLifecycle(initialValue = "left")
+
+    val lyricsTextSizeFlow = remember(context) {
+        context.dataStore.data.map { it[stringPreferencesKey("lyrics_text_size")] ?: LyricsTextSize.DEFAULT.key }
+    }
+    val lyricsTextSizeKey by lyricsTextSizeFlow.collectAsStateWithLifecycle(initialValue = LyricsTextSize.DEFAULT.key)
+    val lyricsTextSize = LyricsTextSize.fromKey(lyricsTextSizeKey)
 
     val showLyricsTranslationFlow = remember(context) {
         context.dataStore.data.map { it[booleanPreferencesKey("show_lyrics_translation")] ?: true }
@@ -444,15 +452,13 @@ fun LyricsSheet(
 
     // One short move, in step with the controls folding away: the slow spring this used outlived the fold and kept re-measuring every line.
     val fontScale by animateFloatAsState(
-        targetValue = if (immersiveMode) 1.4f else 1f,
+        targetValue = lyricsTextSize.scale(immersive = immersiveMode),
         animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
         label = "fontScale"
     )
     
-    val scaledTextStyle = lyricsTextStyle.copy(
-        fontSize = lyricsTextStyle.fontSize * fontScale,
-        lineHeight = lyricsTextStyle.lineHeight * fontScale
-    )
+    // fontScale is the chosen size (and, in immersive mode, the chosen size plus a quarter); the page's own style is the chosen size too
+    val scaledTextStyle = lyricsTextStyle.scaledBy(fontScale)
 
     fun resetImmersiveTimer() {
         if (immersiveMode) immersiveMode = false
@@ -739,7 +745,7 @@ fun LyricsSheet(
                                 ) { _, line ->
                                     PlainLyricsLine(
                                         line = line,
-                                        style = lyricsTextStyle,
+                                        style = lyricsTextStyle.scaledBy(lyricsTextSize.scale(immersive = false)),
                                         lyricsAlignment = lyricsAlignment,
                                         showTranslation = if (hasTranslatedLyrics) showLyricsTranslation else true,
                                         showRomanization = if (hasRomanizedLyrics) showLyricsRomanization else true,
@@ -839,6 +845,8 @@ fun LyricsSheet(
                     },
                     lyricsAlignment = lyricsAlignment,
                     onLyricsAlignmentChange = onLyricsAlignmentChange,
+                    lyricsTextSize = lyricsTextSize.key,
+                    onLyricsTextSizeChange = onLyricsTextSizeChange,
                     hasTranslatedLyrics = hasTranslatedLyrics,
                     showTranslation = showLyricsTranslation,
                     onShowTranslationChange = { enabled ->

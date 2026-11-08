@@ -24,6 +24,18 @@ sealed interface DacEqWriteResult {
     data class Failed(val why: String, val restored: Boolean?, val state: DacEqState?) : DacEqWriteResult
 }
 
+/**
+ * B58 3.1 (#53): a write's result as one phrase for the log, the same words in the writer's `RESULT` line and in the line the screen writes when it tells the listener ("The DAC's EQ was not
+ * changed / Talking to the DAC failed" is [DacEqWriteResult.Failed], and says nothing of why: this does).
+ */
+internal fun describeWriteResult(result: DacEqWriteResult): String = when (result) {
+    is DacEqWriteResult.Done -> "done: ${result.note}"
+    is DacEqWriteResult.Refused -> "REFUSED ${result.refusal}: ${result.detail}"
+    is DacEqWriteResult.Unavailable -> "unavailable: ${result.why}"
+    is DacEqWriteResult.Mismatch -> "MISMATCH expected=[${result.expected}] actual=[${result.actual}] restored=${result.restored}"
+    is DacEqWriteResult.Failed -> "FAILED ${result.why} restored=${result.restored}"
+}
+
 /** What the second stage of an operation on the app's slot came to: the gate's plan for the selected slot, or the result it ends with. */
 private sealed interface Selected {
     class Ready(val authorisation: GateDecision.Authorised) : Selected
@@ -106,7 +118,7 @@ class DacEqWriter(
         val use = try {
             access.withSession(att, log) { session ->
                 logHeader("BACKUP", att, WriteInitiator.REVIEWER_COMMAND)
-                val state = FiioEqReader.read(session).also { logState(session, it) }
+                val state = access.presetClaims.resolve(att, FiioEqReader.read(session), session::logLine).also { logState(session, it) }
                 val existing = backups.load(att.backupKey)
                 if (existing != null && !replace) return@withSession DacEqBackupResult.Exists(existing, state)
                 val backup = DacEqBackup.of(att, state, wallClockMs()) ?: return@withSession DacEqBackupResult.NotReadable(state)
@@ -120,11 +132,15 @@ class DacEqWriter(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            log("DAC_HID|ERROR BACKUP the HID session could not run: ${error.javaClass.simpleName}: ${error.message}")
             return DacEqBackupResult.Unavailable("${error.javaClass.simpleName}: ${error.message}")
         }
         return when (use) {
             is HidUse.Ran -> use.value.also { log("DAC_HID|RESULT BACKUP ${it.javaClass.simpleName}") }
-            is HidUse.Unavailable -> DacEqBackupResult.Unavailable(use.why)
+            is HidUse.Unavailable -> {
+                log("DAC_HID|UNAVAILABLE BACKUP: ${use.why}")
+                DacEqBackupResult.Unavailable(use.why)
+            }
         }
     }
 
@@ -186,6 +202,28 @@ class DacEqWriter(
     suspend fun inventory(att: AttachedFiio, initiator: WriteInitiator, stale: () -> String? = { null }): DacEqWriteResult =
         run("INVENTORY", att, initiator, stale) { op -> op.inventory() }
 
+    /**
+     * B59 (#53): reads **the user slots only** (USER 1–3 on the Melody) by select → read → select back, into the backup: the first look at what each holds,
+     * which is what the choice of the app's slot is made from. A pointer move only (no gain, band or save), and only while playback is paused, like [inventory].
+     */
+    suspend fun readUserSlots(att: AttachedFiio, initiator: WriteInitiator, stale: () -> String? = { null }): DacEqWriteResult =
+        run("READ_USER_SLOTS", att, initiator, stale) { op -> op.inventory(userSlotsOnly = true) }
+
+    /**
+     * B59 (#53): records which user slot the app uses on this DAC, **once** ([DacEqBackup.chosenSlot]). Sends nothing to the DAC. False when [slotId] is not a
+     * user slot of the model, there is no backup, or it could not be stored.
+     */
+    fun chooseSlot(att: AttachedFiio, slotId: Int): Boolean {
+        if (att.profile.writableSlots.none { it.id == slotId }) return false
+        val backup = backups.load(att.backupKey) ?: return false
+        if (backup.chosenSlot == slotId) return true
+        val updated = backup.withChosenSlot(slotId)
+        if (!backups.update(updated)) return false
+        onBackupChanged(att, updated)
+        log("DAC_HID|SLOT the app's slot on ${att.displayName} is 0x%02X (${att.profile.slots.first { it.id == slotId }.name}); chosen once, kept in the backup".format(slotId))
+        return true
+    }
+
     /** B31 P1.4: selects one of the DAC's presets and nothing else. While music plays it needs [confirmed]. */
     suspend fun selectPreset(
         att: AttachedFiio,
@@ -232,12 +270,18 @@ class DacEqWriter(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            // B58 3.1 (#53): the session itself could not run (the interface could not be opened or claimed, the thread died): this used to end here with nothing in the log, and the
+            // screen says only "Talking to the DAC failed"
+            log("DAC_HID|ERROR $name the HID session could not run: ${error.javaClass.simpleName}: ${error.message}")
             return DacEqWriteResult.Unavailable("${error.javaClass.simpleName}: ${error.message}")
         }
         return when (use) {
             is HidUse.Ran -> use.value
-            is HidUse.Unavailable ->
+            is HidUse.Unavailable -> {
+                // B58 3.1 (#53): the DAC could not be opened, or the edit went stale before it was: said, with the reason, before the screen says anything
+                log("DAC_HID|UNAVAILABLE $name stale=${use.stale}: ${use.why}")
                 if (use.stale) DacEqWriteResult.Refused(GateRefusal.EDIT_OUTDATED, use.why) else DacEqWriteResult.Unavailable(use.why)
+            }
         }
     }
 
@@ -261,13 +305,7 @@ class DacEqWriter(
         }
     }
 
-    private fun describe(result: DacEqWriteResult): String = when (result) {
-        is DacEqWriteResult.Done -> "done: ${result.note}"
-        is DacEqWriteResult.Refused -> "REFUSED ${result.refusal}: ${result.detail}"
-        is DacEqWriteResult.Unavailable -> "unavailable: ${result.why}"
-        is DacEqWriteResult.Mismatch -> "MISMATCH expected=[${result.expected}] actual=[${result.actual}] restored=${result.restored}"
-        is DacEqWriteResult.Failed -> "FAILED ${result.why} restored=${result.restored}"
-    }
+    private fun describe(result: DacEqWriteResult): String = describeWriteResult(result)
 
     private fun logHeader(name: String, att: AttachedFiio, initiator: WriteInitiator) {
         log(
@@ -283,8 +321,19 @@ class DacEqWriter(
 
     private inner class Op(val session: FiioHidSession, val att: AttachedFiio, val initiator: WriteInitiator, val stale: () -> String?) {
         val profile = att.profile
-        val appSlot: Int get() = profile.appSlotId ?: -1
+
+        /**
+         * B59 (#53): **the slot the app writes on this DAC**: the one it took over, else the one chosen for the DAC, else the profile's default. Read from the backup
+         * on disk each time, so a choice made inside this operation ([chooseSlot]) is the one the next request uses.
+         */
+        val appSlot: Int get() = backups.load(att.backupKey)?.appSlotFor(profile) ?: profile.appSlotId ?: -1
         val sense: PreGainSense get() = senseOf(profile)
+
+        /**
+         * B59 (#53): the bands the DAC **stored with a Q of its own** (it was sent 0.71 and said 0.70), by index: from then on this is the app's record of the
+         * band, so the later read-backs, the final check and a restore compare with what the DAC holds and not with what was asked.
+         */
+        private val qStored = mutableMapOf<Int, DacEqBand>()
 
         /** SET frames this operation has sent. While it is zero the operation can still be dropped; after the first it finishes or restores. */
         var setsSent = 0
@@ -304,7 +353,9 @@ class DacEqWriter(
             private set
 
         private fun read(label: String): Pair<DacEqState, Long> {
-            val state = FiioEqReader.read(session)
+            // B60 (#53): the preset as this session knows it (the Melody answers 0x0A once a band was touched; see FiioPresetClaims); the first read of an operation asks the
+            // preset before any band, so a select made elsewhere shows as its own id here and the claim follows it
+            val state = access.presetClaims.resolve(att, FiioEqReader.read(session), session::logLine)
             stateAfter = state
             if (startPreset == null) startPreset = (state.activePreset as? EqRead.Read)?.value
             session.logLine("DAC_HID|STATE ($label) ${state.verdict}, complete=${state.isComplete}")
@@ -346,6 +397,7 @@ class DacEqWriter(
                     sense = sense,
                     playing = playbackActive(),
                     userConsent = userConsent(profile),
+                    appSlotId = appSlot,
                 ),
             ).also { decision ->
                 session.logLine(
@@ -433,11 +485,30 @@ class DacEqWriter(
             is EqRead.Failed -> "the pre-gain could not be read back (${got.why})"
         }
 
+        /** B59: [band] as the app records it: what the DAC stored for it when it stored another Q, else as asked. */
+        private fun recorded(band: DacEqBand): DacEqBand = qStored[band.index]?.takeIf { it.sameAsAllowingQRounding(band) } ?: band
+
+        /**
+         * B59 (#53): [stored] is what the DAC holds for the band that was sent as [sent], and its Q is one hundredth off. Said once per band and
+         * remembered: **from here on this is the app's record of that band**. A band that holds exactly what was sent says nothing.
+         */
+        private fun noteQRounding(sent: DacEqBand, stored: DacEqBand) {
+            if (stored.qHundredths == sent.qHundredths) return
+            // only a band that is the one sent but for its Q (an unset band read as zeros is not a Q rounding)
+            if (!stored.sameAsAllowingQRounding(sent)) return
+            if (qStored[sent.index]?.qHundredths == stored.qHundredths) return
+            qStored[sent.index] = stored
+            session.logLine(
+                "DAC_HID|CONFIRM band ${sent.index + 1}: the DAC stored Q ${"%.2f".format(java.util.Locale.ROOT, stored.q)} for ${"%.2f".format(java.util.Locale.ROOT, sent.q)} (its rounding)"
+            )
+        }
+
         /** `GET 15 [i]` and compare: null when the band reads as [expected]; else why not. */
         private fun readBackBand(expected: DacEqBand, why: String): String? = when (val got = FiioEqReader.readBand(session, expected.index)) {
             is EqRead.Read ->
-                if (got.value.sameAs(expected)) {
+                if (got.value.sameAsAllowingQRounding(recorded(expected))) {
                     session.logLine("DAC_HID|READBACK band ${expected.index + 1} ${DacEqStateFormat.band(got.value)} ($why)")
+                    noteQRounding(expected, got.value)
                     null
                 } else {
                     "band ${expected.index + 1} reads [${DacEqStateFormat.band(got.value)}], not [${DacEqStateFormat.band(expected)}]"
@@ -455,6 +526,13 @@ class DacEqWriter(
             val ack = session.awaitSetAck(command, data, name)
             return when (ack) {
                 is FiioSetAck.Confirmed -> null
+                is FiioSetAck.QRounded -> {
+                    // B59 (#53): the DAC took the band and stored the Q it can hold. Only the Q differs, by one hundredth; the gain is exact.
+                    val sent = (FiioEqReader.decodeBand(ack.sent[0].toInt() and 0xFF, ack.sent) as EqRead.Read).value
+                    val stored = (FiioEqReader.decodeBand(ack.reported[0].toInt() and 0xFF, ack.reported) as EqRead.Read).value
+                    noteQRounding(sent, stored)
+                    null
+                }
                 is FiioSetAck.Contrary ->
                     "the DAC acknowledged $name with [${FiioHidFrames.hex(ack.reported)}] after being sent [${FiioHidFrames.hex(ack.sent)}]"
                 is FiioSetAck.Unusable, FiioSetAck.Missing -> {
@@ -501,13 +579,16 @@ class DacEqWriter(
                         }
                     }
                 }
+                // B60 (#53): what this SET leaves in the selected preset is recorded before it goes out (it may be applied whatever the acknowledgement says), so a read taken
+                // mid-failure that answers the Melody's marker can still be told from a preset someone else selected
+                access.presetClaims.noteWritten(att, step.after)
                 if (!send(permit, step.command, data, step.name)) return "${step.name} could not be sent"
                 confirm(step.command, data, step.name)?.let { return "${step.name} was not confirmed: $it" }
                 if (step.command == FiioHidWrites.CMD_GAIN) {
                     gainSent = step.after.preGainTenthsDb
                 } else {
                     val index = data[0].toInt() and 0xFF
-                    bandsSent[index] = step.after.bands[index]
+                    bandsSent[index] = recorded(step.after.bands[index])
                 }
                 before = step.after
             }
@@ -802,7 +883,7 @@ class DacEqWriter(
             if (!sendSave(permit, id)) return DacEqWriteResult.Failed("the save could not be sent", restored = false, state = stateAfter)
             pause(SAVE_TAIL_MS)
             val check = DacEqSlotSnapshot.of(read("after restoring slot 0x%02X".format(id)).first)
-            if (check == null || !check.sameEffectAs(saved.writable())) {
+            if (check == null || !check.sameEffectAsAllowingQRounding(saved.writable())) {
                 return DacEqWriteResult.Mismatch(describeSnapshot(saved), check?.let(::describeSnapshot) ?: "unreadable", restored = false, state = null)
             }
             return null
@@ -906,7 +987,8 @@ class DacEqWriter(
         /** Records (or lets go of) the app's ownership of its slot, after everything else worked. */
         private fun markOwned(owned: Boolean, after: DacEqState, note: String): DacEqWriteResult {
             val backup = backups.load(att.backupKey) ?: return DacEqWriteResult.Failed("the backup disappeared", restored = null, state = after)
-            val updated = if (owned) backup.withOwned(appSlot) else backup.withoutOwned(appSlot)
+            // B59: giving the slot back also forgets which slot was chosen, so the next time the EQ is turned on the choice is made again (the slot is the listener's again)
+            val updated = if (owned) backup.withOwned(appSlot).withChosenSlot(appSlot) else backup.withoutOwned(appSlot).withChosenSlot(null)
             if (!backups.update(updated)) {
                 return DacEqWriteResult.Failed(
                     "the slot was changed but the backup could not record that it is ${if (owned) "the app's" else "given back"}", restored = null, state = after,
@@ -917,16 +999,17 @@ class DacEqWriter(
             return DacEqWriteResult.Done(after, note)
         }
 
-        fun inventory(): DacEqWriteResult {
+        fun inventory(userSlotsOnly: Boolean = false): DacEqWriteResult {
             val (decision, snapshot) = authorised(WriteRequest(WriteKind.INVENTORY, initiator))
+            val slots = if (userSlotsOnly) profile.writableSlots else profile.slots
             if (decision is GateDecision.Refused) return DacEqWriteResult.Refused(decision.refusal, decision.detail)
             val permit = (decision as GateDecision.Authorised).permit
             val original = (snapshot.first.activePreset as EqRead.Read).value
             var problem: String? = null
             var putBack = true
-            session.logLine("DAC_HID|INVENTORY ${profile.slots.size} preset(s): select, read, and the selection back on 0x%02X; no gain, band or save is sent".format(original))
+            session.logLine("DAC_HID|INVENTORY ${slots.size} preset(s): select, read, and the selection back on 0x%02X; no gain, band or save is sent".format(original))
             try {
-                for (slot in profile.slots) {
+                for (slot in slots) {
                     val state = if (slot.id == original) {
                         snapshot.first
                     } else {
@@ -952,7 +1035,7 @@ class DacEqWriter(
             if (!putBack) return failAndRestore("the selection (0x%02X) could not be put back after the inventory".format(original))
             val after = read("after the inventory").first.also { logState(session, it) }
             problem?.let { return DacEqWriteResult.Failed(it, restored = null, state = after) }
-            return DacEqWriteResult.Done(after, "${profile.slots.size} preset(s) read and kept in the backup; selection back on 0x%02X".format(original))
+            return DacEqWriteResult.Done(after, "${slots.size} preset(s) read and kept in the backup; selection back on 0x%02X".format(original))
         }
 
         fun selectPreset(presetId: Int, confirmed: Boolean): DacEqWriteResult {
@@ -1022,7 +1105,10 @@ class DacEqWriter(
             val after = read("read-back").first.also { logState(session, it) }
             val actual = DacEqSlotSnapshot.of(after)
             val selected = (after.activePreset as? EqRead.Read)?.value
-            if (actual != null && selected == permitPointer && actual.sameEffectAs(expected)) {
+            // B59 (#53): the bands the DAC stored with a Q of its own are compared as it stored them, and a Q one hundredth off is the DAC's rounding; every other field is exact.
+            val recordedExpected = expected.copy(bands = expected.bands.map(::recorded))
+            if (actual != null && selected == permitPointer && actual.sameEffectAsAllowingQRounding(recordedExpected)) {
+                actual.bands.forEach { stored -> expected.bands.getOrNull(stored.index)?.let { noteQRounding(it, stored) } }
                 return DacEqWriteResult.Done(after, note)
             }
             val mismatch = "expected [${describeSnapshot(expected)}], the DAC reports [${actual?.let(::describeSnapshot) ?: "an incomplete state"}]" +
@@ -1092,7 +1178,11 @@ class DacEqWriter(
             session.awaitSetAck(FiioHidWrites.CMD_PRESET, FiioHidWrites.encodePreset(id), "select 0x%02X".format(id))
             repeat(SELECT_POLLS) {
                 pause(SELECT_POLL_MS)
-                if (FiioEqReader.readPreset(session).valueOrNull == id) return true
+                if (FiioEqReader.readPreset(session).valueOrNull == id) {
+                    // B60 (#53): the DAC named the preset right after the select: from here the app knows which one is selected, whatever it answers once a band is touched
+                    access.presetClaims.noteSelected(att, id)
+                    return true
+                }
             }
             session.logLine("DAC_HID|the DAC never reported preset 0x%02X".format(id))
             return false

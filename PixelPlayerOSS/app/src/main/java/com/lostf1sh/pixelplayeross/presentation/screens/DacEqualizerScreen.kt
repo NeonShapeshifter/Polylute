@@ -24,11 +24,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import com.lostf1sh.pixelplayeross.presentation.components.GlassModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,6 +69,7 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqError
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqOperation
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacPresetRow
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqScreenController
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqSlotChoicePrompt
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqUiState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.FeatureStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.FeatureStatusKind
@@ -75,7 +78,6 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.textRes
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapChevron
 import com.lostf1sh.pixelplayeross.ui.ds.DapDivider
-import com.lostf1sh.pixelplayeross.ui.ds.DapEqBandSliders
 import com.lostf1sh.pixelplayeross.ui.ds.DapIndeterminateBar
 import com.lostf1sh.pixelplayeross.ui.ds.DapNavRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapRuledSection
@@ -112,8 +114,20 @@ interface DacEqScreenActions {
     fun onRefresh()
     fun onDismissError()
 
-    /** B31 P1.3: takes the app's slot over (never offered as a popup, only on the card). */
+    /** B31 P1.3: takes the app's slot over (the screen no longer offers it by itself: turning the EQ on does it, see [onConfirmTurnOn]). */
     fun onTakeOver()
+
+    /** B59 (#53): the listener said yes to the one question of turning the DAC's EQ on (pause, choose the slot, take it over, apply, resume). */
+    fun onConfirmTurnOn() {}
+
+    /** B59 (#53): the listener said no to it: nothing was sent. */
+    fun onCancelTurnOn() {}
+
+    /** B59 (#53): every user slot boosts and the listener picked one the app may take. */
+    fun onChooseSlot(slotId: Int) {}
+
+    /** B59 (#53): ... or would rather not give any. */
+    fun onCancelSlotChoice() {}
 
     /** B31 P1.3: gives the slot its factory curve back. */
     fun onRestoreFactory()
@@ -150,6 +164,10 @@ internal class DacEqScreenActionsImpl(
     override fun onRefresh() = controller.refresh()
     override fun onDismissError() = controller.dismissError()
     override fun onTakeOver() = controller.takeOver()
+    override fun onConfirmTurnOn() = controller.confirmTurnOn()
+    override fun onCancelTurnOn() = controller.cancelTurnOn()
+    override fun onChooseSlot(slotId: Int) = controller.chooseSlot(slotId)
+    override fun onCancelSlotChoice() = controller.cancelSlotChoice()
     override fun onRestoreFactory() = controller.restoreFactory()
     override fun onReadDacPresets() = controller.readDacPresets()
     override fun onSelectDacPreset(presetId: Int, confirmed: Boolean) = controller.selectDacPreset(presetId, confirmed)
@@ -261,11 +279,6 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
                     item(key = "dac_eq_operation") { DacEqOperationRow(operation, state) }
                 }
 
-                // Offered on the screen, never as a popup on connect (the owner's rule): the listener decides when.
-                if (state.takeOverOffered) {
-                    item(key = "dac_eq_takeover") { DacEqTakeOverCard(state, actions) }
-                }
-
                 // B40-F2: a DAC whose EQ was not read (or not settled) is not shown as off, flat and 0 dB: the screen says it could not read it.
                 if (state.unread) {
                     item(key = "dac_eq_unread") {
@@ -367,25 +380,6 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
                                 divider = false,
                             )
 
-                            val range = state.capability?.maxGainDb?.roundToInt() ?: 12
-                            DapRuledSection(title = stringResource(R.string.dac_eq_section_bands, range), labelGap = DapSpacing.SectionGap) {
-                                Spacer(Modifier.height(DapSpacing.Sm))
-                                DapEqBandSliders(
-                                    gains = state.bands.map { (it.gainTenthsDb / 10.0).roundToInt().coerceIn(-range, range) },
-                                    labels = state.bands.map { frequencyLabel(it.frequencyHz) },
-                                    onGainChange = { index, db -> actions.onEditBand(index) { it.copy(gainTenthsDb = db * 10) } },
-                                    rangeDb = range,
-                                )
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                    DapTextAction(
-                                        label = stringResource(R.string.eq_reset_flat),
-                                        onClick = actions::onResetFlat,
-                                        enabled = !frozen,
-                                        color = LocalDapAccent.current,
-                                    )
-                                }
-                            }
-
                             DapRuledSection(title = stringResource(R.string.dac_eq_section_filters), labelGap = DapSpacing.SectionGap) {
                                 state.bands.forEach { band ->
                                     DapNavRow(
@@ -400,6 +394,15 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
                                         valueStyle = DapType.CaptionMedium,
                                         onClick = { editIndex = band.index },
                                         enabled = !frozen,
+                                    )
+                                }
+                                // B61 item 4: the ten sliders are gone (a headphone PEQ put into them lands on the wrong frequencies: the numbers are the filters); the reset sits with the list
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    DapTextAction(
+                                        label = stringResource(R.string.eq_reset_flat),
+                                        onClick = actions::onResetFlat,
+                                        enabled = !frozen,
+                                        color = LocalDapAccent.current,
                                     )
                                 }
                             }
@@ -471,6 +474,8 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
                 capability = state.capability,
                 onChange = { change -> actions.onEditBand(index, change) },
                 onDismiss = { editIndex = null },
+                curve = state.bands,
+                sense = state.preGainSense,
             )
         }
     }
@@ -514,6 +519,28 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
             onDismiss = { showRestoreFactory = false },
         )
     }
+    state.turnOnPrompt?.let { prompt ->
+        // B59 (#53): the one question. What happens, once; the music note only when music plays.
+        val slot = prompt.slotName
+        val body = buildString {
+            append(
+                if (slot != null) {
+                    stringResource(R.string.dac_eq_turnon_body_chosen, prompt.dacName, slot)
+                } else {
+                    stringResource(R.string.dac_eq_turnon_body_unchosen, prompt.dacName)
+                },
+            )
+            if (prompt.musicPlaying) append(' ').append(stringResource(R.string.dac_eq_turnon_music))
+        }
+        DacEqConfirmDialog(
+            title = stringResource(R.string.dac_eq_turnon_title),
+            body = body,
+            confirmLabel = stringResource(R.string.dac_eq_turnon_action),
+            onConfirm = actions::onConfirmTurnOn,
+            onDismiss = actions::onCancelTurnOn,
+        )
+    }
+    state.slotChoicePrompt?.let { prompt -> DacEqSlotChoiceDialog(prompt, actions) }
     state.confirmSelect?.let { row ->
         DacEqConfirmDialog(
             title = stringResource(R.string.dac_eq_select_confirm_title),
@@ -523,6 +550,52 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
             onDismiss = actions::onDismissConfirmSelect,
         )
     }
+}
+
+/**
+ * B59 (#53): asked only when every user slot of the DAC holds a curve that raises the level: one row per slot with its net level, the profile's default
+ * preselected. A copy of the one picked is saved first, so it can be put back.
+ */
+@Composable
+private fun DacEqSlotChoiceDialog(prompt: DacEqSlotChoicePrompt, actions: DacEqScreenActions) {
+    var picked by remember(prompt) { mutableIntStateOf(prompt.preselected) }
+    AlertDialog(
+        onDismissRequest = actions::onCancelSlotChoice,
+        title = {
+            ModalInputBridge()
+            Text(stringResource(R.string.dac_eq_slot_choice_title))
+        },
+        text = {
+            Column {
+                Text(stringResource(R.string.dac_eq_slot_choice_body), style = DapType.Body, color = Dap.secondaryText)
+                prompt.options.forEach { option ->
+                    Row(
+                        Modifier.fillMaxWidth().defaultMinSize(minHeight = DapSpacing.Xl).clickable(role = Role.RadioButton) { picked = option.slotId }
+                            .padding(top = DapSpacing.Sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = picked == option.slotId, onClick = null)
+                        Text(
+                            text = option.netPeakDb?.let { stringResource(R.string.dac_eq_slot_choice_row, option.name, "%.1f".format(it)) }
+                                ?: stringResource(R.string.dac_eq_slot_choice_row_unknown, option.name),
+                            style = DapType.Body,
+                            modifier = Modifier.padding(start = DapSpacing.Sm),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { actions.onChooseSlot(picked) }) {
+                Text(stringResource(R.string.dac_eq_slot_choice_action), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = actions::onCancelSlotChoice) {
+                Text(stringResource(R.string.cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        },
+    )
 }
 
 /** A yes/no in the app's own words: an alert is a window of its own, so the volume-key bridge is routed in its title like the others. */
@@ -540,32 +613,13 @@ private fun DacEqConfirmDialog(title: String, body: String, confirmLabel: String
     )
 }
 
-/** B31 P1.3: the card that offers to take the app's slot over; the listener taps it when the music is paused. */
-@Composable
-private fun DacEqTakeOverCard(state: DacEqUiState, actions: DacEqScreenActions) {
-    val slot = state.appSlotName.orEmpty()
-    DapRuledSection(title = stringResource(R.string.dac_eq_takeover_title, slot), labelGap = DapSpacing.SectionGap) {
-        Text(
-            text = stringResource(R.string.dac_eq_takeover_body, slot),
-            style = DapType.Body,
-            color = Dap.secondaryText,
-            modifier = Modifier.padding(top = DapSpacing.Sm),
-        )
-        DapTextAction(
-            label = stringResource(R.string.dac_eq_takeover_action, slot),
-            onClick = actions::onTakeOver,
-            enabled = state.canEdit,
-            color = LocalDapAccent.current,
-        )
-    }
-}
-
 /** What the screen is doing on the DAC that is not an edit: one line and the indeterminate bar. */
 @Composable
 private fun DacEqOperationRow(operation: DacEqOperation, state: DacEqUiState) {
     val slot = state.appSlotName.orEmpty()
     val text = when (operation) {
         DacEqOperation.TAKE_OVER -> stringResource(R.string.dac_eq_takeover_busy, slot)
+        DacEqOperation.TURN_ON -> stringResource(R.string.dac_eq_operation_turn_on)
         DacEqOperation.RESTORE_FACTORY -> stringResource(R.string.dac_eq_restore_factory)
         DacEqOperation.READ_PRESETS -> stringResource(R.string.dac_eq_dac_presets_read)
         DacEqOperation.SELECT_PRESET -> stringResource(R.string.dac_eq_reading)
@@ -676,6 +730,13 @@ private fun DacEqStatusRow(state: DacEqUiState, actions: DacEqScreenActions) {
     }
 }
 
+/** B60 (#53): the sentence for a turn-on that stopped: what became of the DAC ([restored]: true put back, false could not be, null nothing was changed) and whether the music is left paused. */
+internal fun turnOnStoppedText(restored: Boolean?, musicLeftPaused: Boolean): Int = when (restored) {
+    true -> if (musicLeftPaused) R.string.dac_eq_error_turn_on_restored_paused else R.string.dac_eq_error_turn_on_restored
+    false -> if (musicLeftPaused) R.string.dac_eq_error_turn_on_not_restored_paused else R.string.dac_eq_error_turn_on_not_restored
+    null -> if (musicLeftPaused) R.string.dac_eq_error_turn_on_nothing_paused else R.string.dac_eq_error_turn_on_nothing
+}
+
 @Composable
 private fun DacEqErrorBlock(error: DacEqError, actions: DacEqScreenActions) {
     Column(Modifier.fillMaxWidth().padding(top = DapSpacing.Md)) {
@@ -686,6 +747,9 @@ private fun DacEqErrorBlock(error: DacEqError, actions: DacEqScreenActions) {
                 is DacEqError.ReadBackDiffers ->
                     stringResource(if (error.restored) R.string.dac_eq_error_readback_restored else R.string.dac_eq_error_readback_not_restored)
                 is DacEqError.Failed -> stringResource(R.string.dac_eq_error_failed)
+                // B60 (#53): one short sentence in the listener's language - what happened to the DAC, and that the music stays paused. The technical reason (the expected and the
+                // reported bands, a frame) is in the log (`DAC_HID|TURN_ON ended …`), not on the screen.
+                is DacEqError.TurnOnStopped -> stringResource(turnOnStoppedText(error.restored, error.musicLeftPaused))
                 DacEqError.Unavailable -> stringResource(R.string.dac_eq_error_unavailable)
                 is DacEqError.Dropped -> stringResource(R.string.dac_eq_error_refused, stringResource(error.reason.textRes))
             },
@@ -706,94 +770,24 @@ internal fun DacEqFilterSheet(
     capability: DacEqCapability?,
     onChange: ((DacEqBand) -> DacEqBand) -> Unit,
     onDismiss: () -> Unit,
+    curve: List<DacEqBand> = emptyList(),
+    sense: com.lostf1sh.pixelplayeross.data.dac.fiio.PreGainSense = com.lostf1sh.pixelplayeross.data.dac.fiio.PreGainSense.BOOST,
 ) {
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
+    // B61 item 4: dismissing the sheet by a swipe also finishes the edit (once, and only a band the gate would take); Done does it from inside
+    var draft by remember(band.index) { mutableStateOf<Pair<DacEqBand, Boolean>?>(null) }
     GlassModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            draft?.let { (finished, ok) -> if (ok && finished != band) onChange { finished } }
+            onDismiss()
+        },
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         ModalInputBridge()
-        DacEqFilterEditorContent(band, capability, onChange, onDismiss)
+        DacEqFilterEditorContent(band, capability, onChange, onDismiss, curve = curve, sense = sense, onDraft = { b, ok -> draft = b to ok })
     }
 }
-
-/** One filter's editor: its type, and a frequency, a gain and a Q each moved by the tonal round buttons. Limits are the DAC's. */
-@Composable
-internal fun DacEqFilterEditorContent(
-    band: DacEqBand,
-    capability: DacEqCapability?,
-    onChange: ((DacEqBand) -> DacEqBand) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val minGain = ((capability?.minGainDb ?: -12.0) * 10).roundToInt()
-    val maxGain = ((capability?.maxGainDb ?: 12.0) * 10).roundToInt()
-    val minHz = capability?.minFrequencyHz ?: 20
-    val maxHz = capability?.maxFrequencyHz ?: 20_000
-    val minQ = ((capability?.minQ ?: 0.1) * 100).roundToInt()
-    val maxQ = ((capability?.maxQ ?: 10.0) * 100).roundToInt()
-    val types = DacEqUiTypes(band.type)
-    val typeLabels = types.associateWith { stringResource(typeNameRes(it)) }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = DapSpacing.Gutter)
-            .padding(bottom = DapSpacing.SectionGap),
-        verticalArrangement = Arrangement.spacedBy(DapSpacing.Md),
-    ) {
-        Text(stringResource(R.string.dac_eq_filter_title, band.index + 1), style = DapType.Body, color = Dap.primaryText)
-        Text(stringResource(R.string.dac_eq_field_type), style = DapType.Caption, color = Dap.tertiaryText)
-        DapSegmentedPicker(
-            options = types,
-            selected = band.type ?: FiioFilterType.PEAK,
-            onSelect = { type -> onChange { it.copy(typeCode = type.code) } },
-            label = { typeLabels.getValue(it) },
-            fillWidth = true,
-        )
-        StepperRow(
-            label = stringResource(R.string.dac_eq_field_frequency),
-            value = frequencyText(band.frequencyHz),
-            onLower = { onChange { it.copy(frequencyHz = stepFrequency(it.frequencyHz, -1).coerceIn(minHz, maxHz)) } },
-            onRaise = { onChange { it.copy(frequencyHz = stepFrequency(it.frequencyHz, +1).coerceIn(minHz, maxHz)) } },
-        )
-        StepperRow(
-            label = stringResource(R.string.dac_eq_field_gain),
-            value = "${formatGain(band.gainTenthsDb)} dB",
-            onLower = { onChange { it.copy(gainTenthsDb = (it.gainTenthsDb - GAIN_STEP_TENTHS).coerceIn(minGain, maxGain)) } },
-            onRaise = { onChange { it.copy(gainTenthsDb = (it.gainTenthsDb + GAIN_STEP_TENTHS).coerceIn(minGain, maxGain)) } },
-        )
-        StepperRow(
-            label = stringResource(R.string.dac_eq_field_q),
-            value = formatQ(band.qHundredths),
-            onLower = { onChange { it.copy(qHundredths = stepQ(it.qHundredths, -1).coerceIn(minQ, maxQ)) } },
-            onRaise = { onChange { it.copy(qHundredths = stepQ(it.qHundredths, +1).coerceIn(minQ, maxQ)) } },
-        )
-        DapTextAction(label = stringResource(R.string.dac_eq_done), onClick = onDismiss, color = LocalDapAccent.current)
-    }
-}
-
-@Composable
-private fun StepperRow(label: String, value: String, onLower: () -> Unit, onRaise: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = DapType.Body, color = Dap.primaryText, modifier = Modifier.weight(1f))
-        DapTonalRoundButton(
-            contentDescription = stringResource(R.string.dac_eq_decrease, label),
-            onClick = onLower,
-            size = 48.dp,
-        ) { tint -> Icon(Icons.Rounded.Remove, contentDescription = null, tint = tint) }
-        Box(Modifier.width(96.dp), contentAlignment = Alignment.Center) {
-            Text(value, style = DapType.Value, color = Dap.primaryText, maxLines = 1)
-        }
-        DapTonalRoundButton(
-            contentDescription = stringResource(R.string.dac_eq_increase, label),
-            onClick = onRaise,
-            size = 48.dp,
-        ) { tint -> Icon(Icons.Rounded.Add, contentDescription = null, tint = tint) }
-    }
-}
-
-private fun DacEqUiTypes(current: FiioFilterType?): List<FiioFilterType> =
-    if (current == null || current in DacEqUiState.offeredTypes) DacEqUiState.offeredTypes else DacEqUiState.offeredTypes + current
 
 // ── Presets ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -947,7 +941,6 @@ internal fun fitText(fit: DacEqFit): String = when (fit) {
 
 // ── Formatting and steps ─────────────────────────────────────────────────────────────────────────────────
 
-private const val GAIN_STEP_TENTHS = 5
 
 /** The conflict sentence is long on purpose (what, what still applies, how to stop it): it is never cut. */
 internal const val CONFLICT_LINES = 10

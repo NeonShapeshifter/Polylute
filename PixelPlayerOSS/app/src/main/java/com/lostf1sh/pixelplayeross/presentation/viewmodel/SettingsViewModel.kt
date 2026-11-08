@@ -126,6 +126,8 @@ data class SettingsUiState(
     val coverGlassLively: Boolean = false,
     /** B56-7.2: "Animated covers" as the listener set it, or null while they have not (the mode's default stands: see `AnimatedCovers.effective`). */
     val animatedCoversStored: Boolean? = null,
+    /** B61 item 5 (#70): "Also on the lock screen". */
+    val animatedCoversOnLock: Boolean = false,
     /** B57-fix1 4: the folder the animated covers are read through (Android 13+): its name, or null while there is none. */
     val animatedCoversFolder: String? = null,
     /** Whether waking the dedicated player raises the DAP lock surface. Off unless asked for. */
@@ -401,6 +403,9 @@ class SettingsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             themePreferencesRepository.animatedCoversStoredFlow.collect { stored -> _uiState.update { it.copy(animatedCoversStored = stored) } }
+        }
+        viewModelScope.launch {
+            themePreferencesRepository.animatedCoversOnLockFlow.collect { onLock -> _uiState.update { it.copy(animatedCoversOnLock = onLock) } }
         }
         viewModelScope.launch {
             animatedCoverFolderStore.folder.collect { tree -> _uiState.update { it.copy(animatedCoversFolder = tree?.let(animatedCoverFolderStore::nameOf)) } }
@@ -877,6 +882,11 @@ class SettingsViewModel @Inject constructor(
     /** B56-7.2: "Animated covers". */
     fun setAnimatedCovers(enabled: Boolean) {
         viewModelScope.launch { themePreferencesRepository.setAnimatedCovers(enabled) }
+    }
+
+    /** B61 item 5 (#70): "Also on the lock screen". */
+    fun setAnimatedCoversOnLock(enabled: Boolean) {
+        viewModelScope.launch { themePreferencesRepository.setAnimatedCoversOnLock(enabled) }
     }
 
     /**

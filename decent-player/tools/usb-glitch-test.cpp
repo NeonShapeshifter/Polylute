@@ -1237,7 +1237,9 @@ static void expectARefusalFallsBackToBeforeTheExcursion() {
         assert(fabs(usbFeedbackPpm(after, nominal)) <= fabs(referencePpm) + kSettledPpm);
         f.run(rawOf(nominal * (1.0 + sign * 0.0499)), 3000);
         assert(fabs(usbFeedbackPpm(sentNow(f, nominal * (1.0 + sign * 0.0499)), nominal) - referencePpm) < kSettledPpm);
-        assert(f.implausible.implausibleRampMs > 0);   // the line can say how long the feedback had been out of the band
+        // B61: with the mid-stream line back at the ordinary 2 % (B60 review, owner OK), the +0.90 % and +1.45 % readings are followed again and the refusal comes at +2 % some 200 ms later, so
+        // the line can say how long the feedback had been out of the band (B59 had made this 0 with its 7 500 line; B58's assertion is back).
+        assert(f.implausible.implausibleRampMs > 0);
     }
     // (3) a healthy DAC never refuses, so the settle changes nothing for it: what `auto` sends is the follower, reading for reading
     {
@@ -1266,7 +1268,7 @@ static void expectARefusalFallsBackToBeforeTheExcursion() {
 
 // ── B47-A5: the lock-up detector ───────────────────────────────────────────────────────────────────────────────────────────────────────
 //
-// It must fire on 2026-10-29's rail (and on 2026-10-25's), after USB_DAC_LOCK_RAIL_MS, and on nothing a healthy Melody does.
+// It must fire on 2026-10-29's rail (and on 2026-10-25's), after USB_DAC_LOCK_RAIL_FAST_MS (B61; 1 500 ms before), and on nothing a healthy Melody does.
 
 struct LockFeed {
     UsbDacLockWatch w;
@@ -1294,16 +1296,16 @@ struct LockFeed {
 
 static void expectTheLockDetectorFiresOnARailAndOnNothingElse() {
     const double n441 = 44100.0 / 8000.0;
-    // the rail of 17:32:34: 5.7875 (+4.99 %), constant; fires once, 1500 ms in, with the numbers the line needs
+    // the rail of 17:32:34: 5.7875 (+4.99 %), constant; fires once, USB_DAC_LOCK_RAIL_FAST_MS in (B61; 1 500 ms before), with the numbers the line needs
     {
         LockFeed f(n441);
         f.run(n441, 5000);                          // a healthy start
         const int64_t railFrom = f.now;
-        f.run(5.7875, USB_DAC_LOCK_RAIL_MS);        // 1 500 readings, the last one 1 499 ms after the first: not yet
+        f.run(5.7875, USB_DAC_LOCK_RAIL_FAST_MS);   // 200 readings, the last one 199 ms after the first: not yet
         assert(f.fires == 0);
         f.run(5.7875, 1);
-        assert(f.fires == 1 && f.firedAtMs - railFrom == USB_DAC_LOCK_RAIL_MS);
-        assert(f.last.railedMs == USB_DAC_LOCK_RAIL_MS && f.last.readings == USB_DAC_LOCK_RAIL_MS + 1 && f.last.ppm > 49000.0);
+        assert(f.fires == 1 && f.firedAtMs - railFrom == USB_DAC_LOCK_RAIL_FAST_MS);
+        assert(f.last.railedMs == USB_DAC_LOCK_RAIL_FAST_MS && f.last.readings == USB_DAC_LOCK_RAIL_FAST_MS + 1 && f.last.ppm > 49000.0);
         usbDacLockLateReap(&f.w);
         usbDacLockLateReap(&f.w);
         f.run(5.7875, 180000);                      // three more minutes of the rail: still one fire
@@ -1325,6 +1327,7 @@ static void expectTheLockDetectorFiresOnARailAndOnNothingElse() {
         assert(f.fires == 0);
         f.run(5.2374, 1600);
         assert(f.fires == 1 && f.last.ppm < -49000.0);
+        assert(f.last.railedMs == USB_DAC_LOCK_RAIL_FAST_MS);                                     // 5 s into the stream: 200 ms of rail
     }
     // never on the healthy Melody's shapes
     {   LockFeed f(n441); f.run(n441, 2000); f.run(5.5674, 3000); f.run(n441, 2000); assert(f.fires == 0); }          // 10-06: +0.996 % for 3 s
@@ -1340,23 +1343,23 @@ static void expectTheLockDetectorFiresOnARailAndOnNothingElse() {
         }
         assert(f.fires == 0);
     }
-    {   // even a rail of one reading in ten, or a run of 1 400 ms, is not a lock-up
+    {   // even a rail of one reading in ten, or a run of 199 ms (B61: the time is 200 ms), is not a lock-up
         LockFeed f(n441);
         for (int64_t i = 0; i < 20000; i++) { f.reading(i % 10 == 0 ? 5.7875 : n441); f.now += 1; }
         assert(f.fires == 0);
-        f.run(5.7875, 1400);
+        f.run(5.7875, USB_DAC_LOCK_RAIL_FAST_MS - 1);
         f.reading(n441);
         f.now += 1;
-        f.run(5.7875, 1400);
+        f.run(5.7875, USB_DAC_LOCK_RAIL_FAST_MS - 1);
         assert(f.fires == 0);                       // each run is under the time, and a clock's reading between them ends the first
     }
-    {   // a pause between two readings (no one reaps the endpoint) starts the count over
+    {   // a pause between two readings (no one reaps the endpoint) starts the count over, and the stream's first moment with it (B61)
         LockFeed f(n441);
-        f.run(5.7875, 1000);
+        f.run(5.7875, USB_DAC_LOCK_START_GRACE_MS + USB_DAC_LOCK_RAIL_FAST_MS - 100);   // under the time from a stream's first reading
         f.now += 1000;                               // 1 s without readings
-        f.run(5.7875, 1000);
-        assert(f.fires == 0);
-        f.run(5.7875, 600);
+        f.run(5.7875, USB_DAC_LOCK_START_GRACE_MS + USB_DAC_LOCK_RAIL_FAST_MS);
+        assert(f.fires == 0);                        // inside the first moment after the pause and 200 ms after it: not yet (the count started over)
+        f.run(5.7875, 1);
         assert(f.fires == 1);
     }
     {   // late completions only count inside a run
@@ -1368,8 +1371,8 @@ static void expectTheLockDetectorFiresOnARailAndOnNothingElse() {
         assert(f.w.lateReaps == 1);
     }
     printf("A5 detector: fires %d ms into a rail beyond +-%.1f %% (+4.99 %% and -5 %% alike), once per run; silent on the 10-06 +1 %% / 3 s plateau, Crimen +0.83 %%, "
-           "Ciega +0.82 %% for 416 s, Miko +407 ppm, one-reading blips up to +1.9 %%, runs of 1 400 ms, and a pause in the readings\n",
-           USB_DAC_LOCK_RAIL_MS, USB_DAC_LOCK_RAIL_PPM / 1e4);
+           "Ciega +0.82 %% for 416 s, Miko +407 ppm, one-reading blips up to +1.9 %%, runs of 199 ms, and a pause in the readings\n",
+           USB_DAC_LOCK_RAIL_FAST_MS, USB_DAC_LOCK_RAIL_PPM / 1e4);
 }
 
 /** B47-A1: only a writer that sat 20 ms or more in the run queue earns the extra line. */
@@ -1386,6 +1389,285 @@ static void expectTheCpuLineIsForARealStall() {
     d.runqUs = 82000;
     assert(!usbGapWantsCpuLine(&d));             // no counters, no claim
     assert(usbGlitchLogIntervalMs(USB_GLITCH_OUTPUT_GAP_CPU) == 1000);   // rate limited like the others
+}
+
+// ── B59 5: the 48 kHz stick (#46) and the mid-song ramp (#39) ─────────────────────────────────────────
+
+/**
+ * #46, 2026-11-02 18:33:59: 44.1 -> 48 kHz, the feedback froze at +5 819 ppm. A value frozen that far from nominal, identical for 400 ms inside the rate-change window, is called stuck
+ * (with `rateChangeHold`), not at 1 500 ms; a nearer one keeps the 1 500 ms; a slow reaper (too few readings) keeps it too; and a DAC that answers its new rate (readings that move) never fires.
+ */
+static void expectAFarFrozenValueAfterARateChangeIsCalledAtFourHundredMs() {
+    {   // the device's numbers: nominal 6.0 (48 kHz), frozen at +5 819 ppm
+        Feed f(6.0);
+        f.w.rateChangeStart = true;
+        f.w.streamStartMs = 0;
+        f.run(rawOf(6.0 * (1.0 + 5819e-6)), 2000);
+        assert(f.stuckEvents == 1);
+        assert(f.stuck.rateChangeHold);
+        assert(f.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS);
+        assert(f.stuck.readings >= USB_FEEDBACK_RATE_CHANGE_FAR_MIN_READINGS);
+        assert(USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS >= 300 && USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS <= 500);     // inside what the log says is enough
+    }
+    {   // the healthy plateau of a rate change (+0.996 % = 9 960 ppm, 3 s and more) is not far enough to be called early: it keeps the 1 500 ms (and the 7 999 / 8 001 ppm edge)
+        static const double kPlateaus[] = {9960.0, 10000.0, 8001.0};
+        for (double ppm : kPlateaus) {
+            Feed f(6.0);
+            f.w.rateChangeStart = true;
+            f.w.streamStartMs = 0;
+            f.run(rawOf(6.0 * (1.0 + ppm * 1e-6)), 2000);
+            assert(f.stuckEvents == 1 && f.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_STUCK_MS);
+        }
+        Feed edge(6.0);
+        edge.w.rateChangeStart = true;
+        edge.w.streamStartMs = 0;
+        edge.run(rawOf(6.0 * (1.0 + 7990e-6)), 2000);
+        assert(edge.stuckEvents == 1 && edge.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS);
+        // the three stuck values ever seen after a rate change: 3 316 (1 500 ms), 5 819 and 6 653 (400 ms)
+        static const double kStuck[] = {5819.0, 6653.0};
+        for (double ppm : kStuck) {
+            Feed f(6.0);
+            f.w.rateChangeStart = true;
+            f.w.streamStartMs = 0;
+            f.run(rawOf(6.0 * (1.0 + ppm * 1e-6)), 2000);
+            assert(f.stuckEvents == 1 && f.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS);
+        }
+    }
+    {   // a frozen value nearer than 5 000 ppm: the 1 500 ms of B50
+        Feed f(6.0);
+        f.w.rateChangeStart = true;
+        f.w.streamStartMs = 0;
+        f.run(rawOf(6.0 * (1.0 + 3000e-6)), 2000);
+        assert(f.stuckEvents == 1 && f.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_STUCK_MS);
+    }
+    {   // far, but a reaper that delivers a reading every 4 ms (100 in 400 ms): 400 ms is not enough readings, so it waits for 250 of them (1 000 ms here), not for the 1 500
+        Feed f(6.0);
+        f.w.rateChangeStart = true;
+        f.w.streamStartMs = 0;
+        const uint32_t raw = rawOf(6.0 * (1.0 + 5819e-6));
+        for (int i = 0; i < 700; i++) { f.reading(raw); f.now += 4; }
+        assert(f.stuckEvents == 1);
+        assert(f.stuck.readings >= USB_FEEDBACK_RATE_CHANGE_FAR_MIN_READINGS && f.stuck.heldMs > USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS && f.stuck.heldMs < USB_FEEDBACK_RATE_CHANGE_STUCK_MS);
+    }
+    {   // not a rate change, or past its 3 s window: the ordinary 5 s
+        Feed f(6.0);
+        f.run(rawOf(6.0 * (1.0 + 5819e-6)), 4000);
+        assert(f.stuckEvents == 0);
+        f.run(rawOf(6.0 * (1.0 + 5819e-6)), 1500);
+        assert(f.stuckEvents == 1 && f.stuck.heldMs == USB_FEEDBACK_STUCK_MIN_MS && !f.stuck.rateChangeHold);
+    }
+    {   // a DAC that answers its new rate: the readings keep moving by a few tenths of a percent, however far out the average sits
+        Feed f(6.0);
+        f.w.rateChangeStart = true;
+        f.w.streamStartMs = 0;
+        for (int i = 0; i < 3000; i++) { f.reading(rawOf(6.0 * (1.0 + 6000e-6 + (i % 7) * 40e-6))); f.now += 1; }
+        assert(f.stuckEvents == 0);
+    }
+}
+
+/**
+ * B61 (item 2.1), the revert of B59's 7 500 mid-stream line, gated against the device. 2026-11-07 00:52-01:06 (B60-review/logcat-live-0051.txt): at 48 kHz the Melody refills its FIFO in routine
+ * bursts every ~3 s, 6.0000 -> 6.0149 -> 6.0449 -> 6.0499 (+8 321 ppm) and back within ~70 ms, and at 44.1 kHz up to 5.5575 (+8 162 ppm). The 7 500 line refused the top of every burst (~170 times);
+ * with the app sending exactly nominal at that moment the DAC then climbed to the rail (eight locks, ~1.8 s of pause each). The line is the ordinary 2 % again: a burst is **followed**, reading
+ * for reading, and the Melody's start ramp (+2.08 %) is still refused at 2 %. The cost (the owner's choice, 11-07: "a short shh now and then is better than a pause") is #39's small pop, which the
+ * 7 500 line had cut: the ramp is followed up to +1.9 % again.
+ */
+static void expectTheMelodysRefillBurstIsFollowedAndTheRampIsStillRefusedAtTwoPercent() {
+    struct Dac { const char *name; double nominal; double steps[4]; double topPpm; };
+    static const Dac kDacs[] = {
+        {"48 kHz", 6.0, {6.0149, 6.0199, 6.0449, 6.0499}, 8321.0},
+        {"44.1 kHz", 44100.0 / 8000.0, {5.5275, 5.5425, 5.5525, 5.5575}, 8162.0},
+    };
+    for (const Dac &d : kDacs) {
+        // 40 s of continuous readings (well past the 10 s that used to make a stream "mid-stream"), a burst every 3 s: nothing is ever refused, and `auto` sends what the DAC asks
+        Feed f(d.nominal);
+        double largestPpm = 0.0;
+        int bursts = 0, refusedBy7500 = 0;                                                       // the line B59 had: 7 500 ppm
+        for (int64_t t = 0; t < 40000; t++) {
+            const int64_t phase = t % 3000;
+            const double fpmf = phase < 20 ? d.steps[0] : phase < 40 ? d.steps[1] : phase < 55 ? d.steps[2] : phase < 125 ? d.steps[3] : d.nominal;
+            f.reading(rawOf(fpmf));
+            assert(!f.w.implausible);
+            assert(fabs(sentNow(f, rawOf(fpmf) / 65536.0) - rawOf(fpmf) / 65536.0) < 1e-12);     // followed, reading for reading, not held at nominal
+            const double ppm = usbFeedbackPpm(rawOf(fpmf) / 65536.0, d.nominal);
+            if (ppm > largestPpm) largestPpm = ppm;
+            if (phase == 60) { bursts++; if (ppm > 7500.0) refusedBy7500++; }                    // the top of each burst
+            f.now += 1;
+        }
+        assert(f.implausibleStarts == 0 && f.stuckEvents == 0);
+        assert(bursts == 14 && refusedBy7500 == bursts);                                         // every burst top was beyond B59's line
+        assert(fabs(largestPpm - d.topPpm) < 25.0);                                              // the burst top really was in the replay
+        printf("B61 burst %s: top +%.0f ppm followed on every one of %d bursts, never refused (B59's 7 500 line would have refused %d)\n", d.name, largestPpm, bursts, refusedBy7500);
+    }
+    assert(USB_FEEDBACK_MIDSTREAM_ABSURD_PPM > 2.0 * 8321.0);                                    // no future line within a factor of two of the largest burst seen
+    assert(USB_FEEDBACK_MIDSTREAM_ABSURD_PPM == USB_FEEDBACK_ABSURD_PPM);
+    const double nominal = 44100.0 / 8000.0;
+    {   // the Melody's own start ramp mid-song, +0 -> +2.08 % over 170 ms: followed to +2 %, then refused (the 2 % line), as before B59
+        Feed f(nominal);
+        f.run(rawOf(nominal), 12000);
+        double largestFollowedPpm = 0.0;
+        for (int i = 0; i <= 170; i++) {
+            const double ppm = 20800.0 * i / 170.0;
+            f.reading(rawOf(nominal * (1.0 + ppm * 1e-6)));
+            f.now += 1;
+            if (!f.w.implausible && ppm > largestFollowedPpm) largestFollowedPpm = ppm;
+        }
+        assert(f.implausibleStarts == 1 && f.w.implausibleWhy == USB_FEEDBACK_IMPLAUSIBLE_ABSURD);
+        assert(f.implausible.implausiblePpm > USB_FEEDBACK_ABSURD_PPM && f.implausible.implausiblePpm < USB_FEEDBACK_ABSURD_PPM + 400.0);
+        assert(largestFollowedPpm > 19000.0 && largestFollowedPpm <= USB_FEEDBACK_ABSURD_PPM);   // #39 is back: followed up to +1.9 %
+    }
+    {   // a start transient (+1.0 % for 3 s) and a resume after a pause are followed, and past 2 % is refused whenever
+        Feed f(nominal);
+        f.run(rawOf(nominal * 1.0100), 3000);
+        assert(f.implausibleStarts == 0 && !f.w.implausible);
+        Feed g(nominal);
+        g.run(rawOf(nominal), 12000);
+        g.idle(1000);
+        g.run(rawOf(nominal * 1.0100), 2000);
+        assert(g.implausibleStarts == 0 && !g.w.implausible);
+        Feed h(nominal);
+        h.run(rawOf(nominal * 1.0250), 5);
+        assert(h.w.implausible && h.w.implausibleWhy == USB_FEEDBACK_IMPLAUSIBLE_ABSURD);
+    }
+}
+
+// ── B61 item 2.2: a rail is called in 200 ms, and a stream's first moment is not a rail ────────────────────────────────────────────
+
+/** The 11-07 lock-ups as readings: the burst top, then the DAC's request climbing in a straight line (0.5 fpmf/s) from where the refusal left it. [fpmf at t ms]. */
+static double runawayFpmf(double fromFpmf, int64_t tMs) { return fromFpmf + 0.5115 * (double)tMs / 1000.0; }
+
+static void expectTheEightRailLocksOf1107AreCalledInTwoHundredMs() {
+    struct Lock { const char *name; double nominal; double burstTop; const char *firstOutOfWindow; };
+    static const Lock kLocks[] = {
+        {"48 kHz 00:53:50 / 01:00:32 / 01:01:13 (first reading beyond the window 6.3049, +50 822 ppm)", 6.0, 6.0499, "10 4E 06 00"},
+        {"44.1 kHz 01:04:05 / 01:04:27 / 01:04:58 / 01:05:40 / 01:06:02 (5.7925, +50 790 ppm)", 44100.0 / 8000.0, 5.5575, "E0 CA 05 00"},
+    };
+    for (const Lock &l : kLocks) {
+        LockFeed f(l.nominal);
+        f.run(l.nominal, 30000);                          // 20-100 s into the stream in the log: well past the first moment
+        for (int64_t t = 0; t < 20; t++) { f.reading(l.burstTop); f.now += 1; }
+        // the climb from the burst top; the log's samples: +5.08 % at 0.51 s, +8.67 % at 0.93 s, +17.1 % at 1.93 s
+        const int64_t climbFrom = f.now;
+        int64_t railFromMs = -1;
+        for (int64_t t = 0; t < 2000 && f.fires == 0; t++) {
+            const double fpmf = runawayFpmf(l.burstTop, t);
+            if (railFromMs < 0 && usbFeedbackPpm(fpmf, l.nominal) >= USB_DAC_LOCK_RAIL_PPM) railFromMs = f.now;
+            f.reading(fpmf);
+            f.now += 1;
+        }
+        assert(f.fires == 1 && railFromMs >= 0);
+        const int64_t detected = f.firedAtMs - railFromMs;
+        assert(detected == USB_DAC_LOCK_RAIL_FAST_MS);                                           // 200 ms, from the first reading beyond +4.5 %
+        assert(f.last.railedMs == USB_DAC_LOCK_RAIL_FAST_MS && f.last.ppm > USB_DAC_LOCK_RAIL_PPM && f.last.ppm < 70000.0);   // still near the line: a rail, not yet +17 %
+        printf("B61 rail lock %s: climb began at +%lld ms, beyond +4.5 %% from +%lld ms, called at +%lld ms (200 ms of rail; the 1 500 ms rule called it at +%lld ms)\n", l.name,
+               0LL, (long long)(railFromMs - climbFrom), (long long)(f.firedAtMs - climbFrom), (long long)(railFromMs - climbFrom + 1500));   // 1 500 ms: the hold before B61
+        (void)l.firstOutOfWindow;
+    }
+}
+
+static void expectAStreamsFirstMomentDoesNotCountAndNothingHealthyIsARail() {
+    const double n48 = 6.0;
+    {   // 10-31 00:12: 48 kHz after 44.1, the DAC answers the previous rate's value (5.51245, -81 258 ppm) for ~40 ms, then the new rate: not a lock, with or without the grace
+        LockFeed f(n48);
+        f.run(5.51245, 40);
+        f.run(n48 * 1.006653, 3000);
+        assert(f.fires == 0);
+    }
+    {   // the same stale answer lasting 450 ms (11 times what was seen), at the very start of a stream: nothing in the first moment counts, so it is still no lock
+        LockFeed f(n48);
+        f.run(5.51245, 450);
+        f.run(n48, 3000);
+        assert(f.fires == 0);
+    }
+    {   // a rail from the first reading of a stream is still called: 200 ms counted from the end of the first moment, i.e. at 700 ms (it was 1 500 before B61)
+        LockFeed f(n48);
+        f.run(n48 * 1.0499, USB_DAC_LOCK_START_GRACE_MS + USB_DAC_LOCK_RAIL_FAST_MS);
+        assert(f.fires == 0);
+        f.run(n48 * 1.0499, 1);
+        assert(f.fires == 1 && f.firedAtMs == USB_DAC_LOCK_START_GRACE_MS + USB_DAC_LOCK_RAIL_FAST_MS && f.last.railedMs == f.firedAtMs);
+        assert(USB_DAC_LOCK_START_GRACE_MS + USB_DAC_LOCK_RAIL_FAST_MS < 1500);
+    }
+    {   // the first moment starts again after a pause, like the continuous count: 12 s of readings, 1 s of silence, then a rail
+        LockFeed f(n48);
+        f.run(n48, 12000);
+        f.now += 1000;
+        f.run(n48 * 1.0499, USB_DAC_LOCK_START_GRACE_MS + USB_DAC_LOCK_RAIL_FAST_MS);            // inside the new first moment and 200 ms after it: not yet
+        assert(f.fires == 0);
+        f.run(n48 * 1.0499, 1);
+        assert(f.fires == 1);
+    }
+    {   // never on what a healthy Melody does: the burst (+8 321 ppm) held for a second, the 3 s start plateau (+1.0 %), the start ramp (+2.08 %) for 170 ms, and 199 ms of rail
+        LockFeed f(n48);
+        f.run(n48, 5000);
+        f.run(6.0499, 1000);
+        f.run(n48, 100);
+        f.run(n48 * 1.0100, 3000);
+        f.run(n48 * 1.0208, 170);
+        f.run(n48, 100);
+        assert(f.fires == 0);
+        f.run(n48 * 1.0499, USB_DAC_LOCK_RAIL_FAST_MS - 1);
+        f.reading(n48);
+        f.now += 1;
+        f.run(n48 * 1.0499, USB_DAC_LOCK_RAIL_FAST_MS - 1);                                       // two runs of 199 ms with a clock's reading between them
+        assert(f.fires == 0);
+    }
+    assert(USB_DAC_LOCK_RAIL_FAST_MS >= 150 && USB_DAC_LOCK_RAIL_FAST_MS <= 250);                // the prompt's window
+    assert(USB_DAC_LOCK_START_GRACE_MS >= 10 * 40);                                              // ten times the 40 ms of stale readings seen
+    assert(USB_DAC_LOCK_RAIL_PPM > 2.0 * 20800.0);                                               // over twice the Melody's start ramp
+}
+
+/**
+ * B61 (item 2.2): the start lock of 2026-11-07 10:12:43 (96 -> 44.1 kHz, frozen at 5.5724 = +10 864 ppm, called at 1 500 ms) is called at 400 ms, and the healthy plateau of that
+ * rate change (+9 960 ppm on 10-06, +9 070 the Melody's own request after that very restart, +10 000 in the replays) keeps the 1 500 ms.
+ */
+static void expectTheStartLockOf1107IsCalledAtFourHundredMsAndTheHealthyPlateauIsNot() {
+    const double n441 = 44100.0 / 8000.0;
+    {   // the device's numbers: 44.1 kHz, frozen at 5.5724 from the first reading of the rate-change stream
+        Feed f(n441);
+        f.w.rateChangeStart = true;
+        f.w.streamStartMs = 0;
+        f.run(rawOf(5.5724), 2000);
+        assert(f.stuckEvents == 1 && f.stuck.rateChangeHold);
+        assert(f.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS && f.stuck.readings >= USB_FEEDBACK_RATE_CHANGE_FAR_MIN_READINGS);
+        assert(f.stuck.ppm > 10800.0 && f.stuck.ppm < 10900.0);
+        printf("B61 start lock 10:12:43 (96 -> 44.1 kHz, 5.5724 = %+.0f ppm): called after %lld ms (was 1500)\n", f.stuck.ppm, (long long)f.stuck.heldMs);
+    }
+    {   // the plateaus that end by themselves keep the slow hold: +9 070, +9 960, +10 000 and the edge 10 499; and the values just below and above the line
+        static const double kHealthy[] = {9070.0, 9960.0, 10000.0, 10499.0, 8001.0};
+        for (double ppm : kHealthy) {
+            Feed f(n441);
+            f.w.rateChangeStart = true;
+            f.w.streamStartMs = 0;
+            f.run(rawOf(n441 * (1.0 + ppm * 1e-6)), 1400);
+            assert(f.stuckEvents == 0);                                                          // a plateau of 1.4 s is not called (the guard)
+            f.run(rawOf(n441 * (1.0 + ppm * 1e-6)), 600);
+            assert(f.stuckEvents == 1 && f.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_STUCK_MS);   // 3 s of it is (B50's accepted restart), at 1 500 ms as before
+        }
+        static const double kFar[] = {10500.0, 10864.0, 15000.0, 19999.0};
+        for (double ppm : kFar) {
+            Feed f(n441);
+            f.w.rateChangeStart = true;
+            f.w.streamStartMs = 0;
+            f.run(rawOf(n441 * (1.0 + ppm * 1e-6)), 2000);
+            assert(f.stuckEvents == 1 && f.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS);
+        }
+        Feed past(n441);                                                                         // past the line `auto` refuses at any moment: nothing is followed, so the slow hold
+        past.w.rateChangeStart = true;
+        past.w.streamStartMs = 0;
+        past.run(rawOf(n441 * 1.0210), 2000);
+        assert(past.stuckEvents == 1 && past.stuck.heldMs == USB_FEEDBACK_RATE_CHANGE_STUCK_MS);
+    }
+    {   // not a rate change: the same value keeps the ordinary 5 s, and a DAC that answers its new rate (the readings move) never fires
+        Feed f(n441);
+        f.run(rawOf(5.5724), 4000);
+        assert(f.stuckEvents == 0);
+        Feed g(n441);
+        g.w.rateChangeStart = true;
+        g.w.streamStartMs = 0;
+        for (int i = 0; i < 3000; i++) { g.reading(rawOf(n441 * (1.0 + 10900e-6 + (i % 7) * 40e-6))); g.now += 1; }
+        assert(g.stuckEvents == 0);
+    }
+    assert(USB_FEEDBACK_RATE_CHANGE_FAR_ABOVE_PPM > 10000.0 * 1.04 && USB_FEEDBACK_RATE_CHANGE_FAR_ABOVE_PPM < 10864.0 * 0.97);
 }
 
 int main() {
@@ -1426,6 +1708,11 @@ int main() {
     expectAutoKeepsUpAfterStart();
     expectARefusalFallsBackToBeforeTheExcursion();
     expectTheLockDetectorFiresOnARailAndOnNothingElse();
+    expectAFarFrozenValueAfterARateChangeIsCalledAtFourHundredMs();
+    expectTheMelodysRefillBurstIsFollowedAndTheRampIsStillRefusedAtTwoPercent();
+    expectTheEightRailLocksOf1107AreCalledInTwoHundredMs();
+    expectAStreamsFirstMomentDoesNotCountAndNothingHealthyIsARail();
+    expectTheStartLockOf1107IsCalledAtFourHundredMsAndTheHealthyPlateauIsNot();
     printf("usb glitch tests: PASS\n");
     return 0;
 }

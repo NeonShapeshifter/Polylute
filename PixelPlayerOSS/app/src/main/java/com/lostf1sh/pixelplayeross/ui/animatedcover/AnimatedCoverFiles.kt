@@ -25,6 +25,10 @@ enum class AnimatedCoverKind(val fileName: String) {
     VIDEO("cover.mp4"),
     WEBP("cover.webp"),
     GIF("cover.gif"),
+    ;
+
+    /** The extension (B59 4): what `disc2.mp4` shares with `cover.mp4`. */
+    val extension: String get() = fileName.substringAfterLast('.')
 }
 
 /**
@@ -46,6 +50,19 @@ data class AnimatedCover(val file: File, val kind: AnimatedCoverKind, val sizeBy
 
 /** Picking the animated file out of a folder's file names: pure, so the priority is a unit test. */
 object AnimatedCoverNames {
+    /**
+     * B59 4 (#82): the file for a song of disc [disc]: **that disc's own animated file** (`disc2.mp4` over `disc2.webp` over `disc2.gif`, [com.lostf1sh.pixelplayeross.utils.DiscCoverNames])
+     * when the folder has one, else the album's `cover.*` ([pick]). [disc] 0 or less: the album's.
+     */
+    fun pick(names: Iterable<String>, disc: Int): Pair<String, AnimatedCoverKind>? = pickDisc(names, disc) ?: pick(names)
+
+    /** Only the disc's own animated file, or null: what a still frame of "this disc's animation" is taken from (the album's `cover.*` is not the disc's). */
+    fun pickDisc(names: Iterable<String>, disc: Int): Pair<String, AnimatedCoverKind>? {
+        val name = com.lostf1sh.pixelplayeross.utils.DiscCoverNames.pickAnimated(names, disc) ?: return null
+        val extension = name.substringAfterLast('.').lowercase(Locale.ROOT)
+        return AnimatedCoverKind.entries.firstOrNull { it.extension == extension }?.let { name to it }
+    }
+
     /** The name of the file to play and its kind, or null when the folder has none. Names are compared without regard to case (an SD card's FAT is not case sensitive; others may be). */
     fun pick(names: Iterable<String>): Pair<String, AnimatedCoverKind>? {
         val byLower = HashMap<String, String>()
@@ -77,7 +94,14 @@ interface AnimatedCoverDirectory {
      */
     fun isUnreachable(dir: File): Boolean = false
 
+    /**
+     * B61: what these covers are read from, as a short text that changes when the source does (the disk, no folder, or the folder the listener chose). The library scan remembers that a
+     * folder had nothing to install **for this source**, and asks again when it is another.
+     */
+    fun identity(): String = ""
+
     object Disk : AnimatedCoverDirectory {
+        override fun identity(): String = "disk"
         override fun names(dir: File): List<String>? = dir.list()?.toList()
         override fun stamp(dir: File): Long = dir.lastModified()
         override fun sizeOf(file: File): Long = file.length()
@@ -86,6 +110,7 @@ interface AnimatedCoverDirectory {
 
     /** Nothing can be read: Android 13+ with no folder chosen. Every album shows its still cover. */
     object None : AnimatedCoverDirectory {
+        override fun identity(): String = "none"
         override fun names(dir: File): List<String>? = null
         override fun stamp(dir: File): Long = 0L
         override fun sizeOf(file: File): Long = 0L
@@ -182,10 +207,10 @@ class AnimatedCoverFinder internal constructor(
      * The animated cover for the song at [songPath] of album [albumId] (the library's `album_id`; 0 or less when it has none), or null. Suspends on the IO dispatcher; safe to call from the
      * main thread.
      */
-    suspend fun find(songPath: String, albumId: Long = 0L): AnimatedCover? = withContext(io) { findNow(songPath, albumId) }
+    suspend fun find(songPath: String, albumId: Long = 0L, discNumber: Int = 0): AnimatedCover? = withContext(io) { findNow(songPath, albumId, discNumber) }
 
     /** The same on the calling thread: for the tests, and for a caller that is already off the main thread. */
-    internal fun findNow(songPath: String, albumId: Long = 0L): AnimatedCover? {
+    internal fun findNow(songPath: String, albumId: Long = 0L, discNumber: Int = 0): AnimatedCover? {
         // a streamed or content-only song has no folder
         if (!songPath.startsWith("/")) return null
         val own = File(songPath).parentFile ?: return null
@@ -202,7 +227,7 @@ class AnimatedCoverFinder internal constructor(
         }
         var found: AnimatedCover? = null
         for (folder in ordered) {
-            val result = coverIn(File(folder.path))
+            val result = coverIn(File(folder.path), discNumber)
             if (!result.fromCache) worked = true
             trace.append(if (trace.isEmpty()) "" else "; ").append(folder.path).append(" (").append(folder.songs).append(" songs): ").append(result.outcome.say)
             if (result.cover != null) {
@@ -231,21 +256,22 @@ class AnimatedCoverFinder internal constructor(
 
     private class FolderResult(val cover: AnimatedCover?, val outcome: Outcome, val fromCache: Boolean)
 
-    private fun coverIn(dir: File): FolderResult {
-        val key = dir.path
+    private fun coverIn(dir: File, disc: Int): FolderResult {
+        // B59 4: the answer for a folder depends on the disc asked for (its own file, else the album's)
+        val key = if (disc > 0) "${dir.path}|disc$disc" else dir.path
         val stamp = directory.stamp(dir)
         val version = libraryVersion()
         synchronized(cache) { cache[key] }?.let { if (it.stamp == stamp && it.libraryVersion == version) return FolderResult(it.cover, it.outcome, fromCache = true) }
-        val (found, outcome) = list(dir)
+        val (found, outcome) = list(dir, disc)
         if (outcome.remember) synchronized(cache) { cache[key] = Entry(stamp, version, found, outcome) }
         return FolderResult(found, outcome, fromCache = false)
     }
 
-    private fun list(dir: File): Pair<AnimatedCover?, Outcome> {
+    private fun list(dir: File, disc: Int): Pair<AnimatedCover?, Outcome> {
         listings++
         if (!trusts(dir.name)) return null to Outcome.NOT_TRUSTED
         val names = directory.names(dir) ?: return null to (if (directory.isUnreachable(dir)) Outcome.OUTSIDE else Outcome.UNREADABLE)
-        val (name, kind) = AnimatedCoverNames.pick(names) ?: return null to Outcome.NONE_THERE
+        val (name, kind) = AnimatedCoverNames.pick(names, disc) ?: return null to Outcome.NONE_THERE
         val file = File(dir, name)
         val size = directory.sizeOf(file)
         if (size <= 0L) return null to Outcome.EMPTY_FILE

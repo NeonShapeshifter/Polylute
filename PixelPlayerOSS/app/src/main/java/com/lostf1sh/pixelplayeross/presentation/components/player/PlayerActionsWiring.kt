@@ -77,6 +77,7 @@ internal class PlayerViewModelFullPlayerActions(
     override fun onResetLyrics() = player.resetLyricsForCurrentSong()
     override fun onLyricsSyncOffsetChange(songId: String, offsetMs: Int) = player.setLyricsSyncOffset(songId, offsetMs)
     override fun onLyricsAlignmentChange(alignment: String) = player.setLyricsAlignment(alignment)
+    override fun onLyricsTextSizeChange(size: String) = player.setLyricsTextSize(size)
     override fun onShowLyricsTranslationChange(show: Boolean) = player.setShowLyricsTranslation(show)
     override fun onShowLyricsRomanizationChange(show: Boolean) = player.setShowLyricsRomanization(show)
     override fun onImmersiveTemporarilyDisabledChange(disabled: Boolean) = player.setImmersiveTemporarilyDisabled(disabled)

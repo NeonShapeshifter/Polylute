@@ -42,11 +42,18 @@ internal object AnimatedCoverFrames {
     internal var uriDecoder: UriFirstFrameDecoder = UriFirstFrameDecoder { context, uri, kind -> firstFrame(context, uri, kind) }
 
     /** The cached JPEG of the first frame of the animated cover in [songPath]'s folder, or null when there is none (or it cannot be read). */
-    fun frameFor(context: Context, songPath: String, directory: AnimatedCoverDirectory = AnimatedCoverDirectory.Disk): File? {
+    fun frameFor(
+        context: Context,
+        songPath: String,
+        directory: AnimatedCoverDirectory = AnimatedCoverDirectory.Disk,
+        /** B59 4: the song's disc; its own `discN.*` animation is used when there is one (and, with [discOnly], nothing else). */
+        discNumber: Int = 0,
+        discOnly: Boolean = false,
+    ): File? {
         val dir = File(songPath).parentFile ?: return null
         if (!AlbumArtUtils.shouldTrustDirectoryArtwork(dir.name)) return null
         val names = directory.names(dir) ?: return null
-        val (name, kind) = AnimatedCoverNames.pick(names) ?: return null
+        val (name, kind) = (if (discOnly) AnimatedCoverNames.pickDisc(names, discNumber) else AnimatedCoverNames.pick(names, discNumber)) ?: return null
         val source = File(dir, name)
         val size = directory.sizeOf(source)
         if (size <= 0L) return null

@@ -4,6 +4,7 @@ import com.decent.usbaudio.media3.UsbDirectSinkState
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabelSource
 import com.lostf1sh.pixelplayeross.data.dac.fiio.NoDacEqLabels
+import com.lostf1sh.pixelplayeross.data.dac.fiio.PurityDacEqNotes
 import com.lostf1sh.pixelplayeross.data.diagnostics.MaintenanceOverrideStore
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteState
@@ -34,6 +35,7 @@ class AudioStatusSource @Inject constructor(
     maintenanceOverrides: MaintenanceOverrideStore,
     @AppScope scope: CoroutineScope,
     dacEqLabels: DacEqLabelSource = NoDacEqLabels,
+    purityNotes: PurityDacEqNotes = PurityDacEqNotes(),
 ) {
     private val base: kotlinx.coroutines.flow.Flow<AudioStatus> = combine(
         dualPlayerEngine.audioRouteState,
@@ -58,7 +60,8 @@ class AudioStatusSource @Inject constructor(
         base,
         dualPlayerEngine.resonanceLimiterRunning,
         dacEqLabels.writable,
-    ) { status, limiterRunning, dacEqWritable ->
-        status.copy(limiterRunning = limiterRunning, dacEqWritable = dacEqWritable)
+        purityNotes.note,
+    ) { status, limiterRunning, dacEqWritable, purityNote ->
+        status.copy(limiterRunning = limiterRunning, dacEqWritable = dacEqWritable, purityDacEqNote = purityNote)
     }.distinctUntilChanged().stateIn(scope, SharingStarted.WhileSubscribed(5_000), AudioStatus())
 }

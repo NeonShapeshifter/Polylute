@@ -143,6 +143,10 @@ fun AlbumCarouselSection(
             while (attempts++ < MAX_FOLLOW_ATTEMPTS) {
                 // A held finger counts as a scroll in progress: its drag holds the pager's scroll but `isScrollInProgress` stays false until it moves, and an attempt made
                 // under it fails at once (every attempt would be spent before the finger lifts).
+                // B58 9 (#72): said once per wait, so a cover that stops following can be told from the log: what it is waiting on, and for which song
+                if (carouselState.pagerState.isScrollInProgress || fingerTrace.down) {
+                    CoverFollowLog.waiting(currentSong?.id, effectiveTargetIndex, attempts, carouselState.pagerState.isScrollInProgress, fingerTrace.down)
+                }
                 snapshotFlow { carouselState.pagerState.isScrollInProgress || fingerTrace.down }
                     .first { !it }
                 // The settle collector below wakes on the same end of a scroll; after one yield it has said whether the listener chose the page the cover rests on.
@@ -183,6 +187,10 @@ fun AlbumCarouselSection(
             }
         } finally {
             programmaticScrollInProgress = false
+        }
+        // B58 9 (#72): the follower used up its attempts and the cover is not on the target: the one line a report of "the big cover stopped following" needs
+        if (attempts > MAX_FOLLOW_ATTEMPTS && !carouselState.isAtRestOn(effectiveTargetIndex)) {
+            CoverFollowLog.gaveUp(currentSong?.id, effectiveTargetIndex, queue.size, carouselState.currentItem, MAX_FOLLOW_ATTEMPTS)
         }
         lastSettledSongId = currentSong?.id
         // B56-1.1: where the cover ended up for the song that is playing, so a cover that stays on another image can be told from the log (#47).
@@ -273,6 +281,39 @@ fun AlbumCarouselSection(
                 }
             }
         )
+    }
+}
+
+/**
+ * B58 9 (#72): the two lines the cover follower writes, under the tag `CoverBind` (debug level, like `COVER_BIND`), for the one report that could not be reproduced: the big cover of the
+ * full player that stopped following the song (seen once on the HONOR, cleared by restarting the app). **No behaviour changed**: these only say what it waited on and that it gave up.
+ *
+ * ```
+ * COVER_BIND_WAIT song=<id> target=<index> attempt=<n> why=<finger down|scroll in progress|finger down and scroll in progress>
+ * COVER_BIND_GAVE_UP song=<id> target=<index> of=<queue size> page=<where the cover is> attempts=<n>
+ * ```
+ */
+internal object CoverFollowLog {
+    const val TAG = "CoverBind"
+
+    fun waitingLine(song: String?, target: Int, attempt: Int, scrolling: Boolean, fingerDown: Boolean): String {
+        val why = when {
+            fingerDown && scrolling -> "finger down and scroll in progress"
+            fingerDown -> "finger down"
+            else -> "scroll in progress"
+        }
+        return "COVER_BIND_WAIT song=$song target=$target attempt=$attempt why=$why"
+    }
+
+    fun gaveUpLine(song: String?, target: Int, queueSize: Int, page: Int, attempts: Int): String =
+        "COVER_BIND_GAVE_UP song=$song target=$target of=$queueSize page=$page attempts=$attempts"
+
+    fun waiting(song: String?, target: Int, attempt: Int, scrolling: Boolean, fingerDown: Boolean) {
+        Timber.tag(TAG).d(waitingLine(song, target, attempt, scrolling, fingerDown))
+    }
+
+    fun gaveUp(song: String?, target: Int, queueSize: Int, page: Int, attempts: Int) {
+        Timber.tag(TAG).d(gaveUpLine(song, target, queueSize, page, attempts))
     }
 }
 

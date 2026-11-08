@@ -134,6 +134,10 @@ val LYRICS_ALIGNMENTS = setOf("left", "center", "right")
 
 const val LYRICS_ALIGNMENT_DEFAULT = "left"
 
+/** B58 4 (#78): the steps of the lyrics text size the listener picks (see `LyricsTextSize`), and the one a new install has. */
+val LYRICS_TEXT_SIZES = setOf("small", "medium", "large", "xlarge")
+const val LYRICS_TEXT_SIZE_DEFAULT = "medium"
+
 /**
  * The declared owner of the lyrics preference key strings.
  *
@@ -148,6 +152,7 @@ const val LYRICS_ALIGNMENT_DEFAULT = "left"
  */
 object LyricsPreferenceKeys {
     val ALIGNMENT = stringPreferencesKey("lyrics_alignment")
+    val TEXT_SIZE = stringPreferencesKey("lyrics_text_size")
     val SHOW_TRANSLATION = booleanPreferencesKey("show_lyrics_translation")
     val SHOW_ROMANIZATION = booleanPreferencesKey("show_lyrics_romanization")
     val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on_lyrics")
@@ -921,6 +926,19 @@ constructor(
             dataStore.data.map { preferences ->
                 preferences[LyricsPreferenceKeys.ALIGNMENT] ?: LYRICS_ALIGNMENT_DEFAULT
             }.distinctUntilChanged()
+
+    val lyricsTextSizeFlow: Flow<String> =
+            dataStore.data.map { preferences ->
+                preferences[LyricsPreferenceKeys.TEXT_SIZE] ?: LYRICS_TEXT_SIZE_DEFAULT
+            }.distinctUntilChanged()
+
+    suspend fun setLyricsTextSize(size: String) {
+        dataStore.edit { preferences ->
+            if (size in LYRICS_TEXT_SIZES) {
+                preferences[LyricsPreferenceKeys.TEXT_SIZE] = size
+            }
+        }
+    }
 
     suspend fun setLyricsAlignment(alignment: String) {
         dataStore.edit { preferences ->

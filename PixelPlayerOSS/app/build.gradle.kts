@@ -123,10 +123,10 @@ android {
         applicationId = "app.polylute"
         minSdk = 29
         targetSdk = 37
-        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.3.0, code 7) and
+        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.4.0-rc.1, code 8) and
         // these are what is used when it holds none.
-        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 7
-        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.3.0"
+        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 8
+        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.4.0-rc.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -194,7 +194,9 @@ android {
             it.useJUnitPlatform()
             // B35: the whole suite runs in one worker JVM, and its live heap climbs to ~470 MB of the default 512 MB (GC log of the B34 tree: 89 full
             // collections, 0 headroom); 43 more tests tipped `QueueUtilsTest`'s 10k-song fixtures into OutOfMemoryError. A worker that has room.
-            it.maxHeapSize = "1g"
+            // B58: 1 GB tipped `QueueUtilsTest` again (the live heap at the OOM is ~1 GB, mostly Robolectric resource tables for the four SDK sandboxes the suite uses, 255k MediaItems
+            // and 1.9M byte arrays kept by earlier classes; the histograms are in analysis/.../B58-gates/heap-diagnosis). Same answer as B35: a worker that has room.
+            it.maxHeapSize = "1536m"
         }
     }
 

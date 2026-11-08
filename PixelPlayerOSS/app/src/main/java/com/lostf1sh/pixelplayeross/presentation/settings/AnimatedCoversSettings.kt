@@ -59,6 +59,16 @@ internal fun AnimatedCoversRows(state: AppearanceSettingsState, actions: Appeara
         },
         leadingIcon = { Icon(Icons.Rounded.Movie, null, tint = MaterialTheme.colorScheme.secondary) },
     )
+    // B61 item 5 (#70): Polylute's own lock screen exists only on a DAP, and only has a cover to animate while Animated covers is on
+    if (LocalDapMode.current && stored && (!needsFolder || hasFolder)) {
+        SwitchSettingItem(
+            title = stringResource(R.string.setcat_animated_covers_lock_title),
+            subtitle = stringResource(R.string.setcat_animated_covers_lock_subtitle),
+            checked = state.animatedCoversOnLock,
+            onCheckedChange = actions::onAnimatedCoversOnLockChange,
+            leadingIcon = { Icon(Icons.Rounded.Movie, null, tint = MaterialTheme.colorScheme.secondary) },
+        )
+    }
     if (needsFolder && hasFolder) {
         SettingsItem(
             title = stringResource(R.string.setcat_animated_covers_folder_title),

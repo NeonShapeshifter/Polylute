@@ -24,6 +24,8 @@ import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqWriteAvailability
 import com.lostf1sh.pixelplayeross.data.dac.fiio.FiioHidProfiles
 import com.lostf1sh.pixelplayeross.data.dac.fiio.PreGainSense
 import com.lostf1sh.pixelplayeross.presentation.B31Renders
+import com.lostf1sh.pixelplayeross.presentation.B59Renders
+import com.lostf1sh.pixelplayeross.presentation.B60Renders
 import com.lostf1sh.pixelplayeross.presentation.RenderChecks
 import com.lostf1sh.pixelplayeross.presentation.navigation.DapBackAuthority
 import com.lostf1sh.pixelplayeross.presentation.navigation.LocalDapBackNavigation
@@ -44,6 +46,7 @@ import io.mockk.unmockkStatic
 import kotlinx.coroutines.flow.flowOf
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -105,6 +108,10 @@ open class DacEqTakeOverRenderTest {
         override fun onRefresh() { calls += "refresh" }
         override fun onDismissError() { calls += "dismiss" }
         override fun onTakeOver() { calls += "takeover" }
+        override fun onConfirmTurnOn() { calls += "turnon" }
+        override fun onCancelTurnOn() { calls += "cancelturnon" }
+        override fun onChooseSlot(slotId: Int) { calls += "slot:$slotId" }
+        override fun onCancelSlotChoice() { calls += "cancelslot" }
         override fun onRestoreFactory() { calls += "factory" }
         override fun onReadDacPresets() { calls += "readpresets" }
         override fun onSelectDacPreset(presetId: Int, confirmed: Boolean) { calls += "selectdac:$presetId:$confirmed" }
@@ -188,25 +195,91 @@ open class DacEqTakeOverRenderTest {
     }
 
     @Test
-    fun `the slot is offered on the card, with what taking it over does, and a tap asks for it`() {
+    fun `B59 - the take-over card is gone, the DAC presets stay, and turning the EQ on asks one question with what happens`() {
         val actions = Recorder()
-        setScreen(uiState(), actions)
+        val prompt = com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqTurnOnPrompt("SNOWSKY Melody", slotName = null, musicPlaying = true)
+        setScreen(uiState().copy(appSlotName = null, turnOnPrompt = prompt), actions)
+        // the question: the title, what happens (the app picks a user slot, the music pauses and starts again), and the two answers
         assertShows(
-            s(R.string.dac_eq_takeover_title, "USER 3"), s(R.string.dac_eq_takeover_body, "USER 3"), s(R.string.dac_eq_takeover_action, "USER 3"),
-            s(R.string.dac_eq_dac_presets_title), s(R.string.dac_eq_dac_presets_note), s(R.string.dac_eq_dac_presets_read),
-            s(R.string.dac_eq_dac_presets_read_note), s(R.string.dac_eq_dac_preset_unread), "Jazz", "USER 1", "Close EQ",
+            s(R.string.dac_eq_turnon_title), s(R.string.dac_eq_turnon_body_unchosen, "SNOWSKY Melody") + " " + s(R.string.dac_eq_turnon_music),
+            s(R.string.dac_eq_turnon_action),
         )
-        B31Renders.save(compose, "P1-resonance-take-over-offered-$language")
-        compose.onAllNodesWithText(s(R.string.dac_eq_takeover_action, "USER 3"))[0].performClick()
-        assertEquals(listOf("takeover"), actions.calls)
-        fits("take-over offered")
+        B59Renders.save(compose, "turn-on-question-$language")
+        // the old separate card is not on the screen
+        compose.onAllNodesWithText(s(R.string.dac_eq_takeover_busy, "USER 3")).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.dac_eq_turnon_action))[0].performClick()
+        assertEquals(listOf("turnon"), actions.calls)
+    }
+
+    @Test
+    fun `B59 - the question says the slot when one is chosen already, says nothing of music that is not playing, and no is a no`() {
+        val actions = Recorder()
+        val prompt = com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqTurnOnPrompt("SNOWSKY Melody", slotName = "USER 1", musicPlaying = false)
+        setScreen(uiState().copy(turnOnPrompt = prompt), actions)
+        assertShows(s(R.string.dac_eq_turnon_title), s(R.string.dac_eq_turnon_body_chosen, "SNOWSKY Melody", "USER 1"))
+        compose.onAllNodesWithText(s(R.string.dac_eq_turnon_music), substring = true).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.cancel))[0].performClick()
+        assertEquals(listOf("cancelturnon"), actions.calls)
+    }
+
+    @Test
+    fun `B59 - when every user slot boosts the listener picks one, USER 3 preselected, and the pick is wired`() {
+        val actions = Recorder()
+        val prompt = com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqSlotChoicePrompt(
+            listOf(
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqSlotChoiceRow(0xA0, "USER 1", 3.0),
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqSlotChoiceRow(0xA1, "USER 2", 6.0),
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.DacEqSlotChoiceRow(0xA2, "USER 3", 10.7),
+            ),
+            preselected = 0xA2,
+        )
+        setScreen(uiState().copy(slotChoicePrompt = prompt), actions)
+        assertShows(
+            s(R.string.dac_eq_slot_choice_title), s(R.string.dac_eq_slot_choice_body), s(R.string.dac_eq_slot_choice_row, "USER 1", "%.1f".format(3.0)),
+            s(R.string.dac_eq_slot_choice_row, "USER 3", "%.1f".format(10.7)), s(R.string.dac_eq_slot_choice_action),
+        )
+        B59Renders.save(compose, "slot-choice-$language")
+        compose.onAllNodesWithText(s(R.string.dac_eq_slot_choice_action))[0].performClick()
+        assertEquals(listOf("slot:${0xA2}"), actions.calls)
+    }
+
+    @Test
+    fun `B60 - a turn-on that stopped says in one short sentence what happened to the DAC and that the music stays paused, and shows no dump`() {
+        // the 19:23 failure: the long English dump of expected and reported bands
+        val dump = "expected [pre-gain +0.0 dB; 1: PEAK 32 Hz +0.0 dB Q 0.71; 2: PEAK 64 Hz +0.0 dB Q 0.71], the DAC reports [pre-gain +0.0 dB; 1: PEAK 32 Hz +0.0 dB Q 0.70; 2: PEAK 64 Hz +0.0 dB Q 0.70] (selected 0x0A)"
+        setScreen(uiState(error = DacEqError.TurnOnStopped(restored = true, musicLeftPaused = true, detail = dump)))
+        assertShows(s(R.string.dac_eq_error_title), s(R.string.dac_eq_error_turn_on_restored_paused))
+        // the dump (English, bands, frame bytes) is in the log, not on the screen
+        compose.onAllNodes(androidx.compose.ui.test.hasText("PEAK", substring = true)).assertCountEquals(0)
+        compose.onAllNodes(androidx.compose.ui.test.hasText("expected [", substring = true)).assertCountEquals(0)
+        compose.onAllNodes(androidx.compose.ui.test.hasText("0x0A", substring = true)).assertCountEquals(0)
+        B60Renders.save(compose, "turn-on-stopped-$language")
+    }
+
+    @Test
+    fun `B60 - each way a turn-on can stop has its own one-sentence text in this language, with and without the music left paused`() {
+        val cases = listOf(
+            Triple(true, true, R.string.dac_eq_error_turn_on_restored_paused),
+            Triple(true, false, R.string.dac_eq_error_turn_on_restored),
+            Triple(false, true, R.string.dac_eq_error_turn_on_not_restored_paused),
+            Triple(false, false, R.string.dac_eq_error_turn_on_not_restored),
+            Triple(null, true, R.string.dac_eq_error_turn_on_nothing_paused),
+            Triple(null, false, R.string.dac_eq_error_turn_on_nothing),
+        )
+        for ((restored, paused, expected) in cases) {
+            assertEquals(expected, turnOnStoppedText(restored, paused))
+            val text = s(expected)
+            // a sentence for the listener: no brackets, no frame bytes, no band dump
+            assertTrue(text, !text.contains('[') && !text.contains("0x") && !text.contains("PEAK"))
+            // the ones that leave the music paused say more than the ones that do not
+            if (paused) assertTrue(text, text.length > s(turnOnStoppedText(restored, false)).length)
+        }
     }
 
     @Test
     fun `after the take-over the card is gone, the slot is the app's, and the way back is there behind a question`() {
         val actions = Recorder()
         setScreen(uiState(owned = true), actions)
-        compose.onAllNodesWithText(s(R.string.dac_eq_takeover_action, "USER 3")).assertCountEquals(0)
         assertShows(s(R.string.dac_eq_owned_title, "USER 3"), s(R.string.dac_eq_restore_factory))
         compose.onAllNodesWithText(s(R.string.dac_eq_restore_factory))[0].performClick()
         compose.waitForIdle()

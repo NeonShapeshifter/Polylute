@@ -57,7 +57,7 @@ class B575AnimatedCoverEventsTest {
     @Test
     fun `the inputs are written out in a fixed order, every one of them`() {
         assertThat(playing.describe()).isEqualTo(
-            "enabled=true playerExpanded=true coverPageShowing=true sheetOpen=false lockSurfaceVisible=false resumed=true screenInteractive=true systemAnimationsAllowed=true playing=true",
+            "enabled=true playerExpanded=true coverPageShowing=true sheetOpen=false lockSurfaceVisible=false resumed=true screenInteractive=true systemAnimationsAllowed=true playing=true lockCoverOn=false", // B61 item 5: the switch "Also on the lock screen" is the last input
         )
         assertThat(Inputs().describe()).startsWith("enabled=false playerExpanded=false")
     }

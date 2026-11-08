@@ -67,7 +67,23 @@ data class DacEqBand(
         index == other.index && typeCode == other.typeCode && frequencyHz == other.frequencyHz &&
             gainTenthsDb == other.gainTenthsDb && qHundredths == other.qHundredths
 
+    /**
+     * B59 (#53): [sameAs], except that **the Q** may be one hundredth off either way. The Melody was sent Q 0.71 and acknowledged, stored and read back
+     * 0.70 (every other Q seen came back exact: 1.00, 1.50, 3.01), which the exact comparison turned into a failed take-over. Index, type, frequency and
+     * **gain** stay exact: the gain is what the safety gate counts, and a Q never changes a peak filter's level.
+     */
+    fun sameAsAllowingQRounding(other: DacEqBand): Boolean =
+        index == other.index && typeCode == other.typeCode && frequencyHz == other.frequencyHz &&
+            gainTenthsDb == other.gainTenthsDb && kotlin.math.abs(qHundredths - other.qHundredths) <= Q_ROUNDING_HUNDREDTHS
+
+    /** B59: [sameEffectAs] with the Q rounding of [sameAsAllowingQRounding]: what a read-back is compared with a band that was written. */
+    fun sameEffectAsAllowingQRounding(other: DacEqBand): Boolean =
+        sameAsAllowingQRounding(other) || (index == other.index && ((isUnset && other.isInert) || (other.isUnset && isInert)))
+
     companion object {
+        /** B59: how far the DAC's own Q may be from the one it was sent (hundredths) and still be the same band. One, and no more. */
+        const val Q_ROUNDING_HUNDREDTHS = 1
+
         fun of(index: Int, type: FiioFilterType, frequencyHz: Int, gainDb: Double, q: Double) = DacEqBand(
             index = index,
             typeCode = type.code,
@@ -160,6 +176,11 @@ data class DacEqState(
     val eqSwitch: EqRead<Boolean>,
     /** One entry per band of the *active* preset, index 0 up; the count the DAC reported, else the table's. */
     val bands: List<EqRead<DacEqBand>>,
+    /**
+     * B60 (#53): when [activePreset] was read through [FiioPresetClaims] (the DAC answered the marker of a touched user slot and the app knows which slot it
+     * had selected), the id the DAC really answered; null for a reading taken as the DAC gave it.
+     */
+    val presetReportedAs: Int? = null,
 ) {
     /** Preset, count, gain and every band read, and the count agrees with the table: the precondition for a write. */
     val isComplete: Boolean

@@ -1,8 +1,32 @@
-# Polylute
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/polylute-wordmark-dark.svg">
+    <img src="docs/readme/polylute-wordmark-light.svg" alt="Polylute" width="420">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/NeonShapeshifter/Polylute/releases/latest"><img src="https://img.shields.io/github/v/release/NeonShapeshifter/Polylute?label=download&sort=semver" alt="Download the latest release"></a>
+  <img src="https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white" alt="Android 10 or newer">
+  <a href="PixelPlayerOSS/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="License: GPL-3.0-or-later"></a>
+</p>
 
 Polylute is an Android music player for the files on your device.
 
 It can send audio straight to a USB DAC, bit-perfect (Purity), or through its own processing (Resonance: per-headphone profiles, an equalizer and volume limits). It can also turn a phone into a dedicated digital audio player (DAP mode).
+
+<p align="center">
+  <img src="docs/readme/purity.png" width="49%" alt="Purity: bit-perfect to your USB DAC, no root">
+  <img src="docs/readme/animated-covers.gif" width="49%" alt="Animated covers: put a cover.mp4 in the album folder and the cover moves">
+</p>
+<p align="center">
+  <img src="docs/readme/lyrics.png" width="49%" alt="Lyrics: synced, word by word when available, romanized when you need it">
+  <img src="docs/readme/library.png" width="49%" alt="Library: your files, offline; online info only if you turn it on">
+</p>
+<p align="center">
+  <img src="docs/readme/stats.png" width="49%" alt="Stats: what you play and for how long, kept on your phone">
+  <img src="docs/readme/home.png" width="49%" alt="Home: a new mix every day, from what you listen to">
+</p>
 
 ## Requirements
 
@@ -51,6 +75,17 @@ Dedicated is for turning a phone, ideally a spare one, into a DAP: a phone that 
 ### Leaving Dedicated
 
 Settings, Home and DAP mode, **Stop being the device owner** (in the Spanish app: "Dejar de ser propietario del dispositivo"). Polylute clears what it set and gives up Device Owner. No reset is needed. Polylute stays the home app until you pick another one with Choose home app. If you cannot open the app at all, a factory reset also ends it.
+
+## Animated covers
+
+Put a `cover.mp4`, `cover.webp` or `cover.gif` in an album's folder and the full player plays it, muted and in a loop, in place of the still cover. Turn it on in Settings, Appearance, **Animated covers**; on Android 13 and newer, Polylute asks once for the folder your music is in (read only).
+
+- If a folder has more than one, mp4 wins, then webp, then gif. mp4 is the lightest by far: it is decoded in hardware.
+- The 64 MB limit is for gif and webp only (they are decoded in memory, so a bigger one is not played). An mp4 has no size limit: the hardware decoder reads it a few seconds at a time. You rarely need a big one: a 720 px, 15 to 30 second H.264 or HEVC mp4 is a few MB and looks sharp on a phone.
+- The cover belongs to the album: a song of the album that sits in another folder plays it too.
+- A folder that mixes albums (such as `Music` or `Download`) is never used for one album's cover.
+- A disc of its own: in an album folder whose songs are on two or more discs, `disc1.jpg` (or `.jpeg`, `.png`) is the cover of the songs on disc 1, `disc2.jpg` of disc 2, and so on. It beats `cover.*` and the song's own picture for those songs; the album itself keeps its own cover (`cover.*`, else the picture in the files), never a `discN` file. A folder with one disc is not searched for them. `disc2.mp4` (or `.webp`, `.gif`) is the animated cover of disc 2, with the same rules as `cover.mp4`; a disc with none plays the album's `cover.mp4`. Not `cd1.jpg`: that name is often a picture of the CD itself.
+- It plays only on the full player's cover page, and stops when the screen is off or the player is closed. Lists, the mini player and the lock screen keep the still cover.
 
 ## Build
 

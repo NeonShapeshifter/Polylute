@@ -672,6 +672,24 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                 lockCovers = lockSurfaceVisible && !lockRevealing,
                             )
                         }
+                        // B56-7.2: the animated covers: on in app mode and off on a DAP until the listener says otherwise; the sync's change counter is what makes the player look again.
+                        // B61 item 5 (#70): made here, above both the app and the lock surface, with the activity's one controller: the full player and Polylute's lock screen (when the listener
+                        // turned "Also on the lock screen" on) share it, so there is never a second decoder.
+                        val animatedCoversStored by themePreferencesRepository.animatedCoversStoredFlow.collectAsStateWithLifecycle(initialValue = null)
+                        val animatedCoversOnLock by themePreferencesRepository.animatedCoversOnLockFlow.collectAsStateWithLifecycle(initialValue = false)
+                        val libraryVersion by libraryChangeSignal.version.collectAsStateWithLifecycle()
+                        val animatedCoverFolder by animatedCoverFolderStore.folder.collectAsStateWithLifecycle()
+                        val animatedCoverEnv = remember(animatedCoversStored, animatedCoversOnLock, productState.level != null, libraryVersion, animatedCoverFolder) {
+                            // a folder chosen, changed or removed: what the finder remembers about every album folder was read through the old one
+                            animatedCoverFinder.invalidate()
+                            com.lostf1sh.pixelplayeross.ui.animatedcover.AnimatedCoverEnv(
+                                finder = animatedCoverFinder,
+                                enabled = com.lostf1sh.pixelplayeross.data.preferences.AnimatedCovers.effective(animatedCoversStored, productState.level != null),
+                                libraryVersion = libraryVersion * 31 + (animatedCoverFolder?.hashCode() ?: 0),
+                                lockCoverOn = animatedCoversOnLock,
+                            )
+                        }
+                        val sharedCoverController = com.lostf1sh.pixelplayeross.ui.animatedcover.rememberSharedAnimatedCoverController()
                         FreezeWhileCovered(
                             frozen = lockSurfaceVisible,
                             hidden = (lockSurfaceVisible || lockCover.covered) && !lockRevealing,
@@ -683,24 +701,12 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                     else Modifier
                                 ),
                         ) {
-                            // B56-7.2: the animated covers: on in app mode and off on a DAP until the listener says otherwise; the sync's change counter is what makes the player look again
-                            val animatedCoversStored by themePreferencesRepository.animatedCoversStoredFlow.collectAsStateWithLifecycle(initialValue = null)
-                            val libraryVersion by libraryChangeSignal.version.collectAsStateWithLifecycle()
-                            val animatedCoverFolder by animatedCoverFolderStore.folder.collectAsStateWithLifecycle()
-                            val animatedCoverEnv = remember(animatedCoversStored, productState.level != null, libraryVersion, animatedCoverFolder) {
-                                // a folder chosen, changed or removed: what the finder remembers about every album folder was read through the old one
-                                animatedCoverFinder.invalidate()
-                                com.lostf1sh.pixelplayeross.ui.animatedcover.AnimatedCoverEnv(
-                                    finder = animatedCoverFinder,
-                                    enabled = com.lostf1sh.pixelplayeross.data.preferences.AnimatedCovers.effective(animatedCoversStored, productState.level != null),
-                                    libraryVersion = libraryVersion * 31 + (animatedCoverFolder?.hashCode() ?: 0),
-                                )
-                            }
                             androidx.compose.runtime.CompositionLocalProvider(
                                 com.lostf1sh.pixelplayeross.presentation.screens.LocalFindFolders provides mainViewModel::findFolders,
                                 LocalMusicAccessGranted provides mediaPermissionGranted,
                                 com.lostf1sh.pixelplayeross.presentation.LocalDapMode provides (productState.level != null),
                                 com.lostf1sh.pixelplayeross.ui.animatedcover.LocalAnimatedCoverEnv provides animatedCoverEnv,
+                                com.lostf1sh.pixelplayeross.ui.animatedcover.LocalAnimatedCoverController provides sharedCoverController,
                             ) {
                                 // B42-fix1: what inside the app holds the screen on (the lyrics toggle) must not while the lock screen is what
                                 // the listener sees.
@@ -730,18 +736,23 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                             dapDeviceOwnerController.setDapLockScreenEnabled(lockScreenEnabled)
                             dapDeviceOwnerController.reconcileKeyguardPolicy()
                         }
-                        DapLockSurface(
-                            playerViewModel = playerViewModel,
-                            enabled = lockScreenEnabled,
-                            dedicated = lockSurfaceAllowed,
-                            onSurfaceVisibleChange = { visible ->
-                                lockSurfaceVisible = visible
-                                lockSurfaceShowing.value = visible
-                                if (!visible) lockRevealing = false
-                            },
-                            onRevealingChange = { lockRevealing = it },
-                            cover = lockCover,
-                        )
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            com.lostf1sh.pixelplayeross.ui.animatedcover.LocalAnimatedCoverEnv provides animatedCoverEnv,
+                            com.lostf1sh.pixelplayeross.ui.animatedcover.LocalAnimatedCoverController provides sharedCoverController,
+                        ) {
+                            DapLockSurface(
+                                playerViewModel = playerViewModel,
+                                enabled = lockScreenEnabled,
+                                dedicated = lockSurfaceAllowed,
+                                onSurfaceVisibleChange = { visible ->
+                                    lockSurfaceVisible = visible
+                                    lockSurfaceShowing.value = visible
+                                    if (!visible) lockRevealing = false
+                                },
+                                onRevealingChange = { lockRevealing = it },
+                                cover = lockCover,
+                            )
+                        }
                         if (!mediaPermissionGranted && !isBenchmarkMode) {
                             MusicAccessPrompt(
                                 onAllow = mediaPermissionState::launchMultiplePermissionRequest,

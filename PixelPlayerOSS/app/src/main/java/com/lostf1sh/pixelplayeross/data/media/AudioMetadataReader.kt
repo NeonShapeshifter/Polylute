@@ -60,14 +60,40 @@ object AudioMetadataReader {
         MusicBrainzIds()
     }
 
+    /**
+     * B59 2 (#80): what the scan wants from the one tag-map read it makes of a file it did not deep-read: the MusicBrainz ids **and the composer**, so the composer is
+     * known when the song is saved and the background fill has nothing left to read after a Full Rescan (it used to read every file again: 34 s).
+     */
+    fun readScanTags(file: File): Pair<MusicBrainzIds, ComposerRead> = try {
+        val map = openPfd { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) }?.use { fd ->
+            TagLib.getMetadata(fd.detachFd(), readPictures = false)?.propertyMap
+        }
+        if (map == null) {
+            MusicBrainzIds() to ComposerRead.Unreadable
+        } else {
+            MusicBrainzTags.read(map) to composerFromPropertyMap(map)
+        }
+    } catch (error: Exception) {
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        Timber.tag(TAG).w(error, "Could not read the scan tags in %s", file.path)
+        MusicBrainzIds() to ComposerRead.Unreadable
+    } catch (error: LinkageError) {
+        // The tag library cannot run here (a host without it, as the JVM tests): the ids come from the single-purpose read this one replaced (which those tests stand in for), and the
+        // composer is left to the background fill, as it was before this read gave it.
+        readMusicBrainzIds(file) to ComposerRead.Unreadable
+    }
+
+    /** The COMPOSER (or `TCOM`) of a tag map; pure, so [readComposer] and the scan's read cannot disagree. */
+    internal fun composerFromPropertyMap(map: Map<String, Array<String>>): ComposerRead =
+        (map["COMPOSER"]?.firstOrNull()?.takeIf { it.isNotBlank() } ?: map["TCOM"]?.firstOrNull()?.takeIf { it.isNotBlank() })
+            ?.let { ComposerRead.Found(it.trim()) } ?: ComposerRead.None
+
     /** B56 phase 6: the COMPOSER tag of a file, from one tag-map read (the same call the scan makes for MusicBrainz ids). */
     fun readComposer(file: File): ComposerRead = try {
         val map = openPfd { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) }?.use { fd ->
             TagLib.getMetadata(fd.detachFd(), readPictures = false)?.propertyMap
         }
-        if (map == null) ComposerRead.Unreadable
-        else (map["COMPOSER"]?.firstOrNull()?.takeIf { it.isNotBlank() } ?: map["TCOM"]?.firstOrNull()?.takeIf { it.isNotBlank() })
-            ?.let { ComposerRead.Found(it.trim()) } ?: ComposerRead.None
+        if (map == null) ComposerRead.Unreadable else composerFromPropertyMap(map)
     } catch (error: Exception) {
         if (error is kotlinx.coroutines.CancellationException) throw error
         Timber.tag(TAG).w(error, "Could not read the composer tag in %s", file.path)
@@ -546,27 +572,9 @@ object AudioMetadataReader {
         }.getOrNull()
     }
 
+    /** #79: the same reading as playback ([ReplayGainTags]): R128 as Q7.8 relative to −23 LUFS, no value outside a real correction. */
     private fun extractReplayGainDb(
         propertyMap: Map<String, Array<String>>,
         keys: List<String>
-    ): Float? {
-        for (key in keys) {
-            val rawValue = propertyMap[key]?.firstOrNull() ?: continue
-            val parsedValue = parseReplayGainDb(rawValue)
-            if (parsedValue != null) {
-                return parsedValue
-            }
-        }
-        return null
-    }
-
-    private fun parseReplayGainDb(rawValue: String?): Float? {
-        val cleanedValue = rawValue
-            ?.trim()
-            ?.replace(',', '.')
-            ?.replace(Regex("(?i)[dD][bB]"), "")
-            ?.trim()
-            ?: return null
-        return cleanedValue.toFloatOrNull()
-    }
+    ): Float? = ReplayGainTags.gainDb(propertyMap, keys)
 }

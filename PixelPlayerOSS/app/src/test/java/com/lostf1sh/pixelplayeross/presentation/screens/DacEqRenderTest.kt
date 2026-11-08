@@ -208,7 +208,7 @@ open class DacEqRenderTest {
             s(R.string.headphone_eq_mode_off), s(R.string.dac_eq_mode_on),
             s(R.string.dac_eq_preset_row), "Warm", s(R.string.dac_eq_preset_matches), s(R.string.dac_eq_save_preset),
             s(R.string.eq_section_response), s(R.string.dac_eq_pregain), s(R.string.dac_eq_pregain_note),
-            s(R.string.dac_eq_section_bands, 12), s(R.string.eq_reset_flat), s(R.string.dac_eq_section_filters),
+            s(R.string.eq_reset_flat), s(R.string.dac_eq_section_filters),
             s(R.string.dac_eq_footer, "USER 3"),
         )
         for (n in 1..10) assertShows(s(R.string.dac_eq_filter_label, n))
@@ -231,7 +231,7 @@ open class DacEqRenderTest {
         setScreen(uiState(verdict = DacEqVerdict.OFF, bands = curve(), presets = emptyList(), selected = null, selectedState = SelectedPresetState.NONE))
         assertShows(s(R.string.audio_status_off), s(R.string.dac_eq_active_preset, "Close EQ"), s(R.string.dac_eq_mode_on))
         compose.onAllNodesWithText(s(R.string.dac_eq_section_filters)).assertCountEquals(0)
-        compose.onAllNodesWithText(s(R.string.dac_eq_section_bands, 12)).assertCountEquals(0)
+        compose.onAllNodesWithText(s(R.string.eq_reset_flat)).assertCountEquals(0)
         B30Renders.save(compose, "P3-resonance-dac-eq-closed-$language")
         fits("DAC EQ closed")
     }
@@ -311,7 +311,8 @@ open class DacEqRenderTest {
     // ── The filter editor ────────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `the filter editor steps frequency, gain and Q within the DAC's limits`() {
+    fun `the filter editor steps frequency, gain and Q within the DAC's limits, and hands the finished band over once at Done`() {
+        // B61 item 4: the arrows work on a draft; nothing is handed over (and so nothing is written) until Done. Before, every tap was a change.
         val changes = mutableListOf<DacEqBand>()
         var band = DacEqBand.of(3, FiioFilterType.PEAK, 1000, 2.0, 1.0)
         compose.setContent {
@@ -323,17 +324,19 @@ open class DacEqRenderTest {
             }
         }
         compose.onNodeWithContentDescription(s(R.string.dac_eq_increase, s(R.string.dac_eq_field_gain))).performClick()
-        assertEquals(25, changes.last().gainTenthsDb)
         compose.onNodeWithContentDescription(s(R.string.dac_eq_decrease, s(R.string.dac_eq_field_gain))).performClick()
         compose.onNodeWithContentDescription(s(R.string.dac_eq_decrease, s(R.string.dac_eq_field_gain))).performClick()
-        assertEquals(15, changes.last().gainTenthsDb)
         compose.onNodeWithContentDescription(s(R.string.dac_eq_increase, s(R.string.dac_eq_field_frequency))).performClick()
-        assertEquals(1059, changes.last().frequencyHz)
         compose.onNodeWithContentDescription(s(R.string.dac_eq_increase, s(R.string.dac_eq_field_q))).performClick()
-        assertEquals(112, changes.last().qHundredths)
+        assertEquals(emptyList<DacEqBand>(), changes)                           // five taps, nothing handed over
         B30Renders.save(compose, "P3-dac-eq-filter-editor-$language")
         RenderChecks.assertInsideWindow(compose, "filter editor")
         RenderChecks.assertNoCutText(compose, "filter editor")
+        compose.onNodeWithText(s(R.string.dac_eq_done)).performClick()
+        assertEquals(1, changes.size)                                           // one finished edit, one hand-over
+        assertEquals(15, changes.single().gainTenthsDb)                         // +0.5 -0.5 -0.5 from 2.0 dB
+        assertEquals(1059, changes.single().frequencyHz)
+        assertEquals(112, changes.single().qHundredths)
     }
 
     @Test

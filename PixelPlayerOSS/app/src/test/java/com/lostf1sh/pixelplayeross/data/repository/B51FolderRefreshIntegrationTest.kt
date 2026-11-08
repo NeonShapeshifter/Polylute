@@ -37,7 +37,7 @@ class B51FolderRefreshIntegrationTest {
         val service = mockk<MusicInfoService>()
         val colors = mockk<ColorSchemeProcessor>(relaxed = true)
         try {
-            val initial = AlbumArtUtils.refreshFolderArtwork(context, id, audio.path, null, true, true, false) { null }
+            val initial = AlbumArtUtils.refreshFolderArtwork(context, id, audio.path, null, true, true, false) { false }
             val song = Song.emptySong().copy(id = id.toString(), album = "Album", albumId = 7, path = audio.path, albumArtUriString = initial.uri)
                 .toEntity(audio.path, folder.path)
             every { prefs.folderCoversEnabledFlow } returns flowOf(true)

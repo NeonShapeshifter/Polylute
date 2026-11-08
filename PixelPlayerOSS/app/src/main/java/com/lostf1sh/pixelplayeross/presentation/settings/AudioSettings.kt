@@ -26,6 +26,8 @@ import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer
 import com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode
 import com.lostf1sh.pixelplayeross.data.volume.FixedOutputDac
+import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel
+import com.lostf1sh.pixelplayeross.data.dac.fiio.PurityDacEqNote
 import com.lostf1sh.pixelplayeross.data.volume.PristineModePolicy
 import com.lostf1sh.pixelplayeross.data.volume.SafetyVolumeState
 import com.lostf1sh.pixelplayeross.presentation.components.AndroidRouteHintLine
@@ -338,15 +340,6 @@ private fun OutputSection(state: AudioSettingsState, actions: AudioSettingsActio
                 onClick = actions::onShowFixedOutputNotice,
             )
         }
-        // B39-A7: Resonance can let other apps use the DAC; Purity never does. The switch is the listener's and is off by default.
-        DapSwitchRow(
-            label = stringResource(R.string.audio_dac_share_title),
-            description = stringResource(
-                if (state.audio.purityPreference) R.string.audio_dac_share_sub_purity else R.string.audio_dac_share_sub,
-            ),
-            checked = state.dacShareEnabled,
-            onCheckedChange = actions::onDacShareChange,
-        )
         DapNavRow(
             label = stringResource(R.string.dac_more),
             onClick = { actions.onOpenKnownDacs() },
@@ -407,6 +400,32 @@ private fun PureDirectSection(state: AudioSettingsState, actions: AudioSettingsA
             onCheckedChange = actions::onPureDirectChange,
             enabled = !heldOff,
         )
+        // B61 (item 3): Purity closes the DAC's EQ and puts it back; when that did not go as asked (the DAC was away, what it had selected is not Polylute's), one short line says so.
+        state.audio.purityDacEqNote?.let { note ->
+            Text(
+                text = stringResource(
+                    when (note) {
+                        PurityDacEqNote.REOPEN_WHEN_CONNECTED -> R.string.pristine_dac_eq_note_reopen_waits
+                        PurityDacEqNote.NOT_OURS_TO_REOPEN -> R.string.pristine_dac_eq_note_not_ours
+                        PurityDacEqNote.REOPEN_FAILED -> R.string.pristine_dac_eq_note_reopen_failed
+                        PurityDacEqNote.CLOSE_FAILED -> R.string.pristine_dac_eq_note_close_failed
+                    },
+                ),
+                style = DapType.Body,
+                color = Dap.secondaryText,
+                modifier = Modifier.fillMaxWidth().padding(bottom = DapSpacing.Sm),
+            )
+        }
+        // B61: the share row sits under the Purity switch it refers to (it read "This applies in Resonance" at the top of the page, before Purity and Resonance were said)
+        // B39-A7: Resonance can let other apps use the DAC; Purity never does. The switch is the listener's and is off by default.
+        DapSwitchRow(
+            label = stringResource(R.string.audio_dac_share_title),
+            description = stringResource(
+                if (state.audio.purityPreference) R.string.audio_dac_share_sub_purity else R.string.audio_dac_share_sub,
+            ),
+            checked = state.dacShareEnabled,
+            onCheckedChange = actions::onDacShareChange,
+        )
         if (state.pureDirect.digitalBlocksPristine) {
             Column(Modifier.fillMaxWidth().padding(vertical = DapSpacing.Sm)) {
                 Text(
@@ -457,7 +476,8 @@ private fun SoundSection(state: AudioSettingsState, actions: AudioSettingsAction
                     detail,
                 ),
                 onClick = { actions.onOpenEqualizer(eq.profileId) },
-                extra = { FeatureStatusLine(eq.status) },
+                // B61: "Off" is already in the row's own sentence ("On the phone · Blue 2 · Off"): the line is for what the sentence cannot say (applied, frozen, bypassed...)
+                extra = { if (eq.status.kind != FeatureStatusKind.OFF) FeatureStatusLine(eq.status) },
             )
         }
 
@@ -468,7 +488,8 @@ private fun SoundSection(state: AudioSettingsState, actions: AudioSettingsAction
         // Resonance screen. Nothing is written by tapping it.
         val dacName = state.currentDac?.profile?.displayName ?: state.audio.route.deviceName ?: stringResource(R.string.eq_the_dac)
         state.audio.dacEqStatus(dacName)?.let { dacEq ->
-            val useDacEqProfile = state.equalizer?.profileId?.takeIf { state.audio.dacEqWritable }
+            // B61: not while Purity holds the DAC's EQ closed (the DAC EQ page is frozen then), and not when the DAC's EQ is on already: the action would lead nowhere
+            val useDacEqProfile = state.equalizer?.profileId?.takeIf { state.audio.dacEqWritable && !state.audio.purityInForce && state.audio.dacEq != DacEqLabel.ON }
             DapNavRow(
                 label = stringResource(R.string.audio_dac_eq_title),
                 // "Polylute only reads it for now" is true of a read-only DAC; where this build can write the DAC's EQ it would contradict the action below.
@@ -495,7 +516,8 @@ private fun SoundSection(state: AudioSettingsState, actions: AudioSettingsAction
             description = stringResource(R.string.audio_replaygain_sub),
             checked = state.replayGainEnabled,
             onCheckedChange = actions::onReplayGainEnabledChange,
-            extra = { FeatureStatusLine(rg) },
+            // B61: a switch that is off already says "off"; the line is for applied, frozen and bypassed
+            extra = { if (rg.kind != FeatureStatusKind.OFF) FeatureStatusLine(rg) },
             // Frozen is not disabled: the choice is kept and can be changed, it just does not reach the signal.
             dim = rgFrozen,
         )
@@ -522,7 +544,8 @@ private fun SoundSection(state: AudioSettingsState, actions: AudioSettingsAction
             description = stringResource(R.string.audio_limiter_sub),
             checked = state.resonanceLimiterEnabled,
             onCheckedChange = actions::onResonanceLimiterChange,
-            extra = { FeatureStatusLine(limiter) },
+            // B61: the same rule as ReplayGain's switch: "Off" under a switch that is off says nothing; the other off-kind lines (Android route only, from the next song) do
+            extra = { if (limiter.textRes != R.string.audio_status_off) FeatureStatusLine(limiter) },
             dim = limiter.kind == FeatureStatusKind.FROZEN,
         )
 

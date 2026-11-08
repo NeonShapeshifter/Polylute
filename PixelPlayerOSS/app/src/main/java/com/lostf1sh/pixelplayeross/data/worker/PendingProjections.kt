@@ -53,6 +53,22 @@ internal object PendingProjections {
 }
 
 /**
+ * B58 2 (#68): a file moved with `mv` keeps its MediaStore id, its dates and its identity evidence; the only thing that changed is its path, and the library kept the old one
+ * until a Full Rescan. These are the rows whose file MediaStore now has somewhere else than where the library has it: the incremental sync reads them again.
+ *
+ * @param storedPaths where the library keeps each song's file (locator -> path).
+ */
+internal fun movedFiles(scanned: List<ScannedItem>, storedPaths: Map<Long, String>): Set<Long> {
+    val moved = HashSet<Long>()
+    for (item in scanned) {
+        val now = item.path ?: continue
+        val before = storedPaths[item.mediaStoreId] ?: continue
+        if (before.isNotEmpty() && before != now) moved += item.mediaStoreId
+    }
+    return moved
+}
+
+/**
  * What MediaStore said about a row (its fingerprint and signature) when the sync last handled a disagreement with the library's evidence for
  * it: one line per row, `locator<TAB>token`. A small file in the app's own storage, written whole and moved into place, so a sync that dies
  * in the middle leaves the one before it. Missing or damaged, it is empty: every disagreement is handled once more, which is what B41 did every

@@ -244,7 +244,7 @@ static void setImplausible(UsbFeedbackWatch *w, enum UsbFeedbackImplausible why,
  * B12a-2: is this applied reading one `auto` must not obey? Absurd at any moment, or beyond the sustained
  * threshold in every reading for USB_FEEDBACK_SUSTAINED_MS (a pause longer than the gap starts the count over).
  */
-static void judgePlausibility(UsbFeedbackWatch *w, double fpmf, double ppm, int64_t nowMs, UsbFeedbackEvent *ev) {
+static void judgePlausibility(UsbFeedbackWatch *w, double fpmf, double ppm, int64_t nowMs, int64_t continuousMs, UsbFeedbackEvent *ev) {
     const double mag = ppm < 0.0 ? -ppm : ppm;
     if (mag > USB_FEEDBACK_SUSTAINED_PPM) {
         if (!w->bigRun || nowMs - w->bigLastMs > USB_FEEDBACK_GAP_MS) {
@@ -258,7 +258,7 @@ static void judgePlausibility(UsbFeedbackWatch *w, double fpmf, double ppm, int6
     enum UsbFeedbackImplausible why = USB_FEEDBACK_PLAUSIBLE;
     if (ppm <= -50000.0 || ppm >= 50000.0) {
         why = USB_FEEDBACK_IMPLAUSIBLE_OUT_OF_WINDOW;
-    } else if (mag > USB_FEEDBACK_ABSURD_PPM) {
+    } else if (mag > (continuousMs >= USB_FEEDBACK_MIDSTREAM_AFTER_MS ? USB_FEEDBACK_MIDSTREAM_ABSURD_PPM : USB_FEEDBACK_ABSURD_PPM)) {
         why = USB_FEEDBACK_IMPLAUSIBLE_ABSURD;
     } else if (w->bigRun && nowMs - w->bigStartMs >= USB_FEEDBACK_SUSTAINED_MS) {
         why = USB_FEEDBACK_IMPLAUSIBLE_SUSTAINED;
@@ -325,13 +325,22 @@ void usbFeedbackWatchObservePolicy(UsbFeedbackWatch *w, uint32_t raw, double nom
     if (w->haveRun && nowMs - w->runLastMs > USB_FEEDBACK_GAP_MS) {
         closeRun(w, nominalFpmf, USB_FEEDBACK_END_GAP, raw, ev);
     }
-    judgePlausibility(w, raw / 65536.0, usbFeedbackPpm(raw / 65536.0, nominalFpmf), nowMs, ev);
+    // B59 5: the readings are continuous until a gap of USB_FEEDBACK_GAP_MS; a pause, a resume or a new stream starts the count again
+    if (!w->contStarted || nowMs - w->contLastMs > USB_FEEDBACK_GAP_MS) {
+        w->contStarted = true;
+        w->contStartMs = nowMs;
+    }
+    w->contLastMs = nowMs;
+    judgePlausibility(w, raw / 65536.0, usbFeedbackPpm(raw / 65536.0, nominalFpmf), nowMs, nowMs - w->contStartMs, ev);
     if (!w->haveRun) {
         startRun(w, raw, nowMs);
         return;
     }
     if (raw != w->runRaw) {
         closeRun(w, nominalFpmf, USB_FEEDBACK_END_CHANGED, raw, ev);
+        // B59 5: a refusal that begins with this very reading also drops the run this reading has just ended (it is folded above, after the refusal's own drop): it was the excursion's
+        // onset, and with the lower mid-stream line the first refused reading can be the one that ends it
+        if (ev->implausibleStarted) w->freshCount = 0;
         startRun(w, raw, nowMs);
         return;
     }
@@ -341,7 +350,15 @@ void usbFeedbackWatchObservePolicy(UsbFeedbackWatch *w, uint32_t raw, double nom
         const double ppm = usbFeedbackPpm(raw / 65536.0, nominalFpmf);
         const int64_t ageMs = nowMs - w->streamStartMs;
         const bool rateChangeHold = w->rateChangeStart && ageMs >= 0 && ageMs < USB_FEEDBACK_RATE_CHANGE_WINDOW_MS;
-        const int64_t holdMs = rateChangeHold ? USB_FEEDBACK_RATE_CHANGE_STUCK_MS : usbFeedbackStuckHoldMs(policy, ppm);
+        int64_t holdMs = rateChangeHold ? USB_FEEDBACK_RATE_CHANGE_STUCK_MS : usbFeedbackStuckHoldMs(policy, ppm);
+        // B59 5 (#46): inside the rate-change window a value frozen far from nominal is called after 400 ms, not 1 500 (see USB_FEEDBACK_RATE_CHANGE_FAR_PPM)
+        const double offsetPpm = ppm < 0 ? -ppm : ppm;
+        // B61: and above the healthy plateau too, up to the line `auto` already refuses at any moment (see USB_FEEDBACK_RATE_CHANGE_FAR_ABOVE_PPM)
+        const bool farBand = (offsetPpm >= USB_FEEDBACK_RATE_CHANGE_FAR_PPM && offsetPpm < USB_FEEDBACK_RATE_CHANGE_FAR_MAX_PPM) ||
+                             (offsetPpm >= USB_FEEDBACK_RATE_CHANGE_FAR_ABOVE_PPM && offsetPpm < USB_FEEDBACK_ABSURD_PPM);
+        if (rateChangeHold && farBand && w->runReadings >= USB_FEEDBACK_RATE_CHANGE_FAR_MIN_READINGS) {
+            holdMs = USB_FEEDBACK_RATE_CHANGE_FAR_STUCK_MS;
+        }
         if (nowMs - w->runStartMs >= holdMs &&
             (ppm > USB_FEEDBACK_STUCK_MIN_PPM || ppm < -USB_FEEDBACK_STUCK_MIN_PPM)) {
             w->stuck = true;
@@ -419,22 +436,41 @@ void usbDacLockReset(UsbDacLockWatch *w) {
     memset(w, 0, sizeof(*w));
 }
 
+/** The run is over (or never was): its fields go; what is known of the stream's first moment stays. */
+static void endLockRun(UsbDacLockWatch *w) {
+    const bool haveFirst = w->haveFirst;
+    const int64_t firstMs = w->firstMs;
+    const int64_t lastAnyMs = w->lastAnyMs;
+    usbDacLockReset(w);
+    w->haveFirst = haveFirst;
+    w->firstMs = firstMs;
+    w->lastAnyMs = lastAnyMs;
+}
+
 bool usbDacLockObserve(UsbDacLockWatch *w, double ppm, int64_t nowMs, UsbDacLockEvent *ev) {
     const double magnitude = ppm < 0.0 ? -ppm : ppm;
-    if (w->inRun && nowMs - w->lastMs > USB_DAC_LOCK_GAP_MS) usbDacLockReset(w);   // a pause between readings ends the run
+    // B61: the stream's first moment starts again after a gap in all readings (a pause, a resume), as the feedback watch's continuous count does
+    if (!w->haveFirst || nowMs - w->lastAnyMs > USB_DAC_LOCK_GAP_MS) {
+        w->haveFirst = true;
+        w->firstMs = nowMs;
+    }
+    w->lastAnyMs = nowMs;
+    if (w->inRun && nowMs - w->lastMs > USB_DAC_LOCK_GAP_MS) endLockRun(w);   // a pause between readings ends the run
     if (magnitude < USB_DAC_LOCK_RAIL_PPM) {
-        usbDacLockReset(w);   // a reading that is a clock's again: the run is over, and so is a lock-up
+        endLockRun(w);   // a reading that is a clock's again: the run is over, and so is a lock-up
         return false;
     }
     if (!w->inRun) {
-        usbDacLockReset(w);
+        endLockRun(w);
         w->inRun = true;
         w->startMs = nowMs;
     }
     w->lastMs = nowMs;
     w->readings++;
     w->ppm = ppm;
-    if (w->locked || nowMs - w->startMs < USB_DAC_LOCK_RAIL_MS) return false;
+    // B61: 200 ms of rail, counted from the end of the stream's first moment at the earliest (another rate's value may be reported for a few readings when a stream starts)
+    const int64_t countedFrom = w->startMs > w->firstMs + USB_DAC_LOCK_START_GRACE_MS ? w->startMs : w->firstMs + USB_DAC_LOCK_START_GRACE_MS;
+    if (w->locked || nowMs - countedFrom < USB_DAC_LOCK_RAIL_FAST_MS) return false;
     w->locked = true;
     ev->ppm = ppm;
     ev->railedMs = nowMs - w->startMs;

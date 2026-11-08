@@ -66,6 +66,7 @@ internal class AppearanceSettingsActionsImpl(
     override fun onBackgroundMotionChange(value: com.lostf1sh.pixelplayeross.data.preferences.BackgroundMotion) = vm.setBackgroundMotion(value)
     override fun onLyricsModeChange(value: LyricsMode) = vm.setLyricsMode(value)
     override fun onAnimatedCoversChange(value: Boolean) = vm.setAnimatedCovers(value)
+    override fun onAnimatedCoversOnLockChange(value: Boolean) = vm.setAnimatedCoversOnLock(value)
     override fun onAnimatedCoverFolderPicked(uri: android.net.Uri?, flags: Int) = vm.onAnimatedCoverFolderPicked(uri, flags)
     override fun onAnimatedCoverFolderRemove() = vm.removeAnimatedCoverFolder()
     override fun onImmersiveLyricsEnabledChange(value: Boolean) = vm.setImmersiveLyricsEnabled(value)

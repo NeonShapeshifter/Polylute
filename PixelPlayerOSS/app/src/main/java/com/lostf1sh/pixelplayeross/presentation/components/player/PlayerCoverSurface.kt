@@ -68,6 +68,7 @@ internal fun PlayerCoverSurface(
         playerExpanded = currentSheetState == PlayerSheetState.EXPANDED,
         coverPageShowing = LocalPlayerPageSignal.current?.onPlayerPage ?: true,
         albumId = song.albumId,
+        discNumber = com.lostf1sh.pixelplayeross.utils.DiscCoverNames.effectiveDisc(song.discNumber),
     )
     // Artwork keeps its size when paused: shrinking it to 95% made the cover look disabled, and
     // playback state is already explicit in the central control.

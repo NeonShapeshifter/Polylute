@@ -17,6 +17,9 @@ import com.lostf1sh.pixelplayeross.data.database.AlbumEntity
 import com.lostf1sh.pixelplayeross.data.database.ArtistEntity
 import com.lostf1sh.pixelplayeross.data.database.LibraryItemOverrideDao
 import com.lostf1sh.pixelplayeross.data.database.LibraryItemEntity
+import com.lostf1sh.pixelplayeross.data.database.LibraryItemState
+import com.lostf1sh.pixelplayeross.data.database.SongComposerEntity
+import com.lostf1sh.pixelplayeross.data.media.ComposerRead
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
 import com.lostf1sh.pixelplayeross.data.database.withOverrides
 import com.lostf1sh.pixelplayeross.data.database.SongArtistCrossRef
@@ -92,6 +95,25 @@ constructor(
     private var minSongDurationMs: Int = 10000
     private var minTracksPerAlbum: Int = 1
 
+    /**
+     * B58 2 (#68): every progress the worker shows goes through here. A [total] of 0 means "working, cannot count": the Settings row then draws an unfilled bar with the phase's
+     * name instead of "0%". The phase always says what the worker is doing now, so the row never sits on a phase that has finished.
+     */
+    /** B59 2 (#80): the composer of each song the scan read a tag map for (empty text: the file has none), by song id; saved with the songs. */
+    private val composersFromScan = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    private suspend fun report(current: Int, total: Int, phase: SyncProgress.SyncPhase) = reportOrdinal(current, total, phase.ordinal)
+
+    private suspend fun reportOrdinal(current: Int, total: Int, phaseOrdinal: Int) {
+        setProgress(
+            workDataOf(
+                PROGRESS_CURRENT to current,
+                PROGRESS_TOTAL to total,
+                PROGRESS_PHASE to phaseOrdinal
+            )
+        )
+    }
+
     private fun hasMediaReadPermission(): Boolean {
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             android.Manifest.permission.READ_MEDIA_AUDIO
@@ -157,6 +179,7 @@ constructor(
                     Timber.tag(TAG)
                         .i("Starting MediaStore synchronization (Mode: $syncMode, ForceMetadata: $requestedForceMetadata)...")
                     val startTime = System.currentTimeMillis()
+                    val phases = SyncPhaseLog(syncMode.name)
 
                     val artistDelimiters = userPreferencesRepository.artistDelimitersFlow.first()
                     val artistWordDelimiters = userPreferencesRepository.artistWordDelimitersFlow.first()
@@ -182,19 +205,15 @@ constructor(
                     val blockedDirs = userPreferencesRepository.blockedDirectoriesFlow.first()
                     val directoryResolver = DirectoryRuleResolver(allowedDirs, blockedDirs)
 
+                    phases.lap("setup")
+
                     // B40-F3: files copied in that Android has not indexed yet are found in the included folders and handed to its scanner
                     // first, so the MediaStore read below has them. Never stops the sync.
                     val walkFolders = inputData.getBoolean(INPUT_WALK_FOLDERS, false)
                     val walkFoldersIfDue = inputData.getBoolean(INPUT_WALK_FOLDERS_IF_DUE, false)
                     if (walkFolders || walkFoldersIfDue) {
                         runCatching {
-                            setProgress(
-                                workDataOf(
-                                    PROGRESS_CURRENT to 0,
-                                    PROGRESS_TOTAL to 0,
-                                    PROGRESS_PHASE to SyncProgress.SyncPhase.FETCHING_MEDIASTORE.ordinal
-                                )
-                            )
+                            report(0, 0, SyncProgress.SyncPhase.FETCHING_MEDIASTORE)
                             fileScannerFactory(applicationContext)
                                 .run(
                                     com.lostf1sh.pixelplayeross.data.library.LibraryFolders.Rules(allowedDirs, blockedDirs),
@@ -205,6 +224,8 @@ constructor(
                             Timber.tag(TAG).w(error, "The folder walk failed; the sync goes on with what MediaStore has")
                         }
                     }
+
+                    if (walkFolders || walkFoldersIfDue) phases.lap("walk-folders")
 
                     val lastSyncTimestamp = userPreferencesRepository.getLastSyncTimestamp()
 
@@ -232,8 +253,12 @@ constructor(
                         // B41-fix1 (B10): a row whose evidence disagrees with the library's is read again only until it has been handled for
                         // the evidence MediaStore gives now; what was handled is kept (see PendingProjections).
                         val pendingNow = PendingProjections.compute(scannedItems, localSongIds, knownByLocator, handledEvidence.load())
-                        pendingProjectionIds = pendingNow.pending
+                        // B58 2: a file moved with `mv` is read again (its path is the only thing that changed)
+                        val movedNow = movedFiles(scannedItems, localProjections.mapValues { it.value.filePath })
+                        if (movedNow.isNotEmpty()) Timber.tag(TAG).i("${movedNow.size} files are somewhere else than the library has them; reading them again")
+                        pendingProjectionIds = pendingNow.pending + movedNow
                         disagreeingEvidence = pendingNow.disagreeing
+                        phases.lap("inventory", libraryItems.size)
 
                         // Identity is resolved BEFORE anything is destroyed. The previous version
                         // deleted the set difference here, which meant a renumbered file was
@@ -295,6 +320,7 @@ constructor(
                                 "${identityPlan.ambiguousCount} ambiguous, " +
                                 "${identityPlan.absent.size} absent"
                         )
+                        phases.lap("identity-plan", scannedItems.size)
 
                         // ABSENT IS NOT DELETED.
                         //
@@ -319,28 +345,27 @@ constructor(
                         }
                         pendingProjectionIds = pendingProjectionIds + pendingReattachments.map { it.mediaStoreId }
                         currentCoroutineContext().ensureActive()
-                        musicDao.markLibraryItemsDormantAndDropProjections(
-                            identityPlan.absent.map { it.libraryItemId.value }
-                        )
-                        if (identityPlan.absent.isNotEmpty()) {
+                        // B59 2 (#80): an item that is already dormant (no projection, no locator) stays as it is: the same absent items used to be marked again on every sync
+                        // (38 of them on the HONOR, a write and an invalidation each time)
+                        val alreadyDormant = libraryItems
+                            .filter { it.lifecycle == LibraryItemState.DORMANT && it.currentLocator == null }
+                            .mapTo(HashSet()) { it.libraryItemId }
+                        val newlyAbsent = identityPlan.absent.map { it.libraryItemId.value }.filter { it !in alreadyDormant }
+                        musicDao.markLibraryItemsDormantAndDropProjections(newlyAbsent)
+                        if (newlyAbsent.isNotEmpty()) {
                             Timber.tag(TAG).i(
-                                "Marked ${identityPlan.absent.size} library items dormant and dropped " +
+                                "Marked ${newlyAbsent.size} library items dormant and dropped " +
                                     "their stale projections; no user state deleted"
                             )
                         }
+                        phases.lap("dormant", newlyAbsent.size)
 
                         val deletedIds = emptyList<Long>().toSet()
 
                         if (deletedIds.isNotEmpty()) {
                             Timber.tag(TAG)
                                 .i("Found ${deletedIds.size} deleted songs. Removing from database...")
-                            setProgress(
-                                workDataOf(
-                                    PROGRESS_CURRENT to 0,
-                                    PROGRESS_TOTAL to deletedIds.size,
-                                    PROGRESS_PHASE to SyncProgress.SyncPhase.SAVING_TO_DATABASE.ordinal
-                                )
-                            )
+                            report(0, deletedIds.size, SyncProgress.SyncPhase.SAVING_TO_DATABASE)
                             musicDao.deleteSongsAndRelatedData(deletedIds.toList())
                         } else {
                             Timber.tag(TAG).d("No deleted songs found.")
@@ -377,21 +402,18 @@ constructor(
                         progressBatchSize,
                         pendingProjectionIds
                     ) { current, total, phaseOrdinal ->
-                        setProgress(
-                            workDataOf(
-                                PROGRESS_CURRENT to current,
-                                PROGRESS_TOTAL to total,
-                                PROGRESS_PHASE to phaseOrdinal
-                            )
-                        )
+                        // reading MediaStore's rows cannot be counted as it goes: the row shows the phase with an unfilled bar, then the files are counted
+                        if (phaseOrdinal == SyncProgress.SyncPhase.FETCHING_MEDIASTORE.ordinal) reportOrdinal(0, 0, phaseOrdinal)
+                        else reportOrdinal(current, total, phaseOrdinal)
                     }
 
                     Timber.tag(TAG)
                         .i("Fetched ${songsToInsert.size} new/modified songs from MediaStore.")
+                    phases.lap("fetch-metadata", songsToInsert.size)
 
                     currentCoroutineContext().ensureActive()
                     val anySongsFetched = songsToInsert.isNotEmpty()
-                    if (anySongsFetched) {
+                    val prepared: MultiArtistProcessResult? = if (anySongsFetched) {
 
                         val allExistingArtists =
                                 if (syncMode == SyncMode.REBUILD) {
@@ -415,7 +437,7 @@ constructor(
                         Timber.tag(TAG)
                             .i("Processing ${songsToInsert.size} songs for upsert. Hash: ${songsToInsert.hashCode()}")
 
-                        val (correctedSongs, albums, artists, crossRefs) =
+                        val processed =
                                 preProcessAndDeduplicateWithMultiArtist(
                                         songs = songsToInsert,
                                         artistDelimiters = artistDelimiters,
@@ -427,116 +449,134 @@ constructor(
                                         existingArtistIdMap = existingArtistIdMap,
                                         initialMaxArtistId = maxArtistId
                                 )
+                        phases.lap("preprocess", processed.songs.size)
+                        processed
+                    } else {
+                        null
+                    }
 
-                        if (syncMode == SyncMode.REBUILD) {
-                            setProgress(
-                                workDataOf(
-                                    PROGRESS_CURRENT to 0,
-                                    PROGRESS_TOTAL to correctedSongs.size,
-                                    PROGRESS_PHASE to SyncProgress.SyncPhase.SAVING_TO_DATABASE.ordinal
-                                )
-                            )
+                    // B58 2 (#68): everything that writes the library after the files were read is ONE transaction: the songs, the identities moved onto their
+                    // renumbered files, the user's edits, the durable items and the evidence. The observed library tables are invalidated once, when it commits (before,
+                    // every reattached file was a commit of its own, and each commit re-ran every list query the screens observe). The row moves while it runs.
+                    val total = prepared?.songs?.size ?: 0
+                    musicDao.inOneTransaction {
+                        if (prepared != null) {
+                            report(0, total, SyncProgress.SyncPhase.SAVING_TO_DATABASE)
+                            if (syncMode == SyncMode.REBUILD) {
+                                musicDao.rebuildLocalMusicDataWithCrossRefs(prepared.songs, prepared.albums, prepared.artists, prepared.crossRefs)
+                                report(total, total, SyncProgress.SyncPhase.SAVING_TO_DATABASE)
+                            } else {
+                                // B56-6: a song the scan has just read again has a new file behind it: its composer is read again too (by the backfill below)
+                                musicDao.forgetComposers(prepared.songs.map { it.id })
+                                musicDao.incrementalSyncMusicData(
+                                    songs = prepared.songs,
+                                    albums = prepared.albums,
+                                    artists = prepared.artists,
+                                    crossRefs = prepared.crossRefs,
+                                    deletedSongIds = emptyList(),
+                                ) { saved -> report(saved, total, SyncProgress.SyncPhase.SAVING_TO_DATABASE) }
+                            }
+                            // B59 2 (#80): the composers the scan itself read (same transaction as the songs): the background fill finds nothing left for them
+                            val at = System.currentTimeMillis()
+                            val scanned = prepared.songs.mapNotNull { song ->
+                                composersFromScan[song.id]?.let { composer -> SongComposerEntity(songId = song.id, composer = composer, readAt = at) }
+                            }
+                            if (scanned.isNotEmpty()) musicDao.upsertComposers(scanned)
+                        } else if (syncMode == SyncMode.REBUILD) {
+                            report(0, 0, SyncProgress.SyncPhase.SAVING_TO_DATABASE)
                             musicDao.rebuildLocalMusicDataWithCrossRefs(
-                                correctedSongs,
-                                albums,
-                                artists,
-                                crossRefs
+                                songs = emptyList(),
+                                albums = emptyList(),
+                                artists = emptyList(),
+                                crossRefs = emptyList()
                             )
-                        } else {
-                            setProgress(
-                                workDataOf(
-                                    PROGRESS_CURRENT to 0,
-                                    PROGRESS_TOTAL to correctedSongs.size,
-                                    PROGRESS_PHASE to SyncProgress.SyncPhase.SAVING_TO_DATABASE.ordinal
+                        }
+                        phases.lap("save", songsToInsert.size)
+
+                        // --- identity binding, after the projections exist ---------------------------------
+                        //
+                        // The order here is not incidental. Reattachment must run *before* the library
+                        // items are seeded, because seeding claims each projection's locator for the
+                        // identity the scan minted — and the reattached row is about to be re-owned by a
+                        // different identity. Seeding first would leave the old identity holding a
+                        // locator, and the unique index on `current_locator` would then refuse the
+                        // reattachment outright.
+                        //
+                        // From here on the row reads "Completing sync" and counts what can be counted (the reattached files);
+                        // the set-based steps cannot, and say so with an unfilled bar rather than a number that does not move.
+                        report(0, pendingReattachments.size, SyncProgress.SyncPhase.COMPLETING)
+                        if (pendingReattachments.isNotEmpty()) {
+                            var executed = 0
+                            var looked = 0
+                            pendingReattachments.forEach { reattached ->
+                                if (++looked % PROGRESS_STEP == 0) {
+                                    report(looked, pendingReattachments.size, SyncProgress.SyncPhase.COMPLETING)
+                                }
+                                val incoming = musicDao.getSongByLocatorOnce(reattached.mediaStoreId)
+                                if (incoming == null) return@forEach
+
+                                val override = overrideDao.getForLibraryItem(reattached.libraryItemId.value)
+                                val previousLocator = musicDao.currentLocatorFor(reattached.libraryItemId.value)
+                                val moved = musicDao.reattachProjection(
+                                    libraryItemId = reattached.libraryItemId.value,
+                                    oldLocator = previousLocator,
+                                    incoming = incoming.withOverrides(override),
+                                    stableKey = incoming.stableKey,
+                                    fileSignature = LibraryIdentity.computeFileSignature(
+                                        incoming.duration,
+                                        incoming.fileSize
+                                    ),
                                 )
-                            )
-                            // B56-6: a song the scan has just read again has a new file behind it: its composer is read again too (by the backfill below)
-                            musicDao.forgetComposers(correctedSongs.map { it.id })
-                            musicDao.incrementalSyncMusicData(
-                                    songs = correctedSongs,
-                                    albums = albums,
-                                    artists = artists,
-                                    crossRefs = crossRefs,
-                                    deletedSongIds = emptyList()
+                                if (moved) executed++
+                            }
+                            report(pendingReattachments.size, pendingReattachments.size, SyncProgress.SyncPhase.COMPLETING)
+                            Timber.tag(TAG).i(
+                                "Reattached $executed of ${pendingReattachments.size} renumbered items " +
+                                    "onto their existing identities; no duplicate logical items created"
                             )
                         }
-                    } else if (syncMode == SyncMode.REBUILD) {
-                        setProgress(
-                            workDataOf(
-                                PROGRESS_CURRENT to 0,
-                                PROGRESS_TOTAL to 0,
-                                PROGRESS_PHASE to SyncProgress.SyncPhase.SAVING_TO_DATABASE.ordinal
+                        phases.lap("reattach", pendingReattachments.size)
+                        report(0, 0, SyncProgress.SyncPhase.COMPLETING)
+
+                        // The user's edits are authoritative in `library_item_overrides`; the columns on
+                        // the projection are a cache of them, recomputed here so a projection written by
+                        // this scan shows the user's title rather than the file's.
+                        musicDao.reapplyLibraryItemOverridesToProjections()
+                        phases.lap("overrides")
+
+                        // Every projection belongs to a durable item, including the ones this scan just
+                        // created. Without this a fresh install would have songs that no
+                        // active-projection query can see, because the predicate requires the join.
+                        musicDao.seedLibraryItemsFromProjections()
+                        phases.lap("seed-items")
+                        // Commit fresh matching evidence only after successful projection writes.
+                        musicDao.updateLibraryItemEvidenceBatchGuarded(pendingEvidenceUpdates + songsToInsert.map {
+                            LibraryItemEntity(
+                                libraryItemId = it.libraryItemId,
+                                stableKey = it.stableKey,
+                                fileSignature = LibraryIdentity.computeFileSignature(it.duration, it.fileSize),
                             )
-                        )
-                        musicDao.rebuildLocalMusicDataWithCrossRefs(
-                            songs = emptyList(),
-                            albums = emptyList(),
-                            artists = emptyList(),
-                            crossRefs = emptyList()
-                        )
+                        }, evidenceReadAtStart)
+                        phases.lap("evidence", pendingEvidenceUpdates.size + songsToInsert.size)
                     }
-
-                    // --- identity binding, after the projections exist ---------------------------------
-                    //
-                    // The order here is not incidental. Reattachment must run *before* the library
-                    // items are seeded, because seeding claims each projection's locator for the
-                    // identity the scan minted — and the reattached row is about to be re-owned by a
-                    // different identity. Seeding first would leave the old identity holding a
-                    // locator, and the unique index on `current_locator` would then refuse the
-                    // reattachment outright.
-
-                    if (pendingReattachments.isNotEmpty()) {
-                        var executed = 0
-                        pendingReattachments.forEach { reattached ->
-                            val incoming = musicDao.getSongByLocatorOnce(reattached.mediaStoreId)
-                            if (incoming == null) return@forEach
-
-                            val override = overrideDao.getForLibraryItem(reattached.libraryItemId.value)
-                            val previousLocator = musicDao.currentLocatorFor(reattached.libraryItemId.value)
-                            val moved = musicDao.reattachProjection(
-                                libraryItemId = reattached.libraryItemId.value,
-                                oldLocator = previousLocator,
-                                incoming = incoming.withOverrides(override),
-                                stableKey = incoming.stableKey,
-                                fileSignature = LibraryIdentity.computeFileSignature(
-                                    incoming.duration,
-                                    incoming.fileSize
-                                ),
-                            )
-                            if (moved) executed++
-                        }
-                        Timber.tag(TAG).i(
-                            "Reattached $executed of ${pendingReattachments.size} renumbered items " +
-                                "onto their existing identities; no duplicate logical items created"
-                        )
-                    }
-
-                    // The user's edits are authoritative in `library_item_overrides`; the columns on
-                    // the projection are a cache of them, recomputed here so a projection written by
-                    // this scan shows the user's title rather than the file's.
-                    musicDao.reapplyLibraryItemOverridesToProjections()
-
-                    // Every projection belongs to a durable item, including the ones this scan just
-                    // created. Without this a fresh install would have songs that no
-                    // active-projection query can see, because the predicate requires the join.
-                    musicDao.seedLibraryItemsFromProjections()
-                    // Commit fresh matching evidence only after successful projection writes.
-                    musicDao.updateLibraryItemEvidenceBatchGuarded(pendingEvidenceUpdates + songsToInsert.map {
-                        LibraryItemEntity(
-                            libraryItemId = it.libraryItemId,
-                            stableKey = it.stableKey,
-                            fileSignature = LibraryIdentity.computeFileSignature(it.duration, it.fileSize),
-                        )
-                    }, evidenceReadAtStart)
 
                     // Reads the now-committed song projections, not matching evidence. Artwork is optional:
                     // an unavailable folder must not lose identity evidence or fail the library sync.
                     try {
-                        folderArtworkRefresh?.refresh()
+                        // the files are read with the bar counting them; the writes that follow are one commit (B58 2)
+                        withContext(
+                            SyncRunContext(
+                                inTransaction = { writes -> musicDao.inOneTransaction { writes() } },
+                                onProgress = { done, count -> report(done, count, SyncProgress.SyncPhase.COMPLETING) },
+                                fullRescan = syncPlan.forceMetadata,
+                            )
+                        ) { folderArtworkRefresh?.refresh() }
                     } catch (error: Exception) {
                         if (error is CancellationException) throw error
                         Timber.tag(TAG).w(error, "Could not refresh folder artwork after the evidence commit")
                     }
+                    phases.lap("folder-artwork")
+                    report(0, 0, SyncProgress.SyncPhase.COMPLETING)
 
                     // B41-fix1 (B10): the disagreements this sync has dealt with are the ones it does not ask about again until MediaStore
                     // says something else. Only after the projections and the evidence were written, and never a reason to stop the sync.
@@ -559,12 +599,14 @@ constructor(
 
                     currentCoroutineContext().ensureActive()
                     userPreferencesRepository.setLastSyncTimestamp(startTime)
+                    phases.lap("bookkeeping")
 
                     // B56-6: composers for search, a batch at a time; never fails the sync
                     runCatching { composerBackfill(musicDao).runOnce() }.onFailure { error ->
                         if (error is CancellationException) throw error
                         Timber.tag(TAG).w(error, "The composer backfill failed; the sync goes on")
                     }
+                    phases.lap("composers")
 
                     val endTime = System.currentTimeMillis()
                     Timber.tag(TAG)
@@ -573,6 +615,7 @@ constructor(
                     val totalSongs = musicDao.getSongCount().first()
                     if (!syncPlan.runMaintenance) {
                         Timber.tag(TAG).d("Skipping library maintenance phases for local-only sync.")
+                        phases.finish(songsToInsert.size)
                         return@withContext Result.success(
                             workDataOf(OUTPUT_TOTAL_SONGS to totalSongs)
                         )
@@ -617,15 +660,7 @@ constructor(
                                             current,
                                             total ->
                                         val overallCurrent = totalScannedCount + current
-                                        setProgress(
-                                                workDataOf(
-                                                        PROGRESS_CURRENT to overallCurrent,
-                                                        PROGRESS_TOTAL to totalToScan,
-                                                        PROGRESS_PHASE to
-                                                                SyncProgress.SyncPhase.SCANNING_LRC
-                                                                        .ordinal
-                                                )
-                                        )
+                                        report(overallCurrent, totalToScan, SyncProgress.SyncPhase.SCANNING_LRC)
                                     }
                             totalScannedCount += idBatch.size
                             Timber.tag(TAG).d(
@@ -634,15 +669,15 @@ constructor(
                         }
 
                         Timber.tag(TAG).i("LRC Scan finished for $totalToScan songs.")
+                        phases.lap("lrc-scan", totalToScan)
                     }
 
-                    setProgress(
-                        workDataOf(
-                            PROGRESS_PHASE to SyncProgress.SyncPhase.CLEANING_CACHE.ordinal
-                        )
-                    )
+                    // nothing to count here: no total, so the row shows an unfilled bar and the phase, not a number
+                    report(0, 0, SyncProgress.SyncPhase.CLEANING_CACHE)
                     val allSongIds = musicDao.getAllSongIds().toSet()
                     AlbumArtCacheManager.cleanOrphanedCacheFiles(applicationContext, allSongIds)
+                    phases.lap("clean-cache", allSongIds.size)
+                    phases.finish(songsToInsert.size)
 
                     val finalTotalSongs = musicDao.getSongCount().first()
 
@@ -780,7 +815,10 @@ constructor(
         
         val albumEntities = correctedSongs.groupBy { it.albumId }.map { (catAlbumId, songsInAlbum) ->
              val firstSong = songsInAlbum.first()
-             val representativeAlbumArt = songsInAlbum.firstNotNullOfOrNull { it.albumArtUriString }
+             // B60 (#82 follow-up): an album whose folder has disc covers goes by its own cover (decided by the folder-artwork step, recorded), never by the first song's, which is a disc's
+             val recordedAlbumCover = AlbumArtUtils.recordedAlbumCover(applicationContext, catAlbumId)
+                 ?.takeIf { songsInAlbum.any { AlbumArtUtils.hasDiscCover(applicationContext, it.id) } }
+             val representativeAlbumArt = if (recordedAlbumCover != null) recordedAlbumCover.uri else songsInAlbum.firstNotNullOfOrNull { it.albumArtUriString }
              val determinedAlbumArtist = chooseAlbumDisplayArtist(
                  songs = songsInAlbum,
                  preferAlbumArtist = groupByAlbumArtist
@@ -1330,6 +1368,8 @@ constructor(
             if (file.exists()) {
                 try {
                     AudioMetadataReader.read(file, readArtwork = false)?.let { meta ->
+                        // B59 2 (#80): the composer is on this read already: kept for the save, so nothing reads the file again for it
+                        composersFromScan[raw.id] = meta.composer?.trim().orEmpty()
                         musicBrainzIds = meta.musicBrainzIds
                         if (!meta.title.isNullOrBlank()) title = meta.title
                         if (!meta.artist.isNullOrBlank()) artist = meta.artist
@@ -1351,7 +1391,16 @@ constructor(
 
         if (!shouldAugmentMetadata) {
             val file = File(raw.filePath)
-            if (file.isFile) musicBrainzIds = AudioMetadataReader.readMusicBrainzIds(file)
+            if (file.isFile) {
+                // B59 2 (#80): the same single tag-map read gives the composer too
+                val (ids, composer) = AudioMetadataReader.readScanTags(file)
+                musicBrainzIds = ids
+                when (composer) {
+                    is ComposerRead.Found -> composersFromScan[raw.id] = composer.composer.trim()
+                    ComposerRead.None -> composersFromScan[raw.id] = ""
+                    ComposerRead.Unreadable -> Unit // not known: the background fill reads it later
+                }
+            }
         }
 
         // The fingerprint's track and disc come from the one frozen function the identity pass uses
@@ -1504,7 +1553,8 @@ constructor(
                         trackNumber = keyTrack,
                         discNumber = keyDisc
                     ),
-                    fileSignature = LibraryIdentity.computeFileSignature(duration, size)
+                    fileSignature = LibraryIdentity.computeFileSignature(duration, size),
+                    path = path,
                 )
             }
         }
@@ -1544,6 +1594,9 @@ constructor(
         const val PERIODIC_MAINTENANCE_WORK_NAME =
             "com.lostf1sh.pixelplayeross.data.worker.SyncWorker.PeriodicMaintenance"
         private const val TAG = "SyncWorker"
+
+        /** The tag of the log lines [SyncPhaseLog] writes (the same as the worker's own). */
+        internal const val LOG_TAG = TAG
         const val INPUT_FORCE_METADATA = "input_force_metadata"
         const val INPUT_RUN_MAINTENANCE = "input_run_maintenance"
         const val INPUT_SYNC_MODE = "input_sync_mode"
@@ -1562,6 +1615,9 @@ constructor(
         internal var fileScannerFactory: (Context) -> com.lostf1sh.pixelplayeross.data.library.LibraryFileScanner =
             { context -> com.lostf1sh.pixelplayeross.data.library.LibraryFileScanner(context) }
         private const val MAX_PLAYBACK_DEFERRALS = 5
+
+        /** How often (in items) a counted step reports. */
+        private const val PROGRESS_STEP = 50
 
         /** B56-6: how the worker gets the composer backfill. The tests hand in one over a fake tag reader; nothing else touches it. */
         @Volatile

@@ -161,7 +161,10 @@ fun safetyMaxStatus(state: SafetyMaxOutputState): FeatureStatus = when (state) {
 fun AudioStatus.dacEqStatus(dacName: String): FeatureStatus? = when (dacEq) {
     DacEqLabel.NOT_APPLICABLE -> null
     DacEqLabel.ON -> FeatureStatus(FeatureStatusKind.APPLIED, R.string.audio_dac_eq_on)
-    DacEqLabel.OFF -> FeatureStatus(FeatureStatusKind.OFF, R.string.audio_dac_eq_closed, arg = dacName)
+    // B61 (item 3): with Purity in force the DAC's EQ is closed by Purity (it selects the model's Close EQ preset, the curve stays saved): the row says whose doing it is
+    DacEqLabel.OFF ->
+        if (purityInForce) FeatureStatus(FeatureStatusKind.OFF, R.string.audio_dac_eq_closed_by_purity)
+        else FeatureStatus(FeatureStatusKind.OFF, R.string.audio_dac_eq_closed, arg = dacName)
     DacEqLabel.FLAT -> FeatureStatus(FeatureStatusKind.OFF, R.string.audio_dac_eq_flat)
     DacEqLabel.UNKNOWN -> FeatureStatus(FeatureStatusKind.BYPASSED, R.string.audio_dac_eq_unknown)
 }

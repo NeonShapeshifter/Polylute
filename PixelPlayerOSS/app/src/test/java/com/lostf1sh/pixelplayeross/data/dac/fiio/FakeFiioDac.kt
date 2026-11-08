@@ -102,6 +102,23 @@ class FakeFiioDac(
     var afterSet: ((dac: FakeFiioDac, report: ByteArray) -> Unit)? = null
     var dropReplies = false
     var corruptBandOnWrite: Int? = null
+
+    /**
+     * B59 (#53): what the DAC actually **stores** for a band it was sent (null: exactly what was sent). The real Melody stored Q 0.71 as 0.70; its acknowledgement and
+     * every later read say 0.70. The acknowledgement of a band SET echoes the stored band, as the device's did.
+     */
+    var storeBand: ((DacEqBand) -> DacEqBand)? = null
+    private var lastStoredBand: DacEqBand? = null
+    /**
+     * B60 (#53): **the Melody as the frames of 11-06 show it.** When set (0x0A), `GET 16` answers this id instead of the selected preset's once a band of a **user slot** has been
+     * read or written (`GET 15` / `SET 15`) since the last select (`SET 16`) or save (`SET 19`); the selection itself does not move, and "Close EQ" and the factory presets
+     * never do it. A button on the DAC ([selectOnDevice]) and a replug end it as a select does. Null: the DAC always names its preset (every test before B60).
+     */
+    var editingMarker: Int? = null
+    private var touched = false
+
+    /** What `GET 16` answers now. */
+    val reportedPreset: Int get() = if (touched && editingMarker != null) editingMarker!! else activePreset
     var requireCrc: FiioCrcMode? = null
     var rejectedSetCrcs = 0
         private set
@@ -130,9 +147,11 @@ class FakeFiioDac(
     }
 
     /** Someone presses the DAC's own button: another preset is selected, with no command from the app. */
-    fun selectOnDevice(id: Int) {
+    fun selectOnDevice(id: Int, hiddenByMarker: Boolean = false) {
         activePreset = id
         savedActive = id
+        // B60: a DAC whose button does not end the marker (not what the Melody's HID select does): the foreign select is hidden behind 0x0A
+        if (!hiddenByMarker) touched = false else if (editingMarker != null) touched = true
     }
 
     /** Unplug and plug back: the DAC comes back with what it had saved. */
@@ -143,6 +162,7 @@ class FakeFiioDac(
             saved.forEach { (id, slot) -> live[id] = slot.copy() }
         }
         activePreset = savedActive
+        touched = false
     }
 
     override fun write(report: ByteArray): Int {
@@ -169,7 +189,8 @@ class FakeFiioDac(
                 val applied = !ignored && set(report, command, data, length)
                 afterSet?.invoke(this, report)
                 // A report whose check byte the DAC rejects is not acknowledged either.
-                if (applied || (ignored && ackIgnored)) ack(command, data)
+                val acknowledged = if (command == 0x15 && applied && storeBand != null) lastStoredBand?.let(FiioHidWrites::encodeBand) ?: data else data
+                if (applied || (ignored && ackIgnored)) ack(command, acknowledged)
             }
         }
         return report.size
@@ -180,18 +201,24 @@ class FakeFiioDac(
     private fun get(command: Int, data: ByteArray) {
         val active = live.getValue(activePreset)
         when (command) {
-            0x16 -> reply(command, byteArrayOf(activePreset.toByte()))
+            0x16 -> reply(command, byteArrayOf(reportedPreset.toByte()))
             0x18 -> reply(command, byteArrayOf(active.bands.size.toByte()))
             0x17 -> reply(command, s16(active.preGainTenths))
             0x15 -> {
                 val index = data.firstOrNull()?.toInt() ?: return
                 val band = active.bands.getOrNull(index) ?: return
+                touchBands()
                 reply(command, byteArrayOf(index.toByte()) + s16(band.gainTenthsDb) + u16(band.frequencyHz) + u16(band.qHundredths) +
                     byteArrayOf(band.typeCode.toByte()))
             }
             0x1A -> if (answersSwitch) reply(command, byteArrayOf(if (activePreset == profile.disabledPresetId) 0 else 1)) else stale()
             else -> Unit
         }
+    }
+
+    /** B60: a band of the selected preset was read or written; on a user slot that is what makes `GET 16` answer the marker. */
+    private fun touchBands() {
+        if (profile.writableSlots.any { it.id == activePreset }) touched = true
     }
 
     /** Applies one SET; false when the DAC rejected it (a wrong check byte). */
@@ -211,6 +238,7 @@ class FakeFiioDac(
                     activePreset = target
                     // Assumption of the fake: the selection itself is remembered at once (it is a pointer, not content).
                     savedActive = target
+                    touched = false
                 }
             }
             0x17 -> active.preGainTenths = ((data[0].toInt() shl 8) or (data[1].toInt() and 0xFF)).toShort().toInt()
@@ -224,12 +252,16 @@ class FakeFiioDac(
                     gainTenthsDb = ((data[1].toInt() shl 8) or (data[2].toInt() and 0xFF)).toShort().toInt(),
                     qHundredths = ((data[5].toInt() and 0xFF) shl 8) or (data[6].toInt() and 0xFF),
                 )
-                if (index in active.bands.indices) active.bands[index] = band
+                val stored = storeBand?.invoke(band) ?: band
+                touchBands()
+                lastStoredBand = stored
+                if (index in active.bands.indices) active.bands[index] = stored
             }
             profile.saveCommand -> {
                 val target = if (data.isNotEmpty()) data[0].toInt() and 0xFF else activePreset
                 persistedSlots += target
                 saved[target] = live.getValue(target).copy()
+                touched = false
             }
         }
         return true

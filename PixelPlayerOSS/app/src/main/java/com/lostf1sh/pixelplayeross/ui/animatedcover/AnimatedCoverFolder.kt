@@ -33,6 +33,7 @@ class AnimatedCoverFolder(
     override fun modifiedOf(file: File) = current().modifiedOf(file)
     override fun documentUriOf(file: File) = current().documentUriOf(file)
     override fun isUnreachable(dir: File) = current().isUnreachable(dir)
+    override fun identity() = current().identity()
 
     companion object {
         /** The directory to read covers with from a place that has no injected one (the library scan's worker): the same answer, from the same stored folder. */
@@ -108,6 +109,8 @@ internal class TreeAnimatedCoverDirectory(
 
     /** Outside the chosen folder: no document to ask for, so "nothing here" is final. (Inside it, a failed query is a failed read.) */
     override fun isUnreachable(dir: File): Boolean = documentIdOf(dir) == null
+
+    override fun identity(): String = "tree|$tree|$rootPath"
 
     private fun entryOf(file: File): Entry? = synchronized(listings) { listings[file.parent.orEmpty()]?.get(file.name) }
 

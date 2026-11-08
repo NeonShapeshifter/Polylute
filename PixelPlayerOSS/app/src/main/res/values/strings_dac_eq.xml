@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- B30 (N-06): the DAC's own EQ. What the labels say about it, and what the Resonance screen says when it edits it. -->
-    <string name="pristine_status_dac_eq_on">On — but the DAC\'s EQ is shaping the sound</string>
+    <string name="pristine_status_dac_eq_on">On — but the DAC\'s EQ is still on and Polylute could not close it</string>
     <string name="pristine_status_dac_eq_unknown">On — the DAC\'s EQ could not be read</string>
     <string name="pristine_reason_resonance_dac">Resonance: USB Direct with the DAC\'s EQ</string>
     <string name="pristine_reason_resonance_both">Resonance: USB Direct with the DAC\'s EQ and the app\'s DSP</string>
@@ -81,7 +81,7 @@
     <string name="dac_eq_refusal_limits">a value is outside the DAC\'s limits</string>
     <string name="dac_eq_refusal_boost">the curve would raise the level more than the pre-gain can take back</string>
     <string name="dac_eq_refusal_slot_unknown">USER 3 has not been taken over yet; take it over first</string>
-    <string name="dac_eq_refusal_slot_unsafe">USER 3 holds a curve that raises the level; take it over first</string>
+    <string name="dac_eq_refusal_slot_unsafe">that slot holds a curve that raises the level; turning the DAC\'s EQ on takes it over first</string>
     <string name="dac_eq_refusal_reviewer">this is a reviewer\'s step</string>
     <string name="dac_eq_refusal_outdated">the DAC or the conditions changed while the edit was waiting</string>
     <string name="dac_eq_dropped_dac">the DAC was changed or reconnected while the edit was waiting</string>
@@ -94,7 +94,6 @@
     <string name="dac_eq_open_audio">Open Audio settings</string>
     <string name="headphone_dac_eq_presets_title">DAC EQ presets</string>
     <string name="headphone_dac_eq_preset_this_dac">this DAC</string>
-    <string name="dac_eq_section_bands">Bands · ±%1$d dB</string>
 
     <!-- B31: taking USER 3 over, the DAC\'s own presets, and the refusals that go with them. -->
     <string name="dac_eq_refusal_playing">music is playing; pause it first, because the DAC plays a preset at whatever level it holds the moment it is selected</string>
@@ -103,13 +102,10 @@
     <string name="dac_eq_refusal_taken">USER 3 is the app\'s now; restore its factory curve to give it back</string>
     <string name="dac_eq_refusal_confirm">music is playing; confirm the change first</string>
     <string name="dac_eq_refusal_low_level">this check needs the DAC at a low level</string>
-    <string name="dac_eq_takeover_title">%1$s is not the app\'s yet</string>
-    <string name="dac_eq_takeover_body">%1$s may hold a curve that was in the DAC already, and it can play louder than the app allows. Taking it over saves a flat curve there so the app can use it safely. The DAC plays the slot for a moment, so pause the music first. The original curve is kept and can be restored.</string>
-    <string name="dac_eq_takeover_action">Take over %1$s</string>
     <string name="dac_eq_takeover_busy">Taking over %1$s…</string>
     <string name="dac_eq_owned_title">%1$s is the app\'s</string>
     <string name="dac_eq_restore_factory">Restore the factory curve</string>
-    <string name="dac_eq_restore_factory_note">Puts back the curve %1$s held before the app took it over. The app will not use the slot again until you take it over again. Pause the music first.</string>
+    <string name="dac_eq_restore_factory_note">Puts back the curve %1$s held before the app took it over. The app will choose a slot again the next time you turn the DAC\'s EQ on. Pause the music first.</string>
     <string name="dac_eq_restore_factory_title">Restore the factory curve?</string>
     <string name="dac_eq_restore_factory_confirm">Restore</string>
     <string name="dac_eq_dac_presets_title">The DAC\'s presets</string>
@@ -129,7 +125,7 @@
     <string name="dac_eq_offer_title">Use the DAC\'s own EQ</string>
     <string name="dac_eq_offer_sub">%1$s has an EQ inside it. Polylute can edit it: USB Direct stays, and nothing is equalized on the phone.</string>
     <string name="dac_eq_consent_title">Let Polylute change the DAC\'s EQ?</string>
-    <string name="dac_eq_consent_body">Polylute will keep its own curve in %1$s\'s %2$s slot. Before it writes anything it saves a copy of what the DAC holds; it never makes the sound louder than the original; it reads the DAC back after every change and puts the copy back if the DAC did not keep what was sent. You can restore the DAC from this screen at any time, and take this permission back. Saying yes writes nothing: the first change is made when you edit the curve.</string>
+    <string name="dac_eq_consent_body">Polylute will keep its own curve in one of %1$s\'s user slots: one that holds nothing that raises the level, and it tells you which. Before it writes anything it saves a copy of what the DAC holds; it never makes the sound louder than the original; it reads the DAC back after every change and puts the copy back if the DAC did not keep what was sent. You can restore the DAC from this screen at any time, and take this permission back. Saying yes writes nothing: the first change is made when you turn the DAC\'s EQ on or edit the curve.</string>
     <string name="dac_eq_consent_allow">Allow</string>
     <string name="dac_eq_consent_not_now">Not now</string>
     <string name="dac_eq_back_to_software">Use Polylute\'s EQ instead</string>
@@ -138,4 +134,35 @@
     <string name="dac_eq_unread_body">Polylute shows nothing about it and changes nothing. Read again, or unplug the DAC and plug it back in.</string>
     <string name="dac_eq_twice_note">Polylute\'s EQ for these headphones is on too, so the same correction would be applied twice.</string>
     <string name="dac_eq_twice_action">Turn Polylute\'s EQ off for these headphones</string>
+
+    <string name="dac_eq_turnon_title">Turn on the DAC\'s EQ?</string>
+    <string name="dac_eq_turnon_body_unchosen">Polylute will use one of %1$s\'s user slots for its curve: it reads them, picks one that holds nothing that raises the level, and tells you which. The curve that slot held is saved and can be put back. The DAC plays a slot for a moment while it is read.</string>
+    <string name="dac_eq_turnon_body_chosen">Polylute will use the %2$s slot of %1$s for its curve. The curve it held is saved and can be put back. The DAC plays the slot for a moment while it is taken over.</string>
+    <string name="dac_eq_turnon_music">The music pauses for a few seconds and starts again by itself.</string>
+    <string name="dac_eq_turnon_action">Turn on</string>
+    <string name="dac_eq_operation_turn_on">Turning on the DAC\'s EQ…</string>
+    <string name="dac_eq_slot_choice_title">Which slot may Polylute use?</string>
+    <string name="dac_eq_slot_choice_body">Every user slot of the DAC holds a curve that raises the level. Polylute saves a copy of the one you pick, so you can put it back.</string>
+    <string name="dac_eq_slot_choice_row">%1$s — raises the level by up to %2$s dB</string>
+    <string name="dac_eq_slot_choice_row_unknown">%1$s — not read</string>
+    <string name="dac_eq_slot_choice_action">Use this slot</string>
+    <string name="dac_eq_error_turn_on_restored">The DAC\'s EQ could not be turned on; the DAC was put back as it was.</string>
+    <string name="dac_eq_error_turn_on_restored_paused">The DAC\'s EQ could not be turned on; the DAC was put back as it was and the music stays paused.</string>
+    <string name="dac_eq_error_turn_on_not_restored">The DAC\'s EQ could not be turned on, and the DAC could not be put back: restore it from the backup.</string>
+    <string name="dac_eq_error_turn_on_not_restored_paused">The DAC\'s EQ could not be turned on, and the DAC could not be put back: restore it from the backup. The music stays paused.</string>
+    <string name="dac_eq_error_turn_on_nothing">The DAC\'s EQ could not be turned on; nothing was changed on the DAC.</string>
+    <string name="dac_eq_error_turn_on_nothing_paused">The DAC\'s EQ could not be turned on; nothing was changed on the DAC, and the music stays paused.</string>
+    <!-- B61 item 3: Purity closes the DAC's EQ -->
+    <string name="audio_dac_eq_closed_by_purity">Off · closed by Purity</string>
+    <string name="pristine_dac_eq_note_reopen_waits">Couldn\'t reach the DAC. Its EQ comes back the next time it\'s connected.</string>
+    <string name="pristine_dac_eq_note_not_ours">The DAC\'s EQ stays closed: what it had selected isn\'t a Polylute slot.</string>
+    <string name="pristine_dac_eq_note_reopen_failed">The DAC\'s EQ could not be brought back. It stays closed.</string>
+    <string name="pristine_dac_eq_note_close_failed">Purity could not close the DAC\'s EQ.</string>
+    <!-- B61 item 4: the filter editor, numbers only -->
+    <string name="dac_eq_range_hz">Frequency: %1$s to %2$s, whole numbers</string>
+    <string name="dac_eq_range_db">Gain: %1$s to %2$s dB, one decimal at most</string>
+    <string name="dac_eq_range_q">Q: %1$s to %2$s, two decimals at most</string>
+    <string name="dac_eq_sign_toggle">+/−</string>
+    <string name="dac_eq_discard">Close without applying</string>
+    <string name="dac_eq_edit_refused">Won\'t be applied: this curve rises %1$.1f dB above 0 and the DAC\'s gain sense is not confirmed yet. Keep every band at 0 dB or below.</string>
 </resources>

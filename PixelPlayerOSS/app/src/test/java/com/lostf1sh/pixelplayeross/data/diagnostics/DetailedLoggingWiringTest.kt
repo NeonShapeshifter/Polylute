@@ -52,7 +52,8 @@ class DetailedLoggingWiringTest {
     @Test
     fun `the DAC conversation's trace is an info line, so it is what a release build records`() {
         val module = source("di/DacEqModule.kt")
-        assertThat(Regex("""Timber\.tag\("DAC_HID"\)\.i\(line\)""").findAll(module).count()).isEqualTo(2)
+        // B61: three now. The controller's, the service's and the Purity coordinator's (it closes and puts back the DAC's EQ, and says so under the same tag, so it is in the Detailed log too)
+        assertThat(Regex("""Timber\.tag\("DAC_HID"\)\.i\(line\)""").findAll(module).count()).isEqualTo(3)
         assertThat(DetailedLogPolicy.TECHNICAL_TAGS).contains("DAC_HID")
     }
 

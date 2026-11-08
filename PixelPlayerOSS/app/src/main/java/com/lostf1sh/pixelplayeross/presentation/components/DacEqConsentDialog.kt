@@ -21,7 +21,7 @@ fun DacEqConsentDialog(offer: DacEqOffer, onAllow: () -> Unit, onDismiss: () -> 
         text = {
             // this window is its own surface: the activity's volume-key path does not reach it
             ModalInputBridge()
-            Text(stringResource(R.string.dac_eq_consent_body, offer.dacName, offer.slotName))
+            Text(stringResource(R.string.dac_eq_consent_body, offer.dacName))
         },
         confirmButton = { TextButton(onClick = onAllow) { Text(stringResource(R.string.dac_eq_consent_allow)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.dac_eq_consent_not_now)) } },

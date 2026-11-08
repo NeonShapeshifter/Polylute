@@ -48,7 +48,7 @@
     <!-- B39-A7: sharing the DAC with other apps, Resonance only. -->
     <string name="audio_dac_share_title">Compartir el DAC con otras apps</string>
     <string name="audio_dac_share_sub">Solo en Resonance: otras apps pueden usar el DAC mientras Polylute está en pausa. Al reproducir lo recupera.</string>
-    <string name="audio_dac_share_sub_purity">Purity está activado y conserva el DAC. Esto se aplica en Resonance.</string>
+    <string name="audio_dac_share_sub_purity">Purity se queda el DAC para sí. Compartir se aplica con Purity desactivado (Resonance).</string>
     <!-- B39-A8: a DAC is connected and its USB permission was denied or never given. %1$s = the DAC. -->
     <string name="audio_usb_permission_title">Falta el acceso USB</string>
     <string name="audio_usb_permission_sub">%1$s está conectado, pero Polylute no tiene permiso: el sonido va por la ruta USB de Android. Toca para pedirlo otra vez.</string>

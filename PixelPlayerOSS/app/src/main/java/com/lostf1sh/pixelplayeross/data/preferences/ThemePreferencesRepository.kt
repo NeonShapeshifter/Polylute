@@ -53,6 +53,9 @@ class ThemePreferencesRepository @Inject constructor(
         /** B56-7.2: "Animated covers". Absent = the mode's own default ([AnimatedCovers.defaultEnabled]): on in app mode, off on a DAP. */
         val ANIMATED_COVERS = booleanPreferencesKey("animated_covers_v1")
 
+        /** B61 item 5 (#70): "Also on the lock screen": Polylute's own DAP lock screen plays the album's animated cover too. Off until the listener turns it on, in both modes. */
+        val ANIMATED_COVERS_ON_LOCK = booleanPreferencesKey("animated_covers_on_lock_v1")
+
         /**
          * B41-fix1 (B1): the light or dark the listener picked while the cover decides the colours. A key of its own so the explicit theme
          * (`dap_base_theme_v1` and `app_theme_mode`) is never touched by it. Absent = what that pair already says ([CoverThemeChoice.derivedFrom]).
@@ -104,6 +107,13 @@ class ThemePreferencesRepository @Inject constructor(
 
     suspend fun setAnimatedCovers(enabled: Boolean) {
         dataStore.edit { preferences -> preferences[Keys.ANIMATED_COVERS] = enabled }
+    }
+
+    /** B61 item 5 (#70): "Also on the lock screen", **off by default** (absent = off). */
+    val animatedCoversOnLockFlow: Flow<Boolean> = dataStore.data.map { preferences -> preferences[Keys.ANIMATED_COVERS_ON_LOCK] ?: false }
+
+    suspend fun setAnimatedCoversOnLock(enabled: Boolean) {
+        dataStore.edit { preferences -> preferences[Keys.ANIMATED_COVERS_ON_LOCK] = enabled }
     }
 
     /** B56-7.1: "Background motion", the two keys read as one choice. */

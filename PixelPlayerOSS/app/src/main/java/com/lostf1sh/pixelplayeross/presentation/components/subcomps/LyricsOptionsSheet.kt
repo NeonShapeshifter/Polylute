@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.R
+import com.lostf1sh.pixelplayeross.presentation.components.LyricsTextSize
 import com.lostf1sh.pixelplayeross.presentation.components.ModalInputBridge
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapDestructiveAction
@@ -87,6 +88,9 @@ fun LyricsOptionsSheet(
     onSyncOffsetChange: (Int) -> Unit,
     lyricsAlignment: String,
     onLyricsAlignmentChange: (String) -> Unit,
+    /** B58 4 (#78): the text size, one of `LyricsTextSize`'s keys, and what to do when the listener picks another. */
+    lyricsTextSize: String = LyricsTextSize.DEFAULT.key,
+    onLyricsTextSizeChange: (String) -> Unit = {},
     hasTranslatedLyrics: Boolean,
     showTranslation: Boolean,
     onShowTranslationChange: (Boolean) -> Unit,
@@ -162,6 +166,20 @@ fun LyricsOptionsSheet(
                 onSelect = onLyricsAlignmentChange,
                 optionLabel = { if (it == "left") left else center },
                 // The sheet is the surface; the track sits one step below it, as in the design.
+                containerColor = Dap.background,
+            )
+            val sizeLabels = mapOf(
+                LyricsTextSize.SMALL.key to stringResource(R.string.lyrics_menu_size_small),
+                LyricsTextSize.MEDIUM.key to stringResource(R.string.lyrics_menu_size_medium),
+                LyricsTextSize.LARGE.key to stringResource(R.string.lyrics_menu_size_large),
+                LyricsTextSize.EXTRA_LARGE.key to stringResource(R.string.lyrics_menu_size_extra_large),
+            )
+            DapSegmentedRow(
+                label = stringResource(R.string.lyrics_menu_text_size),
+                options = LyricsTextSize.entries.map { it.key },
+                selected = lyricsTextSize,
+                onSelect = onLyricsTextSizeChange,
+                optionLabel = { sizeLabels.getValue(it) },
                 containerColor = Dap.background,
             )
             DapSwitchRow(

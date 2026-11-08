@@ -7,7 +7,9 @@ import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqBackupState
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqBand
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqDefaults
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLive
+import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqSlotPlan
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqSlotSnapshot
+import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqTurnOnOutcome
 import com.lostf1sh.pixelplayeross.data.dac.fiio.PreGainSense
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqCapability
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqCurve
@@ -25,8 +27,10 @@ import com.lostf1sh.pixelplayeross.data.headphones.DacEqCompat
 import com.lostf1sh.pixelplayeross.data.headphones.DacEqFilterDef
 import com.lostf1sh.pixelplayeross.data.headphones.DacEqPairDac
 import com.lostf1sh.pixelplayeross.data.headphones.DacEqPreset
+import com.lostf1sh.pixelplayeross.data.dac.fiio.describeWriteResult
 import com.lostf1sh.pixelplayeross.data.headphones.DacEqPresetCatalog
 import com.lostf1sh.pixelplayeross.data.headphones.DacEqPresetStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -98,6 +102,10 @@ class DacEqScreenController(
         val operation: DacEqOperation? = null,
         /** B31: a select of this DAC preset waits for the listener's yes because music is playing. */
         val confirmSelect: Int? = null,
+        /** B59 (#53): turning the EQ on waits for the listener's one yes (the app's slot is not its own yet). */
+        val confirmTurnOn: Boolean = false,
+        /** B59 (#53): every user slot boosts and the turn-on waits for the listener to pick the slot. */
+        val slotAsk: DacEqSlotPlan.Ask? = null,
     )
 
     private val edit = MutableStateFlow(Edit())
@@ -117,6 +125,7 @@ class DacEqScreenController(
         val att = readout.attachedOrNull
         val known = readout as? DacEqReadout.Known
         if (att != null && known != null && known.state.isComplete && service.availability(att).needsConsent) {
+            // (the consent text no longer names a slot: the app picks one on the first turn-on; the field stays for the callers that read it)
             DacEqOffer(dacName = att.displayName, slotName = att.profile.slots.firstOrNull { it.id == att.profile.appSlotId }?.name.orEmpty())
         } else {
             null
@@ -243,8 +252,10 @@ class DacEqScreenController(
             ?: (if (att != null) flatBands(att) else emptyList())
         val sense = service.sense(att)
         val backup = backupState.backup?.takeIf { att != null && backupState.backupKey == att.backupKey }
-        val owned = fiio?.appSlotId?.let { backup?.owns(it) } == true
-        val presetRows = dacPresetRows(fiio, backup, (state?.activePreset as? EqRead.Read)?.value, sense)
+        // B59 (#53): the app's slot is the one taken over, else the one chosen for this DAC; before a choice the screen names none
+        val appSlot = if (fiio != null) backup?.takeIf { it.hasAppSlot(fiio) }?.appSlotFor(fiio) else null
+        val owned = appSlot != null && backup?.owns(appSlot) == true
+        val presetRows = dacPresetRows(fiio, backup, (state?.activePreset as? EqRead.Read)?.value, sense, appSlot ?: fiio?.appSlotId)
         val preGainOrNull = if (shown.isEmpty()) 0 else DacEqCurve.preGainTenthsFor(shown, sense)
         val preGain = preGainOrNull ?: 0
         val dacPreGain = (state?.preGainTenthsDb as? EqRead.Read)?.value
@@ -265,7 +276,7 @@ class DacEqScreenController(
             verdict = verdict,
             bands = shown,
             preGainTenthsDb = preGain,
-            appSlotName = fiio?.let { p -> p.slots.firstOrNull { it.id == p.appSlotId }?.name },
+            appSlotName = fiio?.let { p -> p.slots.firstOrNull { it.id == appSlot }?.name },
             activePresetName = state?.let { s ->
                 (s.activePreset as? EqRead.Read)?.value?.let { id -> fiio?.slots?.firstOrNull { it.id == id }?.name }
             },
@@ -286,6 +297,8 @@ class DacEqScreenController(
             netPeakDb = if (shown.isEmpty()) 0.0 else DacEqCurve.netPeakDb(shown, preGain, sense),
             debugOverride = availability == DacEqWriteAvailability.DEBUG_OVERRIDE,
             slotOwned = owned,
+            turnOnNeedsSlot = att != null && fiio?.canBeWritten == true && availability.canWrite && !owned && editState.operation == null &&
+                !slotKnownHarmless(fiio, backup, appSlot, sense),
             takeOverOffered = att != null && fiio?.canBeWritten == true && availability.canWrite && !owned && editState.operation == null,
             operation = editState.operation,
             dacPresets = presetRows,
@@ -294,11 +307,36 @@ class DacEqScreenController(
             preGainSense = sense,
             // B40-F2: the DAC applies a correction and the headphones' own EQ is on too: the same correction twice, said and one tap to fix
             softwareEqAlsoOn = eqOn && profile?.equalizer?.enabled == true,
+            turnOnPrompt = if (editState.confirmTurnOn && att != null) {
+                DacEqTurnOnPrompt(
+                    dacName = att.displayName,
+                    slotName = fiio?.slots?.firstOrNull { it.id == appSlot }?.name,
+                    musicPlaying = service.isPlaying(),
+                )
+            } else {
+                null
+            },
+            slotChoicePrompt = editState.slotAsk?.let { ask ->
+                DacEqSlotChoicePrompt(
+                    options = ask.options.map { DacEqSlotChoiceRow(it.slotId, it.name, it.netPeakDb.takeIf { db -> db.isFinite() }) },
+                    preselected = ask.preselected,
+                )
+            },
         )
     }
 
+    /**
+     * B59 (#53): the app's slot (the chosen one, else the profile's default) is in the backup and holds nothing that can play louder than the limit, so the gate lets a
+     * curve be written into it without a take-over: no question is needed. Same rule as the gate's own check before it selects a slot.
+     */
+    private fun slotKnownHarmless(profile: FiioHidProfile?, backup: DacEqBackup?, chosen: Int?, sense: PreGainSense): Boolean {
+        val slot = chosen ?: backup?.let { b -> profile?.let { b.appSlotFor(it) } } ?: profile?.appSlotId ?: return false
+        val held = backup?.slots?.get(slot) ?: return false
+        return DacEqLive.of(held, sense).netPeakDb <= 0.0
+    }
+
     /** The DAC's presets by name, with what the inventory read of each (B31 P1.4). Empty where the profile lists none. */
-    private fun dacPresetRows(profile: FiioHidProfile?, backup: DacEqBackup?, activeId: Int?, sense: PreGainSense): List<DacPresetRow> =
+    private fun dacPresetRows(profile: FiioHidProfile?, backup: DacEqBackup?, activeId: Int?, sense: PreGainSense, appSlotId: Int?): List<DacPresetRow> =
         profile?.slots?.map { slot ->
             val snapshot = backup?.slots?.get(slot.id)
             val closed = slot.id == profile.disabledPresetId
@@ -307,7 +345,7 @@ class DacEqScreenController(
                 id = slot.id,
                 name = slot.name,
                 isActive = slot.id == activeId,
-                isAppSlot = slot.id == profile.appSlotId,
+                isAppSlot = slot.id == appSlotId,
                 isClosed = closed,
                 readFromDac = snapshot != null,
                 preGainTenthsDb = snapshot?.preGainTenthsDb,
@@ -352,8 +390,102 @@ class DacEqScreenController(
             }
         } else {
             val pending = edit.value.pending?.takeIf { edit.value.origin?.token == origin.token }
-            edit.update { it.copy(pending = pending ?: ui.bands, origin = origin, selection = null, error = null) }
+            // B59 (#53): when the app has no slot it can write yet (not taken over, and not known to be safe to select), turning the EQ on is one action with one
+            // question: what will happen, once. Nothing is sent before the yes. A slot already known to be harmless is written as it always was.
+            val needsSlot = ui.turnOnNeedsSlot
+            edit.update { it.copy(pending = pending ?: ui.bands, origin = origin, selection = null, error = null, confirmTurnOn = needsSlot) }
+            if (needsSlot) {
+                debounceJob?.cancel()
+                return
+            }
             schedule(immediate = true)
+        }
+    }
+
+    // ── B59 (#53): turning the EQ on in one action ───────────────────────────────────────────────────────
+
+    /** The listener said yes to the one question: pause the music if it plays, choose the slot, take it over, apply the curve, resume. */
+    fun confirmTurnOn() {
+        val state = edit.value
+        if (!state.confirmTurnOn || uiState.value.operation != null) return
+        val origin = state.origin?.takeIf { service.controller.isCurrent(it.token) } ?: return
+        val bands = state.pending ?: return
+        scope.launch {
+            edit.update { it.copy(confirmTurnOn = false, operation = DacEqOperation.TURN_ON, error = null) }
+            writesStarted++
+            val outcome = service.turnOn.turnOn(
+                att = origin.att,
+                bands = bands,
+                initiator = WriteInitiator.USER_ACTION,
+                stale = { staleReason(origin) },
+                chooseSlot = ::askForSlot,
+            )
+            edit.update { it.copy(operation = null, slotAsk = null) }
+            timber.log.Timber.tag("DAC_HID").i(
+                "DAC_HID|SCREEN TURN_ON: the screen is told: %s (music paused by the app: %s, started again: %s)",
+                outcome.result?.let(::describeWriteResult) ?: "cancelled by the listener", outcome.pausedMusic, outcome.resumedMusic,
+            )
+            handleTurnOn(outcome, origin, bands)
+        }
+    }
+
+    /** The listener said no to the one question: nothing was sent, the Off/On picker stays where it was. */
+    fun cancelTurnOn() = edit.update { it.copy(confirmTurnOn = false, pending = null, origin = null, selection = null) }
+
+    private var slotAnswer: CompletableDeferred<Int?>? = null
+
+    private suspend fun askForSlot(ask: DacEqSlotPlan.Ask): Int? {
+        val answer = CompletableDeferred<Int?>()
+        slotAnswer = answer
+        edit.update { it.copy(slotAsk = ask) }
+        return try {
+            answer.await()
+        } finally {
+            slotAnswer = null
+            edit.update { it.copy(slotAsk = null) }
+        }
+    }
+
+    /** Every user slot boosts and the listener picked one of them. */
+    fun chooseSlot(slotId: Int) {
+        slotAnswer?.complete(slotId)
+    }
+
+    /** Every user slot boosts and the listener would rather not give any: nothing is written, the music starts again. */
+    fun cancelSlotChoice() {
+        slotAnswer?.complete(null)
+    }
+
+    private suspend fun handleTurnOn(outcome: DacEqTurnOnOutcome, origin: EditOrigin, bands: List<DacEqBand>) {
+        val result = outcome.result
+        if (result == null) {
+            edit.update { it.copy(busy = false, pending = null, origin = null, selection = null, error = null) }
+            return
+        }
+        when (result) {
+            is DacEqWriteResult.Done -> handle(result, origin, bands = bands)
+            is DacEqWriteResult.Refused ->
+                if (result.refusal == GateRefusal.EDIT_OUTDATED) {
+                    drop(dropReason(origin) ?: DacEqDropReason.DAC_CHANGED)
+                } else {
+                    edit.update { it.copy(busy = false, pending = null, origin = null, selection = null, error = DacEqError.Refused(result.refusal)) }
+                }
+            is DacEqWriteResult.Unavailable ->
+                edit.update { it.copy(busy = false, pending = null, origin = null, selection = null, error = DacEqError.Unavailable) }
+            is DacEqWriteResult.Mismatch ->
+                edit.update {
+                    it.copy(
+                        busy = false, pending = null, origin = null, selection = null,
+                        error = DacEqError.TurnOnStopped(result.restored, outcome.pausedMusic, "expected [${result.expected}], the DAC reports [${result.actual}]"),
+                    )
+                }
+            is DacEqWriteResult.Failed ->
+                edit.update {
+                    it.copy(
+                        busy = false, pending = null, origin = null, selection = null,
+                        error = DacEqError.TurnOnStopped(result.restored, outcome.pausedMusic, result.why),
+                    )
+                }
         }
     }
 
@@ -478,6 +610,7 @@ class DacEqScreenController(
             edit.update { it.copy(operation = operation, error = null) }
             val result = block(origin.att)
             edit.update { it.copy(operation = null) }
+            timber.log.Timber.tag("DAC_HID").i("DAC_HID|SCREEN %s: the screen is told: %s", operation, describeWriteResult(result))
             when (result) {
                 is DacEqWriteResult.Done -> edit.update { it.copy(error = null) }
                 is DacEqWriteResult.Refused -> edit.update { it.copy(error = DacEqError.Refused(result.refusal)) }
@@ -546,6 +679,7 @@ class DacEqScreenController(
         edit.update { it.copy(busy = true, error = null) }
         writesStarted++
         val result = service.screenWriter.applyCurve(origin.att, bands, WriteInitiator.USER_ACTION) { staleReason(origin) }
+        timber.log.Timber.tag("DAC_HID").i("DAC_HID|SCREEN the edit: the screen is told: %s", describeWriteResult(result))
         handle(result, origin, bands = bands, selection = selection)
     }
 

@@ -24,6 +24,12 @@ sealed interface FiioSetAck {
     /** A well-formed report of this SET's command with the data that was sent. */
     data class Confirmed(val seq: Int, val kind: FiioFrameKind) : FiioSetAck
 
+    /**
+     * B59 (#53): a well-formed report of a band SET that carries the data that was sent **but for the Q, one hundredth off either way**: the DAC took
+     * the band and stored the Q it can hold (the Melody was sent 0.71 and said 0.70). [reported] is what it stored. Index, type, frequency and gain match.
+     */
+    class QRounded(val seq: Int, val kind: FiioFrameKind, val sent: ByteArray, val reported: ByteArray) : FiioSetAck
+
     /** A well-formed report of this SET's command that carries other data than was sent (a clamped, rounded or ignored value). */
     class Contrary(val seq: Int, val sent: ByteArray, val reported: ByteArray) : FiioSetAck
 
@@ -32,6 +38,23 @@ sealed interface FiioSetAck {
 
     /** Nothing arrived. */
     data object Missing : FiioSetAck
+}
+
+/** B59 (#53): the band SET's data, `[i, gain hi, gain lo, freq hi, freq lo, q hi, q lo, type]`, compared field by field. */
+internal object FiioBandAck {
+    private const val BAND_LENGTH = 8
+    private val EXACT_FIELDS = intArrayOf(0, 1, 2, 3, 4, 7)
+
+    /** The Q of a band's data in hundredths. */
+    fun q(data: ByteArray): Int = ((data[5].toInt() and 0xFF) shl 8) or (data[6].toInt() and 0xFF)
+
+    /** [reported] is [sent] but for a Q that differs by one hundredth either way: index, gain, frequency and type are the same bytes. */
+    fun differsOnlyByQRounding(sent: ByteArray, reported: ByteArray): Boolean {
+        if (sent.size != BAND_LENGTH || reported.size != BAND_LENGTH) return false
+        if (EXACT_FIELDS.any { sent[it] != reported[it] }) return false
+        val off = kotlin.math.abs(q(sent) - q(reported))
+        return off in 1..DacEqBand.Q_ROUNDING_HUNDREDTHS
+    }
 }
 
 /** What a GET came to. */
@@ -127,6 +150,12 @@ class FiioHidSession(
                     } else if (parsed.data.contentEquals(expected)) {
                         log("DAC_HID|ACK $name ok seq=${parsed.seq} ${parsed.kind.name.lowercase()} data=[${FiioHidFrames.hex(parsed.data)}]")
                         return FiioSetAck.Confirmed(parsed.seq, parsed.kind)
+                    } else if (command == FiioHidWrites.CMD_BAND && FiioBandAck.differsOnlyByQRounding(expected, parsed.data)) {
+                        log(
+                            "DAC_HID|ACK $name ok seq=${parsed.seq} ${parsed.kind.name.lowercase()} data=[${FiioHidFrames.hex(parsed.data)}] " +
+                                "(the Q is ${FiioBandAck.q(parsed.data)} for ${FiioBandAck.q(expected)} hundredths: the DAC's rounding)"
+                        )
+                        return FiioSetAck.QRounded(parsed.seq, parsed.kind, expected, parsed.data)
                     } else {
                         log(
                             "DAC_HID|ACK $name CONTRARY seq=${parsed.seq} sent=[${FiioHidFrames.hex(expected)}] " +
@@ -137,6 +166,10 @@ class FiioHidSession(
                 }
                 is FiioReplyParse.NoAnswer -> {
                     log("DAC_HID|ACK $name not an acknowledgement: ${parsed.reason}")
+                    // B60 (#53): say what the frame of a save is, so a reviewer does not read it as a fault
+                    FiioHidReplies.bareCounter(raw, profile.reportId)?.let { counter ->
+                        log("DAC_HID|ACK $name is the DAC's bare counter (seq=$counter, `00 EE 00 SEQ`): its answer to a save carries nothing to check, and the read-back that follows is what confirms")
+                    }
                     worst = worse(worst ?: NoAnswerReason.TIMEOUT, parsed.reason)
                 }
             }

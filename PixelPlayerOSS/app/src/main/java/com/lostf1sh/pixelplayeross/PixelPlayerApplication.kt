@@ -75,6 +75,10 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
     @Inject
     lateinit var dacEqController: dagger.Lazy<com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqController>
 
+    /** B61 (item 3): Purity closes the DAC's EQ and puts it back; follows the Purity switch and the DAC that is attached. */
+    @Inject
+    lateinit var purityDacEqObserver: dagger.Lazy<com.lostf1sh.pixelplayeross.data.dac.fiio.PurityDacEqObserver>
+
     @Inject
     lateinit var libraryMetadataRepair: dagger.Lazy<com.lostf1sh.pixelplayeross.data.metadata.LibraryMetadataRepair>
 
@@ -148,6 +152,7 @@ class PixelPlayerApplication : Application(), ImageLoaderFactory, Configuration.
         dacHeadphoneAssociationController.get().start()
         // B30: idle until a FiiO/Snowsky DAC is attached and USB Direct carries a stream; then one read-only GET pass.
         dacEqController.get().start(startupScope)
+        purityDacEqObserver.get().start(startupScope)
         safetyVolumeController.get().start()
         // FIX-3 (B11-fix): packed track numbers and missing years, repaired in the background.
         libraryMetadataRepair.get().start(startupScope)

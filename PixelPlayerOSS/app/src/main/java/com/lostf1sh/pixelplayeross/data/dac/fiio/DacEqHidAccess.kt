@@ -44,6 +44,9 @@ class DacEqHidAccess(
     /** Held for the whole of a session. A debug command that opens its own connection (the probe, the listen) takes it too. */
     val lock = Mutex()
 
+    /** B60 (#53): which preset each attachment last had selected, so a DAC that answers a marker instead of it (the Melody's 0x0A) is read as what it is. Shared by the reads and the writes. */
+    val presetClaims = FiioPresetClaims()
+
     /**
      * [stale] is asked **after the lock is won and before the interface is opened**: a caller that waited behind another session (or
      * a debounce, a read, a write) finds out here whether what it came to do is still what is wanted, and an answer other than

@@ -140,7 +140,8 @@ class LyricsImmersiveRenderTest {
         settle(4_000)
         settle(2_000)
         val after = lineBounds(100_000)
-        assertThat(after.height).isGreaterThan(before.height * 1.2f)
+        // B58 4 (#78) changes this on purpose: immersive grows the chosen size by a quarter (it was a fixed 1.4 times one style), so the line is about 1.25 times taller
+        assertThat(after.height).isGreaterThan(before.height * 1.1f)
         // the middle of the line is where the page keeps the current line, to a few pixels, at the size it has now
         assertThat(abs(after.center.y - highlightCentre)).isLessThan(8f)
     }

@@ -55,7 +55,7 @@ class B51AlbumArtworkRenderTest {
             AlbumArtUtils.clearCacheForSong(context, id)
             val method = AlbumArtUtils::class.java.methods.firstOrNull { it.name.startsWith("refreshFolderArtwork") && it.parameterCount == 8 }
             val uri = if (method != null) {
-                val noEmbedded: (String) -> ByteArray? = { null }
+                val noEmbedded: (String) -> Boolean = { false }
                 val result = method.invoke(AlbumArtUtils, context, id, song.path, null, true, true, false, noEmbedded)
                 result.javaClass.getMethod("getUri").invoke(result) as String?
             } else AlbumArtUtils.getAlbumArtUri(context, song.path, id, false)

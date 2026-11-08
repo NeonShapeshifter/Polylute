@@ -13,7 +13,7 @@ object DacEqStateFormat {
                     "${capability.minFrequencyHz}..${capability.maxFrequencyHz} Hz, filters=${capability.filterTypes.joinToString("/") { it.name }}, " +
                     "closePreset=${capability.disabledPresetId?.let { "0x%02X".format(it) } ?: "none"}, verified=${capability.verified}"
             )
-            add("$prefix read: preset=${preset(state.activePreset, capability)} count=${read(state.bandCount) { it.toString() }} " +
+            add("$prefix read: preset=${preset(state.activePreset, capability)}${state.presetReportedAs?.let { " (the DAC answered 0x%02X)".format(it) } ?: ""} count=${read(state.bandCount) { it.toString() }} " +
                 "preGain=${read(state.preGainTenthsDb) { "${tenths(it)} dB" }} switch=${read(state.eqSwitch) { if (it) "on" else "off" }}")
             state.bands.forEachIndexed { i, entry ->
                 add("$prefix band ${i + 1}: ${read(entry) { b -> band(b) }}")

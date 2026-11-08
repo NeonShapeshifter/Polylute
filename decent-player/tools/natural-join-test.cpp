@@ -3519,8 +3519,8 @@ void testLockedDacRecovery() {
             CHECK(r.locked, "%d Hz %s: the fake DAC did not lock up", rate, v.name);
             CHECK(r.positionContinuous, "%d Hz %s: the frame count (Media3's position) is not the frames of the source", rate, v.name);
             CHECK(r.bytesExact, "%d Hz %s: the audible stream is not the source in order", rate, v.name);
-            // detected in a second and a half of rail plus a block, and the first step done a few hundred ms later: "a second or two", not minutes
-            CHECK(r.lockToDetectMs >= USB_DAC_LOCK_RAIL_MS - 100 && r.lockToDetectMs <= USB_DAC_LOCK_RAIL_MS + 700, "%d Hz %s: detected %lld ms after the underrun", rate, v.name,
+            // B61: detected in 200 ms of rail plus a block (it was a second and a half), and the first step done a few hundred ms later
+            CHECK(r.lockToDetectMs >= USB_DAC_LOCK_RAIL_FAST_MS - 100 && r.lockToDetectMs <= USB_DAC_LOCK_RAIL_FAST_MS + 700, "%d Hz %s: detected %lld ms after the underrun", rate, v.name,
                   (long long)r.lockToDetectMs);
             CHECK(r.lockToStepEndMs >= 0 && r.lockToStepEndMs <= 2800, "%d Hz %s: the first step ended %lld ms after the underrun", rate, v.name, (long long)r.lockToStepEndMs);
             CHECK(r.step1 == 1, "%d Hz %s: step 1 ran %d times", rate, v.name, r.step1);
@@ -4179,7 +4179,9 @@ void testTrainFeedback() {
                     });
                 }
             }
-            CHECK(detectedMs >= USB_DAC_LOCK_RAIL_MS && detectedMs <= USB_DAC_LOCK_RAIL_MS + 8,
+            // B61: 200 ms of rail (1 500 ms before), counted from the end of the stream's first moment at the earliest: the 48 kHz replay's rail begins 2.2 s into the stream, the 44.1 kHz one at 300 ms
+            const int64_t expectedDetectMs = USB_DAC_LOCK_RAIL_FAST_MS + (railMs < USB_DAC_LOCK_START_GRACE_MS ? USB_DAC_LOCK_START_GRACE_MS - railMs : 0);
+            CHECK(detectedMs >= expectedDetectMs && detectedMs <= expectedDetectMs + 8,
                   "%d Hz replay cure=%d detected after %lld ms", rate, cure, (long long)detectedMs);
             CHECK(steps[1] == (cure != 0 ? 1 : 0), "%d Hz replay step 1 decision missing or recovery disabled", rate);
             if (cure > 0) {
@@ -4225,7 +4227,7 @@ void testTrainFeedback() {
                 live = live || (line.find("live=") != std::string::npos && line.find("acceptedAge=") != std::string::npos);
                 periodic = periodic || line.find("Feedback #") != std::string::npos;
             }
-            CHECK(outsideUs >= 0 && lockUs / 1000 - outsideUs / 1000 == USB_DAC_LOCK_RAIL_MS, "DAC_LOCKED was not logged at exactly 1500ms after rail: outside=%lld lock=%lld delta=%lld", (long long)outsideUs, (long long)lockUs, (long long)(lockUs / 1000 - outsideUs / 1000));
+            CHECK(outsideUs >= 0 && lockUs / 1000 - outsideUs / 1000 >= expectedDetectMs - 2 && lockUs / 1000 - outsideUs / 1000 <= expectedDetectMs, "DAC_LOCKED was not logged at the rail time after rail (200 ms, from the end of the stream's first 500 ms at the earliest): outside=%lld lock=%lld delta=%lld", (long long)outsideUs, (long long)lockUs, (long long)(lockUs / 1000 - outsideUs / 1000));
             CHECK((cure != 0 || staleAccepted) && rawMatches, "missing a stale accepted age or received raw bytes");
             CHECK(window && live && periodic, "replay missing out-of-window/raw/streamAge/live/acceptedAge/periodic evidence");
             if (cure == 0 && rate == 44100) CHECK(back, "no back-after transition");
@@ -4297,6 +4299,8 @@ void testRateChangeStuckRecovery() {
     constexpr int kPreviousRate = 44100;
     constexpr int kBlock = 128;
     constexpr int kShortHoldMs = 1500;
+    // B59 5 (#46): a value frozen at 5 000..8 000 ppm inside the window is called at 400 ms (see USB_FEEDBACK_RATE_CHANGE_FAR_PPM): the +5819 and +6653 ppm of the device
+    constexpr int kFarHoldMs = 400;
     constexpr int kWindowMs = 3000;
     constexpr int kWrongRateMs = 40;
     constexpr int kRampMs = 900;
@@ -4307,22 +4311,24 @@ void testRateChangeStuckRecovery() {
     constexpr int kToleranceMs = 10;
     constexpr double kNominal = 6.0;
     constexpr double kPreviousFeedback = 5.51245;
-    constexpr double kFrozenValues[] = {6.03491, 6.0199, 6.03992};
+    // B61: the fourth is the 11-07 10:12:43 start lock, +10 864 ppm (5.5724 at 44.1 kHz) taken to this table's 48 kHz nominal
+    constexpr double kFrozenValues[] = {6.03491, 6.0199, 6.03992, 6.0 * (1.0 + 10864e-6)};
     struct Case { const char *name; int previous; int mode; double frozen; int hold; };
     // mode 0 freezes, 1 settles after the usual ramp, 2 is a short healthy plateau,
     // 3 is a longer healthy plateau (the accepted restart cost), 4 freezes after a cached skip.
     const Case cases[] = {
-        {"changed rate +5819 ppm", kPreviousRate, 0, kFrozenValues[0], kShortHoldMs},
+        {"changed rate +5819 ppm", kPreviousRate, 0, kFrozenValues[0], kFarHoldMs},
         {"same rate after recovery", kRate, 0, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
         {"changed rate +3316 ppm", kPreviousRate, 0, kFrozenValues[1], kShortHoldMs},
-        {"changed rate +6653 ppm", kPreviousRate, 0, kFrozenValues[2], kShortHoldMs},
+        {"changed rate +6653 ppm", kPreviousRate, 0, kFrozenValues[2], kFarHoldMs},
+        {"changed rate +10864 ppm (11-07 start lock)", kPreviousRate, 0, kFrozenValues[3], kFarHoldMs},
         {"first stream after attach", 0, 0, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
         {"usual ramp settles", kPreviousRate, 1, 0, 0},
         {"healthy plateau below hold", kPreviousRate, 2, 0, 0},
         {"healthy plateau above hold costs a restart", kPreviousRate, 3, 0, kShortHoldMs},
         {"cached skip in changed-rate stream", kPreviousRate, 4, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
         {"cached skip in first stream", 0, 4, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
-        {"hold crossing start window", kPreviousRate, 5, kFrozenValues[0], USB_FEEDBACK_STUCK_MIN_MS},
+        {"hold crossing start window", kPreviousRate, 5, kFrozenValues[0], kFarHoldMs},
     };
     usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
     usbSetDacRecoveryEnabled(true);
@@ -4371,7 +4377,7 @@ void testRateChangeStuckRecovery() {
             if (line.find("DAC_LOCKED") != std::string::npos) {
                 stuck++;
                 detectedMs = (entry.first - t0) / 1000;
-                const bool shortened = c.hold == kShortHoldMs;
+                const bool shortened = c.hold == kShortHoldMs || c.hold == kFarHoldMs;
                 CHECK(line.find("why=stuck") != std::string::npos, "%s was classified as a rail", c.name);
                 CHECK((line.find("hold=rate-change") != std::string::npos) == shortened,
                       "%s wrong hold marker %s", c.name, line.c_str());
@@ -4395,6 +4401,87 @@ void testRateChangeStuckRecovery() {
         }
         printf("B50 %s arms=%d locks=%d restarts=%d ok=%d detected=%lldms\n",
                c.name, arms, stuck, restarts, ok, (long long)detectedMs);
+        setFeedbackScript(nullptr);
+    }
+}
+
+
+// B61 item 2: the 11-07 evidence through the real writer, on the virtual clock. 2026-11-07 00:52-01:06 the Melody refilled its FIFO in bursts every ~3 s (6.0000 -> 6.0149 -> 6.0449 -> 6.0499, +8 321 ppm, back
+// within ~70 ms); B59's 7 500 line refused the top of each, and eight times the DAC then climbed in a straight line (~0.5 fpmf/s) to the rail and locked, ~1.8 s of pause each.
+void testRefillBurstsAndRunaway() {
+    constexpr int kRate = 48000;
+    constexpr double kNominal = 6.0;
+    constexpr int kBurstEveryMs = 3000;
+    constexpr int kRunawayAtMs = 9070;          // the third burst does not come back: the DAC's request climbs from its top
+    constexpr double kSlopePerSecond = 0.5115;
+    for (int runaway = 0; runaway <= 1; runaway++) {
+        simclock::VirtualTime virtualTime;
+        Writer w(kRate, true);
+        usbDacRecoveryForgetEpisodes();
+        usbSetFeedbackPolicy(USB_FEEDBACK_AUTO);
+        usbSetDacRecoveryEnabled(true);
+        const Pcm src = makeNoise(kRate * 22, 24, 0x61000000u + (uint32_t)runaway);
+        const int64_t t0 = nowUs();
+        int restarts = 0;
+        int64_t restartUs = 0;
+        int64_t railCrossedMs = -1;
+        setFeedbackScript([&](int64_t atUs) {
+            FeedbackAnswer a;
+            const int64_t ms = (atUs - t0) / 1000;
+            if (restarts > 0) {
+                a.fpmf = (atUs - restartUs) / 1000 < 900 ? melodyRampAt((atUs - restartUs) / 1000, kNominal) : kNominal;
+                return a;
+            }
+            const int64_t phase = ms % kBurstEveryMs;
+            if (ms >= 2000 && phase < 20) a.fpmf = 6.0149;
+            else if (ms >= 2000 && phase < 40) a.fpmf = 6.0199;
+            else if (ms >= 2000 && phase < 55) a.fpmf = 6.0449;
+            else if (ms >= 2000 && phase < 125) a.fpmf = 6.0499;
+            else a.fpmf = kNominal;
+            if (runaway && ms >= kRunawayAtMs) {
+                a.fpmf = 6.0499 + kSlopePerSecond * (ms - kRunawayAtMs) / 1000.0;
+                if (railCrossedMs < 0 && a.fpmf >= kNominal * (1.0 + USB_DAC_LOCK_RAIL_PPM * 1e-6)) railCrossedMs = ms;
+            }
+            return a;
+        });
+        g_usb.trainLines.clear();
+        int next = 0;
+        int64_t detectedMs = -1;
+        int steps[4] = {};
+        while (next + 128 <= src.frames() && nowUs() - t0 < 16000 * 1000LL) {
+            w.write(src, next, 128);
+            next += 128;
+            int64_t state[USB_DAC_STATE_COUNT];
+            usbDacLockState(w.ctx, state);
+            if (state[0] && detectedMs < 0) detectedMs = (nowUs() - t0) / 1000;
+            const int step = (int)state[5];
+            if (step >= 1 && step <= 3) steps[step]++;
+            if (step == 1 || step == 2) runOneStep(w, src, next, step, 128, [&] { restarts++; restartUs = nowUs(); });
+        }
+        int refusals = 0, rails = 0, ok = 0;
+        for (const auto &entry : g_usb.trainLines) {
+            const std::string &line = entry.second;
+            if (line.find("FEEDBACK_REJECTED") != std::string::npos && (!runaway || entry.first < t0 + kRunawayAtMs * 1000LL)) refusals++;
+            if (line.find("DAC_LOCKED") != std::string::npos && line.find("why=rail") != std::string::npos) rails++;
+            if (line.find("result=ok") != std::string::npos) ok++;
+        }
+        for (const auto &line : g_usb.feedbackGlitches) {
+            if (line.find("FEEDBACK_REJECTED") != std::string::npos && !runaway) refusals++;
+        }
+        if (!runaway) {
+            // a burst is FOLLOWED: nothing refused, no lock, no recovery, over five bursts
+            CHECK(refusals == 0 && rails == 0 && detectedMs < 0 && restarts == 0, "bursts alone: refused %d, rail locks %d, detected %lld, restarts %d", refusals, rails, (long long)detectedMs, restarts);
+            printf("B61 refill bursts (+8 321 ppm every 3 s, 14 s): refused %d, locks %d, recoveries %d\n", refusals, rails, restarts);
+        } else {
+            CHECK(refusals == 0, "the bursts before the runaway were refused %d times", refusals);
+            CHECK(railCrossedMs >= 0 && detectedMs >= 0, "the runaway was never called (crossed %lld, detected %lld)", (long long)railCrossedMs, (long long)detectedMs);
+            const int64_t afterRail = detectedMs - railCrossedMs;
+            CHECK(rails == 1 && afterRail >= USB_DAC_LOCK_RAIL_FAST_MS - 5 && afterRail <= USB_DAC_LOCK_RAIL_FAST_MS + 60,
+                  "runaway called %lld ms after the rail was crossed (rail locks %d)", (long long)afterRail, rails);
+            CHECK(steps[1] == 1 && restarts == 1 && ok == 1 && steps[2] == 0, "recovery: step 1 x%d, restarts %d, ok %d, step 2 x%d", steps[1], restarts, ok, steps[2]);
+            printf("B61 runaway after a burst (0.5115 fpmf/s from the burst top): +4.5%% crossed at %lld ms, DAC_LOCKED %lld ms after it (the 1 500 ms rule: ~1 500), step 1 ran, verdict ok\n",
+                   (long long)railCrossedMs, (long long)afterRail);
+        }
         setFeedbackScript(nullptr);
     }
 }
@@ -4649,6 +4736,7 @@ int main(int argc, char **argv) {
     if (only.empty() || only == "startguard") testFeedbackStartGuard();
     if (only.empty() || only == "train") testTrainFeedback();
     if (only.empty() || only == "rate-change") testRateChangeStuckRecovery();
+    if (only.empty() || only == "b61-bursts") testRefillBurstsAndRunaway();
     if (only.empty() || only == "stuck-recovery") testStuckDacRecovery();
     if (only.empty() || only == "pause-keepalive") testPauseKeepalive();
     if (only.empty() || only == "pause-seek-keepalive") testPauseSeekKeepalive();

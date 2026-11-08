@@ -35,9 +35,32 @@ import com.lostf1sh.pixelplayeross.ui.glass.rememberGlassEnvironment
  * the cover of the song that plays is looked for again). Provided once by the activity; where nothing provides it (a test of some other screen) there are no animated covers.
  */
 @Immutable
-class AnimatedCoverEnv(val finder: AnimatedCoverFinder, val enabled: Boolean, val libraryVersion: Long)
+class AnimatedCoverEnv(
+    val finder: AnimatedCoverFinder,
+    val enabled: Boolean,
+    val libraryVersion: Long,
+    /** B61 item 5 (#70): "Also on the lock screen" (off by default): Polylute's own lock screen plays the cover too. */
+    val lockCoverOn: Boolean = false,
+)
 
 val LocalAnimatedCoverEnv = compositionLocalOf<AnimatedCoverEnv?> { null }
+
+/**
+ * B61 item 5 (#70): **the one controller of the activity**, shared by the full player's cover page and Polylute's lock screen: "at most one decoder" is then true of the whole app and not of
+ * one surface. Provided by the activity ([rememberSharedAnimatedCoverController]); where nothing provides it (the tests of the host) a host makes its own, as it always did.
+ */
+val LocalAnimatedCoverController = compositionLocalOf<AnimatedCoverController?> { null }
+
+/** The activity's controller: made once, with the engines the platform (or a test) gives, and released when the activity's composition ends. */
+@Composable
+fun rememberSharedAnimatedCoverController(): AnimatedCoverController {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val engines = LocalAnimatedCoverEngines.current
+    val controller = remember { AnimatedCoverController(scope, engines?.invoke(context.applicationContext, scope) ?: PlatformAnimatedCoverEngines(context.applicationContext, scope)) }
+    DisposableEffect(controller) { onDispose { controller.release() } }
+    return controller
+}
 
 /** The factory the player's host uses; a test of the host swaps it for a fake. */
 val LocalAnimatedCoverEngines = compositionLocalOf<((android.content.Context, kotlinx.coroutines.CoroutineScope) -> AnimatedCoverEngineFactory)?> { null }
@@ -71,37 +94,51 @@ internal fun rememberAnimatedCoverHost(
     playerExpanded: Boolean,
     coverPageShowing: Boolean,
     albumId: Long = 0L,
+    /** B59 4 (#82): the song's disc number (0 when it has none): a disc may have its own animated cover (`disc2.mp4`), else the album's applies. */
+    discNumber: Int = 0,
+    /**
+     * B61 item 5 (#70): this is **Polylute's lock screen's** host, not the player's. It exists only with "Also on the lock screen" on (otherwise null: the lock screen has no animated cover), and it drives
+     * the shared controller while the lock screen is up; the player's host stands aside meanwhile ([lockDrives]) and takes over again when the lock screen goes.
+     */
+    onLock: Boolean = false,
 ): AnimatedCoverHost? {
     val env = LocalAnimatedCoverEnv.current ?: return null
+    if (onLock && !env.lockCoverOn) return null
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val engines = LocalAnimatedCoverEngines.current
-    val controller = remember(env.finder) {
+    val shared = LocalAnimatedCoverController.current
+    val controller = shared ?: remember(env.finder) {
         AnimatedCoverController(scope, engines?.invoke(context.applicationContext, scope) ?: PlatformAnimatedCoverEngines(context.applicationContext, scope))
     }
-    DisposableEffect(controller) { onDispose { controller.release() } }
+    DisposableEffect(controller) { onDispose { if (shared == null) controller.release() } }
     val size = remember { mutableIntStateOf(0) }
     val host = remember(controller) { AnimatedCoverHost(controller, size) }
 
     // looked for off the main thread, once per album (the finder keeps the answer); again when the library changes. The answer belongs to the album it was found for (B57.5 2.2): while the
     // lookup for another album runs, the old answer is not this song's, so it is not shown and no decoder is made for it (before, a cover made for the previous song's album lived a few
     // milliseconds, until the lookup came back, and was then released as "left"). Songs of the same album keep the answer, so skipping inside an album never touches the decoder.
-    val lookupKey = if (albumId > 0L) "album:$albumId" else "folder:${songPath.substringBeforeLast('/', "")}"
-    var found by remember { mutableStateOf<Pair<String, AnimatedCover?>?>(null) }
-    LaunchedEffect(songPath, albumId, env.enabled, env.finder, env.libraryVersion) {
-        val cover = if (env.enabled && songPath.isNotEmpty()) env.finder.find(songPath, albumId) else null
+    val lookupKey = (if (albumId > 0L) "album:$albumId" else "folder:${songPath.substringBeforeLast('/', "")}") + (if (discNumber > 0) "|disc:$discNumber" else "")
+    // B61 item 5: a host that takes over from the other surface starts from the answer the controller already has for this song, so the decoder it is playing is not released to be made again
+    var found by remember(controller) { mutableStateOf<Pair<String, AnimatedCover?>?>(controller.sharedLookup?.takeIf { it.first == lookupKey }) }
+    LaunchedEffect(songPath, albumId, discNumber, env.enabled, env.finder, env.libraryVersion) {
+        val cover = if (env.enabled && songPath.isNotEmpty()) env.finder.find(songPath, albumId, discNumber) else null
         found = lookupKey to cover
+        controller.sharedLookup = lookupKey to cover
     }
     val wantedKey = rememberUpdatedState(lookupKey)
 
     val system = rememberGlassEnvironment()
-    val lockShowing = rememberUpdatedState(LocalLockSurfaceShowing.current)
+    val lockShowing = rememberUpdatedState(onLock || LocalLockSurfaceShowing.current)
+    val lockCoverOn = rememberUpdatedState(env.lockCoverOn)
     val enabled = rememberUpdatedState(env.enabled)
     val expanded = rememberUpdatedState(playerExpanded)
     val onCoverPage = rememberUpdatedState(coverPageShowing)
     val playing = rememberUpdatedState(isPlaying)
     LaunchedEffect(controller) {
         snapshotFlow {
+            // B61 item 5: with "Also on the lock screen" on and the lock screen up, the lock screen's host decides; the player's has no opinion (null) until it is gone
+            if (!onLock && lockShowing.value && lockCoverOn.value) return@snapshotFlow null
             val inputs = AnimatedCoverPolicy.Inputs(
                 enabled = enabled.value,
                 playerExpanded = expanded.value,
@@ -112,6 +149,7 @@ internal fun rememberAnimatedCoverHost(
                 screenInteractive = system.interactive.value,
                 systemAnimationsAllowed = system.animationsAllowed.value,
                 playing = playing.value(),
+                lockCoverOn = lockCoverOn.value,
             )
             val want = AnimatedCoverController.Want(
                 cover = found?.takeIf { it.first == wantedKey.value }?.second,
@@ -122,7 +160,7 @@ internal fun rememberAnimatedCoverHost(
             )
             // the inputs written out travel beside the want (they are not part of it: only a change of the want reaches the controller), for the event lines of the device log
             want to inputs.describe()
-        }.distinctUntilChanged { old, new -> old.first == new.first }.collect { (want, inputs) -> controller.update(want, inputs) }
+        }.distinctUntilChanged { old, new -> old?.first == new?.first }.collect { decided -> decided?.let { (want, inputs) -> controller.update(want, inputs) } }
     }
     return host
 }
@@ -134,6 +172,14 @@ internal fun rememberAnimatedCoverHost(
 @Composable
 internal fun AnimatedCoverLayer(host: AnimatedCoverHost?, modifier: Modifier = Modifier) {
     if (host == null) return
+    // B61 item 5 (#70): the surface that claimed the view last shows it (the lock screen over the player); the others draw nothing and get it back when it goes
+    val token = remember { Any() }
+    DisposableEffect(host.controller, token) {
+        host.controller.claimView(token)
+        onDispose { host.controller.releaseView(token) }
+    }
+    val owner by host.controller.viewOwner.collectAsStateWithLifecycle()
+    if (owner != token) return
     val engine by host.controller.engine.collectAsStateWithLifecycle()
     val current = engine ?: return
     val view = current.view ?: return

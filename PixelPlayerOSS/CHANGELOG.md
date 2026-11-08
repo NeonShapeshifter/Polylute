@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.4.0-rc.1
+
+- **DAC EQ on the Snowsky Melody.** Writing a curve to the Melody now works end to end: Polylute takes one of the DAC's user slots, writes your filters, saves them and reads them back to check. The filter editor is numbers only: tap a value to type it exactly (decimal keyboard, a +/− action for gain), hold an arrow to move faster, and press Done to send one write per finished edit. A curve the DAC cannot take safely is shown as refused before anything is sent.
+- **Purity closes the DAC's EQ.** Turning Purity on now also closes the DAC's own EQ (your curve stays saved in its slot), so the signal really reaches the DAC untouched. Turning Purity off puts the same slot back and checks that the curve is unchanged. If the DAC is unplugged at that moment, it happens the next time you connect it. The Audio page reads in order and no longer repeats "Off".
+- **USB DAC stability.** When the Melody's clock feedback runs away, or freezes after a change of sample rate, Polylute now notices in 0.2 to 0.4 seconds instead of 1.5 and restarts it, so the gap you hear is much shorter.
+- **Animated covers.** `cover.mp4` has no size limit any more (gif and webp keep 64 MB). An album with several discs can have a cover per disc: `disc1.jpg`, `disc2.jpg`, and `disc2.mp4` for an animated one. In DAP mode the animated cover can also play on Polylute's lock screen (Appearance › Animated covers › Also on the lock screen, off by default).
+- **Library.** A Full Rescan is much faster (about 1 min 40 s for ~5,000 songs on the test phone, was over 10 minutes) and its progress moves. Updating the library no longer repeats the folder-cover work every time: after the first update, an unchanged library updates in a few seconds.
+- **Lyrics.** A text size choice in the lyrics menu; immersive mode grows the size you chose.
+- **DAP lock screen.** Smaller clock placed higher, bigger cover.
+- **Stats.** Artist photos.
+- **Daily Mix.** A discreet shuffle icon.
+- **ReplayGain.** R128 loudness tags (Opus) are read correctly. Before, they could make songs play silent.
+- The scroll bubble no longer covers the floating buttons.
+
+### Known issues
+- DAC EQ curves that boost a band above 0 dB are refused for now, until the Melody's pre-gain direction is confirmed. Cuts work.
+- The first library update after installing this version takes longer once (it relearns the folders).
+
 ## 1.3.0
 
 - **Animated covers.** The full player can loop a muted `cover.mp4`, `cover.webp` or `cover.gif` from an album folder, with a folder picker for access. Lists, the mini player and the lock screen keep the still cover.

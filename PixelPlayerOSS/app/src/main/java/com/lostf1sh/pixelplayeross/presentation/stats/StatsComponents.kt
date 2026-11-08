@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -160,6 +161,30 @@ internal fun RowCover(uri: String?, title: String, modifier: Modifier = Modifier
         }
     }
 }
+
+/**
+ * B58 6 (#74): an artist's avatar in the rankings: the photo the library has for the artist (what Home shows), and the initials when there is none. The initials stay under the photo,
+ * so a photo that is slow to load or cannot be read leaves the initials and not a hole. The address is the one stored for the artist: nothing is looked up from here.
+ */
+@Composable
+internal fun ArtistAvatar(name: String, image: String?, modifier: Modifier = Modifier) {
+    if (image == null) {
+        InitialsAvatar(name, modifier)
+        return
+    }
+    Box(modifier.size(DapSizes.ThumbRow).clip(CircleShape).testTag(ARTIST_PHOTO_TAG)) {
+        InitialsAvatar(name, Modifier.fillMaxSize())
+        coil.compose.AsyncImage(
+            model = image,
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+/** The test tag of a ranking row's artist photo. */
+internal const val ARTIST_PHOTO_TAG = "stats-artist-photo"
 
 /** An artist's avatar: the initials on the raised surface. */
 @Composable

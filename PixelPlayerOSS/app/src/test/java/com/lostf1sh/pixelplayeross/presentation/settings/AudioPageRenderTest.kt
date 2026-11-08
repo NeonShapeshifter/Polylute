@@ -218,7 +218,8 @@ open class AudioPageRenderTest {
     @Test
     fun `B41 - a DAC whose own EQ is closed says it is off in the DAC, by name, and not that it could not be read`() {
         // the owner's Melody reads preset 0xF0 ("Close EQ") twice and consistently: that is the DAC's real state
-        setPage(state(dacPure.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.OFF)))
+        // B61: with Purity on the row says "closed by Purity" (B61AudioPurityRenderTest); the DAC's own words are for a DAC that is off with Purity off
+        setPage(state(dacResonance.copy(dacEq = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.OFF)))
         assertShows(s(R.string.audio_dac_eq_title), s(R.string.audio_dac_eq_closed, "SNOWSKY Melody"))
         assertAbsent(s(R.string.audio_dac_eq_on), s(R.string.audio_dac_eq_flat), s(R.string.audio_dac_eq_unknown))
         fits("DAC EQ off in the DAC")
@@ -244,7 +245,8 @@ open class AudioPageRenderTest {
         val actions = Recorder()
         val closed = com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqLabel.OFF
         // a DAC this build can write (the Melody): the action is there, for the headphones the EQ screen is opened for
-        setPage(state(dacPure.copy(dacEq = closed, dacEqWritable = true)), actions)
+        // B61: offered where it leads somewhere: the DAC's EQ is off and Purity is not holding it closed
+        setPage(state(dacResonance.copy(dacEq = closed, dacEqWritable = true)), actions)
         compose.onNodeWithText(s(R.string.audio_dac_eq_use)).performScrollTo().assertIsDisplayed().performClick()
         assertEquals(listOf("useDacEq:hp-1"), actions.calls)
         fits("DAC EQ with the action")
@@ -271,12 +273,13 @@ open class AudioPageRenderTest {
     }
 
     @Test
-    fun `B39-A7 - Share the DAC with other apps is a switch in Output, off by default, and calls its action`() {
+    fun `B39-A7 - Share the DAC with other apps is a switch under Purity, off by default, and calls its action`() {
         val actions = Recorder()
         setPage(state(dacResonance), actions)
         assertShows(s(R.string.audio_dac_share_title), s(R.string.audio_dac_share_sub))
-        compose.onAllNodes(isToggleable())[0].assertIsOff()
-        compose.onAllNodes(isToggleable())[0].performClick()
+        // B61: the first switch is Purity; the share row sits under it (it read "This applies in Resonance" at the top of the page, before Purity was said)
+        compose.onAllNodes(isToggleable())[1].assertIsOff()
+        compose.onAllNodes(isToggleable())[1].performClick()
         assertEquals(listOf("dacShare:true"), actions.calls)
     }
 
@@ -290,7 +293,7 @@ open class AudioPageRenderTest {
     @Test
     fun `B39-A7 - a stored on state is drawn on`() {
         setPage(state(dacResonance, ui = SettingsUiState(replayGainEnabled = true, dacShareEnabled = true)))
-        compose.onAllNodes(isToggleable())[0].assertIsOn()
+        compose.onAllNodes(isToggleable())[1].assertIsOn()
     }
 
     // ── B40-F8: Resonance's peak limiter: a switch, off unless asked for, with a line that says the truth ──────────────────
@@ -419,9 +422,9 @@ open class AudioPageRenderTest {
         val pure = com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer.noControl
         setPage(state(dacResonance, fixedOutputDac = dongle, fixedOutputAnswer = pure))
         assertShows(s(R.string.pristine_held_off_no_control, "SNOWSKY Melody"))
-        // the first toggle is the share switch (Output); the Purity switch is the second, off and not enabled
-        compose.onAllNodes(isToggleable())[1].assertIsOff()
-        compose.onAllNodes(isToggleable())[1].assertIsNotEnabled()
+        // B61: the first toggle is the Purity switch (the share switch is under it), off and not enabled
+        compose.onAllNodes(isToggleable())[0].assertIsOff()
+        compose.onAllNodes(isToggleable())[0].assertIsNotEnabled()
         fits("held off")
     }
 
@@ -436,8 +439,8 @@ open class AudioPageRenderTest {
     fun `B40-P3 - a device in Purity leaves the switch as the listener set it`() {
         val purity = answer(true, com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode.PURITY)
         setPage(state(dacPure, fixedOutputDac = dongle, fixedOutputAnswer = purity))
-        compose.onAllNodes(isToggleable())[1].assertIsOn()
-        compose.onAllNodes(isToggleable())[1].assertIsEnabled()
+        compose.onAllNodes(isToggleable())[0].assertIsOn()
+        compose.onAllNodes(isToggleable())[0].assertIsEnabled()
     }
 
     // ── what every state shows ───────────────────────────────────────────────────────────────────────
@@ -539,8 +542,8 @@ open class AudioPageRenderTest {
     fun `the Pure Direct switch is on this page and calls the action that writes its preference`() {
         val actions = Recorder()
         setPage(state(dacResonance), actions)
-        // The page's switches in order: "Share the DAC with other apps" (Output, B39-A7), then Pure Direct.
-        compose.onAllNodes(isToggleable())[1].performClick()
+        // The page's switches in order (B61): Pure Direct, then "Share the DAC with other apps" (B39-A7), which sits under it.
+        compose.onAllNodes(isToggleable())[0].performClick()
         assertEquals(listOf("pure:true"), actions.calls)
     }
 

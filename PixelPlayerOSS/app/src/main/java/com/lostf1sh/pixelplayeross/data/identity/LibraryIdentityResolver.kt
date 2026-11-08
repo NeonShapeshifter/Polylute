@@ -36,6 +36,8 @@ data class ScannedItem(
     val mediaStoreId: Long,
     val fingerprint: String,
     val fileSignature: String,
+    /** Where MediaStore says the file is now. Not part of the identity (the key's inputs are frozen); the scan uses it to notice a file that moved (B58 2). */
+    val path: String? = null,
 )
 
 /**

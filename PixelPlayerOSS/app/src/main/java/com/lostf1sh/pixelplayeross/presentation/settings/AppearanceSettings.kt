@@ -79,6 +79,8 @@ data class AppearanceSettingsState(
     val lyricsMode: LyricsMode = LyricsMode.DEFAULT,
     /** B56-7.2 (Player): "Animated covers" as the listener set it; null = not yet, the mode's default stands. */
     val animatedCoversStored: Boolean? = null,
+    /** B61 item 5 (#70): "Also on the lock screen". */
+    val animatedCoversOnLock: Boolean = false,
     /** B57-fix1 4: the folder the animated covers are read through (its name), or null while there is none. Only Android 13+ has one. */
     val animatedCoversFolder: String? = null,
     /** B57-fix1 4: Android 13+ reads the covers through a folder the listener picks; before it there is no picker and no folder row. */
@@ -115,6 +117,7 @@ data class AppearanceSettingsState(
             coverGlassLively = ui.coverGlassLively,
             lyricsMode = ui.lyricsMode,
             animatedCoversStored = ui.animatedCoversStored,
+            animatedCoversOnLock = ui.animatedCoversOnLock,
             animatedCoversFolder = ui.animatedCoversFolder,
             showBookmarkButton = ui.showBookmarkButton,
             immersiveLyricsEnabled = ui.immersiveLyricsEnabled,
@@ -156,6 +159,7 @@ interface AppearanceSettingsActions {
     fun onLyricsModeChange(value: LyricsMode)
     /** B56-7.2 (Player): "Animated covers". A fake that does not care leaves it alone. */
     fun onAnimatedCoversChange(value: Boolean) = Unit
+    fun onAnimatedCoversOnLockChange(value: Boolean) = Unit
     /** B57-fix1 4: the system folder picker's answer (null = cancelled): a kept folder turns the feature on, anything else changes nothing. */
     fun onAnimatedCoverFolderPicked(uri: android.net.Uri?, flags: Int) = Unit
     /** B57-fix1 4: "Remove" the folder: the permission is released and the feature goes off. */

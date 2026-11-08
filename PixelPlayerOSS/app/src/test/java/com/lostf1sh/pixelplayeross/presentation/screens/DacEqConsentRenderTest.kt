@@ -217,7 +217,7 @@ open class DacEqConsentRenderTest {
         }
         compose.waitForIdle()
         compose.onNodeWithText(s(R.string.dac_eq_consent_title)).assertExists()
-        compose.onNodeWithText(s(R.string.dac_eq_consent_body, "SNOWSKY Melody", "USER 3")).assertExists()
+        compose.onNodeWithText(s(R.string.dac_eq_consent_body, "SNOWSKY Melody")).assertExists()
         compose.onNodeWithText(s(R.string.dac_eq_consent_not_now)).performClick()
         compose.onNodeWithText(s(R.string.dac_eq_consent_allow)).performClick()
         assertThat(allowed).isEqualTo(1)

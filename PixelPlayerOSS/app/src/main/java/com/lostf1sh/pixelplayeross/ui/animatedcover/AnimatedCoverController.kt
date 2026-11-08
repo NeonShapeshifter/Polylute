@@ -76,6 +76,31 @@ class AnimatedCoverController(
     var current: AnimatedCover? = null
         private set
 
+    /**
+     * B61 item 5 (#70): the last lookup any surface made (the song's key and what the finder answered), so a surface that takes over (the lock screen over the open player, and back) starts from the
+     * answer the other already has and does not ask "no cover yet" of a controller that is playing it (which would release the decoder, to make it again a moment later). Main thread only.
+     */
+    var sharedLookup: Pair<String, AnimatedCover?>? = null
+
+    // B61 item 5 (#70): the one engine has one view, and two surfaces can ask for it (the full player's cover page and Polylute's lock screen over it). The surface that claimed it last shows it;
+    // when that one goes, the one before it gets it back. A surface that is not the owner draws nothing, so the view is never in two parents and never stolen in the middle of a recomposition.
+    private val viewClaims = ArrayList<Any>()
+    private val _viewOwner = MutableStateFlow<Any?>(null)
+
+    /** The surface that shows [engine]'s view now, or null. */
+    val viewOwner: StateFlow<Any?> = _viewOwner.asStateFlow()
+
+    fun claimView(token: Any) {
+        viewClaims.remove(token)
+        viewClaims.add(token)
+        _viewOwner.value = token
+    }
+
+    fun releaseView(token: Any) {
+        viewClaims.remove(token)
+        _viewOwner.value = viewClaims.lastOrNull()
+    }
+
     private val failed = LinkedHashSet<String>()
     private var idleJob: Job? = null
 

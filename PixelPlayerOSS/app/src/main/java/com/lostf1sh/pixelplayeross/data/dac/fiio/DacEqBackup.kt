@@ -26,6 +26,14 @@ data class DacEqSlotSnapshot(
         preGainTenthsDb == other.preGainTenthsDb && bands.size == other.bands.size &&
             bands.indices.all { bands[it].sameEffectAs(other.bands[it]) }
 
+    /**
+     * B59 (#53): [sameEffectAs] with the Q one hundredth either way (the DAC's own rounding of what it was sent): the comparison of a read-back with
+     * what was written. The gain, the frequency, the type and the pre-gain stay exact.
+     */
+    fun sameEffectAsAllowingQRounding(other: DacEqSlotSnapshot): Boolean =
+        preGainTenthsDb == other.preGainTenthsDb && bands.size == other.bands.size &&
+            bands.indices.all { bands[it].sameEffectAsAllowingQRounding(other.bands[it]) }
+
     /** This content as the app writes it: no unset band (they become flat ones). */
     fun writable(): DacEqSlotSnapshot = copy(bands = bands.map(DacEqDefaults::writable))
 
@@ -65,6 +73,12 @@ data class DacEqBackup(
      * [slots] keeps what each held before (the factory curve), untouched, and "restore factory curve" gives it back.
      */
     val ownedSlots: Set<Int> = emptySet(),
+    /**
+     * B59 (#53): the user slot the app uses on this DAC, **chosen once** (the first take-over reads the user slots and picks a harmless one, or the
+     * listener picks) and remembered here. Null: not chosen yet; then a slot the app already took over ([ownedSlots]) is the app's, else the profile's
+     * default ([FiioHidProfile.appSlotId]). Older backup files have no such field and read as null.
+     */
+    val chosenSlot: Int? = null,
 ) {
     /** Every snapshot is a whole one and the one for the active preset is there. */
     val isComplete: Boolean
@@ -78,9 +92,31 @@ data class DacEqBackup(
 
     fun owns(slot: Int): Boolean = slot in ownedSlots
 
+    fun withChosenSlot(slot: Int?): DacEqBackup = copy(chosenSlot = slot)
+
+    /**
+     * B59 (#53): **the slot the app writes on this DAC.** A slot the app already took over stays the app's (B31's record), whatever else; else the one
+     * chosen for this DAC; else, while nothing is chosen, the profile's default (USER 3 on the Melody), which is what the app used before the choice existed.
+     * Only a slot the profile lists as writable counts.
+     */
+    fun appSlotFor(profile: FiioHidProfile): Int? {
+        val writable = profile.writableSlots.map { it.id }
+        return ownedSlots.firstOrNull { it in writable }
+            ?: chosenSlot?.takeIf { it in writable }
+            ?: profile.appSlotId
+    }
+
+    /** B59: the app has a slot on this DAC already (taken over, or chosen): nothing more to decide. */
+    fun hasAppSlot(profile: FiioHidProfile): Boolean {
+        val writable = profile.writableSlots.map { it.id }
+        return ownedSlots.any { it in writable } || chosenSlot in writable
+    }
+
     companion object {
         fun of(att: AttachedFiio, state: DacEqState, nowEpochMs: Long): DacEqBackup? {
             val snapshot = DacEqSlotSnapshot.of(state) ?: return null
+            // B60 (#53): a pointer the model does not list (the Melody's 0x0A marker that no claim could name) is not a selection to restore to: no backup from it.
+            if (att.profile.slots.isNotEmpty() && att.profile.slots.none { it.id == snapshot.presetId }) return null
             return DacEqBackup(
                 backupKey = att.backupKey,
                 profileId = att.profile.id,

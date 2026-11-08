@@ -17,19 +17,25 @@ class B56AnimatedCoverBoundaryTest {
         val users = kotlinFiles().filter { rel(it) != "ui/animatedcover/AnimatedCoverLayer.kt" }
             .filter { it.readText().let { t -> t.contains("AnimatedCoverLayer(") || t.contains("rememberAnimatedCoverHost(") } }
             .map(::rel)
-        assertThat(users).containsExactly("presentation/components/player/PlayerCoverSurface.kt")
+        // B61 item 5 (#70): and Polylute's own lock screen, when the listener turned "Also on the lock screen" on (it is the one other surface that shows the cover, through the same controller)
+        assertThat(users).containsExactly("presentation/components/player/PlayerCoverSurface.kt", "presentation/lockscreen/DapLockScreen.kt")
     }
 
     @Test
-    fun `the lists, the mini player, Home, notifications, the lock screen and widgets never mention it`() {
+    fun `the lists, the mini player, Home, notifications and widgets never mention it, and of the lock screen only its cover does`() {
         val animated = kotlinFiles().filter { !rel(it).startsWith("ui/animatedcover/") }.filter { it.readText().contains("ui.animatedcover") }.map(::rel).toSet()
         // who may import the package: the player's cover, the activity that provides it, the settings that switch it, the artwork path that takes its first frame
         assertThat(animated).containsExactly(
             "MainActivity.kt",
             "presentation/components/player/PlayerCoverSurface.kt",
+            // B61 item 5 (#70): the lock screen's cover (one file of its package)
+            "presentation/lockscreen/DapLockScreen.kt",
             "utils/FolderArtworkSession.kt",
         )
-        for (area in listOf("presentation/lockscreen", "presentation/widget", "widget", "presentation/components/MiniPlayer", "presentation/screens/HomeScreen.kt", "data/service")) {
+        // the rest of the lock screen's package (the clock, the progress, the transport row, the surface that hosts it), the widgets, the mini player, Home and the service still never mention it
+        val lockOthers = kotlinFiles().filter { rel(it).startsWith("presentation/lockscreen") && rel(it) != "presentation/lockscreen/DapLockScreen.kt" }
+        assertThat(lockOthers.none { it.readText().contains("animatedcover") }).isTrue()
+        for (area in listOf("presentation/widget", "widget", "presentation/components/MiniPlayer", "presentation/screens/HomeScreen.kt", "data/service")) {
             val files = kotlinFiles().filter { rel(it).startsWith(area) }
             assertThat(files.none { it.readText().contains("animatedcover") }).isTrue()
         }
@@ -55,10 +61,10 @@ class B56AnimatedCoverBoundaryTest {
     fun `the find step is off the main thread, and the finder is the only thing that lists a folder`() {
         val finder = File(main, "ui/animatedcover/AnimatedCoverFiles.kt").readText()
         // B57.5 2.1: the cover is the album's, so the finder is asked for the song's path and its album
-        assertThat(finder).contains("withContext(io) { findNow(songPath, albumId) }")
+        assertThat(finder).contains("withContext(io) { findNow(songPath, albumId, discNumber) }")
         assertThat(finder).contains("Dispatchers.IO")
         val layer = File(main, "ui/animatedcover/AnimatedCoverLayer.kt").readText()
-        assertThat(layer).contains("env.finder.find(songPath, albumId)")
+        assertThat(layer).contains("env.finder.find(songPath, albumId, discNumber)")
         assertThat(layer).doesNotContain("findNow")
         // no list row and no composable under presentation/screens asks for a folder's cover file
         assertThat(kotlinFiles().filter { rel(it).startsWith("presentation/screens") }.none { it.readText().contains("AnimatedCoverFinder") }).isTrue()

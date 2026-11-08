@@ -58,7 +58,9 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -95,8 +97,18 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import timber.log.Timber
 
-/** The cover, as the design sets it (`LockScreen.dc.html`): 216 dp on the HONOR. It shrinks on a shorter screen, never grows. */
-private val LockArtworkSize = 216.dp
+/**
+ * The cover on the lock surface: at most 280 dp, never wider than the content (320 dp on the HONOR) and never more than the room the other blocks leave. B58 7 (#77, the owner's wish):
+ * it was 216 dp (`LockScreen.dc.html`), and the clock above it took more room than it needed. It shrinks on a shorter screen, never grows past this.
+ */
+private val LockArtworkSize = 280.dp
+
+/** B58 7 (#77): the clock is the display token made smaller (64 sp before): it is read at a glance, and the cover is what the surface is for. */
+private val LockClockStyle = DapType.Display.copy(fontSize = 44.sp, lineHeight = 48.sp)
+
+/** B58 7 (#77): how far below the status bar the clock starts (48 dp before), and the gap between the clock block and the cover (32 dp before). */
+private val LockClockTopGap = DapSpacing.Lg
+private val LockClockCoverGap = DapSpacing.SectionGap
 
 /**
  * The DAP lock surface: a playback face for a dedicated player.
@@ -251,13 +263,13 @@ fun DapLockScreen(
                     .navigationBarsPadding()
                     .padding(horizontal = DapSpacing.Gutter),
                 top = {
-                    // The design puts the clock 72 dp from the top of the screen; the status bar is the first of them.
+                    // B58 7: the clock sits higher (the design put it 72 dp from the top; it is [LockClockTopGap] under the status bar now).
                     Column(Modifier.fillMaxWidth()) {
-                        Spacer(Modifier.height(DapSpacing.Xl))
+                        Spacer(Modifier.height(LockClockTopGap))
                         LockClock()
                     }
                 },
-                cover = { LockArtwork(song) },
+                cover = { LockArtwork(song, isPlaying) },
                 middle = {
                     Column(Modifier.fillMaxWidth()) {
                         NowPlayingText(song)
@@ -375,6 +387,10 @@ internal class FingerTrace {
 
 private const val LOCK_LOG_TAG = "DapLockScreen"
 
+/** The test tags of the clock and of the cover's square (B58 7: the tests measure them). */
+internal const val LOCK_CLOCK_TAG = "lock_clock"
+internal const val LOCK_COVER_TAG = "lock_cover"
+
 /**
  * The surface's four blocks, stacked the way the design stacks them: the clock, the cover, the title and controls,
  * and, at the foot, the output line and the way out.
@@ -395,7 +411,7 @@ private fun LockLayout(
     androidx.compose.ui.layout.Layout(
         content = {
             Box(Modifier.layoutId("top")) { top() }
-            Box(Modifier.layoutId("cover")) { cover() }
+            Box(Modifier.layoutId("cover").testTag(LOCK_COVER_TAG)) { cover() }
             Box(Modifier.layoutId("middle")) { middle() }
             Box(Modifier.layoutId("bottom")) { bottom() }
         },
@@ -406,7 +422,7 @@ private fun LockLayout(
         val topP = byId("top").measure(loose)
         val middleP = byId("middle").measure(loose)
         val bottomP = byId("bottom").measure(loose)
-        val gapAbove = DapSpacing.GroupGap.roundToPx()
+        val gapAbove = LockClockCoverGap.roundToPx()
         val gapBelow = 28.dp.roundToPx()
         val room = constraints.maxHeight - topP.height - middleP.height - bottomP.height - gapAbove - gapBelow
         val side = minOf(LockArtworkSize.roundToPx(), constraints.maxWidth, room).coerceAtLeast(0)
@@ -458,7 +474,7 @@ private fun LockClock() {
             .format(now)
     }
 
-    Text(text = timeText, style = DapType.Display, color = Dap.primaryText, maxLines = 1)
+    Text(text = timeText, style = LockClockStyle, color = Dap.primaryText, maxLines = 1, modifier = Modifier.testTag(LOCK_CLOCK_TAG))
     Spacer(Modifier.height(DapSpacing.Sm))
     Text(text = dateText, style = DapType.BodyLarge, color = Dap.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
@@ -481,19 +497,41 @@ private fun systemUses24HourClock(context: Context): Boolean {
     return pattern.contains('H') || pattern.contains('k')
 }
 
-/** The cover: it fills the square [LockLayout] gives it (at most the design's 216 dp). */
+/**
+ * The cover: it fills the square [LockLayout] gives it (at most [LockArtworkSize]).
+ *
+ * B61 item 5 (#70): with "Also on the lock screen" on, the album's animated cover plays over the still one, through the activity's one controller (never a second decoder): the host asks for the
+ * song's own cover (its disc's, when it has one), the layer draws the engine's view while this surface is the one that holds it, and the screen going off releases it as it always did.
+ */
 @Composable
-private fun LockArtwork(song: Song) {
-    SmartImage(
-        model = song.albumArtUriString?.takeIf { it.isNotBlank() },
-        contentDescription = stringResource(R.string.cd_album_art_for_title, song.title),
-        shape = RoundedCornerShape(DapRadius.Surface),
-        // The largest rendered size (216 dp at this density), not the file's full resolution.
-        targetSize = coil.size.Size(648, 648),
-        modifier = Modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(DapRadius.Surface)),
-    )
+private fun LockArtwork(song: Song, isPlaying: Boolean) {
+    val playing = androidx.compose.runtime.rememberUpdatedState(isPlaying)
+    Box(Modifier.fillMaxSize()) {
+        SmartImage(
+            model = song.albumArtUriString?.takeIf { it.isNotBlank() },
+            contentDescription = stringResource(R.string.cd_album_art_for_title, song.title),
+            shape = RoundedCornerShape(DapRadius.Surface),
+            // The largest rendered size (280 dp at this density), not the file's full resolution.
+            targetSize = coil.size.Size(840, 840),
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(DapRadius.Surface)),
+        )
+        val host = com.lostf1sh.pixelplayeross.ui.animatedcover.rememberAnimatedCoverHost(
+            songPath = song.path,
+            isPlaying = { playing.value },
+            playerExpanded = false,
+            coverPageShowing = false,
+            albumId = song.albumId,
+            discNumber = song.discNumber ?: 0,
+            onLock = true,
+        )
+        if (host != null) {
+            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(DapRadius.Surface)).onSizeChanged { host.onSize(minOf(it.width, it.height)) }) {
+                com.lostf1sh.pixelplayeross.ui.animatedcover.AnimatedCoverLayer(host)
+            }
+        }
+    }
 }
 
 /** Title and artist under the cover. */

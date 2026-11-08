@@ -3,4 +3,7 @@
     <!-- B56 fas 7.2: animerade omslag -->
     <string name="setcat_animated_covers_title">Animerade omslag</string>
     <string name="setcat_animated_covers_subtitle">I helskärmsspelaren spelas cover.mp4, cover.webp eller cover.gif från albummappen upp utan ljud i en slinga. Listor, minispelaren och låsskärmen behåller det stilla omslaget.</string>
+    <!-- B61 item 5 (#70) -->
+    <string name="setcat_animated_covers_lock_title">Även på låsskärmen</string>
+    <string name="setcat_animated_covers_lock_subtitle">Polylutes egen låsskärm spelar upp albumets animerade omslag medan musik spelas och skärmen är på. Av som standard.</string>
 </resources>

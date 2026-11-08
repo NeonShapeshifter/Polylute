@@ -15,6 +15,11 @@
     <string name="lyrics_menu_sync_sub">Flytta raderna tidigare eller senare</string>
     <string name="lyrics_menu_sync_earlier">Fördröj 0,1 s</string>
     <string name="lyrics_menu_sync_later">Tidigarelägg 0,1 s</string>
+    <string name="lyrics_menu_text_size">Textstorlek</string>
+    <string name="lyrics_menu_size_small">S</string>
+    <string name="lyrics_menu_size_medium">M</string>
+    <string name="lyrics_menu_size_large">L</string>
+    <string name="lyrics_menu_size_extra_large">XL</string>
     <string name="lyrics_menu_alignment">Justering</string>
     <string name="lyrics_menu_align_left">Vänster</string>
     <string name="lyrics_menu_align_center">Mitten</string>

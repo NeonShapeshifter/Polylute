@@ -19,10 +19,14 @@ data class DacEqLive(val preGainTenthsDb: Int, val bands: List<DacEqBand>, val s
     /** The same, under each single reading the sense allows. */
     val netPeaksDb: List<Double> get() = DacEqCurve.netPeaksDb(bands, preGainTenthsDb, sense)
 
-    /** The same sound (see [DacEqBand.sameEffectAs]): the plan ends here even when the DAC kept an unset band where the target has a flat one. */
+    /**
+     * The same sound (see [DacEqBand.sameEffectAs]): the plan ends here even when the DAC kept an unset band where the target has a flat one.
+     * B59 (#53): and a Q one hundredth away is the same band ([DacEqBand.sameEffectAsAllowingQRounding]): the DAC's own rounding of what it was sent is not a
+     * change worth a SET (the gain, which the level rule counts, stays exact).
+     */
     fun sameEffectAs(other: DacEqLive): Boolean =
         preGainTenthsDb == other.preGainTenthsDb && bands.size == other.bands.size &&
-            bands.indices.all { bands[it].sameEffectAs(other.bands[it]) }
+            bands.indices.all { bands[it].sameEffectAsAllowingQRounding(other.bands[it]) }
 
     /** The state after one SET frame: a gain or a band changes the working set; any other frame leaves it as it is. */
     fun after(command: Int, data: List<Byte>): DacEqLive = when (command) {
@@ -147,7 +151,8 @@ object DacEqWritePlanner {
         require(start.bands.size == target.bands.size) { "a plan keeps the band count" }
         require(start.sense == target.sense) { "a plan is judged under one sense" }
         val count = target.bands.size
-        val changed = (0 until count).filter { !start.bands[it].sameEffectAs(target.bands[it]) }
+        // B59 (#53): a band that holds what is asked but for the DAC's own one-hundredth Q rounding (0.70 for 0.71) is not rewritten
+        val changed = (0 until count).filter { !start.bands[it].sameEffectAsAllowingQRounding(target.bands[it]) }
         // Bands whose gain does not go up first: they leave less boost behind than they found.
         val ordered = changed.sortedWith(compareBy({ target.bands[it].gainTenthsDb > start.bands[it].gainTenthsDb }, { it }))
         val sequence = ordered + if (forceAll) (0 until count).filter { it !in changed } else emptyList()

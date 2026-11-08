@@ -24,7 +24,7 @@ class B51FolderArtworkTest {
         context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE).edit().clear().commit()
         root.deleteRecursively()
     }
-    private fun refresh(eligible: Boolean = true, enabled: Boolean = true, downloaded: Boolean = false, embedded: ByteArray? = null, uri: String? = null) =
+    private fun refresh(eligible: Boolean = true, enabled: Boolean = true, downloaded: Boolean = false, embedded: Boolean = false, uri: String? = null) =
         AlbumArtUtils.refreshFolderArtwork(context, id, song.path, uri, eligible, enabled, downloaded) { embedded }
 
     @Test fun `mixed album folders and generic directory names are never eligible`() {
@@ -38,9 +38,15 @@ class B51FolderArtworkTest {
         assertThat(refresh().uri).startsWith(LocalArtworkUri.buildSongUri(id))
         assertThat(AlbumArtUtils.getCachedAlbumArtFile(context, id).readBytes()).isEqualTo(cover.readBytes())
         cover.writeBytes(ByteArray(2048) { 44 })
-        val embedded = ByteArray(2048) { 77 }
-        refresh(embedded = embedded)
-        assertThat(AlbumArtUtils.getCachedAlbumArtFile(context, id).readBytes()).isEqualTo(embedded)
+        // B59 2 (#80): the file's own picture wins, and it is not extracted by this step: the folder cover installed before is taken away and the picture comes back lazily
+        val result = refresh(embedded = true)
+        assertThat(result.changed).isTrue()
+        assertThat(result.uri).startsWith(LocalArtworkUri.buildSongUri(id))
+        assertThat(AlbumArtUtils.getCachedAlbumArtFile(context, id).exists()).isFalse()
+        assertThat(context.getSharedPreferences("folder_art_sources", Context.MODE_PRIVATE).contains(id.toString())).isFalse()
+        // and a song that has a picture from the start never gets the folder image
+        assertThat(refresh(embedded = true).changed).isFalse()
+        assertThat(AlbumArtUtils.getCachedAlbumArtFile(context, id).exists()).isFalse()
     }
     @Test fun `switch off prevents installation and clears existing folder covers on refresh`() {
         assertThat(refresh(enabled = false).uri).isNull()

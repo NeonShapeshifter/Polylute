@@ -250,6 +250,11 @@ data class WriteContext(
      * **listener** asked for, and for nothing else: a reviewer's command needs the override, and nothing automatic is ever let through.
      */
     val userConsent: Boolean = false,
+    /**
+     * B59 (#53): the user slot the app writes on this DAC (the one chosen for it, or the one it took over), or null for the profile's default
+     * ([FiioHidProfile.appSlotId]). The gate judges every request against this one slot, whichever it is.
+     */
+    val appSlotId: Int? = null,
 )
 
 /**
@@ -317,7 +322,11 @@ class DacEqWriteGate(
         if (request.kind in PAUSED_ONLY && context.playing) {
             return refuse(GateRefusal.PLAYBACK_NOT_PAUSED, "${request.kind} selects a preset that may play at any level: pause the music first")
         }
-        val appSlot = profile.appSlotId!!
+        // B59 (#53): the slot is the one chosen for this DAC (the writer says which), else the profile's default; it must be one the profile lets the app write.
+        val appSlot = context.appSlotId ?: profile.appSlotId!!
+        if (profile.writableSlots.none { it.id == appSlot }) {
+            return refuse(GateRefusal.NOT_USER_SLOT, "slot 0x%02X is not a user slot of ${profile.displayName}".format(appSlot))
+        }
         val currentPreset = (context.read.activePreset as EqRead.Read).value
 
         return when (request.kind) {
@@ -327,7 +336,7 @@ class DacEqWriteGate(
                 }
                 if (request.slotId != appSlot) return refuse(GateRefusal.NOT_USER_SLOT, "only slot 0x%02X is ours".format(appSlot))
                 backupProblem(context, emptySet())?.let { return it }
-                grant(request, context, appSlot, setOf(preset(appSlot), preset(currentPreset)))
+                grant(request, context, appSlot, setOfNotNull(preset(appSlot), backTo(context, currentPreset)))
             }
             WriteKind.CLOSE_EQ -> {
                 val close = profile.disabledPresetId ?: return refuse(GateRefusal.NOT_USER_SLOT, "the model has no Close EQ preset")
@@ -344,7 +353,7 @@ class DacEqWriteGate(
             WriteKind.TAKE_OVER -> takeOver(request, context, appSlot, currentPreset)
             WriteKind.INVENTORY -> {
                 backupProblem(context, emptySet())?.let { return it }
-                grant(request, context, null, profile.slots.map { preset(it.id) }.toSet() + preset(currentPreset))
+                grant(request, context, null, profile.slots.map { preset(it.id) }.toSet() + setOfNotNull(backTo(context, currentPreset)))
             }
             WriteKind.SELECT_PRESET -> selectPreset(request, context, currentPreset)
             WriteKind.LISTENING_CHECK -> listeningCheck(request, context, appSlot, currentPreset)
@@ -379,7 +388,7 @@ class DacEqWriteGate(
         if (net > 0.0) return refuse(GateRefusal.NET_BOOST, "net peak ${"%.2f".format(net)} dB after the pre-gain")
         if (currentPreset != appSlot) {
             slotSelectProblem(context, appSlot)?.let { return it }
-            return grant(request, context, appSlot, setOf(preset(appSlot), preset(currentPreset)), preGain)
+            return grant(request, context, appSlot, setOfNotNull(preset(appSlot), backTo(context, currentPreset)), preGain)
         }
         val plan = planner(DacEqLive.of(context.read, sense)!!, DacEqLive(preGain, bands, sense), false, false)
         planProblem(profile, plan, exemptFinal = false)?.let { return refuse(GateRefusal.NET_BOOST, it) }
@@ -408,13 +417,13 @@ class DacEqWriteGate(
             force && currentPreset == slot -> DacEqSlotSnapshot.of(context.read)!!
             force -> null // a roundtrip of the app's own slot: nothing is known to write until it is selected and read
             else -> return refuse(GateRefusal.SLOT_IS_THE_APPS, "slot 0x%02X is the app's now; the backup holds its factory curve (restore factory curve puts that back)".format(slot))
-        } ?: return grant(request, context, slot, setOf(preset(slot), preset(currentPreset)))
+        } ?: return grant(request, context, slot, setOfNotNull(preset(slot), backTo(context, currentPreset)))
         val snapshot = source.writable()
         limitsProblem(profile, snapshot.bands, snapshot.preGainTenthsDb, onlyAppFilters = false)
             ?.let { return refuse(GateRefusal.OUT_OF_LIMITS, "the backup of 0x%02X: $it".format(slot)) }
         if (currentPreset != slot) {
             if (!owned) slotSelectProblem(context, slot, snapshot)?.let { return it }
-            return grant(request, context, slot, setOf(preset(slot), preset(currentPreset)))
+            return grant(request, context, slot, setOfNotNull(preset(slot), backTo(context, currentPreset)))
         }
         val plan = planner(DacEqLive.of(context.read, sense)!!, DacEqLive.of(snapshot, sense), force, !owned)
         planProblem(profile, plan, exemptFinal = !owned)?.let { return refuse(GateRefusal.NET_BOOST, it) }
@@ -433,7 +442,7 @@ class DacEqWriteGate(
         if (returnTo != null && context.profile.slots.none { it.id == returnTo }) {
             return refuse(GateRefusal.NOT_USER_SLOT, "preset 0x%02X is not one of ${context.profile.displayName}'s".format(returnTo))
         }
-        return grant(request, context, null, setOfNotNull(preset(context.backup!!.activePresetId), returnTo?.let(::preset)))
+        return grant(request, context, null, setOfNotNull(backTo(context, context.backup!!.activePresetId), returnTo?.let(::preset)))
     }
 
     /**
@@ -446,7 +455,7 @@ class DacEqWriteGate(
         val profile = context.profile
         if (request.slotId != appSlot) return refuse(GateRefusal.NOT_USER_SLOT, "only slot 0x%02X is ours".format(appSlot))
         backupProblem(context, if (currentPreset == appSlot) setOf(appSlot) else emptySet())?.let { return it }
-        if (currentPreset != appSlot) return grant(request, context, appSlot, setOf(preset(appSlot), preset(currentPreset)))
+        if (currentPreset != appSlot) return grant(request, context, appSlot, setOfNotNull(preset(appSlot), backTo(context, currentPreset)))
         val target = DacEqLive(0, DacEqDefaults.flatBands(profile.bandCount), context.sense)
         val plan = planner(DacEqLive.of(context.read, context.sense)!!, target, false, false)
         planProblem(profile, plan, exemptFinal = false)?.let { return refuse(GateRefusal.NET_BOOST, it) }
@@ -463,7 +472,7 @@ class DacEqWriteGate(
         val snapshot = backup.slots.getValue(appSlot).writable()
         limitsProblem(profile, snapshot.bands, snapshot.preGainTenthsDb, onlyAppFilters = false)
             ?.let { return refuse(GateRefusal.OUT_OF_LIMITS, "the factory curve of 0x%02X: $it".format(appSlot)) }
-        if (currentPreset != appSlot) return grant(request, context, appSlot, setOf(preset(appSlot), preset(currentPreset)))
+        if (currentPreset != appSlot) return grant(request, context, appSlot, setOfNotNull(preset(appSlot), backTo(context, currentPreset)))
         val plan = planner(DacEqLive.of(context.read, context.sense)!!, DacEqLive.of(snapshot, context.sense), false, true)
         planProblem(profile, plan, exemptFinal = true)?.let { return refuse(GateRefusal.NET_BOOST, it) }
         return grant(request, context, appSlot, setOfNotNull(save(profile, appSlot), request.returnTo?.let(::preset)), plan = plan)
@@ -485,7 +494,7 @@ class DacEqWriteGate(
         if (context.playing && !request.confirmed) {
             return refuse(GateRefusal.CONFIRMATION_NEEDED, "music is playing: selecting a preset changes the sound, and nobody confirmed")
         }
-        return grant(request, context, null, setOf(preset(target), preset(currentPreset)))
+        return grant(request, context, null, setOfNotNull(preset(target), backTo(context, currentPreset)))
     }
 
     /**
@@ -511,7 +520,7 @@ class DacEqWriteGate(
                 return refuse(GateRefusal.SLOT_NOT_TAKEN_OVER, "slot 0x%02X is selected and not flat with the pre-gain at 0; the check starts from there".format(appSlot))
             }
         }
-        val frames = setOf(preset(appSlot), preset(currentPreset), gain(-LISTENING_CHECK_TENTHS), gain(LISTENING_CHECK_TENTHS), gain(0))
+        val frames = setOfNotNull(preset(appSlot), backTo(context, currentPreset), gain(-LISTENING_CHECK_TENTHS), gain(LISTENING_CHECK_TENTHS), gain(0))
         return grant(request, context, appSlot, frames)
     }
 
@@ -589,6 +598,12 @@ class DacEqWriteGate(
         ?: "the count disagrees with the table"
 
     private fun preset(id: Int) = AllowedFrame(FiioHidWrites.CMD_PRESET, FiioHidWrites.encodePreset(id).toList())
+
+    /**
+     * B60 (#53): the frame that puts the pointer **back** where it was: only for a preset the model lists. A pointer read as the Melody's 0x0A marker that no claim named is not a
+     * preset the app may ever send (`select 0x0A` is not an id of the model), so no permit covers it and the put-back fails safe instead of sending it.
+     */
+    private fun backTo(context: WriteContext, id: Int): AllowedFrame? = if (context.profile.slots.any { it.id == id }) preset(id) else null
     private fun gain(tenths: Int) = AllowedFrame(FiioHidWrites.CMD_GAIN, FiioHidWrites.encodeGain(tenths).toList())
     private fun tenths(db: Double) = (db * 10).roundToInt()
 

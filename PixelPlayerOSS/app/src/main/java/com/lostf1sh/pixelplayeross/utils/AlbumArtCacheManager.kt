@@ -61,6 +61,11 @@ object AlbumArtCacheManager {
      */
     private const val MIN_CLEANUP_INTERVAL_MS = 5 * 60 * 1000L
 
+    /** The tests of the size clean start each case outside the five-minute interval. */
+    internal fun forgetLastCleanup() {
+        lastCleanupTime = 0L
+    }
+
     private data class CacheEvictionCandidate(
         val file: File,
         val lastModifiedSnapshot: Long,
@@ -106,8 +111,11 @@ object AlbumArtCacheManager {
             
             Timber.tag(TAG).d("Cache size ${currentSize / 1024 / 1024}MB exceeds limit, cleaning...")
             
+            // B61 (the LRU edge of B60's review): an album's own cover (one small file per album that has disc covers) is not evicted; the next sync would put it back, but until then the album
+            // would show a placeholder. The size still counts it.
+            val albumCovers = AlbumArtUtils.recordedAlbumCoverKeys(context)
             val filesToDelete = snapshotFilesForCleanup(
-                artFiles = artFiles,
+                artFiles = artFiles.filterNot { extractSongIdFromFilename(it.name) in albumCovers },
                 cleanupPercentage = CLEANUP_PERCENTAGE
             )
             
@@ -151,10 +159,12 @@ object AlbumArtCacheManager {
             }
             
             var deletedCount = 0
-            
+            // B60 review: an album's own cover (a reserved key, never a song id) stays while its album still records it (B61: the keys are worked out from the albums, once)
+            val recordedAlbumCovers = AlbumArtUtils.recordedAlbumCoverKeys(context)
+
             for (file in allArtFiles) {
                 val songId = extractSongIdFromFilename(file.name)
-                if (songId != null && songId !in validSongIds) {
+                if (songId != null && songId !in validSongIds && songId !in recordedAlbumCovers) {
                     if (file.delete()) {
                         deletedCount++
                     }

@@ -48,6 +48,8 @@ data class AudioStatus(
      * page's DAC EQ row offer "Use the DAC's EQ"; a DAC that is read only (or no DAC) offers nothing.
      */
     val dacEqWritable: Boolean = false,
+    /** B61 (item 3): Purity closes the DAC's EQ and puts it back; when that did not go as asked, the one short line the Audio page shows under the Purity switch. */
+    val purityDacEqNote: com.lostf1sh.pixelplayeross.data.dac.fiio.PurityDacEqNote? = null,
 ) {
     /** Whether the router found a USB DAC when it last decided; null before it has looked. */
     val dacPresent: Boolean? get() = route.usbDacPresent

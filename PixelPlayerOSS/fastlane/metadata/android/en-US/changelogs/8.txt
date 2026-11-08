@@ -1,0 +1,1 @@
+Snowsky Melody DAC EQ works end to end, with a numbers-only filter editor. Purity also closes the DAC's own EQ and puts it back when turned off. Faster recovery when a USB DAC's feedback gets stuck. Per-disc covers, no size limit for cover.mp4, animated cover on the DAP lock screen. Much faster Full Rescan and library updates. Lyrics text size. R128 loudness tags read correctly.

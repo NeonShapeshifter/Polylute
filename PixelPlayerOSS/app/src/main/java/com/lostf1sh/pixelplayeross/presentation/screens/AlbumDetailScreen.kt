@@ -48,6 +48,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -223,6 +226,9 @@ fun AlbumDetailScreen(
             uiState.album != null -> {
                 val album = uiState.album!!
                 val songs = uiState.songs
+                // B59 4 (#82): the album has a cover of its own for a disc (the last sync recorded one): the "Disc N" headers show each disc's cover
+                val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+                val albumHasDiscCovers = remember(songs) { songs.any { com.lostf1sh.pixelplayeross.utils.AlbumArtUtils.hasDiscCover(appContext, it.id.toLongOrNull() ?: 0L) } }
                 val songsByDisc = remember(songs) {
                     songs.groupBy { it.discNumber ?: 1 }
                 }
@@ -374,12 +380,22 @@ fun AlbumDetailScreen(
                         songsByDisc.forEach { (discNumber, discSongs) ->
                             if (songsByDisc.size > 1) {
                                 item(key = "disc_header_$discNumber") {
-                                    DapSectionHeader(
-                                        text = stringResource(
-                                            R.string.disc_number_header,
-                                            discNumber
-                                        ).uppercase(currentLocale()),
-                                        modifier = Modifier.padding(top = DapSpacing.Lg)
+                                    // B59 4 (#82): when the album has a cover of its own per disc (`disc1.jpg`, `disc2.jpg`), each "Disc N" header shows that disc's cover small beside it
+                                    val discCover = if (albumHasDiscCovers) discSongs.firstOrNull()?.albumArtUriString else null
+                                    DiscHeader(
+                                        text = stringResource(R.string.disc_number_header, discNumber).uppercase(currentLocale()),
+                                        cover = discCover?.let { art ->
+                                            {
+                                                SmartImage(
+                                                    model = art,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop,
+                                                    targetSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(com.lostf1sh.pixelplayeross.ui.ds.DapSizes.ThumbRow),
+                                                    modifier = Modifier.fillMaxSize(),
+                                                )
+                                            }
+                                        },
+                                        coverTag = "disc_cover_$discNumber",
                                     )
                                 }
                             }
@@ -905,5 +921,28 @@ private fun CollapsingAlbumTopBar(
                 }
             }
         }
+    }
+}
+
+/**
+ * B59 4 (#82): the "Disc N" header of an album page, with that disc's cover small beside it when the album has a cover of its own per disc ([cover] is null otherwise: the header is
+ * the text alone, as before). The cover is a `ui/ds` thumbnail ([com.lostf1sh.pixelplayeross.ui.ds.DapSizes.ThumbRow]) with the surface radius.
+ */
+@Composable
+internal fun DiscHeader(text: String, cover: (@Composable () -> Unit)?, coverTag: String = "disc_cover") {
+    androidx.compose.foundation.layout.Row(
+        Modifier.padding(top = DapSpacing.Lg),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(DapSpacing.Md),
+    ) {
+        if (cover != null) {
+            Box(
+                Modifier
+                    .size(com.lostf1sh.pixelplayeross.ui.ds.DapSizes.ThumbRow)
+                    .clip(RoundedCornerShape(com.lostf1sh.pixelplayeross.ui.ds.DapRadius.Surface))
+                    .testTag(coverTag),
+            ) { cover() }
+        }
+        DapSectionHeader(text = text, modifier = Modifier.weight(1f))
     }
 }

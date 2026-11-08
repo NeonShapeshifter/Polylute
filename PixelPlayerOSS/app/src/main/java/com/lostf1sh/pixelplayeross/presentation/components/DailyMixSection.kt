@@ -36,7 +36,6 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapNavRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapMediaRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapIconKind
 import com.lostf1sh.pixelplayeross.ui.ds.DapOverflowButton
-import com.lostf1sh.pixelplayeross.ui.ds.DapRoundPlayAction
 import com.lostf1sh.pixelplayeross.ui.ds.DapRowState
 import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
 import com.lostf1sh.pixelplayeross.ui.ds.DapRadius
@@ -236,17 +235,17 @@ fun DailyMixHeader(thumbnails: ImmutableList<Song>, onShuffle: (() -> Unit)? = n
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Lg, vertical = DapSpacing.Md)
     ) {
-        // One control, one action (B57-fix1 1): the title is text, and the round shuffle button (the one "Your mix" has) is the header's control.
+        // One control, one action (B57-fix1 1): the title is text, and the shuffle icon is the header's control. B59 3 (#61): a quiet icon, like the ones beside the songs below
+        // (secondary tint, no disc), not the white circle of the "Your mix" header: the owner asked for a subtle shuffle here.
         DapFeatureHeader(
             title = stringResource(R.string.home_daily_mix_title),
             trailing = onShuffle?.let { shuffle ->
                 {
-                    DapRoundPlayAction(
-                        shuffle,
+                    DapOverflowButton(
+                        onClick = shuffle,
                         kind = DapIconKind.Shuffle,
-                        size = DapSizes.MinTouchTarget,
                         iconSize = DapSpacing.Gutter,
-                        contentDescription = stringResource(R.string.cd_shuffle_play),
+                        description = stringResource(R.string.cd_shuffle_play),
                     )
                 }
             },

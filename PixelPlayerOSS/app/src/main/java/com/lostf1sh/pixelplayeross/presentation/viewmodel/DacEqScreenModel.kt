@@ -89,6 +89,13 @@ sealed interface DacEqError {
 
     /** B30-fix1 H2: an edit was dropped without a byte sent, because what it was accepted under changed while it waited. */
     data class Dropped(val reason: DacEqDropReason) : DacEqError
+
+    /**
+     * B59 (#53): turning the DAC's EQ on (one action: pause, choose the slot, take it over, apply) stopped. [restored]: the DAC was put back as it was
+     * (null: nothing needed putting back). [musicLeftPaused]: the app paused the music for it and leaves it paused. [detail]: the step and the DAC's
+     * own words, English, for the reader who wants to know which.
+     */
+    data class TurnOnStopped(val restored: Boolean?, val musicLeftPaused: Boolean, val detail: String?) : DacEqError
 }
 
 /** Why a waiting edit was dropped instead of written (B30-fix1 H2). */
@@ -121,6 +128,20 @@ data class DacPresetRow(
 ) {
     val selectable: Boolean get() = !isActive && !locked && (readFromDac || isClosed)
 }
+
+/**
+ * B59 (#53): the one question turning the DAC's EQ on asks, when the app's slot is not its own yet. [slotName]: the slot it will use, when it is already chosen
+ * (null: it will pick one). [musicPlaying]: the music will be paused for a few seconds and started again.
+ */
+@Immutable
+data class DacEqTurnOnPrompt(val dacName: String, val slotName: String?, val musicPlaying: Boolean)
+
+/** B59 (#53): asked only when every user slot of the DAC holds a curve that boosts: which one the app may take (each with its net level), [preselected] first. */
+@Immutable
+data class DacEqSlotChoicePrompt(val options: List<DacEqSlotChoiceRow>, val preselected: Int)
+
+@Immutable
+data class DacEqSlotChoiceRow(val slotId: Int, val name: String, val netPeakDb: Double?)
 
 /** Whether the pair's selected preset is what the DAC holds. A recognised pair gets its selection shown; a write needs a tap. */
 enum class SelectedPresetState { NONE, MATCHES_DAC, DIFFERS_FROM_DAC }
@@ -167,6 +188,8 @@ data class DacEqUiState(
     val slotOwned: Boolean = false,
     /** B31 P1.3: the Resonance screen offers the take-over (never as a popup on connect): a writable DAC whose slot is not the app's yet. */
     val takeOverOffered: Boolean = false,
+    /** B59 (#53): turning the EQ on needs the one question first: the app has no slot yet that is its own or known to be safe to write. */
+    val turnOnNeedsSlot: Boolean = false,
     /** B31 P1.3: a take-over, a give-back or an inventory is running. */
     val operation: DacEqOperation? = null,
     /** B31 P1.4: the DAC's presets by name, from the inventory in the backup; empty when there is no DAC to list. */
@@ -179,6 +202,10 @@ data class DacEqUiState(
     val preGainSense: PreGainSense = PreGainSense.UNCONFIRMED,
     /** B40-F2: the DAC's EQ shapes the sound and the headphones' own (software) EQ is on too: the same correction would be applied twice. */
     val softwareEqAlsoOn: Boolean = false,
+    /** B59 (#53): turning the EQ on needs the app's slot first: the listener is asked once (what will happen), and nothing is sent until the yes. */
+    val turnOnPrompt: DacEqTurnOnPrompt? = null,
+    /** B59 (#53): every user slot boosts: which one may the app take. */
+    val slotChoicePrompt: DacEqSlotChoicePrompt? = null,
 ) {
     /** B40-F2: the listener allowed writes to this DAC (and the profile is not verified): they can take that back here. */
     val consentGiven: Boolean get() = availability == DacEqWriteAvailability.USER_CONFIRMED
@@ -204,7 +231,7 @@ data class DacEqUiState(
 }
 
 /** A step the screen runs on the DAC that is not an edit of the curve (B31). */
-enum class DacEqOperation { TAKE_OVER, RESTORE_FACTORY, READ_PRESETS, SELECT_PRESET }
+enum class DacEqOperation { TAKE_OVER, RESTORE_FACTORY, READ_PRESETS, SELECT_PRESET, TURN_ON }
 
 /** The curve the DAC reports, as bands, when everything was read; null otherwise. */
 internal fun DacEqReadout.readBands(): List<DacEqBand>? =

@@ -218,11 +218,16 @@ data class LibraryAudioStatsRow(
     val estMaxBytes: Long?
 )
 
+/** B58 2: what [MusicDao.incrementalSyncMusicData] does with "N songs saved" when nobody asked to hear it. */
+val NoSongsSavedReport: suspend (saved: Int) -> Unit = { }
+
 data class MediaStoreIdentityProjection(
     val id: Long,
     val libraryItemId: String,
     val duration: Long,
     val fileSize: Long,
+    /** Where the library believes the file is (B58 2: a file moved with `mv` keeps its MediaStore id and changes only this). */
+    val filePath: String = "",
 )
 
 data class MimeTypeCountRow(
@@ -387,7 +392,7 @@ interface MusicDao {
     suspend fun getAllMediaStoreSongIds(): List<Long>
 
     /** Compact stored evidence; no artwork, lyrics or file reads during reconciliation. */
-    @Query("""SELECT s.id, s.library_item_id AS libraryItemId, s.duration, s.file_size AS fileSize
+    @Query("""SELECT s.id, s.library_item_id AS libraryItemId, s.duration, s.file_size AS fileSize, s.file_path AS filePath
         FROM songs s JOIN library_items li
         ON li.library_item_id = s.library_item_id AND li.current_locator = s.id
         WHERE s.source_type = 0 AND li.state = 'ACTIVE'""")
@@ -880,13 +885,26 @@ interface MusicDao {
      * Incrementally sync music data: upsert new/modified songs and remove deleted ones.
      * More efficient than clear-and-replace for large libraries with few changes.
      */
+    /**
+     * B58 2 (#68): runs [block] in **one** transaction, so the observed library tables are invalidated once, when it commits, however many statements it ran.
+     * Before, every per-item write of a sync (a song's folder artwork, a renumbered file's identity) was a commit of its own, and every commit re-ran every list query
+     * the screens observe: 5,000 invalidations and 42,000 list queries for one Full Rescan on the test host. Nested transactions join this one.
+     */
+    @Transaction
+    suspend fun <T> inOneTransaction(block: suspend () -> T): T = block()
+
+    /**
+     * [incrementalSyncMusicData] says how many songs are written as it goes ([onSongsSaved] gets the running total after each batch of [SONG_BATCH_SIZE]), so the
+     * Settings row moves while the songs are saved. Still one transaction (or part of the caller's): nothing outside sees a half-written library.
+     */
     @Transaction
     suspend fun incrementalSyncMusicData(
         songs: List<SongEntity>,
         albums: List<AlbumEntity>,
         artists: List<ArtistEntity>,
         crossRefs: List<SongArtistCrossRef>,
-        deletedSongIds: List<Long>
+        deletedSongIds: List<Long>,
+        onSongsSaved: suspend (saved: Int) -> Unit = NoSongsSavedReport,
     ) {
         if (deletedSongIds.isNotEmpty()) {
             deletedSongIds.chunked(CROSS_REF_BATCH_SIZE).forEach { chunk ->
@@ -900,8 +918,11 @@ interface MusicDao {
         insertArtists(artists)
         insertAlbums(albums)
 
+        var saved = 0
         songs.chunked(SONG_BATCH_SIZE).forEach { chunk ->
             insertSongs(chunk)
+            saved += chunk.size
+            onSongsSaved(saved)
         }
 
         val updatedSongIds = songs.map { it.id }
@@ -2395,6 +2416,10 @@ interface MusicDao {
 
     @Query("UPDATE songs SET album_art_uri_string = :albumArtUri WHERE id = :songId")
     suspend fun updateSongAlbumArt(songId: Long, albumArtUri: String?)
+
+    /** B60: the album's own cover (never a disc's): written only when it differs, so a sync that changes nothing invalidates nothing. */
+    @Query("UPDATE albums SET album_art_uri_string = :uri WHERE id = :albumId AND album_art_uri_string IS NOT :uri")
+    suspend fun setAlbumArtworkIfDifferent(albumId: Long, uri: String?)
 
     @Query("UPDATE albums SET album_art_uri_string = (SELECT s.album_art_uri_string FROM songs s WHERE s.album_id = albums.id AND s.album_art_uri_string IS NOT NULL ORDER BY s.id LIMIT 1) WHERE id IN (:albumIds)")
     suspend fun refreshAlbumArtwork(albumIds: List<Long>)

@@ -661,6 +661,10 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { userPreferencesRepository.setLyricsAlignment(alignment) }
     }
 
+    fun setLyricsTextSize(size: String) {
+        viewModelScope.launch { userPreferencesRepository.setLyricsTextSize(size) }
+    }
+
     fun setShowLyricsTranslation(show: Boolean) {
         viewModelScope.launch { userPreferencesRepository.setShowLyricsTranslation(show) }
     }

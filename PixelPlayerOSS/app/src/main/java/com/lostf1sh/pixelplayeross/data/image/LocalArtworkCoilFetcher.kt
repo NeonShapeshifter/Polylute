@@ -22,6 +22,8 @@ class LocalArtworkCoilFetcher(
 
     override suspend fun fetch(): FetchResult? {
         val songId = LocalArtworkUri.parseSongId(uri.toString()) ?: return null
+        // B60: an album's own cover (a reserved key) whose cache is still empty is the embedded picture of the song it names, extracted now, once, and cached under the album's key
+        val sourcePath = AlbumArtUtils.albumCoverSourcePath(options.context, uri.toString())
         // A list row asks for ~100 px. Pulling the whole cover out of the audio file, scaling it to
         // 1536 px and writing a ~470 KB JPEG for that is what made a fling over unseen songs eat the
         // CPU (B13), so small requests are served from a small thumbnail instead.
@@ -29,12 +31,14 @@ class LocalArtworkCoilFetcher(
             if (isThumbnailRequest(options.size)) {
                 AlbumArtUtils.ensureAlbumArtThumbnailFile(
                     appContext = options.context,
-                    songId = songId
+                    songId = songId,
+                    filePath = sourcePath
                 )
             } else {
                 AlbumArtUtils.ensureAlbumArtCachedFile(
                     appContext = options.context,
-                    songId = songId
+                    songId = songId,
+                    filePath = sourcePath
                 )
             }
         ) ?: downloadedCover?.invoke(songId) ?: return null

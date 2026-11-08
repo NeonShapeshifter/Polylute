@@ -254,6 +254,13 @@ fun ExpressiveScrollBar(
     val gridMetricsTracker = remember(gridState) { AxisObservationTracker() }
     var isPressed by remember { mutableStateOf(false) }
     var isDragging by remember { mutableStateOf(false) }
+    // B58 5 (#76): tell the screen (the Library fades its floating discs) that a thumb is held, for as long as it is, and when this bar leaves
+    DisposableEffect(isDragging) {
+        // the value this effect was made for, not the state read again when it is disposed (by then it has changed, which is why it is being disposed)
+        val held = isDragging
+        if (held) ScrollDragSignal.begin()
+        onDispose { if (held) ScrollDragSignal.end() }
+    }
     var dragProgress by remember { mutableFloatStateOf(-1f) }
     var pendingScrollIndex by remember { mutableIntStateOf(-1) }
     var retainedDragLabel by remember { mutableStateOf<String?>(null) }

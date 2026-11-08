@@ -5,6 +5,9 @@ import com.lostf1sh.pixelplayeross.data.dac.fiio.AttachedFiio
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqBackupStore
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqController
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqHidAccess
+import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqPlayback
+import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqBand
+import com.lostf1sh.pixelplayeross.data.dac.fiio.FiioFilterType
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqService
 import com.lostf1sh.pixelplayeross.data.dac.fiio.DacEqWriteSwitch
 import com.lostf1sh.pixelplayeross.data.dac.fiio.FakeFiioDac
@@ -87,12 +90,13 @@ class DacEqScreenTakeOverTest {
 
     private class Rig(val dac: FakeFiioDac, val screen: DacEqScreenController, val service: DacEqService, val att: AttachedFiio) {
         var playing = false
+        val events = mutableListOf<String>()
         val ui get() = screen.uiState.value
         val sets get() = dac.sets
     }
 
-    private fun TestScope.opened(): Rig {
-        val dac = RecordedMelody.fakeDac(0xF0, real)
+    private fun TestScope.opened(withPlayback: Boolean = false, prepare: (FakeFiioDac) -> Unit = {}): Rig {
+        val dac = RecordedMelody.fakeDac(0xF0, real).also(prepare)
         val att = AttachedFiio("path-a", "id-a", "dac-a", "Melody A", "path-a", real)
         val opener = FakeOpener(dac)
         val attached = MutableStateFlow<AttachedFiio?>(att)
@@ -105,6 +109,15 @@ class DacEqScreenTakeOverTest {
             controller, DacEqBackupStore(dir), DacEqWriteSwitch(MemoryFlag(true), debugBuild = true),
             elapsedMs = { 0L }, wallClockMs = { 1_700_000_000_000L }, pause = {},
             playbackActive = { rig.playing }, ioDispatcher = Dispatchers.Unconfined,
+            playback = if (withPlayback) {
+                object : DacEqPlayback {
+                    override fun isPlaying() = rig.playing
+                    override suspend fun pauseAndWait(): Boolean { rig.events += "pause"; rig.playing = false; return true }
+                    override fun resume() { rig.events += "resume"; rig.playing = true }
+                }
+            } else {
+                null
+            },
         )
         val profiles = HeadphoneProfileCatalog.createAndSelect(HeadphoneProfileState(), "TYGR", HeadphoneEqState(), 1L, "hp-tygr")
         val screen = DacEqScreenController(scope, "hp-tygr", service, NoPresets(profiles), MutableStateFlow(com.lostf1sh.pixelplayeross.presentation.viewmodel.AudioStatus(route = directRoute(), sinkDirectActive = true)), debounceMs = 700L)
@@ -120,7 +133,8 @@ class DacEqScreenTakeOverTest {
         assertThat(r.ui.takeOverOffered).isTrue()
         assertThat(r.ui.slotOwned).isFalse()
         assertThat(r.sets).isEmpty()
-        assertThat(r.ui.appSlotName).isEqualTo("USER 3")
+        // B59: the app names no slot until one is chosen (the first turn-on reads the user slots and picks), instead of always saying USER 3
+        assertThat(r.ui.appSlotName).isNull()
         // The DAC's presets are listed by name; none has been read, and the screen says so.
         assertThat(r.ui.dacPresets.map { it.name }).containsAtLeast("Jazz", "USER 1", "USER 3", "Close EQ")
         assertThat(r.ui.dacPresets.filter { !it.isClosed }.all { !it.readFromDac }).isTrue()
@@ -212,5 +226,125 @@ class DacEqScreenTakeOverTest {
         advanceUntilIdle()
         assertThat(r.sets).isEmpty()
         assertThat(r.ui.error).isEqualTo(DacEqError.Refused(GateRefusal.PLAYBACK_NOT_PAUSED))
+    }
+
+    // ── B59 (#53): turning the EQ on is one action with one question ────────────────────────────────────────
+
+    private fun boosting(dac: FakeFiioDac, slot: Int, db: Double) =
+        dac.setSlot(slot, 0, (0 until 10).map { DacEqBand.of(it, FiioFilterType.PEAK, FakeFiioDac.FREQUENCIES[it], if (it == 4) db else 0.0, 1.0) })
+
+    @Test
+    fun `B59 - turning the EQ on asks one question and sends nothing until the yes, and no is a no`() = runTest {
+        val r = opened(withPlayback = true)
+        r.playing = true
+        r.screen.setEnabled(true)
+        advanceUntilIdle()
+        val prompt = r.ui.turnOnPrompt
+        assertThat(prompt).isNotNull()
+        assertThat(prompt!!.dacName).isEqualTo("Melody A")
+        assertThat(prompt.slotName).isNull() // no slot is chosen yet: the app picks one when the listener says yes
+        assertThat(prompt.musicPlaying).isTrue()
+        assertThat(r.sets).isEmpty()
+        assertThat(r.events).isEmpty()
+        assertThat(r.ui.error).isNull()
+        r.screen.cancelTurnOn()
+        advanceUntilIdle()
+        assertThat(r.ui.turnOnPrompt).isNull()
+        assertThat(r.sets).isEmpty()
+        assertThat(r.playing).isTrue()
+    }
+
+    @Test
+    fun `B59 - the yes pauses the music, picks the slot, takes it over, applies the curve and starts the music again`() = runTest {
+        val r = opened(withPlayback = true)
+        r.playing = true
+        r.screen.setEnabled(true)
+        advanceUntilIdle()
+        r.screen.confirmTurnOn()
+        advanceUntilIdle()
+        assertThat(r.ui.error).isNull()
+        assertThat(r.ui.operation).isNull()
+        assertThat(r.ui.turnOnPrompt).isNull()
+        assertThat(r.events).containsExactly("pause", "resume").inOrder()
+        assertThat(r.playing).isTrue()
+        assertThat(r.ui.slotOwned).isTrue()
+        assertThat(r.ui.appSlotName).isEqualTo("USER 1") // USER 1 holds nothing: used without a question
+        assertThat(r.ui.eqOn).isTrue()
+        assertThat(r.dac.activePreset).isEqualTo(0xA0)
+        assertThat(r.service.backups.load(r.att.backupKey)!!.chosenSlot).isEqualTo(0xA0)
+        // asked again once the slot is the app's: no question, no pause
+        r.events.clear()
+        r.screen.setEnabled(false)
+        advanceUntilIdle()
+        r.screen.setEnabled(true)
+        advanceUntilIdle()
+        assertThat(r.ui.turnOnPrompt).isNull()
+        assertThat(r.events).isEmpty()
+    }
+
+    @Test
+    fun `B59 - when every user slot boosts the screen asks which one, and the music stays paused until the listener answers`() = runTest {
+        val r = opened(withPlayback = true) { dac -> boosting(dac, 0xA0, 3.0); boosting(dac, 0xA1, 6.0) }
+        r.playing = true
+        r.screen.setEnabled(true)
+        advanceUntilIdle()
+        r.screen.confirmTurnOn()
+        advanceUntilIdle()
+        val choice = r.ui.slotChoicePrompt
+        assertThat(choice).isNotNull()
+        assertThat(choice!!.options.map { it.name }).containsExactly("USER 1", "USER 2", "USER 3").inOrder()
+        assertThat(choice.preselected).isEqualTo(0xA2)
+        assertThat(r.playing).isFalse()
+        assertThat(r.events).containsExactly("pause")
+        r.screen.chooseSlot(0xA1)
+        advanceUntilIdle()
+        assertThat(r.ui.slotChoicePrompt).isNull()
+        assertThat(r.ui.error).isNull()
+        assertThat(r.ui.appSlotName).isEqualTo("USER 2")
+        assertThat(r.ui.slotOwned).isTrue()
+        assertThat(r.playing).isTrue()
+    }
+
+    @Test
+    fun `B59 - a failure shows what happened to the DAC and that the music stays paused, with the reason`() = runTest {
+        val r = opened(withPlayback = true) { dac -> boosting(dac, 0xA0, 3.0); boosting(dac, 0xA1, 6.0) }
+        r.playing = true
+        r.screen.setEnabled(true)
+        advanceUntilIdle()
+        r.screen.confirmTurnOn()
+        advanceUntilIdle()
+        // the pointer moves of the reading are the DAC's first SETs (3 selects + the selection back + the select of the slot); the next ones are the bands
+        r.dac.ignoreNthSet = r.dac.sets.size + 1 + 2
+        r.screen.chooseSlot(0xA2)
+        advanceUntilIdle()
+        val error = r.ui.error
+        assertThat(error).isInstanceOf(DacEqError.TurnOnStopped::class.java)
+        error as DacEqError.TurnOnStopped
+        assertThat(error.musicLeftPaused).isTrue()
+        assertThat(error.restored).isTrue()
+        assertThat(error.detail).contains("was not confirmed")
+        assertThat(r.playing).isFalse()
+        assertThat(r.events).containsExactly("pause")
+        assertThat(r.ui.slotOwned).isFalse()
+        assertThat(r.dac.activePreset).isEqualTo(0xF0)
+        assertThat(r.ui.operation).isNull()
+    }
+
+    @Test
+    fun `B59 - the listener who gives no slot leaves the DAC as it was and the music playing`() = runTest {
+        val r = opened(withPlayback = true) { dac -> boosting(dac, 0xA0, 3.0); boosting(dac, 0xA1, 6.0) }
+        r.playing = true
+        r.screen.setEnabled(true)
+        advanceUntilIdle()
+        r.screen.confirmTurnOn()
+        advanceUntilIdle()
+        r.screen.cancelSlotChoice()
+        advanceUntilIdle()
+        assertThat(r.ui.error).isNull()
+        assertThat(r.ui.slotChoicePrompt).isNull()
+        assertThat(r.events).containsExactly("pause", "resume").inOrder()
+        assertThat(r.playing).isTrue()
+        assertThat(r.dac.sets.map { it.first }.toSet()).containsExactly(0x16) // pointer moves only
+        assertThat(r.ui.slotOwned).isFalse()
     }
 }

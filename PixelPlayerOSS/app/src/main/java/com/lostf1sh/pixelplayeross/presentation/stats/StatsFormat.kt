@@ -66,6 +66,9 @@ internal object StatsFormat {
         else -> "${month(period.from, locale)}–${month(period.to, locale)}"
     }
 
+    /** B58 6 (#74): the photo the library has for the artist named [name], or null (the avatar then shows the initials). Names are compared trimmed and in lower case, as the artist links are. */
+    fun artistImage(images: Map<String, String>, name: String): String? = images[name.trim().lowercase()]?.takeIf { it.isNotBlank() }
+
     /** The one or two initials an artist's avatar shows, upper case: `Yung Lean` → `YL`, `!!!` → `!`. */
     fun initials(name: String): String {
         val words = name.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }

@@ -57,6 +57,8 @@ class DacEqService(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     /** B40-F2: the listener's yes to writes to a model nobody has verified yet; null where there is none (the older tests). */
     val consent: DacEqWriteConsent? = null,
+    /** B59 (#53): pause / resume of the music for the one-tap turn-on; null where there is none (the older tests): then the music is never touched. */
+    val playback: DacEqPlayback? = null,
 ) {
     private val _backup = MutableStateFlow(DacEqBackupState(null, null))
 
@@ -104,6 +106,17 @@ class DacEqService(
     /** The writer the screen uses. */
     val screenWriter: DacEqWriter by lazy { writer() }
 
+    /** B59 (#53): turning the DAC's EQ on as one action (pause, choose the slot, take it over, apply, resume), over the screen's writer and the one gate. */
+    val turnOn: DacEqTurnOn by lazy {
+        DacEqTurnOn(
+            writer = screenWriter,
+            backups = backups,
+            playback = playback,
+            senseOf = { profile -> senseSwitch?.effective(profile) ?: profile.preGainSense },
+            log = log,
+        )
+    }
+
     /** The DAC the EQ is about right now: the one Direct opened (else the only one), as the controller sees it. */
     fun attached(): AttachedFiio? = controller.readout.value.attachedOrNull
 
@@ -134,7 +147,9 @@ class DacEqService(
     /** Reads the whole state now (whatever the route), logs it through [sink], and hands it to the labels. Null when it could not be read at all. */
     suspend fun read(att: AttachedFiio, sink: (String) -> Unit = log): DacEqState? {
         val use = try {
-            controller.access.withSession(att, sink) { session -> FiioEqReader.read(session).also { DacEqStateFormat.lines(it).forEach(sink) } }
+            controller.access.withSession(att, sink) { session ->
+                controller.access.presetClaims.resolve(att, FiioEqReader.read(session), sink).also { DacEqStateFormat.lines(it).forEach(sink) }
+            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {

@@ -259,6 +259,8 @@ interface FullPlayerActions {
     fun onResetLyrics()
     fun onLyricsSyncOffsetChange(songId: String, offsetMs: Int)
     fun onLyricsAlignmentChange(alignment: String)
+    /** B58 4 (#78): the lyrics text size, one of `LyricsTextSize`'s keys. A default so an implementer that has no lyrics page need not say anything. */
+    fun onLyricsTextSizeChange(size: String) {}
     fun onShowLyricsTranslationChange(show: Boolean)
     fun onShowLyricsRomanizationChange(show: Boolean)
     fun onImmersiveTemporarilyDisabledChange(disabled: Boolean)

@@ -54,6 +54,7 @@ import com.lostf1sh.pixelplayeross.presentation.stats.rankingTitle
 import com.lostf1sh.pixelplayeross.presentation.stats.statsSummary
 import com.lostf1sh.pixelplayeross.presentation.stats.statsTop
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.StatsArtistImagesViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.StatsLayer
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.StatsUiState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.StatsViewModel
@@ -82,8 +83,10 @@ fun StatsScreen(
     navController: NavController,
     playerViewModel: PlayerViewModel,
     statsViewModel: StatsViewModel = hiltViewModel(),
+    artistImagesViewModel: StatsArtistImagesViewModel = hiltViewModel(),
 ) {
     val ui by statsViewModel.uiState.collectAsStateWithLifecycle()
+    val artistImages by artistImagesViewModel.images.collectAsStateWithLifecycle()
     var seeAll by rememberSaveable { mutableStateOf<StatsList?>(null) }
     BackHandler(enabled = seeAll != null) { seeAll = null }
     // Coming back to the screen takes whatever was played meanwhile.
@@ -121,6 +124,7 @@ fun StatsScreen(
         // B32-Q2: a row opens what it names, on top of this screen, so Back returns here: the range, the face and the scroll are
         // this screen's (its view model and its saved list state), and nothing here resets them on the way back.
         onOpen = { target -> navController.navigateSafely(target.route()) },
+        artistImages = artistImages,
     )
 }
 
@@ -138,9 +142,11 @@ internal fun StatsContent(
     topActions: TopActions,
     /** Where a tap on a row goes; null where nothing is wired (the rows are text). */
     onOpen: ((StatsTarget) -> Unit)? = null,
+    /** B58 6 (#74): the photo the library has for each artist, by name. */
+    artistImages: Map<String, String> = emptyMap(),
 ) {
     val locale = currentLocale()
-    val look = StatsLook(ui.rankMode, zone, locale, StatsOpener(ui.links, onOpen))
+    val look = StatsLook(ui.rankMode, zone, locale, StatsOpener(ui.links, onOpen), artistImages)
     val report = ui.current
     // The list stops where the navigation bar begins because the scaffold does that for every pushed screen (B29-L9; it was done here, per
     // list, in B28-fix2 E4): its rows never run through the strip between the shell's mini player and the gesture bar.
