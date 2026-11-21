@@ -37,6 +37,8 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.lostf1sh.pixelplayeross.presentation.components.ArtworkViewer
+import com.lostf1sh.pixelplayeross.presentation.components.DetailArtwork
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -130,6 +132,8 @@ fun ArtistDetailScreen(
     infoActions: com.lostf1sh.pixelplayeross.presentation.viewmodel.MusicInfoActionsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showArtworkViewer by remember(artistId) { mutableStateOf(false) }
+    if (showArtworkViewer) ArtworkViewer(uiState.effectiveImageUrl, uiState.artist?.name.orEmpty(), onDismiss = { showArtworkViewer = false })
     val about by viewModel.about.collectAsStateWithLifecycle()
     com.lostf1sh.pixelplayeross.presentation.components.MusicInfoPageFeedback(infoActions, viewModel::downloadedInfoChanged)
     var showOfflineDownloads by remember { mutableStateOf(false) }
@@ -317,6 +321,22 @@ fun ArtistDetailScreen(
                             .forEach { staleKey -> expandedSections.remove(staleKey) }
                     }
 
+                    val pendingSourceLocate by com.lostf1sh.pixelplayeross.presentation.viewmodel.SourceLocateRequests.request.collectAsStateWithLifecycle()
+                    val sourceRoute = Screen.ArtistDetail.createRoute(artist.id)
+                    LaunchedEffect(pendingSourceLocate?.token, albumSections) {
+                        if (pendingSourceLocate?.route == sourceRoute) albumSections.forEach { expandedSections[it.collapseKey()] = true }
+                    }
+                    val located = rememberSourceLocate(sourceRoute, lazyListState, isTransitionFinished && albumSections.isNotEmpty() && albumSections.all { expandedSections[it.collapseKey()] != false }) { id ->
+                        var at = if (!about.isEmpty) 1 else 0
+                        var result = -1
+                        albumSections.filter { it.songs.isNotEmpty() }.forEach { section ->
+                            at += 2 // album header and song-group spacer
+                            val index = section.songs.indexOfFirst { it.id == id }
+                            if (result < 0 && index >= 0) result = at + index
+                            at += section.songs.size + 1 // footer
+                        }
+                        result
+                    }
                     LazyColumn(
                         state = lazyListState,
                         modifier = Modifier
@@ -365,7 +385,7 @@ fun ArtistDetailScreen(
                                     },
                                     onPlayAlbum = {
                                         section.songs.firstOrNull()?.let { firstSong ->
-                                            playerViewModel.showAndPlaySong(firstSong, section.songs, source = ListenSource(ListenSourceKind.ARTIST, artist.id.toString()))
+                                            playerViewModel.showAndPlaySong(firstSong, section.songs, queueName = artist.name, source = ListenSource(ListenSourceKind.ARTIST, artist.id.toString()))
                                         }
                                     }
                                 )
@@ -400,12 +420,13 @@ fun ArtistDetailScreen(
                                             placementSpec = tween(durationMillis = 200)
                                         ),
                                         song = song,
+                                        isLocated = located == song.id,
                                         songIndex = songIndex,
                                         songCount = section.songs.size,
                                         isCurrentSong = stablePlayerState.currentSong?.id == song.id,
                                         isPlaying = stablePlayerState.isPlaying,
                                         onSongClick = {
-                                            playerViewModel.showAndPlaySong(song, section.songs, source = ListenSource(ListenSourceKind.ARTIST, artist.id.toString()))
+                                            playerViewModel.showAndPlaySong(song, section.songs, queueName = artist.name, source = ListenSource(ListenSourceKind.ARTIST, artist.id.toString()))
                                         },
                                         onMoreOptionsClick = {
                                             playerViewModel.selectSongForInfo(song)
@@ -448,6 +469,7 @@ fun ArtistDetailScreen(
                         SharedArtistTopBarProbe(
                             artist = artist,
                             effectiveImageUrl = uiState.effectiveImageUrl,
+                            onArtworkClick = { showArtworkViewer = true },
                             songsCount = songs.size,
                             collapseFraction = collapseFraction,
                             headerHeight = currentTopBarHeightDp,
@@ -494,6 +516,7 @@ fun ArtistDetailScreen(
                         CustomCollapsingTopBar(
                             artist = artist,
                             effectiveImageUrl = uiState.effectiveImageUrl,
+                            onArtworkClick = { showArtworkViewer = true },
                             hasCustomImage = !artist.customImageUri.isNullOrBlank(),
                             songsCount = songs.size,
                             collapseFraction = collapseFraction,
@@ -783,6 +806,7 @@ private fun ArtistAlbumSectionSongItem(
     song: Song,
     songIndex: Int,
     songCount: Int,
+    isLocated: Boolean = false,
     isCurrentSong: Boolean,
     isPlaying: Boolean,
     onSongClick: () -> Unit,
@@ -797,6 +821,7 @@ private fun ArtistAlbumSectionSongItem(
             isCurrentSong = isCurrentSong,
             isPlaying = isPlaying,
             showAlbumArt = false,
+            containerColorOverride = if (isLocated) Dap.panelRaised else null,
             customShape = RectangleShape,
             onMoreOptionsClick = { onMoreOptionsClick() },
             onClick = onSongClick
@@ -809,9 +834,10 @@ private fun ArtistAlbumSectionSongItem(
 }
 
 @Composable
-private fun SharedArtistTopBarProbe(
+internal fun SharedArtistTopBarProbe(
     artist: Artist,
     effectiveImageUrl: String?,
+    onArtworkClick: () -> Unit = {},
     songsCount: Int,
     collapseFraction: Float,
     headerHeight: Dp,
@@ -867,13 +893,9 @@ private fun SharedArtistTopBarProbe(
     ) {
         if (showExpandedContent) {
             if (!displayUrl.isNullOrEmpty()) {
-                SmartImage(
-                    model = displayUrl,
-                    contentDescription = artist.name,
-                    contentScale = ContentScale.Crop,
+                DetailArtwork(
+                    model = displayUrl, description = artist.name, onClick = onArtworkClick,
                     targetSize = headerImageRequestSize,
-                    allowHardware = true,
-                    crossfadeDurationMillis = 0,
                     alpha = expandedContentAlpha,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -997,6 +1019,7 @@ private fun SharedArtistTopBarProbe(
 private fun CustomCollapsingTopBar(
     artist: Artist,
     effectiveImageUrl: String?,
+    onArtworkClick: () -> Unit = {},
     hasCustomImage: Boolean,
     songsCount: Int,
     collapseFraction: Float,
@@ -1061,18 +1084,8 @@ private fun CustomCollapsingTopBar(
             if (showExpandedContent) {
                 val displayUrl = effectiveImageUrl?.takeIf { it.isNotBlank() }
                 if (!displayUrl.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(displayUrl)
-                            .size(headerImageRequestSize)
-                            .allowHardware(true)
-                            .crossfade(false)
-                            .build(),
-                        contentDescription = artist.name,
-                        contentScale = ContentScale.Crop,
-                        alpha = headerContentAlpha,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    DetailArtwork(model = displayUrl, description = artist.name, onClick = onArtworkClick,
+                        targetSize = headerImageRequestSize, alpha = headerContentAlpha, modifier = Modifier.fillMaxSize())
                 } else {
                     MusicIconPattern(
                         modifier = Modifier

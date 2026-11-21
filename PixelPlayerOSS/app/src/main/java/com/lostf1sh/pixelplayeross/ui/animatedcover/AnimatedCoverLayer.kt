@@ -73,6 +73,7 @@ val LocalAnimatedCoverEngines = compositionLocalOf<((android.content.Context, ko
 class AnimatedCoverHost internal constructor(
     internal val controller: AnimatedCoverController,
     private val sizePx: androidx.compose.runtime.MutableIntState,
+    internal val token: Any,
 ) {
     /** The page's size, so the engine decodes at the size it is shown. */
     fun onSize(px: Int) {
@@ -101,6 +102,8 @@ internal fun rememberAnimatedCoverHost(
      * the shared controller while the lock screen is up; the player's host stands aside meanwhile ([lockDrives]) and takes over again when the lock screen goes.
      */
     onLock: Boolean = false,
+    /** Album preview: independent of audio playback, held only while its artwork can be seen. */
+    albumSurface: Boolean = false,
 ): AnimatedCoverHost? {
     val env = LocalAnimatedCoverEnv.current ?: return null
     if (onLock && !env.lockCoverOn) return null
@@ -111,9 +114,10 @@ internal fun rememberAnimatedCoverHost(
     val controller = shared ?: remember(env.finder) {
         AnimatedCoverController(scope, engines?.invoke(context.applicationContext, scope) ?: PlatformAnimatedCoverEngines(context.applicationContext, scope))
     }
-    DisposableEffect(controller) { onDispose { if (shared == null) controller.release() } }
+    val token = remember(controller) { Any() }
+    DisposableEffect(controller, token) { onDispose { controller.releaseRequest(token); if (shared == null) controller.release() } }
     val size = remember { mutableIntStateOf(0) }
-    val host = remember(controller) { AnimatedCoverHost(controller, size) }
+    val host = remember(controller) { AnimatedCoverHost(controller, size, token) }
 
     // looked for off the main thread, once per album (the finder keeps the answer); again when the library changes. The answer belongs to the album it was found for (B57.5 2.2): while the
     // lookup for another album runs, the old answer is not this song's, so it is not shown and no decoder is made for it (before, a cover made for the previous song's album lived a few
@@ -121,14 +125,16 @@ internal fun rememberAnimatedCoverHost(
     val lookupKey = (if (albumId > 0L) "album:$albumId" else "folder:${songPath.substringBeforeLast('/', "")}") + (if (discNumber > 0) "|disc:$discNumber" else "")
     // B61 item 5: a host that takes over from the other surface starts from the answer the controller already has for this song, so the decoder it is playing is not released to be made again
     var found by remember(controller) { mutableStateOf<Pair<String, AnimatedCover?>?>(controller.sharedLookup?.takeIf { it.first == lookupKey }) }
-    LaunchedEffect(songPath, albumId, discNumber, env.enabled, env.finder, env.libraryVersion) {
+    val system = rememberGlassEnvironment()
+    // Reopen/resume is a new lookup even for the same track: a file or grant may have changed.
+    LaunchedEffect(songPath, albumId, discNumber, env.enabled, env.finder, env.libraryVersion,
+        playerExpanded, coverPageShowing, system.resumed.value) {
         val cover = if (env.enabled && songPath.isNotEmpty()) env.finder.find(songPath, albumId, discNumber) else null
         found = lookupKey to cover
         controller.sharedLookup = lookupKey to cover
     }
     val wantedKey = rememberUpdatedState(lookupKey)
 
-    val system = rememberGlassEnvironment()
     val lockShowing = rememberUpdatedState(onLock || LocalLockSurfaceShowing.current)
     val lockCoverOn = rememberUpdatedState(env.lockCoverOn)
     val enabled = rememberUpdatedState(env.enabled)
@@ -154,13 +160,13 @@ internal fun rememberAnimatedCoverHost(
             val want = AnimatedCoverController.Want(
                 cover = found?.takeIf { it.first == wantedKey.value }?.second,
                 sizePx = size.intValue,
-                hold = AnimatedCoverPolicy.shouldHold(inputs),
-                visible = AnimatedCoverPolicy.visible(inputs),
+                hold = if (albumSurface) inputs.enabled && inputs.playerExpanded && inputs.coverPageShowing else AnimatedCoverPolicy.shouldHold(inputs),
+                visible = AnimatedCoverPolicy.visible(inputs) && (!albumSurface || !inputs.lockSurfaceVisible),
                 run = AnimatedCoverPolicy.shouldRun(inputs),
             )
             // the inputs written out travel beside the want (they are not part of it: only a change of the want reaches the controller), for the event lines of the device log
             want to inputs.describe()
-        }.distinctUntilChanged { old, new -> old?.first == new?.first }.collect { decided -> decided?.let { (want, inputs) -> controller.update(want, inputs) } }
+        }.distinctUntilChanged { old, new -> old?.first == new?.first }.collect { decided -> decided?.let { (want, inputs) -> controller.request(token, want, if (onLock) 100 else if (albumSurface) 20 else 50, inputs) } }
     }
     return host
 }
@@ -170,8 +176,10 @@ internal fun rememberAnimatedCoverHost(
  * flash: it fades in over [FADE_MS] once there is something to show.
  */
 @Composable
-internal fun AnimatedCoverLayer(host: AnimatedCoverHost?, modifier: Modifier = Modifier) {
+internal fun AnimatedCoverLayer(host: AnimatedCoverHost?, modifier: Modifier = Modifier, fit: Boolean = false) {
     if (host == null) return
+    val surface by host.controller.surfaceOwner.collectAsStateWithLifecycle()
+    if (surface != host.token) return
     // B61 item 5 (#70): the surface that claimed the view last shows it (the lock screen over the player); the others draw nothing and get it back when it goes
     val token = remember { Any() }
     DisposableEffect(host.controller, token) {
@@ -189,7 +197,7 @@ internal fun AnimatedCoverLayer(host: AnimatedCoverHost?, modifier: Modifier = M
         // The one engine has one view, and the carousel draws it on whichever page is the current one: when that changes, the new page can ask for the view before the old page has let it go (the
         // order Compose applies two pages' changes in is not ours to choose), and a view with a parent cannot be added to another ("The specified child already has a parent"). So it is taken
         // from the old holder first. (B57.5 2.2: found by moving the view between two pages in one recomposition; before this it threw.)
-        AndroidView(factory = { (view.parent as? ViewGroup)?.removeView(view); view }, modifier = modifier.fillMaxSize().alpha(alpha))
+        AndroidView(factory = { (view.parent as? ViewGroup)?.removeView(view); current.setFit(fit); view }, update = { current.setFit(fit) }, modifier = modifier.fillMaxSize().alpha(alpha))
     }
 }
 

@@ -85,6 +85,11 @@ class B40Fix2ResetClaimsTest {
         put("claimedInterface", stream)
     }
 
+    private fun releaseToAndroidAndWait() {
+        device.releaseToAndroid()
+        UsbAudioDevice.volumeExecutor.submit {}.get(3, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
     private fun afterReset() = calls.drop(calls.indexOf("reset") + 1)
 
     // ── the review's case ────────────────────────────────────────────────────────────────────────
@@ -96,7 +101,7 @@ class B40Fix2ResetClaimsTest {
         put("claimedControlInterface", null)
         put("claimedInterface", null)
         put("levelOwedAfterReset", true)
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         verify(exactly = 1) { conn.claimInterface(control, true) }
         verify(exactly = 1) { conn.claimInterface(stream, true) }
         assertThat(calls.indexOf("claim streaming=false")).isLessThan(calls.indexOf("claim control=false"))
@@ -113,7 +118,7 @@ class B40Fix2ResetClaimsTest {
         claimedByPolylute()
         streamingClaims += true
         controlClaims += true
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         // streaming first, then control, straight after the reset, and nothing is let go of afterwards
         assertThat(afterReset().take(2)).containsExactly("claim streaming=true", "claim control=true").inOrder()
         assertThat(afterReset().filter { it.startsWith("release") || it == "close" }).isEmpty()
@@ -129,7 +134,7 @@ class B40Fix2ResetClaimsTest {
         claimedByPolylute()
         streamingClaims += true
         // control: false, false (the retry)
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         assertThat(afterReset().take(3)).containsExactly("claim streaming=true", "claim control=false", "claim control=false").inOrder()
         assertThat(told).isEqualTo(ResetLevelRestorer.Outcome.CONTROL_NOT_HELD)
         assertThat(told!!.dacWithAndroid).isTrue()
@@ -147,7 +152,7 @@ class B40Fix2ResetClaimsTest {
         claimedByPolylute()
         controlClaims += true
         // streaming: false, false (the retry)
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         val claims = afterReset().filter { it.startsWith("claim") }
         assertThat(claims).containsExactly("claim streaming=false", "claim control=true", "claim streaming=false").inOrder()
         assertThat(told).isEqualTo(ResetLevelRestorer.Outcome.STREAMING_NOT_HELD)
@@ -166,7 +171,7 @@ class B40Fix2ResetClaimsTest {
         claimedByPolylute()
         streamingClaims += listOf(false, true)
         controlClaims += true
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         assertThat(afterReset().filter { it.startsWith("claim") })
             .containsExactly("claim streaming=false", "claim control=true", "claim streaming=true").inOrder()
         assertThat(told).isEqualTo(ResetLevelRestorer.Outcome.UNCONFIRMED)
@@ -177,7 +182,7 @@ class B40Fix2ResetClaimsTest {
     @Test
     fun neither_claim_takes_so_nothing_is_released_nothing_is_recorded_and_the_dac_is_with_android() {
         claimedByPolylute()
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         assertThat(afterReset().filter { it.startsWith("claim") }).hasSize(4)
         assertThat(afterReset().filter { it.startsWith("release") }).isEmpty()
         assertThat(told).isEqualTo(ResetLevelRestorer.Outcome.NOT_HELD)
@@ -193,10 +198,10 @@ class B40Fix2ResetClaimsTest {
         claimedByPolylute()
         streamingClaims += true
         controlClaims += true
-        device.releaseToAndroid()                    // kept: both held, owed
+        releaseToAndroidAndWait()                    // kept: both held, owed
         calls.clear()
         // the next recovery: both are held, so nothing is claimed again, the level is tried and still not confirmed
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         assertThat(calls.filter { it.startsWith("claim") }).isEmpty()
         assertThat(calls.filter { it.startsWith("release") }).isEmpty()
         assertThat(told).isEqualTo(ResetLevelRestorer.Outcome.UNCONFIRMED)
@@ -204,7 +209,7 @@ class B40Fix2ResetClaimsTest {
         put("claimedInterface", null)
         streamingClaims += true
         calls.clear()
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         assertThat(calls.filter { it.startsWith("claim") }).containsExactly("claim streaming=true")
         assertThat(get("claimedInterface")).isSameInstanceAs(stream)
     }
@@ -215,7 +220,7 @@ class B40Fix2ResetClaimsTest {
         put("claimedInterface", null)
         put("levelOwedAfterReset", true)
         // streaming cannot be claimed again (it answers false)
-        device.releaseToAndroid()
+        releaseToAndroidAndWait()
         assertThat(told).isEqualTo(ResetLevelRestorer.Outcome.STREAMING_NOT_HELD)
         assertThat(get("claimedInterface")).isNull()
         assertThat(get("claimedControlInterface")).isNull()

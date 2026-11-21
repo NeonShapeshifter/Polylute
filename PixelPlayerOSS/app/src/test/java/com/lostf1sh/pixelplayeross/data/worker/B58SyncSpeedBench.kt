@@ -24,7 +24,7 @@ class B58SyncSpeedBench {
         Assume.assumeTrue("opt-in: B58_SYNC_BENCH=1", System.getenv("B58_SYNC_BENCH") == "1")
         val songs = System.getenv("B58_SYNC_SONGS")?.toInt() ?: 5000
         val label = System.getenv("B58_SYNC_LABEL") ?: "run"
-        val out = File(System.getenv("B58_SYNC_OUT") ?: "../../../analysis/audit-2026-09-27/batches/B58-gates/sync-timing-$label.txt")
+        val out = File(System.getenv("B58_SYNC_OUT") ?: "build/test-artifacts/B58/sync-timing-$label.txt")
         out.parentFile?.mkdirs()
         val report = StringBuilder("B58 sync timing - $label - $songs songs, this host's JVM (Robolectric SQLite), all times in ms\n")
 

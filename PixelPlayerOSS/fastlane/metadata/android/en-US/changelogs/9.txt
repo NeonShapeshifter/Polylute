@@ -1,0 +1,1 @@
+Android Auto library browsing and playback. Improved queue restoration, ReplayGain transitions and USB recovery. Safer backup and tag editing. Search within library tabs, jump to the source of a track, view artwork at full size, and recover animated covers after interruptions.

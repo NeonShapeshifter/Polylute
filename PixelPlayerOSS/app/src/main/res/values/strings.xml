@@ -539,4 +539,14 @@
     <string name="folders_actions">Folder actions</string>
     <string name="lyrics_folder_title">Save lyrics beside your music</string>
     <string name="lyrics_reason_existing_file">a lyrics file already exists</string>
+    <string name="playback_open_to_resume">Open Polylute to resume playback</string>
+    <string name="track_details_rg_pending">Requested · waiting for gain</string>
+    <string name="track_details_rg_waiting">Requested · awaiting this track</string>
+    <string name="track_details_rg_unity">No correction · ×1.0</string>
+    <string name="library_search_tab">Search this tab</string>
+    <string name="library_search_close">Close search</string>
+    <string name="library_search_no_results">No results for “%1$s”</string>
+    <string name="metadata_edit_safe_write_failed">Couldn’t save the changes; the file was not touched.</string>
+    <string name="backup_error_image_items_failed">Couldn’t restore images for: %1$s.</string>
+    <string name="backup_error_export_module_limit">The %1$s module exceeds the backup limit of %2$d MiB.</string>
 </resources>

@@ -28,7 +28,7 @@ class B56BackgroundMotionRenderTest {
     @get:Rule val compose = createComposeRule()
 
     private val out: File
-        get() = File(System.getenv("B56_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B56-gates/renders").apply { mkdirs() }
+        get() = File(System.getenv("B56_RENDERS") ?: "build/test-artifacts/B56/renders").apply { mkdirs() }
 
     private fun render(motion: BackgroundMotion, dark: Boolean, expectedPhase: Float) {
         val setup = B42Setup(B41Renders.saturated(), if (dark) DapBaseTheme.Graphite else DapBaseTheme.Light)

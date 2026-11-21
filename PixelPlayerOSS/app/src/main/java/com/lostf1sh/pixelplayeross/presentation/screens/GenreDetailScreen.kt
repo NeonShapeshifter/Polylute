@@ -141,6 +141,8 @@ fun GenreDetailScreen(
         title = genreDisplayName,
         state = uiState,
         currentSongId = currentSongId,
+        playback = rememberLibraryPlaybackStates(playerViewModel),
+        sourceRoute = Screen.GenreDetail.createRoute(android.net.Uri.encode(genreId)),
         isUnknownGenre = isUnknownGenre,
         onBack = { navController.popBackStack() },
         onRetry = viewModel::reload,
@@ -292,6 +294,8 @@ internal fun GenrePage(
     artistImages: Map<Long, String?> = emptyMap(),
     /** True opens on the full song list ("All songs") instead of the overview. */
     startOnAllSongs: Boolean = false,
+    playback: LibraryPlaybackStates? = null,
+    sourceRoute: String = Screen.GenreDetail.createRoute(state.genre?.id.orEmpty()),
 ) {
     // B56-5.1: the page is an overview (top artists, albums) and one row, "All songs (N)", opens the song list; Back from the list returns to the overview
     var showAllSongs by androidx.compose.runtime.saveable.rememberSaveable(state.genre?.id) { mutableStateOf(startOnAllSongs) }
@@ -302,6 +306,11 @@ internal fun GenrePage(
         state.albums.filter { !it.artUri.isNullOrBlank() }.maxByOrNull { it.songCount }?.artUri
     }
     val listState = rememberLazyListState()
+    val pendingLocate by com.lostf1sh.pixelplayeross.presentation.viewmodel.SourceLocateRequests.request.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingLocate?.token) { if (pendingLocate?.route == sourceRoute) showAllSongs = true }
+    val located = rememberSourceLocate(sourceRoute, listState, showAllSongs && !state.isLoadingSongs) { id ->
+        state.songs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { it + 1 + if (isUnknownGenre) 1 else 0 } ?: -1
+    }
     val density = LocalDensity.current
     val barHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + BackRowHeight
     val barPx = with(density) { barHeight.toPx() }
@@ -365,7 +374,10 @@ internal fun GenrePage(
                         )
                     } else {
                         items(state.songs, key = { it.id }, contentType = { "song" }) { song ->
-                            DapMediaRow(
+                            if (playback != null) LibraryPlaybackAwareSongItem(song = song, playback = playback,
+                                isLocated = located == song.id, onMoreOptionsClick = onMoreSong,
+                                onClick = { onPlaySong(song) }, modifier = Modifier.padding(horizontal = DapSpacing.Gutter))
+                            else DapMediaRow(
                                 title = songTitleLabel(song),
                                 subtitle = songArtistLabel(song),
                                 state = if (currentSongId == song.id) DapRowState.Current else DapRowState.Normal,

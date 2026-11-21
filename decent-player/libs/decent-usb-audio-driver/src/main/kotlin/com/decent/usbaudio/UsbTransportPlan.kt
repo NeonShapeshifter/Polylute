@@ -43,7 +43,8 @@ class UsbTransportPlan(private val fields: LongArray) {
         const val RESUME_LEAD_FRAMES = 29   // B47-A3, appended: the indexes before it did not move
         const val FEEDBACK_START_GUARD_MS = 30   // B48-fix1, appended
         const val PAUSE_KEEPALIVE_MS = 31   // B48-fix2, appended
-        const val COUNT = 32
+        const val START_LEAD_FRAMES = 32  // B63.5, appended
+        const val COUNT = 33
     }
 
     /** Bits of [assumptions]: the timing the plan was made with is not the device's (`USB_PLAN_ASSUME_*`). */
@@ -86,6 +87,7 @@ class UsbTransportPlan(private val fields: LongArray) {
     val feedbackStartGuardMs: Int get() = fields[Field.FEEDBACK_START_GUARD_MS].toInt()
 
     /** B47-A3: the silence a resume feeds first when the ring has played out; the plan's, not a constant here. B48-fix1: and before every start of audio. */
+    val startLeadFrames: Long get() = fields[Field.START_LEAD_FRAMES]
     val resumeLeadFrames: Long get() = fields[Field.RESUME_LEAD_FRAMES]
 
     /**

@@ -134,7 +134,7 @@ class DacEqController(
                     if (readKey == att.attachKey) readKey = null
                     return@launch
                 }
-                read(att)
+                read(att, automatic = true)
             }
         }
     }
@@ -143,8 +143,8 @@ class DacEqController(
      * One read of [att]'s EQ, published if [att] is still the attached DAC. A reading that says "the EQ does nothing" is looked at again
      * [confirmMs] later first, unless what was published before already said the same (B40-F2): see the class doc.
      */
-    private suspend fun read(att: AttachedFiio): DacEqReadout {
-        var result = readOnce(att)
+    private suspend fun read(att: AttachedFiio, automatic: Boolean = false): DacEqReadout {
+        var result = readOnce(att, automatic)
         var looks = 1
         while (result is DacEqReadout.Known && result.state.isQuiet && !corroborated(att, result.state)) {
             if (looks >= MAX_LOOKS) {
@@ -160,7 +160,7 @@ class DacEqController(
             log("DAC_EQ|${att.displayName} reads as ${result.state.verdict}; looking again in $confirmMs ms before saying so")
             delay(confirmMs)
             if (_readout.value.attachedOrNull?.attachKey != att.attachKey) return result
-            val next = readOnce(att)
+            val next = readOnce(att, automatic)
             looks++
             if (next is DacEqReadout.Known && next.state.isQuiet && next.state.sameReading((result as DacEqReadout.Known).state)) {
                 log("DAC_EQ|${att.displayName}: the second look agrees; it is ${next.state.verdict}")
@@ -183,9 +183,15 @@ class DacEqController(
     }
 
     /** One look at [att]'s whole EQ state, not published. */
-    private suspend fun readOnce(att: AttachedFiio): DacEqReadout {
+    private suspend fun readOnce(att: AttachedFiio, automatic: Boolean): DacEqReadout {
         val use = try {
-            access.withSession(att, log) { session -> access.presetClaims.resolve(att, FiioEqReader.read(session), log) }
+            access.withSession(att, log, stale = {
+                when {
+                    _readout.value.attachedOrNull?.attachKey != att.attachKey -> "the DAC attachment changed"
+                    automatic && !directNow -> "Direct playback ended"
+                    else -> null
+                }
+            }) { session -> access.presetClaims.resolve(att, FiioEqReader.read(session), log) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {

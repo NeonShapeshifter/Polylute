@@ -284,7 +284,7 @@ private fun DailyMixSongList(
     onMoreOptionsClick: (Song) -> Unit
 ) {
     val dailyMixQueueName = stringResource(R.string.presentation_batch_g_daily_mix_queue_name)
-    val stablePlayerState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
+    val playback = com.lostf1sh.pixelplayeross.presentation.screens.rememberLibraryPlaybackStates(playerViewModel)
 
     Column(
         modifier = Modifier
@@ -292,31 +292,10 @@ private fun DailyMixSongList(
             .padding(top = DapSpacing.Sm, start = DapSpacing.Lg, end = DapSpacing.Lg)
     ) {
         songs.forEach { song ->
-            val isCurrent = stablePlayerState.currentSong?.id == song.id
-            // The same song row as everywhere else in the product. This was an EnhancedSongListItem
-            // — a Material surface container with its own corner radius and a three-dot overflow,
-            // which is why the mix looked like a different app's list dropped into Home.
-            DapMediaRow(
-                title = songTitleLabel(song),
-                subtitle = songArtistLabel(song),
-                state = if (isCurrent) DapRowState.Current else DapRowState.Normal,
-                leading = {
-                    // Real artwork, from the same field and the same loader every other row in the
-                    // product uses. This slot previously held a literal DapArtworkPlaceholder, so
-                    // the Daily Mix list could never show a cover on any track — including ones
-                    // whose art Library, Now Playing and the shelf all resolved correctly.
-                    SmartImage(
-                        model = song.albumArtUriString,
-                        contentDescription = stringResource(R.string.cd_album_art_for_title, song.title),
-                        shape = RoundedCornerShape(DapRadius.Surface),
-                        targetSize = com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(DapSizes.ThumbRow),
-                        modifier = Modifier.size(DapSizes.ThumbRow),
-                    )
-                },
-                trailing = {
-                    DapOverflowButton(onClick = { onMoreOptionsClick(song) },
-                        description = stringResource(R.string.presentation_batch_e_more_options_for_song, song.title))
-                },
+            com.lostf1sh.pixelplayeross.presentation.screens.LibraryPlaybackAwareSongItem(
+                song = song,
+                playback = playback,
+                onMoreOptionsClick = onMoreOptionsClick,
                 onClick = {
                     playerViewModel.showAndPlaySong(
                         song = song,
@@ -326,7 +305,6 @@ private fun DailyMixSongList(
                     source = ListenSource(ListenSourceKind.HOME_MIX, "daily_mix")
                     )
                 },
-                modifier = Modifier.fillMaxWidth()
             )
         }
     }

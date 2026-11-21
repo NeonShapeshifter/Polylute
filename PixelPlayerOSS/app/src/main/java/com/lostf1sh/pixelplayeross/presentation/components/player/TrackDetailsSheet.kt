@@ -291,11 +291,7 @@ internal fun TrackDetailsBody(
                             value = equalizerLabel(state.equalizer),
                             state = equalizerMark(state.equalizer)
                         )
-                        DetailRow(
-                            label = stringResource(R.string.track_details_replaygain),
-                            value = stringResource(replayGainLabel(state.replayGain)),
-                            state = replayGainMark(state.replayGain)
-                        )
+                        ReplayGainDetailsRow(state.replayGain)
                         // B30: the DAC's own EQ, as far as it could be read. Said for a DAC the app can ask (never for the Android
                         // route's speaker or a DAC outside the FiiO table), "unknown" included: that is what keeps Purity off.
                         if (state.output.dacEq != DacEqLabel.NOT_APPLICABLE) {
@@ -748,11 +744,23 @@ private fun dacEqMark(label: DacEqLabel): DapStateKind = when (label) {
     DacEqLabel.UNKNOWN, DacEqLabel.NOT_APPLICABLE -> DapStateKind.Attention
 }
 
+/** The owner can replace this row's appearance without changing runtime gain or track identity. */
+@Composable
+internal fun ReplayGainDetailsRow(state: ReplayGainState) {
+    DetailRow(
+        label = stringResource(R.string.track_details_replaygain),
+        value = stringResource(replayGainLabel(state)),
+        state = replayGainMark(state),
+    )
+}
+
 /** Requested but not applied is the one state here that warrants attention. */
 private fun replayGainMark(state: ReplayGainState): DapStateKind = when (state) {
     ReplayGainState.NOT_REQUESTED -> DapStateKind.Off
     ReplayGainState.TRACK_APPLIED, ReplayGainState.ALBUM_APPLIED -> DapStateKind.Selected
     ReplayGainState.REQUESTED_NOT_APPLIED -> DapStateKind.Attention
+    ReplayGainState.PENDING, ReplayGainState.WAITING_FOR_TRACK -> DapStateKind.Connected
+    ReplayGainState.UNITY_APPLIED -> DapStateKind.Selected
 }
 
 @Composable
@@ -769,6 +777,9 @@ private fun replayGainLabel(state: ReplayGainState): Int = when (state) {
     ReplayGainState.TRACK_APPLIED -> R.string.track_details_rg_track_applied
     ReplayGainState.ALBUM_APPLIED -> R.string.track_details_rg_album_applied
     ReplayGainState.REQUESTED_NOT_APPLIED -> R.string.track_details_rg_requested_not_applied
+    ReplayGainState.PENDING -> R.string.track_details_rg_pending
+    ReplayGainState.WAITING_FOR_TRACK -> R.string.track_details_rg_waiting
+    ReplayGainState.UNITY_APPLIED -> R.string.track_details_rg_unity
 }
 
 /**

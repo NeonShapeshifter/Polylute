@@ -105,8 +105,8 @@ object DapHeights {
     /** Mini-player. */
     val MiniPlayer = 60.dp
 
-    /** Bottom navigation. */
-    val Nav = 72.dp
+    /** Bottom navigation: icons only since 11-21 (72 dp with labels before); matches NavBarCompactContentHeight. */
+    val Nav = 44.dp
 
     /** Inputs: search field, buttons. */
     val Control = 44.dp

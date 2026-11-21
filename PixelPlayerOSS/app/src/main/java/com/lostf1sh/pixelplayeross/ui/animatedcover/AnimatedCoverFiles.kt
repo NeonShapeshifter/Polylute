@@ -100,6 +100,10 @@ interface AnimatedCoverDirectory {
      */
     fun identity(): String = ""
 
+    /** SAF folder times are not a reliable notification that a child was added. */
+    fun cachesNegativeAnswers(): Boolean = true
+    fun grantState(): String = "not-required"
+
     object Disk : AnimatedCoverDirectory {
         override fun identity(): String = "disk"
         override fun names(dir: File): List<String>? = dir.list()?.toList()
@@ -111,6 +115,7 @@ interface AnimatedCoverDirectory {
     /** Nothing can be read: Android 13+ with no folder chosen. Every album shows its still cover. */
     object None : AnimatedCoverDirectory {
         override fun identity(): String = "none"
+        override fun grantState(): String = "missing"
         override fun names(dir: File): List<String>? = null
         override fun stamp(dir: File): Long = 0L
         override fun sizeOf(file: File): Long = 0L
@@ -139,7 +144,7 @@ fun interface AlbumFolders {
  * - The album's folders are the folders its songs are in, from the library's paths ([AlbumFolders]: one query per album, kept until the library changes). The cover is looked for in them:
  *   `cover.mp4`, then `cover.webp`, then `cover.gif` ([AnimatedCoverNames.pick]). If more than one folder has one, **the folder holding the most songs of the album wins**; on a tie the
  *   song's own folder wins, then the path order. So a song that sits loose in another folder takes the cover of the folder its album is mostly in.
- * - A folder is listed once and the answer (a file or "none") is kept per folder, so an album of twelve songs costs one query and one listing per folder, then nothing. The cache is
+ * - A positive answer is kept per folder; negative SAF answers are retried on the next lookup, so an album of twelve songs costs one query and one listing per folder, then nothing. The cache is
  *   forgotten when the library changes ([invalidate], and a sync raises [LibraryChangeSignal]: an answer taken before the change is not believed after it) and when a folder's own stamp
  *   moves (a file put in or taken out, which a sync may not have seen yet). **A folder that could not be read is not remembered as "no cover"** (B57.5 2.2): the next question reads it again.
  * - A song with no album ([find] with `albumId <= 0`) is looked for in its own folder, as before.
@@ -147,7 +152,7 @@ fun interface AlbumFolders {
  * A folder is trusted by the same rule as the still folder art (`AlbumArtUtils.shouldTrustDirectoryArtwork`): a "Music" or "Downloads" folder mixes albums, and one album's `cover.mp4` must
  * not be played for another's songs. A folder outside the one the listener chose is skipped (the still cover stays when no folder of the album is inside it).
  *
- * One line per answer that took work (never for a cached one) goes to the log under the tag `AnimatedCover`: which folders were asked, what each said, and the winner.
+ * One line per lookup (including a cached answer) goes to the log under the tag `AnimatedCover`: which folders were asked, what each said, and the winner.
  */
 @Singleton
 class AnimatedCoverFinder internal constructor(
@@ -215,10 +220,9 @@ class AnimatedCoverFinder internal constructor(
         if (!songPath.startsWith("/")) return null
         val own = File(songPath).parentFile ?: return null
         val trace = StringBuilder()
-        var worked = false
         val version = libraryVersion()
         val ordered = if (albumId > 0L) {
-            val known = foldersOfAlbum(albumId, version)?.also { if (it.second) worked = true }?.first.orEmpty()
+            val known = foldersOfAlbum(albumId, version)?.first.orEmpty()
             val all = if (known.any { it.path == own.path }) known else known + AlbumFolder(own.path, 0)
             // most songs of the album first; on a tie the song's own folder; then the path order
             all.sortedWith(compareByDescending<AlbumFolder> { it.songs }.thenBy { if (it.path == own.path) 0 else 1 }.thenBy { it.path })
@@ -228,16 +232,14 @@ class AnimatedCoverFinder internal constructor(
         var found: AnimatedCover? = null
         for (folder in ordered) {
             val result = coverIn(File(folder.path), discNumber)
-            if (!result.fromCache) worked = true
             trace.append(if (trace.isEmpty()) "" else "; ").append(folder.path).append(" (").append(folder.songs).append(" songs): ").append(result.outcome.say)
+                .append(" source=").append(if (result.outcome == Outcome.OUTSIDE || result.outcome == Outcome.UNREADABLE) "unreachable" else if (result.fromCache) "cache" else "listing")
             if (result.cover != null) {
                 found = result.cover
                 break
             }
         }
-        if (worked) {
-            log("find album=$albumId song=${File(songPath).name} -> ${found?.file?.path ?: "no animated cover"} | $trace")
-        }
+        log("find album=$albumId song=${File(songPath).name} -> ${found?.file?.path ?: "no animated cover"} | grant=${directory.grantState()} | $trace")
         return found
     }
 
@@ -258,12 +260,12 @@ class AnimatedCoverFinder internal constructor(
 
     private fun coverIn(dir: File, disc: Int): FolderResult {
         // B59 4: the answer for a folder depends on the disc asked for (its own file, else the album's)
-        val key = if (disc > 0) "${dir.path}|disc$disc" else dir.path
+        val key = directory.identity() + "|" + (if (disc > 0) "${dir.path}|disc$disc" else dir.path)
         val stamp = directory.stamp(dir)
         val version = libraryVersion()
-        synchronized(cache) { cache[key] }?.let { if (it.stamp == stamp && it.libraryVersion == version) return FolderResult(it.cover, it.outcome, fromCache = true) }
+        synchronized(cache) { cache[key] }?.let { if (stamp >= 0 && it.stamp == stamp && it.libraryVersion == version) return FolderResult(it.cover, it.outcome, fromCache = true) }
         val (found, outcome) = list(dir, disc)
-        if (outcome.remember) synchronized(cache) { cache[key] = Entry(stamp, version, found, outcome) }
+        if (outcome.remember && stamp >= 0 && (found != null || directory.cachesNegativeAnswers())) synchronized(cache) { cache[key] = Entry(stamp, version, found, outcome) }
         return FolderResult(found, outcome, fromCache = false)
     }
 

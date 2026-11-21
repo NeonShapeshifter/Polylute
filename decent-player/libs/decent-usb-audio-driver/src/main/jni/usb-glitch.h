@@ -403,6 +403,7 @@ typedef struct {
     int64_t runLastMs;
     int64_t runReadings;
     bool stuck;
+    bool acceptedRun; // stream-local exception after bounded recovery; never changes the global threshold
     // Exponentially weighted sums of the readings of runs that were NOT an episode and have settled (B47-A4: older than
     // USB_FEEDBACK_HEALTHY_SETTLE_MS when the next reading arrives; `fresh` holds the younger ones, oldest first).
     double healthySum;
@@ -514,17 +515,79 @@ void usbDacLockLateReap(UsbDacLockWatch *w);
 /** How long the run has lasted at [nowMs], 0 outside one. */
 int64_t usbDacLockRailedMs(const UsbDacLockWatch *w, int64_t nowMs);
 
+// B63.5: explicit feedback must keep arriving while audio is progressing. A submit is
+// recent for 200 ms (128 ms maximum ring plus a scheduling/poll margin). No completion
+// callback is needed to tick this timer. Paused/seek silence never arms it.
+#define USB_FEEDBACK_MISSING_MS 500
+#define USB_FEEDBACK_PROGRESS_MS 200
+
+typedef struct {
+    bool armed, fault;
+    int64_t armedMs, lastValidMs, lastProgressMs;
+    int64_t validReadings, invalidReadings;
+} UsbFeedbackHealth;
+void usbFeedbackHealthReset(UsbFeedbackHealth *w);
+void usbFeedbackHealthProgress(UsbFeedbackHealth *w, int64_t nowMs);
+void usbFeedbackHealthValid(UsbFeedbackHealth *w, int64_t nowMs);
+bool usbFeedbackHealthTick(UsbFeedbackHealth *w, int64_t nowMs, bool expected, bool suspended);
+
+
+// B63.5: a persistent reference is evidence only after two distinct healthy sessions.
+#define USB_FEEDBACK_REFERENCE_LEARN_MS 180000
+#define USB_FEEDBACK_REFERENCE_STABLE_PPM 50.0
+#define USB_FEEDBACK_PLATEAU_MIN_PPM 100.0
+#define USB_FEEDBACK_PLATEAU_MS 5000
+#define USB_FEEDBACK_REFERENCE_CAPACITY 64
+struct UsbFeedbackReference {
+    char key[65]; // SHA-256 of device identity + rate/container/channels, never the serial itself
+    uint32_t raw, sessions;
+    uint64_t lastSession;
+};
+struct UsbFeedbackPlateau {
+    UsbFeedbackReference reference;
+    uint64_t session;
+    bool haveRun, fault, untrainedReported, learned, learningBanned, jumpArmed;
+    uint32_t runRaw, trendRaw;
+    int64_t trendMs;
+    int64_t runSinceMs, lastMs, learnSinceMs, learnLastMs, inliers, outliers;
+    double sum;
+};
+void usbFeedbackPlateauReset(UsbFeedbackPlateau *p, const UsbFeedbackReference *r, uint64_t session);
+void usbFeedbackPlateauBreak(UsbFeedbackPlateau *p);
+// Returns true only on the transition into a suspected plateau. No reference: never a fault.
+bool usbFeedbackPlateauObserve(UsbFeedbackPlateau *p, uint32_t raw, double nominal, int64_t nowMs, bool mayLearn);
+bool usbFeedbackPlateauPending(const UsbFeedbackPlateau *p, double nominal);
+bool usbFeedbackReferenceCandidate(UsbFeedbackPlateau *p, int64_t nowMs, uint32_t *raw);
+
+// Reading-bearing false alarms get a bounded recovery for each identical signature per stream.
+// No-readings (kind 3), failed device operations and unverified volume are never admitted.
+#define USB_DAC_BEHAVIOR_SIGNATURES 8
+struct UsbDacBehaviorSignature {
+    uint32_t raw;
+    int kind;
+    bool reopened, accepted;
+};
+struct UsbDacBehavior {
+    UsbDacBehaviorSignature signature[USB_DAC_BEHAVIOR_SIGNATURES];
+    int count, current;
+    bool budgetExhausted;
+    int lastStepKind;
+    uint32_t lastStepRaw;
+};
+bool usbDacBehaviorObserve(UsbDacBehavior *b, int kind, uint32_t raw, bool valid);
+bool usbDacBehaviorAccepted(const UsbDacBehavior *b, int kind, uint32_t raw);
+void usbDacBehaviorStep(UsbDacBehavior *b, int step, bool ran);
+void usbDacBehaviorVerified(UsbDacBehavior *b);
+
 // ── What to do about it: escalating steps, each bounded (B47-A5) ──────────────────────────────────
 //
-// Step 1 restarts the streaming interface (SETINTERFACE alt 0, then the format's alt again, the stream continues at the same position); step 2, only if the
-// rail or frozen feedback is back after step 1, resets the bus and claims the interfaces again (the B39/B40 path, the DAC's level restored by the rule of every open); then it gives up
-// for the episode: one line, and the feedback stays refused as it always was. Never a loop:
-//  - one attempt per step per episode. An episode ends when the detector has been quiet for USB_DAC_RECOVERY_EPISODE_END_MS after the last step (the recovery held);
-//  - a verdict on a step comes from both watches: a rail or frozen feedback is back (the next step is taken at once) or both stay quiet for
-//    USB_DAC_RECOVERY_VERIFY_MS (`ok`). A pending off-nominal run defers `ok` until it changes or reaches its watch's hold;
-//    in particular the 4 s verdict must not precede the stuck watch's 5 s classification. A settling start ramp is allowed to change and clear;
-//  - a new episode starts at most once per USB_DAC_RECOVERY_COOLDOWN_MS across the whole process: 30 s is long enough for a reset DAC to re-enumerate and settle
-//    (a few seconds) and for the verdict window to close with room to spare, and it caps a DAC that locks again right after every recovery at two attempts a minute.
+// Step 1 re-selects the interface and rate; step 2 resets/reclaims the bus; step 3 closes and
+// reopens the native stream and device. On renewed fault, reopen retries wait 30s, then 90s,
+// then 300s repeatedly. Nothing permanently gives up or mutes music (owner decision 11-18).
+// A verdict uses the shared detector/feedback-health window: real readings for 4s with no fault;
+// a pending off-nominal run defers success. Ten quiet seconds close a recovered episode.
+// The existing process-wide 30s cooldown applies only to starting another episode, not to
+// escalation within one. A device/level operation failure is a failed step, never health.
 #define USB_DAC_RECOVERY_VERIFY_MS 4000
 #define USB_DAC_RECOVERY_EPISODE_END_MS 10000
 #define USB_DAC_RECOVERY_COOLDOWN_MS 30000
@@ -533,10 +596,15 @@ enum {
     USB_DAC_STEP_NONE = 0,
     USB_DAC_STEP_INTERFACE = 1,   // step 1
     USB_DAC_STEP_BUS_RESET = 2,   // step 2
-    USB_DAC_STEP_GIVE_UP = 3,
+    USB_DAC_STEP_REOPEN = 3,
+    USB_DAC_STEP_GIVE_UP = 4, // compatibility only; never emitted (owner: keep playback flowing)
 };
 
 typedef struct {
+    int retryCount;
+    int64_t nextRetryMs;
+    bool operationFailed;
+    bool actionInFlight;
     int lastStep;             // the last step taken in this episode (0: none yet)
     bool gaveUp;
     int awaitingStep;         // a step whose verdict is owed (0: none)
@@ -548,14 +616,14 @@ void usbDacRecoveryPolicyReset(UsbDacRecoveryPolicy *p);
 
 /**
  * The writer looks (it is streaming, not paused, not in a seek): whether the detector says [locked], whether recovery is [enabled], and when the last episode began
- * ([*lastEpisodeStartMs], process-wide, 0 = never). Returns the step to take now (USB_DAC_STEP_INTERFACE / BUS_RESET), USB_DAC_STEP_GIVE_UP once when the steps are
- * used up, or NONE. [pending] means a rail or off-nominal identical run is still being classified: it defers success and episode closure, never starts a step.
+ * ([*lastEpisodeStartMs], process-wide, 0 = never). Returns INTERFACE, BUS_RESET, REOPEN, or NONE. Reopen retries wait 30s, 90s, then 300s while the fault holds. [pending] means a rail or off-nominal identical run is still being classified: it defers success and episode closure, never starts a step.
+ * [suppressSteps] prevents new actions while still closing the verdict of a step already taken.
  * [*verdictStep] is the step an earlier call took whose verdict is now known (0 if none) and [*verdictOk] says which way it went.
  */
-int usbDacRecoveryDecide(UsbDacRecoveryPolicy *p, bool locked, bool enabled, int64_t nowMs, int64_t *lastEpisodeStartMs, int *verdictStep, bool *verdictOk, bool pending = false);
+int usbDacRecoveryDecide(UsbDacRecoveryPolicy *p, bool locked, bool enabled, int64_t nowMs, int64_t *lastEpisodeStartMs, int *verdictStep, bool *verdictOk, bool pending = false, bool suppressSteps = false);
 
 /** The step that was taken ended (its work done or failed) at [nowMs]: the verdict clock starts. */
-void usbDacRecoveryStepDone(UsbDacRecoveryPolicy *p, int step, int64_t nowMs);
+void usbDacRecoveryStepDone(UsbDacRecoveryPolicy *p, int step, int64_t nowMs, bool ran = true);
 
 /**
  * What the host does with the DAC's feedback (SET_FEEDBACK_POLICY, process-only; not persisted).

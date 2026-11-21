@@ -51,7 +51,7 @@ class B51LyricsPermissionRenderTest {
         }
         compose.onNodeWithText("Elegir carpeta").assertIsDisplayed()
         val image = B42Renders.screen(compose)
-        val dir = File(System.getenv("B51_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B51-gates/png-after").apply { mkdirs() }
+        val dir = File(System.getenv("B51_RENDERS") ?: "build/test-artifacts/B51/png-after").apply { mkdirs() }
         File(dir, "lyrics-folder-permission.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
         compose.onNodeWithText("Guardar en Polylute").performClick()
         assertThat(declined).isTrue()

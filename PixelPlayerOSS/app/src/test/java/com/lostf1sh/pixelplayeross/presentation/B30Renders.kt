@@ -9,11 +9,11 @@ import java.io.File
 
 /**
  * B30: where the renders for the owner go. Robolectric images of the screens over made-up data (not phone screenshots), saved under
- * `analysis/.../B30-evidence/renders/` so they can be looked at without the phone. `B30_RENDERS` overrides the folder.
+ * `build/test-artifacts/B30/renders/` so they can be looked at without the phone. `B30_RENDERS` overrides the folder.
  */
 object B30Renders {
     private val root: File
-        get() = File(System.getenv("B30_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B30-evidence/renders").apply { mkdirs() }
+        get() = File(System.getenv("B30_RENDERS") ?: "build/test-artifacts/B30/renders").apply { mkdirs() }
 
     fun save(compose: ComposeContentTestRule, name: String) {
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()

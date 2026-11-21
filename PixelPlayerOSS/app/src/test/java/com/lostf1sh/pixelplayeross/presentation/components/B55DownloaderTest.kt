@@ -30,7 +30,7 @@ import org.robolectric.annotation.GraphicsMode
 @OptIn(ExperimentalCoroutinesApi::class)
 class B55DownloaderTest {
     @get:Rule val compose=createComposeRule()
-    private val dir=File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B55-gates/png-after/downloader")
+    private val dir=File("build/test-artifacts/B55/png-after/downloader")
     private fun pending(vm: OfflineDownloadsViewModel): Set<String> {
         val getter=vm.javaClass.methods.firstOrNull { it.name == "getPendingKeys" } ?: return emptySet()
         @Suppress("UNCHECKED_CAST")

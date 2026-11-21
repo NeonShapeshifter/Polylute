@@ -1,6 +1,9 @@
 package com.lostf1sh.pixelplayeross.data.dac.fiio
 
+import com.decent.usbaudio.UsbDeviceOwner
+import com.decent.usbaudio.UsbDiagnosticJournal
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -40,6 +43,8 @@ interface FiioHidOpener {
 class DacEqHidAccess(
     private val opener: FiioHidOpener,
     private val dispatcher: CoroutineDispatcher,
+    private val owner: UsbDeviceOwner? = null,
+    private val openGeneration: () -> Long = { 0L },
 ) {
     /** Held for the whole of a session. A debug command that opens its own connection (the probe, the listen) takes it too. */
     val lock = Mutex()
@@ -57,8 +62,35 @@ class DacEqHidAccess(
         log: (String) -> Unit,
         stale: () -> String? = { null },
         block: (FiioHidSession) -> T,
-    ): HidUse<T> = lock.withLock {
-        stale()?.let { return@withLock HidUse.Unavailable(it, stale = true) }
-        withContext(dispatcher) { opener.use(attached, log, block) }
+    ): HidUse<T> = withContext(dispatcher) {
+        repeat(OWNER_POLLS) { poll ->
+            val answer = lock.withLock {
+                    stale()?.let { return@withLock HidUse.Unavailable(it, stale = true) }
+                    if (owner == null) return@withLock opener.use(attached, log, block)
+                    val claim = owner.tryClaimAccessory("HID", owner.generation, settled = true) ?: return@withLock null
+                    claim.use {
+                        if (!claim.isCurrent()) return@withLock null
+                        stale()?.let { return@withLock HidUse.Unavailable(it, stale = true) }
+                        val connection = openGeneration()
+                        val started = System.nanoTime()
+                        var ran = false
+                        UsbDiagnosticJournal.control(connection, claim.generation, UsbDiagnosticJournal.Control.HID_BEGIN, "hid")
+                        try {
+                            opener.use(attached, log, block).also { ran = it is HidUse.Ran }
+                        } finally {
+                            UsbDiagnosticJournal.control(connection, claim.generation, UsbDiagnosticJournal.Control.HID_END, "hid",
+                                result = if (ran) 1 else 0, elapsedMs = (System.nanoTime() - started) / 1_000_000)
+                        }
+                    }
+            }
+            if (answer != null) return@withContext answer
+            if (poll < OWNER_POLLS - 1) delay(OWNER_POLL_MS)
+        }
+        HidUse.Unavailable("the USB device is busy")
+    }
+
+    private companion object {
+        const val OWNER_POLLS = 121
+        const val OWNER_POLL_MS = 50L
     }
 }

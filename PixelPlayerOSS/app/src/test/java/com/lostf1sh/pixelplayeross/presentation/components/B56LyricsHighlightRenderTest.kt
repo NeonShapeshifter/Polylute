@@ -54,7 +54,7 @@ class B56LyricsHighlightRenderTest {
 
     private val phase = if (File("").absoluteFile.path.contains("B56-before")) "before" else "after"
     private val out: File
-        get() = File(System.getenv("B56_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B56-gates/renders").apply { mkdirs() }
+        get() = File(System.getenv("B56_RENDERS") ?: "build/test-artifacts/B56/renders").apply { mkdirs() }
 
     private val lines = listOf(
         "Nos vemos en el cielo de Madrid", "Cuando llegue la mañana", "Y el sol se vaya a dormir",

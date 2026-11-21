@@ -25,6 +25,11 @@ class BackupReader @Inject constructor(
     companion object {
         const val MAX_MANIFEST_BYTES = 512 * 1024
         const val MAX_MODULE_PAYLOAD_BYTES = 16 * 1024 * 1024
+        /** Large local text/image collections grow with the library, unlike settings. */
+        fun maxModulePayloadBytes(key: String): Int = when (key) {
+            "lyrics", "playback_history", "engagement_stats", "playlists", "artist_images" -> 64 * 1024 * 1024
+            else -> MAX_MODULE_PAYLOAD_BYTES
+        }
         const val MAX_LEGACY_BACKUP_BYTES = 32 * 1024 * 1024
     }
 
@@ -64,7 +69,7 @@ class BackupReader @Inject constructor(
             when (format) {
                 BackupFormatDetector.Format.PXPL_V4_ENCRYPTED -> throw BackupEncryptedException()
                 BackupFormatDetector.Format.PXPL_V3_ZIP -> {
-                    readEntryFromZip(uri, "$moduleKey.json", MAX_MODULE_PAYLOAD_BYTES)
+                    readEntryFromZip(uri, "$moduleKey.json", maxModulePayloadBytes(moduleKey))
                         ?: throw IllegalArgumentException("Module '$moduleKey' not found in backup")
                 }
                 BackupFormatDetector.Format.PXPL_V2_GZIP,
@@ -92,7 +97,7 @@ class BackupReader @Inject constructor(
             when (format) {
                 BackupFormatDetector.Format.PXPL_V4_ENCRYPTED -> throw BackupEncryptedException()
                 BackupFormatDetector.Format.PXPL_V3_ZIP -> {
-                    readAllEntriesFromZip(uri, MAX_MODULE_PAYLOAD_BYTES)
+                    readAllEntriesFromZip(uri)
                 }
                 BackupFormatDetector.Format.PXPL_V2_GZIP,
                 BackupFormatDetector.Format.LEGACY_GZIP,
@@ -147,13 +152,7 @@ class BackupReader @Inject constructor(
                         continue
                     }
                     if (entry.name == entryName) {
-                        return zip.bufferedReader(Charsets.UTF_8).use { reader ->
-                            readTextLimited(
-                                reader = reader,
-                                maxChars = maxChars,
-                                sourceLabel = "Backup entry '$entryName'"
-                            )
-                        }
+                        return readEntryText(zip, maxChars, "Backup entry '$entryName'")
                     }
                     zip.closeEntry()
                     entry = zip.nextEntry
@@ -163,8 +162,9 @@ class BackupReader @Inject constructor(
         return null
     }
 
-    private fun readAllEntriesFromZip(uri: Uri, maxChars: Int): Map<String, String> {
+    private fun readAllEntriesFromZip(uri: Uri): Map<String, String> {
         val entries = mutableMapOf<String, String>()
+        var totalBytes = 0L
         context.contentResolver.openInputStream(uri)?.use { raw ->
             skipFully(raw, BackupFormatDetector.PXPL_MAGIC_SIZE)
             ZipInputStream(raw).use { zip ->
@@ -176,12 +176,9 @@ class BackupReader @Inject constructor(
                         name.endsWith(".json")
                     ) {
                         val key = name.removeSuffix(".json")
-                        entries[key] = zip.bufferedReader(Charsets.UTF_8).use { reader ->
-                            readTextLimited(
-                                reader = reader,
-                                maxChars = maxChars,
-                                sourceLabel = "Backup entry '$name'"
-                            )
+                        entries[key] = readEntryText(zip, maxModulePayloadBytes(key), "Backup entry '$name'") { n ->
+                            totalBytes += n
+                            require(totalBytes <= com.lostf1sh.pixelplayeross.data.backup.validation.BackupFileValidator.MAX_TOTAL_DECOMPRESSED_BYTES) { "Backup total payload exceeds limit" }
                         }
                     }
                     zip.closeEntry()
@@ -190,6 +187,18 @@ class BackupReader @Inject constructor(
             }
         } ?: throw IllegalStateException("Unable to open backup file")
         return entries
+    }
+
+    private fun readEntryText(input: InputStream, maxBytes: Int, label: String, onBytes: (Int) -> Unit = {}): String {
+        var count = 0L
+        val bounded = object : java.io.FilterInputStream(input) {
+            override fun read(): Int = super.read().also { if (it >= 0) checked(1) }
+            override fun read(b: ByteArray, off: Int, len: Int): Int =
+                `in`.read(b, off, minOf(len.toLong(), maxBytes - count + 1).toInt()).also { if (it > 0) checked(it) }
+            private fun checked(n: Int) { count += n; onBytes(n); require(count <= maxBytes) { "$label exceeds the $maxBytes byte safety limit" } }
+            override fun close() {} // the archive owns the stream
+        }
+        return readTextLimited(bounded.reader(Charsets.UTF_8), maxBytes, label)
     }
 
     /**

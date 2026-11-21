@@ -12,6 +12,7 @@ import androidx.compose.animation.core.animate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -73,13 +76,10 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.components.SmartImage
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaybackProgressRates
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
-import com.lostf1sh.pixelplayeross.ui.ds.DapButton
-import com.lostf1sh.pixelplayeross.ui.ds.DapButtonVariant
 import com.lostf1sh.pixelplayeross.ui.ds.DapIcon
 import com.lostf1sh.pixelplayeross.ui.ds.DapIconKind
 import com.lostf1sh.pixelplayeross.ui.ds.DapMotion
 import com.lostf1sh.pixelplayeross.ui.ds.DapPlayDisc
-import com.lostf1sh.pixelplayeross.ui.ds.DapRadius
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
 import kotlinx.coroutines.CoroutineScope
@@ -97,18 +97,23 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import timber.log.Timber
 
-/**
- * The cover on the lock surface: at most 280 dp, never wider than the content (320 dp on the HONOR) and never more than the room the other blocks leave. B58 7 (#77, the owner's wish):
- * it was 216 dp (`LockScreen.dc.html`), and the clock above it took more room than it needed. It shrinks on a shorter screen, never grows past this.
+/*
+ * The cover on the lock surface spans the screen but for a thin [LockCoverInset] each side (owner 11-20: edge to edge looked odd; it was at most 280 dp inside the gutter, B58 7),
+ * with slightly rounder corners than the surfaces, and never takes more height than the other blocks leave: 344 dp on the HONOR (360 x 805 dp).
  */
-private val LockArtworkSize = 280.dp
+private val LockCoverInset = 8.dp
+private val LockCoverRadius = 12.dp
 
 /** B58 7 (#77): the clock is the display token made smaller (64 sp before): it is read at a glance, and the cover is what the surface is for. */
 private val LockClockStyle = DapType.Display.copy(fontSize = 44.sp, lineHeight = 48.sp)
 
-/** B58 7 (#77): how far below the status bar the clock starts (48 dp before), and the gap between the clock block and the cover (32 dp before). */
-private val LockClockTopGap = DapSpacing.Lg
-private val LockClockCoverGap = DapSpacing.SectionGap
+/** How far below the status bar the clock starts (48 dp before B58, 16 dp before 11-20), and the gaps above and below the cover (24/28 dp before 11-20). */
+private val LockClockTopGap = DapSpacing.Sm
+private val LockClockCoverGap = DapSpacing.Lg
+private val LockCoverTextGap = 20.dp
+
+/** A bottom navigation inset at most this tall is a gesture handle: the footer may sit over it (owner 11-20: "Open app" lower). A taller one (three buttons) is kept clear. */
+private val LockGestureBarMax = 32.dp
 
 /**
  * The DAP lock surface: a playback face for a dedicated player.
@@ -256,12 +261,14 @@ fun DapLockScreen(
             if (glass != null) {
                 CoverGlassBackdrop(glass.crossfade, glass.clock, glass.base, expansion = { 1f })
             }
+            // The footer sits over a gesture handle (owner 11-20: "Open app" lower); three-button navigation keeps its room.
+            val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             LockLayout(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = DapSpacing.Gutter),
+                    .padding(bottom = if (navBottom <= LockGestureBarMax) 0.dp else navBottom),
+                gutter = DapSpacing.Gutter,
                 top = {
                     // B58 7: the clock sits higher (the design put it 72 dp from the top; it is [LockClockTopGap] under the status bar now).
                     Column(Modifier.fillMaxWidth()) {
@@ -298,7 +305,7 @@ fun DapLockScreen(
                         SignalReadout(outputLine = outputLine, untouched = outputUntouched, batteryPercent = batteryPercent)
                         Spacer(Modifier.height(DapSpacing.Md))
                         DismissAffordance(onOpen = { leave(0f, false) })
-                        Spacer(Modifier.height(DapSpacing.Sm))
+                        Spacer(Modifier.height(DapSpacing.Xs))
                     }
                 },
             )
@@ -395,14 +402,15 @@ internal const val LOCK_COVER_TAG = "lock_cover"
  * The surface's four blocks, stacked the way the design stacks them: the clock, the cover, the title and controls,
  * and, at the foot, the output line and the way out.
  *
- * The cover gets what the other three leave (at most [LockArtworkSize], and never wider than the content), and
- * whatever is still left goes **between the controls and the footer**, as in the design, instead of floating around
- * the cover. The three blocks are measured first, so a longer title or a larger font shrinks the cover, not the
- * controls.
+ * The cover gets what the other three leave (at most the screen width less [LockCoverInset] each side: it ignores the
+ * [gutter] the other blocks keep), and whatever is still left goes **between the controls and the footer**, as in
+ * the design, instead of floating around the cover. The three blocks are measured first, so a longer title or a larger
+ * font shrinks the cover, not the controls.
  */
 @Composable
 private fun LockLayout(
     modifier: Modifier,
+    gutter: androidx.compose.ui.unit.Dp,
     top: @Composable () -> Unit,
     cover: @Composable () -> Unit,
     middle: @Composable () -> Unit,
@@ -417,22 +425,24 @@ private fun LockLayout(
         },
         modifier = modifier,
     ) { measurables, constraints ->
-        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val g = gutter.roundToPx()
+        val inner = (constraints.maxWidth - 2 * g).coerceAtLeast(0)
+        val loose = constraints.copy(minWidth = 0, minHeight = 0, maxWidth = inner)
         fun byId(id: String) = measurables.first { it.layoutId == id }
         val topP = byId("top").measure(loose)
         val middleP = byId("middle").measure(loose)
         val bottomP = byId("bottom").measure(loose)
         val gapAbove = LockClockCoverGap.roundToPx()
-        val gapBelow = 28.dp.roundToPx()
+        val gapBelow = LockCoverTextGap.roundToPx()
         val room = constraints.maxHeight - topP.height - middleP.height - bottomP.height - gapAbove - gapBelow
-        val side = minOf(LockArtworkSize.roundToPx(), constraints.maxWidth, room).coerceAtLeast(0)
+        val side = minOf(constraints.maxWidth - 2 * LockCoverInset.roundToPx(), room).coerceAtLeast(0)
         val coverP = byId("cover").measure(androidx.compose.ui.unit.Constraints.fixed(side, side))
         layout(constraints.maxWidth, constraints.maxHeight) {
             var y = 0
-            topP.placeRelative(0, y); y += topP.height + gapAbove
+            topP.placeRelative(g, y); y += topP.height + gapAbove
             coverP.placeRelative((constraints.maxWidth - coverP.width) / 2, y); y += coverP.height + gapBelow
-            middleP.placeRelative(0, y)
-            bottomP.placeRelative(0, constraints.maxHeight - bottomP.height)
+            middleP.placeRelative(g, y)
+            bottomP.placeRelative(g, constraints.maxHeight - bottomP.height)
         }
     }
 }
@@ -498,7 +508,7 @@ private fun systemUses24HourClock(context: Context): Boolean {
 }
 
 /**
- * The cover: it fills the square [LockLayout] gives it (at most [LockArtworkSize]).
+ * The cover: it fills the square [LockLayout] gives it (at most the screen width less its inset).
  *
  * B61 item 5 (#70): with "Also on the lock screen" on, the album's animated cover plays over the still one, through the activity's one controller (never a second decoder): the host asks for the
  * song's own cover (its disc's, when it has one), the layer draws the engine's view while this surface is the one that holds it, and the screen going off releases it as it always did.
@@ -510,12 +520,12 @@ private fun LockArtwork(song: Song, isPlaying: Boolean) {
         SmartImage(
             model = song.albumArtUriString?.takeIf { it.isNotBlank() },
             contentDescription = stringResource(R.string.cd_album_art_for_title, song.title),
-            shape = RoundedCornerShape(DapRadius.Surface),
-            // The largest rendered size (280 dp at this density), not the file's full resolution.
+            shape = RoundedCornerShape(LockCoverRadius),
+            // Above the largest rendered size (360 dp = 720 px on the HONOR), not the file's full resolution.
             targetSize = coil.size.Size(840, 840),
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(DapRadius.Surface)),
+                .clip(RoundedCornerShape(LockCoverRadius)),
         )
         val host = com.lostf1sh.pixelplayeross.ui.animatedcover.rememberAnimatedCoverHost(
             songPath = song.path,
@@ -527,7 +537,7 @@ private fun LockArtwork(song: Song, isPlaying: Boolean) {
             onLock = true,
         )
         if (host != null) {
-            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(DapRadius.Surface)).onSizeChanged { host.onSize(minOf(it.width, it.height)) }) {
+            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(LockCoverRadius)).onSizeChanged { host.onSize(minOf(it.width, it.height)) }) {
                 com.lostf1sh.pixelplayeross.ui.animatedcover.AnimatedCoverLayer(host)
             }
         }
@@ -739,20 +749,26 @@ private fun SignalReadout(outputLine: String?, untouched: Boolean, batteryPercen
 }
 
 /**
- * The way out of the surface, in both forms.
+ * The way out of the surface, in both forms, in one control.
  *
  * The chevron is the gesture made visible — an unlabelled swipe is undiscoverable, and a surface
- * whose only exit is a gesture has no exit for anyone who cannot perform it. The button under it
- * is the accessible route, and it is a real control rather than a hint.
+ * whose only exit is a gesture has no exit for anyone who cannot perform it. So the chevron is also
+ * a real button (48 dp, "Open app" to TalkBack). Owner 11-20: the "Open app" text under it went, the
+ * room it took is air between the controls and the footer.
  */
 @Composable
 private fun DismissAffordance(onOpen: () -> Unit) {
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        DapIcon(kind = DapIconKind.ChevronUp, tint = Dap.tertiaryText, size = 16.dp)
-        DapButton(
-            label = stringResource(R.string.lock_screen_open_app),
-            onClick = onOpen,
-            variant = DapButtonVariant.Text,
-        )
+    val label = stringResource(R.string.lock_screen_open_app)
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onOpen)
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) {
+            DapIcon(kind = DapIconKind.ChevronUp, tint = Dap.secondaryText, size = 24.dp)
+        }
     }
 }

@@ -73,6 +73,7 @@ import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
 import com.lostf1sh.pixelplayeross.data.service.MusicNotificationProvider
 import com.lostf1sh.pixelplayeross.data.service.MusicService
 import com.lostf1sh.pixelplayeross.data.stats.ListenSource
+import com.lostf1sh.pixelplayeross.data.model.PlaybackOrigin
 import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
 import com.lostf1sh.pixelplayeross.data.stats.TrackEndReason
 import com.lostf1sh.pixelplayeross.data.service.player.DualPlayerEngine
@@ -353,6 +354,11 @@ class PlayerViewModel @Inject constructor(
     private val sessionToken: SessionToken,
     private val mediaControllerFactory: com.lostf1sh.pixelplayeross.data.media.MediaControllerFactory
 ) : ViewModel() {
+
+    @Inject lateinit var listeningSourcePages: ListeningSourcePages
+    suspend fun listeningDestination(request: SongLocateRequest) =
+        com.lostf1sh.pixelplayeross.presentation.navigation.listeningDestination(request.source, request.albumId, request.songId) { listeningSourcePages.exists(it) }
+    suspend fun likedIndexOf(songId: String): Int = songId.toLongOrNull()?.let { songIdsInLikedOrder().indexOf(it) } ?: -1
 
     private val _playerUiState = MutableStateFlow(PlayerUiState())
     val playerUiState: StateFlow<PlayerUiState> = _playerUiState.asStateFlow()
@@ -782,6 +788,7 @@ class PlayerViewModel @Inject constructor(
         scope = viewModelScope,
         resolveIndex = { songId -> musicRepository.getSong(songId).first()?.let { libraryIndexOf(it) } ?: -1 },
         onNotFound = { sendToast(context.getString(R.string.player_song_not_found_in_list)) },
+        resolveLikedIndex = ::likedIndexOf,
     )
 
     val libraryLocateRequest: StateFlow<LibraryLocator.Request?> = libraryLocator.request
@@ -789,7 +796,7 @@ class PlayerViewModel @Inject constructor(
     /** The song the Library last scrolled to for another page, while it is marked (a few seconds, or until the next locate). */
     val locatedSongId: StateFlow<String?> = libraryLocator.located
 
-    fun requestLibraryLocate(songId: String) = libraryLocator.request(songId)
+    fun requestLibraryLocate(songId: String, liked: Boolean = false) = libraryLocator.request(songId, liked)
 
     /** The Songs list asks where the requested song is: its index in the list as shown (the song is marked), or -1. */
     suspend fun takeLibraryLocate(request: LibraryLocator.Request): Int = libraryLocator.take(request)
@@ -799,6 +806,7 @@ class PlayerViewModel @Inject constructor(
 
     /** The page that asked is gone (Back): whatever was pending or marked for it goes too. */
     fun clearLibraryLocate() = libraryLocator.clear()
+    fun clearLibraryLocate(ownedToken: Long) = libraryLocator.clear(ownedToken)
 
     fun showAndPlaySongFromLibrary(
         song: Song,
@@ -822,16 +830,20 @@ class PlayerViewModel @Inject constructor(
      * query for that list (which also applies the allowed/blocked folders). Every button that plays "the library" asks here, so a
      * tap on a row, Play, Shuffle, the tile and the locate button all name the same list in the same order.
      */
-    private suspend fun songIdsInLibraryOrder(): List<Long> = musicRepository.getSongIdsSorted(
-        libraryStateHolder.currentSongSortOption.value,
-        libraryStateHolder.currentStorageFilter.value,
+    private suspend fun songIdsInLibraryOrder(): List<Long> = filterLibrarySongIds(
+        musicRepository.getSongIdsSorted(libraryStateHolder.currentSongSortOption.value, libraryStateHolder.currentStorageFilter.value), LibraryTabId.SONGS,
     )
 
-    /** The Liked list as the Library shows it: the same rule for the favourites' own sort. */
-    private suspend fun songIdsInLikedOrder(): List<Long> = musicRepository.getFavoriteSongIdsSorted(
-        libraryStateHolder.currentFavoriteSortOption.value,
-        libraryStateHolder.currentStorageFilter.value,
+    private suspend fun songIdsInLikedOrder(): List<Long> = filterLibrarySongIds(
+        musicRepository.getFavoriteSongIdsSorted(libraryStateHolder.currentFavoriteSortOption.value, libraryStateHolder.currentStorageFilter.value), LibraryTabId.LIKED,
     )
+
+    /**
+     * B63 (owner 11-16): the tab search only *finds*. A song found and tapped plays inside the whole library, in its order, and Play /
+     * Shuffle play the whole library too. Building the queue from the matches made "a weird separate playlist", like the Search tab.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun filterLibrarySongIds(ids: List<Long>, tab: LibraryTabId): List<Long> = ids
 
     /**
      * Library > Songs "Play": the whole list from its first song, in the order it is sorted —
@@ -937,9 +949,7 @@ class PlayerViewModel @Inject constructor(
                 }
 
                 Timber.e(error, failureMessage, song.id)
-                val fallbackQueue = libraryStateHolder.allSongs.value.takeIf { songs ->
-                    songs.isNotEmpty() && songs.any { it.id == song.id }
-                } ?: listOf(song)
+                val fallbackQueue = libraryStateHolder.allSongs.value.takeIf { songs -> songs.isNotEmpty() && songs.any { it.id == song.id } } ?: listOf(song)
                 showAndPlaySong(
                     song = song,
                     contextSongs = fallbackQueue,
@@ -1755,7 +1765,16 @@ class PlayerViewModel @Inject constructor(
             if (songs.isEmpty()) return@launch
             // The ordinary staged loader publishes the first window and the rest once each.
             // Explicit false also overrides persistent shuffle for this already-ordered queue.
-            internalPlaySongs(songs, songs.first(), context.getString(title), shuffle = false, source = queue.source)
+            val origins = queue.blocks.flatMap { block ->
+                val name = when (block.source.kind) {
+                    ListenSourceKind.ALBUM -> libraryStateHolder.albums.value.firstOrNull { it.id.toString() == block.source.ref }?.title
+                    ListenSourceKind.ARTIST -> libraryStateHolder.artists.value.firstOrNull { it.id.toString() == block.source.ref }?.name
+                    ListenSourceKind.GENRE -> musicRepository.getGenres().first().firstOrNull { it.id == block.source.ref }?.name
+                    else -> null
+                }
+                List(block.songs.size) { PlaybackOrigin.of(block.source, name) }
+            }
+            internalPlaySongs(songs, songs.first(), context.getString(title), shuffle = false, source = queue.source, origins = retainBlockValues(queue.songs, songs, origins))
         }
     }
 
@@ -2234,7 +2253,8 @@ class PlayerViewModel @Inject constructor(
             controller.isConnected &&
             !dualPlayerEngine.isTransitionRunning() &&
             songIndexInQueue != -1 &&
-            queueMatchesContext
+            queueMatchesContext &&
+            (source == null || PlaybackOrigin.from(dualPlayerEngine.masterPlayer.currentMediaItem)?.source() == source)
         ) {
             controller.resolveReusablePlaybackTargetIndex(
                 songIndexInQueue = songIndexInQueue,
@@ -2559,14 +2579,15 @@ class PlayerViewModel @Inject constructor(
     fun triggerLocateInLibraryFromPlayer(songId: String) {
         if (songId.isBlank()) return
         if (songLocateNavigationJob?.isActive == true) return
+        val tappedSong = playbackStateHolder.stablePlayerState.value.currentSong?.takeIf { it.id == songId }
+        val tappedOrigin = PlaybackOrigin.from(dualPlayerEngine.masterPlayer.currentMediaItem)
         songLocateNavigationJob = viewModelScope.launch {
             collapsePlayerSheet()
             withTimeoutOrNull(900) {
                 awaitSheetState(PlayerSheetState.COLLAPSED)
                 awaitPlayerCollapse()
             }
-            val albumId = playbackStateHolder.stablePlayerState.value.currentSong?.takeIf { it.id == songId }?.albumId ?: 0L
-            _songLocateNavigationRequests.emit(SongLocateRequest(songId, albumId))
+            _songLocateNavigationRequests.emit(SongLocateRequest(songId, tappedSong?.albumId ?: 0L, tappedOrigin?.source()))
         }
     }
 
@@ -3002,6 +3023,7 @@ class PlayerViewModel @Inject constructor(
 
         updateCurrentPlaybackQueueFromPlayer(playerCtrl)
 
+        _playerUiState.update { it.copy(currentQueueSourceName = PlaybackOrigin.from(playerCtrl.currentMediaItem)?.name.orEmpty()) }
         playerCtrl.currentMediaItem?.let { mediaItem ->
             playbackStateHolder.ensureCurrentPlaybackOccurrence(mediaItem.mediaId)
             val song = resolveSongFromMediaItem(mediaItem)
@@ -3096,6 +3118,7 @@ class PlayerViewModel @Inject constructor(
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = timedSection("PlayerViewModel.onMediaItemTransition") {
+                _playerUiState.update { it.copy(currentQueueSourceName = PlaybackOrigin.from(mediaItem)?.name.orEmpty()) }
                 playbackStateHolder.onPlaybackOccurrenceTransition(mediaItem?.mediaId)
                 preparePlaybackAudioMetadataForMedia(mediaItem?.mediaId)
                 transitionSchedulerJob?.cancel()
@@ -3779,12 +3802,16 @@ class PlayerViewModel @Inject constructor(
         playOrder: IntArray? = null,
         /** B31 P2.2: the phases of a "Shuffle" press, marked as this goes through them; null for everything else. */
         timeline: ShuffleAllTimeline? = null,
+        origins: List<PlaybackOrigin?>? = null,
     ) {
         if (songsToPlay.isEmpty()) {
             clearPreparingSongIfMatching()
             return
         }
         val effectiveStartSong = songsToPlay.firstOrNull { it.id == startSong.id } ?: songsToPlay.first()
+        val origin = if (recordsSource) PlaybackOrigin.of(source, queueName)
+            else PlaybackOrigin.from(dualPlayerEngine.masterPlayer.currentMediaItem)
+        fun sourced(index: Int, item: MediaItem): MediaItem = PlaybackOrigin.attach(item, origins?.getOrNull(index) ?: origin)
         if (recordsSource) {
             // Loading a queue is the listener leaving what was playing (if anything), and every listen of the new queue is
             // recorded as coming from where it was loaded from, never from the queue it replaces.
@@ -3807,7 +3834,7 @@ class PlayerViewModel @Inject constructor(
         _playerUiState.update {
             it.copy(
                 currentPlaybackQueue = songsToPlay.toPlaybackQueue(),
-                currentQueueSourceName = queueName
+                currentQueueSourceName = origins?.getOrNull(startIndex)?.name ?: origin?.name ?: queueName
             )
         }
         playbackStateHolder.updateStablePlayerState {
@@ -3829,13 +3856,13 @@ class PlayerViewModel @Inject constructor(
         val firstItems: List<MediaItem>
         val plan: QueueLoadPlan
         try {
-            startMediaItem = buildResolvedPlaybackMediaItem(effectiveStartSong)
+            startMediaItem = sourced(startIndex, buildResolvedPlaybackMediaItem(effectiveStartSong))
             firstItems = if (geometry.windowSize == 1) {
                 listOf(startMediaItem)
             } else {
                 withContext(Dispatchers.Default) {
                     geometry.window.map { index ->
-                        if (index == geometry.startIndex) startMediaItem else buildPlaybackMediaItem(songsToPlay[index], playlistId)
+                        if (index == geometry.startIndex) startMediaItem else sourced(index, buildPlaybackMediaItem(songsToPlay[index], playlistId))
                     }
                 }
             }
@@ -3888,7 +3915,7 @@ class PlayerViewModel @Inject constructor(
                             // B47-A1: in slices, with a pause between them, on a background thread of its own (QueueLoadPlanning.kt)
                             withContext(QueueBuildDispatcher.dispatcher) {
                                 buildInSlices(range) { slice ->
-                                    List(slice.count()) { offset -> buildPlaybackMediaItem(songsToPlay[slice.first + offset], playlistId) }
+                                    List(slice.count()) { offset -> val index = slice.first + offset; sourced(index, buildPlaybackMediaItem(songsToPlay[index], playlistId)) }
                                 }
                             }
                         },

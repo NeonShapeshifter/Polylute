@@ -4,6 +4,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import com.lostf1sh.pixelplayeross.data.media.ReplayGainManager
 import com.lostf1sh.pixelplayeross.data.service.player.DualPlayerEngine
+import com.lostf1sh.pixelplayeross.data.service.player.FadingPlayer
 import com.lostf1sh.pixelplayeross.data.service.player.ReplayGainRuntimeState
 import com.lostf1sh.pixelplayeross.utils.MediaItemBuilder
 import kotlinx.coroutines.CoroutineScope
@@ -124,6 +125,9 @@ class ReplayGainProcessor(
 
     /** A factor computed mid-crossfade, applied once the transition finishes. */
     private var pendingReplayGainFactor: Float? = null
+    private var pendingMediaId: String? = null
+    // Retain the unmasked computation; the engine masks it for Direct at publication time.
+    private var runtime = ReplayGainRuntimeState()
 
     // Diagnostic-only override. Held separately so the normal paths cannot wipe it: an injected
     // factor must survive the `apply()` calls that fire on metadata changes, or a measurement
@@ -160,13 +164,19 @@ class ReplayGainProcessor(
         get() = effectiveGain
 
     fun setEnabled(value: Boolean) {
+        if (enabled == value) { publishRuntime(); return }
         enabled = value
-        publish(applied = false)
+        pendingReplayGainFactor = null
+        pendingMediaId = null
+        publish(applied = false, pending = value)
     }
 
     fun setUseAlbumGain(value: Boolean) {
+        if (useAlbumGain == value) { publishRuntime(); return }
         useAlbumGain = value
-        publish(applied = false)
+        pendingReplayGainFactor = null
+        pendingMediaId = null
+        publish(applied = false, pending = enabled)
     }
 
     /** Seeds the user's digital gain from the player's current volume on startup. */
@@ -177,6 +187,11 @@ class ReplayGainProcessor(
 
     fun cancel() {
         job?.cancel()
+        requestToken += 1
+        pendingReplayGainFactor = null
+        pendingMediaId = null
+        lastMediaId = null
+        publish(applied = false, mediaId = null)
     }
 
     /**
@@ -225,7 +240,11 @@ class ReplayGainProcessor(
         diagnosticReplayGainFactor = factor
         diagnosticOverrideActive = factor != null
         replayGainFactor = factor
-        if (!engine.isTransitionRunning()) {
+        pendingReplayGainFactor = null
+        pendingMediaId = null
+        val transition = engine.isTransitionRunning()
+        publish(applied = factor != null && !transition, multiplier = factor, pending = factor != null && transition)
+        if (!transition) {
             applyEffectiveGain(engine.masterPlayer)
         } else {
             publishGain()
@@ -262,7 +281,11 @@ class ReplayGainProcessor(
     private fun applyEffectiveGain(player: Player) {
         val gain = effectiveGain
         expectedVolume = gain
-        player.volume = gain
+        if (FadingPlayer.setComposedVolume(player, gain)) {
+            expectedVolume = null // No raw player write, hence no onVolumeChanged echo.
+        } else {
+            player.volume = gain
+        }
         publishGain()
     }
 
@@ -281,6 +304,7 @@ class ReplayGainProcessor(
             combinedGain = effectiveGain,
             profileCompensation = profileCompensation,
         )
+        publishRuntime()
     }
 
     /**
@@ -317,104 +341,73 @@ class ReplayGainProcessor(
     fun apply(mediaItem: MediaItem?) {
         job?.cancel()
         requestToken += 1
-        val currentRequestToken = requestToken
+        val token = requestToken
+        // The real swap callback re-requests the same incoming track before fade completion.
+        // Keep its already-computed target; only another track or a settings change invalidates it.
+        if (pendingMediaId != mediaItem?.mediaId) {
+            pendingReplayGainFactor = null
+            pendingMediaId = null
+        }
 
         if (mediaItem == null) {
-            publish(applied = false)
+            lastMediaId = null
+            publish(applied = false, mediaId = null)
             return
         }
-
-        if (diagnosticOverrideActive) {
-            // A diagnostic factor is in force; the tag path must not overwrite or clear it.
-            replayGainFactor = diagnosticReplayGainFactor
-            if (!engine.isTransitionRunning()) {
-                applyEffectiveGain(engine.masterPlayer)
-            }
-            publish(applied = true, mediaId = mediaItem.mediaId)
-            return
-        }
-
-        if (!enabled) {
-            pendingReplayGainFactor = null
-            // Switching ReplayGain off removes only its contribution. The user's own level is
-            // untouched and becomes the whole gain again.
-            replayGainFactor = null
-            if (!engine.isTransitionRunning()) {
-                applyEffectiveGain(engine.masterPlayer)
-            }
-            publish(applied = false)
-            return
-        }
-
         val mediaId = mediaItem.mediaId
-        val filePath = mediaItem.mediaMetadata.extras
-            ?.getString(MediaItemBuilder.EXTERNAL_EXTRA_FILE_PATH)
-
-        if (filePath.isNullOrBlank()) {
-            Timber.tag(TAG).d("ReplayGain: No file path for track, keeping user-selected volume")
-            // No tags to read: ReplayGain contributes nothing for this track, and the user's level
-            // stands on its own.
+        if (diagnosticOverrideActive) {
+            acceptFactor(mediaId, diagnosticReplayGainFactor ?: 1f)
+            return
+        }
+        if (!enabled) {
             replayGainFactor = null
-            if (!engine.isTransitionRunning()) {
-                applyEffectiveGain(engine.masterPlayer)
-            }
+            lastMediaId = null
             publish(applied = false, mediaId = mediaId)
+            if (!engine.isTransitionRunning()) applyEffectiveGain(engine.masterPlayer) else publishGain()
             return
         }
 
-        val resolvedUseAlbumGain = useAlbumGain
-
-        // Apply the last known RG volume immediately so there is no full-volume spike
-        // while the IO coroutine reads the tags for the new track.
-        if (!engine.isTransitionRunning()) {
-            applyEffectiveGain(engine.masterPlayer)
+        // A new request invalidates the old label immediately, before IO can suspend.
+        publish(applied = false, mediaId = mediaId, pending = true)
+        val path = mediaItem.mediaMetadata.extras?.getString(MediaItemBuilder.EXTERNAL_EXTRA_FILE_PATH)
+        if (path.isNullOrBlank()) {
+            // No tag source means no correction, not a failed volume application.
+            acceptFactor(mediaId, 1f)
+            return
         }
-
-        // Read ReplayGain tags on IO thread to avoid blocking main
+        val album = useAlbumGain
+        if (!engine.isTransitionRunning()) applyEffectiveGain(engine.masterPlayer)
         job = scope.launch {
-            val rgValues = withContext(Dispatchers.IO) {
-                replayGainManager.readReplayGain(filePath)
-            }
-
-            if (currentRequestToken != requestToken) {
+            val tags = withContext(Dispatchers.IO) { replayGainManager.readReplayGain(path) }
+            if (token != requestToken) {
+                // The newer request owns the state. Never label it with this result.
+                publishRuntime()
                 return@launch
             }
-
-            val currentMediaId = currentSessionMediaItem()?.mediaId
-            if (currentMediaId != mediaId) {
+            if (currentSessionMediaItem()?.mediaId != mediaId) {
                 Timber.tag(TAG).d("ReplayGain: Ignoring stale result for mediaId=%s", mediaId)
+                apply(currentSessionMediaItem())
                 return@launch
             }
+            acceptFactor(mediaId, replayGainManager.getVolumeMultiplier(tags, useAlbumGain = album))
+        }
+    }
 
-            val volume = replayGainManager.getVolumeMultiplier(
-                rgValues,
-                useAlbumGain = resolvedUseAlbumGain
-            )
-
-            if (engine.isTransitionRunning()) {
-                // Store for application after transition completes.
-                // Also pass to engine so the crossfade loop ends at the correct RG
-                // volume instead of hard-coding 1f, preventing the audible jump.
-                pendingReplayGainFactor = volume
-                // Composed for the fade loop; see prepareForTransition.
-                engine.incomingTrackEffectiveVolume = effectiveGainOf(userDigitalGain, volume, profileCompensation)
-                // No player write happens on this path, but the factor still changed what the
-                // signal path must do, so the requirements have to see it.
-                publishGain()
-                Timber.tag(TAG).d("ReplayGain: Stored pending factor=%.2f for %s (transition running)",
-                    volume, mediaItem.mediaMetadata.title
-                )
-            } else {
-                pendingReplayGainFactor = null
-                engine.incomingTrackEffectiveVolume = null
-                replayGainFactor = volume
-                lastMediaId = mediaId
-                applyEffectiveGain(engine.masterPlayer)
-                publish(applied = true, mediaId = mediaId, multiplier = volume)
-                Timber.tag(TAG).d("ReplayGain: Applied volume=%.2f for %s",
-                    volume, mediaItem.mediaMetadata.title
-                )
-            }
+    private fun acceptFactor(mediaId: String, factor: Float) {
+        if (engine.isTransitionRunning()) {
+            pendingReplayGainFactor = factor
+            pendingMediaId = mediaId
+            engine.incomingTrackEffectiveVolume = effectiveGainOf(userDigitalGain, factor, profileCompensation)
+            publish(applied = false, mediaId = mediaId, multiplier = factor, pending = true)
+            publishGain()
+        } else {
+            pendingReplayGainFactor = null
+            pendingMediaId = null
+            engine.incomingTrackEffectiveVolume = null
+            replayGainFactor = factor
+            lastMediaId = mediaId
+            publish(applied = true, mediaId = mediaId, multiplier = factor)
+            applyEffectiveGain(engine.masterPlayer)
         }
     }
 
@@ -453,23 +446,28 @@ class ReplayGainProcessor(
     fun onTransitionFinished() {
         val player = engine.masterPlayer
         val pending = pendingReplayGainFactor
+        val pendingId = pendingMediaId
         pendingReplayGainFactor = null
+        pendingMediaId = null
 
         if (!enabled) {
             replayGainFactor = null
+            lastMediaId = null
+            publish(applied = false)
             applyEffectiveGain(player)
             Timber.tag(TAG).d("ReplayGain: Transition finished, RG disabled — user gain=%.2f", userDigitalGain)
             return
         }
 
-        if (pending != null) {
+        if (pending != null && pendingId == currentSessionMediaItem()?.mediaId) {
             // The crossfade loop ramps to this value; apply it now as the stable post-fade volume.
             // Also update lastAppliedVolume so any subsequent onPositionDiscontinuity
             // (REASON_AUTO_TRANSITION fires right after crossfade ends) uses this value
             // immediately instead of launching a new IO coroutine and causing a spike.
             replayGainFactor = pending
+            lastMediaId = pendingId
+            publish(applied = true, mediaId = pendingId, multiplier = pending)
             applyEffectiveGain(player)
-            publish(applied = true, mediaId = player.currentMediaItem?.mediaId, multiplier = pending)
             Timber.tag(TAG).d("ReplayGain: Transition finished, applied pending volume=%.2f", pending)
         } else {
             // No pending volume was computed during transition, trigger full computation
@@ -496,15 +494,20 @@ class ReplayGainProcessor(
         applied: Boolean,
         mediaId: String? = currentSessionMediaItem()?.mediaId,
         multiplier: Float? = null,
+        pending: Boolean = false,
     ) {
-        engine.publishReplayGainState(
-            ReplayGainRuntimeState(
+        runtime = ReplayGainRuntimeState(
                 requested = enabled,
                 useAlbumGain = useAlbumGain,
                 applied = applied,
                 mediaId = mediaId,
                 multiplier = multiplier,
+                pending = pending,
             )
-        )
+        publishRuntime()
+    }
+
+    private fun publishRuntime() {
+        engine.publishReplayGainState(runtime.copy(requested = enabled, useAlbumGain = useAlbumGain))
     }
 }

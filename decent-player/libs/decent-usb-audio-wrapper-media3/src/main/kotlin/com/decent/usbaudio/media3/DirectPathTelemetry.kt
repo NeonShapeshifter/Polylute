@@ -334,6 +334,9 @@ object DirectPathTelemetry {
     /** Times the USB writer's queue ran dry (a poll found nothing to send). */
     val underruns = AtomicLong()
 
+    /** Native stream generation, delta and time of the latest queue poll timeout. */
+    @Volatile var streamUnderrunSummary: String = "stream=none total=0 lastMonoNs=none"
+
     /** Times the queue was down to its last buffer — the warning band before an underrun. */
     val lateBuffers = AtomicLong()
 

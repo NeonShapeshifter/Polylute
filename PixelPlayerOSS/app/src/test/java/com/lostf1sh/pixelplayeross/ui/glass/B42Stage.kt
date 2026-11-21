@@ -106,7 +106,7 @@ internal fun B42PlainApp(theme: DapBaseTheme, palette: DapPalette, accent: DapAc
 /** Where B42's pictures go, and how a screen with sheets (each in a window of its own) is captured. */
 internal object B42Renders {
     val root: File
-        get() = File(System.getenv("B42_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B42-evidence").apply { mkdirs() }
+        get() = File(System.getenv("B42_RENDERS") ?: "build/test-artifacts/B42").apply { mkdirs() }
 
     /** The platform dims what is behind a bottom sheet with its scrim colour at this strength (Material's `BottomSheetDefaults.ScrimColor`). */
     const val SHEET_SCRIM_ALPHA = 0.32f

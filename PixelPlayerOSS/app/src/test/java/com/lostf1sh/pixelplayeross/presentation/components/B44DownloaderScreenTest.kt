@@ -108,7 +108,7 @@ class B44DownloaderScreenTest {
         // Visible composition stays bounded independently of catalog size; paint time is measured separately.
         println("B44 frame composition budget: $composed visible artist headers for 700 x 3 albums; limit 12, 12-header viewport budget")
         val bitmap = com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
-        val file = File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-fix1-evidence/regressions/downloader.png")
+        val file = File("build/test-artifacts/B44-fix1/regressions/downloader.png")
         file.parentFile.mkdirs()
         file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }

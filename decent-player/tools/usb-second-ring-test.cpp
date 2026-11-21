@@ -113,7 +113,7 @@ static void testTheDumpCarriesTheFieldsItIsReadFor() {
 
 static void testItIsOneFixedBlock() {
     // B41-fix1: ~200 bytes a second for the policy's numbers as well (it was ~120); still one block, no allocation.
-    CHECK(sizeof(UsbSecondRing) < 40 * 1024, "the ring is %zu bytes", sizeof(UsbSecondRing));
+    CHECK(sizeof(UsbSecondRing) < 2 * 1024 * 1024, "the ring is %zu bytes", sizeof(UsbSecondRing));
 }
 
 // ── B41-fix1 (A1c): what the 2026-10-25 episodes could not show ──────────────────────────────────────────────
@@ -233,7 +233,7 @@ static void testPolicyChangesKeepTheirStreamAndWhatWasSent() {
         e.stream = 100 + i;
         usbSecondRingPolicyEvent(&ring, &e);
     }
-    n = usbSecondRingEvents(&ring, 201000, 30000, got, USB_POLICY_EVENT_CAPACITY);
+    n = usbSecondRingEvents(&ring, 210000, 30000, got, USB_POLICY_EVENT_CAPACITY);
     CHECK(n == USB_POLICY_EVENT_CAPACITY && got[0].stream == 110 && got[n - 1].stream == 100 + USB_POLICY_EVENT_CAPACITY + 9, "wrap: %d events from stream %lld", n, (long long)got[0].stream);
     // a gesture has no reading: its line is shorter, and names the stream and the policy
     UsbPolicyEvent g;
@@ -247,10 +247,10 @@ static void testPolicyChangesKeepTheirStreamAndWhatWasSent() {
     g.policy = 3;
     char gestureText[256];
     usbSecondRingFormatEvents(&g, 1, 201900, [](int p) { return p == 3 ? "auto" : "?"; }, gestureText, sizeof(gestureText));
-    CHECK(strcmp(gestureText, "event t-0.400s stream=41 rate=44100 resume fade-in policy=auto sending=5.51270\n") == 0, "the gesture line: %s", gestureText);
+    CHECK(strcmp(gestureText, "event t-0.400s stream=41 rate=44100 resume fade-in policy=auto sentBefore=5.51270 sentAfter=0.00000 raw=0x00000000 length=0 status=0/0 delta=0 total=0 depth=0 dryUs=0 burstCount=0\n") == 0, "the gesture line: %s", gestureText);
     // a line that does not fit is left out whole
     char tiny[60];
-    usbSecondRingFormatEvents(got, n, 201000, [](int) { return "auto"; }, tiny, sizeof(tiny));
+    usbSecondRingFormatEvents(got, n, 210000, [](int) { return "auto"; }, tiny, sizeof(tiny));
     CHECK(strchr(tiny, '\n') == nullptr || tiny[strlen(tiny) - 1] == '\n', "an event line was cut in half: %s", tiny);
 }
 
@@ -278,7 +278,41 @@ static void testADumpFromAnotherThreadSeesWholeConsistentSeconds() {
     CHECK(g_bad == 0, "%d torn windows in %d reads", g_bad, g_reads);
 }
 
+static void testB635WholeWindowAcrossGenerations() {
+    usbSecondRingInit(&ring);
+    for (int sec = 0; sec < 130; ++sec) {
+        for (int part = 0; part < 2; ++part) {
+            const int64_t at = sec * 1000 + part * 500 + 100;
+            usbSecondRingStream(&ring, at, sec * 2 + part + 1, part ? 96000 : 44100);
+            usbSecondRingFeedback(&ring, at, part ? 12.0 : 5.5125, part ? 12.0 : 5.5125, false);
+        }
+        if (sec >= 2) for (int i = 0; i < 10; ++i) {
+            UsbPolicyEvent e = {}; e.atMs = sec * 1000 + i * 90; e.stream = sec * 2 + 1;
+            e.kind = USB_POLICY_QUEUE_TIMEOUT; e.delta = 1;
+            usbSecondRingPolicyEvent(&ring, &e);
+        }
+    }
+    usbSecondRingFeedback(&ring, 130100, 12.0, 12.0, false);
+    const int n = usbSecondRingLast(&ring, 130100, 128000, out, USB_SECOND_RING_CAPACITY);
+    CHECK(n == 256, "full 128 seconds with two streams/second lost samples: %d", n);
+    for (int i = 0; i < n; ++i) {
+        CHECK(out[i].second == i / 2 + 2, "window second missing");
+        CHECK(out[i].stream == i + 5 && out[i].rate == (i % 2 ? 96000 : 44100), "generation/rate mixed");
+        CHECK(out[i].readings == 1, "mixed readings from different streams");
+    }
+    static UsbPolicyEvent events[USB_POLICY_EVENT_CAPACITY];
+    CHECK(usbSecondRingEvents(&ring, 130100, 128000, events, USB_POLICY_EVENT_CAPACITY) == 1278,
+          "in-window queue events lost"); // the first two events precede 2.100s
+    CHECK(usbSecondRingSampleOverwrittenAt(&ring) < 2100, "an in-window sample was overwritten");
+    char text[1024];
+    const size_t required = usbSecondRingFormat(out, 1, 130100, nullptr, 0);
+    CHECK(required == usbSecondRingFormat(out, 1, 130100, text, sizeof(text)) && required == strlen(text), "format size calculation differs");
+    printf("B635 128s at two generations/second: samples=%d events=1278 ringBytes=%zu eventBytes=%zu PASS\n",
+          n, sizeof(UsbSecondRing), sizeof(UsbPolicyEvent));
+}
+
 int main() {
+    testB635WholeWindowAcrossGenerations();
     testKeepsTheLast30SecondsAndNothingMore();
     testOlderThanTheCapacityIsGone();
     testASecondIsItsMinMaxMeanAndCounts();

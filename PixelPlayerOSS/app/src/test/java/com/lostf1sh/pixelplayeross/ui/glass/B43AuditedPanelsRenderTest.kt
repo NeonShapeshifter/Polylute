@@ -124,7 +124,7 @@ class B43AuditedPanelsRenderTest {
         for (mode in listOf(Fix3Mode.COVER_GLASS, Fix3Mode.FROM_ALBUM_ART)) for (page in Page.entries) {
             val field = capture(page, mode, false)
             val screen = capture(page, mode, true)
-            val dir = File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B43-evidence", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
+            val dir = File("build/test-artifacts/B43", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
             File(dir, "panel-${page.name.lowercase()}-${mode.label}.png").outputStream().use { screen.compress(Bitmap.CompressFormat.PNG, 100, it) }
             var matching = 0
             // An actual panel must occupy at least 1,000 dp² of the common veil, not merely a

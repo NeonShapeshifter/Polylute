@@ -89,7 +89,8 @@ fun LibrarySongsTab(
     onLocateCurrentSongVisibilityChanged: (Boolean) -> Unit = {},
     onRegisterLocateCurrentSongAction: ((() -> Unit)?) -> Unit = {},
     storageFilter: StorageFilter = StorageFilter.ALL,
-    hasCurrentSong: Boolean = false
+    hasCurrentSong: Boolean = false,
+    filtering: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val flinging = rememberFlingState(listState, listState.interactionSource)
@@ -130,8 +131,10 @@ fun LibrarySongsTab(
     val locatedSongId by playerViewModel.locatedSongId.collectAsStateWithLifecycle()
     // the list this tab shows can be replaced while a request waits for rows (a sort, a refresh): the wait follows the current one
     val currentSongs by rememberUpdatedState(songs)
+    val currentFiltering by rememberUpdatedState(filtering)
     LaunchedEffect(locateRequest?.token) {
-        val request = locateRequest ?: return@LaunchedEffect
+        val request = locateRequest?.takeUnless { it.liked } ?: return@LaunchedEffect
+        snapshotFlow { !currentFiltering }.first { it }
         // keyed on the request alone: a list that is still loading (its count moving) must not cancel it half way
         snapshotFlow { currentSongs.itemCount }.first { it > 0 }
         val index = playerViewModel.takeLibraryLocate(request)
@@ -140,11 +143,11 @@ fun LibrarySongsTab(
             // going to lands short of it. Wait (a moment, not for ever) until the list knows the row, then scroll as the current-song locate does.
             withTimeoutOrNull(LocateLayoutWaitMs) { snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > index } }
             scrollSongsListTo(listState, index)
-        }
+        } else listState.scrollToItem(0)
         playerViewModel.completeLibraryLocate(request)
     }
 
-    LocateCurrentSongEffects(
+    if (!filtering) LocateCurrentSongEffects(
         listState = listState,
         currentSongId = currentSongId,
         itemCount = { songs.itemCount },
@@ -182,7 +185,10 @@ fun LibrarySongsTab(
             (refreshState is LoadState.NotLoading && !reachedEndOfPagination)
     )
 
+    val searchQuery = com.lostf1sh.pixelplayeross.presentation.components.LocalLibraryTabQueries.current[LibraryTabId.SONGS].orEmpty()
     when {
+        searchQuery.isNotBlank() && songs.itemCount == 0 && refreshState !is LoadState.Loading && refreshState !is LoadState.Error ->
+            com.lostf1sh.pixelplayeross.presentation.components.LibrarySearchNoResults(searchQuery)
         refreshState is LoadState.Error && songs.itemCount == 0 -> {
             Box(
                 modifier = Modifier
@@ -334,7 +340,7 @@ fun LibrarySongsTab(
                         else 
                             bottomBarHeight + 16.dp
 
-                        ExpressiveScrollBar(
+                        if (!filtering) ExpressiveScrollBar(
                             contentEndMargin = 12.dp,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)

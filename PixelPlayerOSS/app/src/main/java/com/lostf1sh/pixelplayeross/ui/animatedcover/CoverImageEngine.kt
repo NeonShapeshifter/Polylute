@@ -45,6 +45,8 @@ internal class CoverImageEngine(
     private var drawable: Drawable? = null
     private val job: Job
 
+    override fun setFit(fit: Boolean) { imageView.scaleType = if (fit) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP }
+
     override val view: View get() = imageView
     override val firstFrame: StateFlow<Boolean> = first.asStateFlow()
 

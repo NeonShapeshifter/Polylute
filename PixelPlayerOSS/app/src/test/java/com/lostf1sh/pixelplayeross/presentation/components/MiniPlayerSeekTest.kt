@@ -150,8 +150,9 @@ class MiniPlayerSeekTest {
     @Test
     fun `a sideways drag along the line seeks to where the finger lifts, and nothing else happens`() {
         show()
-        touch.swipe(Offset(72f, top + 10f), dyPx = 0f, millis = 400, delivery = Delivery.FRAMED, dxPx = 504f)
-        // 72 px + 504 px = 576 px of 720: four fifths of 280 s, to the last movement the finger made before it lifted (a few pixels)
+        touch.swipe(Offset(72f, top + 10f), dyPx = 0f, millis = 400, delivery = Delivery.FRAMED, dxPx = 480f)
+        // the line runs 40..680 px (20 dp in from each side since the bubble, 11-21): 72 px + 480 px = 552 px is four fifths of it,
+        // four fifths of 280 s, to the last movement the finger made before it lifted (a few pixels)
         assertThat(seeks).hasSize(1)
         assertThat(seeks.single().toFloat()).isWithin(SOUGHT_TOLERANCE_MS).of(224_000f)
         assertThat(calls).isEmpty()

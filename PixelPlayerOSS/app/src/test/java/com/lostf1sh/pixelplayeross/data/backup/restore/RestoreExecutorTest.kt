@@ -112,7 +112,7 @@ class RestoreExecutorTest {
     fun `execute fails before loading oversized module payload`() = runTest {
         val plan = restorePlan(
             selectedModules = setOf(BackupSection.PLAYBACK_HISTORY),
-            moduleSizeBytes = BackupReader.MAX_MODULE_PAYLOAD_BYTES + 1L
+            moduleSizeBytes = BackupReader.maxModulePayloadBytes(BackupSection.PLAYBACK_HISTORY.key) + 1L
         )
 
         coEvery { playbackHistoryHandler.snapshot() } returns "history-snapshot"

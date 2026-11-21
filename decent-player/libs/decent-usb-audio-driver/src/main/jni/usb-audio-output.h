@@ -192,6 +192,17 @@ struct PipelineGesture {
 /**
  * Aggregate state for one USB audio output stream.
  */
+struct UsbRecoveryControl {
+    UsbFeedbackPlateau plateau;
+    UsbDacBehavior behavior;
+    UsbDacRecoveryPolicy policy;
+    int64_t stream;
+    int64_t frames;
+    int64_t gapStartedUs;
+    int rate;
+    bool unavailable;
+};
+
 struct UsbAudioContext {
     int fd;
     int interfaceId;
@@ -269,9 +280,10 @@ struct UsbAudioContext {
 
     /**
      * B48-fix1: the next audio the writer submits must find the ring at the plan's resume lead. Set wherever audio starts into a ring that is, or may be, played
-     * out: a stream's start, a recovery's restart (`usbDacRecoveryEnd`), a seek that left nothing audible (`pipelineBeginSeek`). Taken by `primeRingForResume`, which
+     * out: a stream's start or a seek that left nothing audible (`pipelineBeginSeek`). Taken by `primeRingForResume`, which
      * the resume after a pause also runs (B47-A3): one priming path. `primeWhy` names the start for the log line.
      */
+    int startupPrerollFrames; // explicitly queued silence already owed before the first music
     bool primeOwed;
     const char *primeWhy;
 
@@ -337,6 +349,16 @@ struct UsbAudioContext {
      * Without calibration, the drift causes periodic pops as the DAC's internal
      * buffer underflows or overflows.
      */
+    UsbFeedbackPlateau plateau;
+    UsbDacBehavior behavior;
+    UsbFeedbackHealth feedbackHealth;
+    bool feedbackHealthSuspended;
+    int64_t feedbackHealthySinceMs;
+    bool journalFeedbackSeen;
+    uint32_t journalRaw;
+    int journalLength, journalUrbStatus, journalPacketStatus;
+    uint32_t diagnosticRaw;
+    int diagnosticLength, diagnosticUrbStatus, diagnosticPacketStatus;
     double calibratedFpmf;
 
     /**
@@ -377,6 +399,11 @@ struct UsbAudioContext {
     UsbDacLockWatch dacLock;
     /** B47-A5: where the recovery's escalation stands for this stream (usb-glitch.h). Only the writer thread touches it. */
     UsbDacRecoveryPolicy dacPolicy;
+    UsbRecoveryControl *recoveryControl;
+    int64_t recoveryGapStartedUs;
+#ifdef POLYLUTE_DEBUG_FAULTS
+    int debugFaultKind;
+#endif
 
     /**
      * B41-fix1 (A1b): the DAC's last word, the last reading inside the +-5 % window, whatever the policy made of it. It is what
@@ -498,13 +525,13 @@ int usbTakeManualDacRecovery();
 #define USB_DAC_STATE_COUNT 6
 /**
  * [locked now (0/1), locks detected in the process, ms the open rail has lasted, its ppm, late completions during it, the step to take now]. The last is the manual request
- * (RECOVER_DAC_NOW; it bypasses the policy) or else the escalation's decision (usbDacRecoveryDecide) and is 0 almost always; 3 means the steps are used up (already logged; the writer has nothing to do).
+ * (RECOVER_DAC_NOW; it bypasses the policy) or else the escalation's decision (usbDacRecoveryDecide) and is 0 almost always; 3 requests a full stream/device reopen.
  * Writer thread only, when it is streaming and neither paused nor in a seek: calling it is what lets the policy look.
  */
 void usbDacLockState(UsbAudioContext *ctx, int64_t out[USB_DAC_STATE_COUNT]);
 
 /**
- * Step 0 of every recovery step, on the writer thread, after the pause-style fade (the faded tail is queued): lets the tail play out (bounded), then discards what is
+ * Step 0 of every recovery step, on the writer thread: lets queued music play out unmodified (bounded), then discards what is
  * left with the seek barrier's own drain (the quarantine rules apply), feedback URB included. The ring is empty and nothing is in flight when it returns true.
  */
 bool usbDacRecoveryBegin(UsbAudioContext *ctx);
@@ -518,8 +545,9 @@ void usbReportOutputGapCpu(const UsbAudioContext *ctx, int64_t runqUs, int64_t c
 /** Host tests: forgets when the last recovery episode began, so the 30 s cooldown of one scenario does not hold back the next. */
 void usbDacRecoveryForgetEpisodes();
 
-/** Process totals: [enabled, locks, step 1 runs, step 1 ok, step 2 runs, step 2 ok, gave up, ms of the last recovery]. */
-#define USB_DAC_RECOVERY_STATS_COUNT 8
+/** Process totals: [enabled, locks, step 1 runs, step 1 ok, step 2 runs, step 2 ok, gave up (always 0), ms of the last recovery,
+ * step 3 runs, step 3 ok, reopen retries, last recovery music gap ms]. */
+#define USB_DAC_RECOVERY_STATS_COUNT 12
 void usbDacRecoveryStats(int64_t out[USB_DAC_RECOVERY_STATS_COUNT]);
 
 /** A step ended, from Kotlin: [result] 0 = it ran, 1 = it failed. Logs `DAC_RECOVERY step=... result=ran|failed`, counts it, puts it in the second ring and starts the policy's verdict clock. */
@@ -625,3 +653,10 @@ void observeSubmittedUsbPayload(const UsbAudioContext *ctx,
 
 /** Records the successful data SETINTERFACE on the cold path, before the stream exists. */
 void usbNoteDataAltSet(int fd);
+
+// Logical episode survives native transport destruction; Java owns this small control after save.
+UsbRecoveryControl *usbSaveRecoveryControl(UsbAudioContext *ctx, UsbRecoveryControl *control);
+void usbBindRecoveryControl(UsbAudioContext *ctx, UsbRecoveryControl *control);
+int usbOfflineRecoveryStep(UsbRecoveryControl *control);
+
+void usbSetFeedbackIdentity(UsbAudioContext *ctx, const char *key);

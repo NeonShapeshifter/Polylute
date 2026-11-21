@@ -1,15 +1,17 @@
 package com.lostf1sh.pixelplayeross.presentation.components
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.*
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.cancellation.CancellationException
 import timber.log.Timber
 
@@ -31,13 +34,6 @@ import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun rememberRoundedParallaxCarouselState(
-    initialPage: Int,
-    pageCount: () -> Int
-): CarouselState = rememberCarouselState(initialItem = initialPage, itemCount = pageCount)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,19 +65,6 @@ fun AlbumCarouselSection(
 ) {
     if (queue.isEmpty()) return
 
-    val initialIndex = remember(currentSong?.id, currentMediaItemIndex, queue) {
-        resolveCurrentQueueIndex(
-            currentSong = currentSong,
-            currentMediaItemIndex = currentMediaItemIndex,
-            queue = queue
-        )
-    }
-
-    val carouselState = rememberRoundedParallaxCarouselState(
-        initialPage = initialIndex,
-        pageCount = { queue.size }
-    )
-
     // Never decode past what the screen can show. "Original" is the quality of the source, not a
     // decode size: at 2048 px every carousel page cost a 16 MB bitmap plus GC on each track change
     // (the P0 of MOTION-PERFORMANCE.md), for artwork drawn at ~600 px on a 720 px screen.
@@ -103,6 +86,10 @@ fun AlbumCarouselSection(
         requestedScrollIndex?.takeIf { it in queue.indices }
     }
     val effectiveTargetIndex = requestedTargetIndex ?: currentSongIndex
+    // Ordered occurrences identify the pager's geometry. Artwork/statistics republications keep it.
+    val queueOrder = remember(queue) { queue.map(Song::id) }
+    val pageCount = queue.size
+    val carouselState = remember(queueOrder) { CarouselState(currentSongIndex, itemCount = { pageCount }) }
     val carouselItemKeys = remember(queue) {
         buildQueueOccurrenceKeys(queue)
     }
@@ -115,89 +102,157 @@ fun AlbumCarouselSection(
         targetSize = targetSize,
         anchorIndex = effectiveTargetIndex
     )
-    var ignoreNextSettledSelectionForPage by remember { mutableStateOf<Int?>(null) }
-    var programmaticScrollInProgress by remember { mutableStateOf(false) }
-    // B23-P3: the carousel is moving itself (a jump to the current index), and what it settles on is its own doing.
-    var resyncing by remember { mutableStateOf(false) }
-    var lastSettledSongId by remember { mutableStateOf(currentSong?.id) }
-    // B48-fix1: what the listener's finger did to the carousel, for the two effects below (see [FingerTrace]).
-    val fingerTrace = remember { FingerTrace() }
+    var programmaticScrollInProgress by remember(carouselState) { mutableStateOf(false) }
+    var lastSettledSongId by remember(carouselState) { mutableStateOf(currentSong?.id) }
+    val fingerTrace = remember(carouselState) { FingerTrace() }
+    val latestSong by rememberUpdatedState(currentSong?.id)
+    val latestTarget by rememberUpdatedState(effectiveTargetIndex)
+    val latestIsOnScreen by rememberUpdatedState(isOnScreen)
+    val latestOnSongSelected by rememberUpdatedState(onSongSelected)
+    val pager = carouselState.pagerState
+
+    fun resetFinger(reason: String) {
+        if (fingerTrace.down || fingerTrace.grabPage != null) {
+            CoverFollowLog.reset(latestSong, latestTarget, reason)
+        }
+        fingerTrace.cancel()
+    }
+
+    fun snapToTarget() {
+        fingerTrace.grabPage = null
+        if (!carouselState.isAtRestOn(latestTarget)) pager.requestScrollToPage(latestTarget)
+    }
+
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var resyncing by remember(lifecycle) { mutableStateOf(!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
+    DisposableEffect(lifecycle, carouselState) {
+        val observer = LifecycleEventObserver { _, _ ->
+            val parked = !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            if (parked && !resyncing) {
+                resetFinger("parked-or-frozen")
+                fingerTrace.resyncOnShow = true
+            }
+            resyncing = parked
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            resetFinger("pager-disposed")
+        }
+    }
+
+    val songId = currentSong?.id
+    SideEffect {
+        fingerTrace.acknowledge(songId, currentSongIndex, queue)
+        // These cases bind in the composition commit, independently of the animation coroutine.
+        if (!resyncing && (fingerTrace.resyncOnShow || !isOnScreen())) {
+            resetFinger("off-screen")
+            fingerTrace.resyncOnShow = false
+            snapToTarget()
+        }
+    }
+
     LaunchedEffect(carouselState) {
-        carouselState.pagerState.interactionSource.interactions.collect { interaction ->
+        pager.interactionSource.interactions.collect { interaction ->
             when (interaction) {
                 is DragInteraction.Start -> {
-                    fingerTrace.down = true
-                    fingerTrace.dragged = true
-                    fingerTrace.grabPage = carouselState.pagerState.currentPage
+                    if (fingerTrace.down && !resyncing && latestIsOnScreen()) {
+                        fingerTrace.activeDrag = interaction
+                        fingerTrace.grabPage = pager.currentPage
+                    } else {
+                        CoverFollowLog.reset(latestSong, latestTarget, "drag-start-without-pointer")
+                    }
                 }
-                is DragInteraction.Stop, is DragInteraction.Cancel -> fingerTrace.down = false
+                is DragInteraction.Stop -> {
+                    if (fingerTrace.activeDrag === interaction.start) fingerTrace.activeDrag = null
+                }
+                is DragInteraction.Cancel -> {
+                    if (fingerTrace.activeDrag === interaction.start) resetFinger("drag-cancelled")
+                }
             }
         }
     }
-    LaunchedEffect(effectiveTargetIndex, requestedTargetIndex, queue) {
-        // B48-fix1: carries the cover to the current item and does not stop until it is there. A scroll of the follower's own can be taken over (a finger that lands on the
-        // cover while it is on its way, the settle correction) and the take-over ends it with a CancellationException that is not this effect's own: the effect used to end with it,
-        // leaving the cover wherever the other scroll put it. It waits for the other scroll to end and looks again, unless what that scroll chose is the listener's.
+
+    LaunchedEffect(carouselState, songId, effectiveTargetIndex, requestedTargetIndex, queue, resyncing, fingerTrace.releaseGeneration) {
+        if (resyncing) return@LaunchedEffect
         var attempts = 0
         try {
             while (attempts++ < MAX_FOLLOW_ATTEMPTS) {
-                // A held finger counts as a scroll in progress: its drag holds the pager's scroll but `isScrollInProgress` stays false until it moves, and an attempt made
-                // under it fails at once (every attempt would be spent before the finger lifts).
-                // B58 9 (#72): said once per wait, so a cover that stops following can be told from the log: what it is waiting on, and for which song
-                if (carouselState.pagerState.isScrollInProgress || fingerTrace.down) {
-                    CoverFollowLog.waiting(currentSong?.id, effectiveTargetIndex, attempts, carouselState.pagerState.isScrollInProgress, fingerTrace.down)
+                val isShiftOnly = songId != null && songId == lastSettledSongId && requestedTargetIndex == null
+                if (isShiftOnly || !isOnScreen()) {
+                    if (!isOnScreen()) resetFinger("off-screen")
+                    if (!fingerTrace.down && fingerTrace.grabPage == null) {
+                        snapToTarget()
+                        break
+                    }
                 }
-                snapshotFlow { carouselState.pagerState.isScrollInProgress || fingerTrace.down }
-                    .first { !it }
-                // The settle collector below wakes on the same end of a scroll; after one yield it has said whether the listener chose the page the cover rests on.
-                yield()
-                if (fingerTrace.chosenPage == carouselState.pagerState.currentPage && fingerTrace.chosenWhileTargetWas == effectiveTargetIndex) break
-                // "There" is the page AND the offset. This effect is keyed on the queue too: when the queue is published again while the cover is on its way (artwork or
-                // statistics of the playing song, a moment after a skip) it restarts, and a scroll cancelled after the middle leaves `currentPage` on the target and the cover short of it.
+                if (carouselState.isAtRestOn(effectiveTargetIndex) && !fingerTrace.down && fingerTrace.grabPage == null) break
+
+                // Without a real drag to settle, an existing scroll cannot hold up the binding.
+                if (pager.isScrollInProgress && !fingerTrace.down && fingerTrace.grabPage == null) {
+                    snapToTarget()
+                    break
+                }
+                if (pager.isScrollInProgress || fingerTrace.down) {
+                    CoverFollowLog.waiting(songId, effectiveTargetIndex, attempts, pager.isScrollInProgress, fingerTrace.down)
+                    val idle = withTimeoutOrNull(FOLLOW_WAIT_MS) {
+                        snapshotFlow { carouselState.pagerState.isScrollInProgress || fingerTrace.down }.first { !it }
+                    }
+                    if (idle == null) {
+                        CoverFollowLog.reset(songId, effectiveTargetIndex, "wait-timeout")
+                        if (fingerTrace.down) {
+                            // The raw release will restart this binding. A held finger keeps its gesture.
+                            fingerTrace.followAfterRelease = true
+                            return@LaunchedEffect
+                        }
+                        snapToTarget()
+                        break
+                    }
+                    // Let the settle collector record a genuine swipe before we move the pager.
+                    yield()
+                }
+                if (fingerTrace.holdsPage(pager.currentPage, effectiveTargetIndex)) break
                 if (carouselState.isAtRestOn(effectiveTargetIndex)) break
                 try {
-                    val isShiftOnly = currentSong?.id != null &&
-                                      currentSong.id == lastSettledSongId &&
-                                      requestedTargetIndex == null
-
-                    if (isShiftOnly || !isOnScreen()) {
-                        // A queue shift, or a carousel nobody can see: jump, no animation. `resyncing` stays up until the pager reports the
-                        // target page and one frame has gone by, so the settle collector below cannot read the end of this jump (or the
-                        // page the pager still showed before it) as a swipe.
-                        resyncing = true
-                        try {
-                            carouselState.pagerState.scrollToPage(effectiveTargetIndex)
-                            withFrameNanos { }
-                        } finally {
-                            resyncing = false
-                        }
-                    } else {
-                        if (requestedTargetIndex != null) {
-                            ignoreNextSettledSelectionForPage = effectiveTargetIndex
-                        }
-                        // Up for the whole follow and not per attempt: between two attempts the NO_PEEK settle correction would otherwise wake, snap the cover back to the page it
-                        // is nearest to (the previous song's, before the middle of the trip) and take the next attempt's animation away from it.
-                        programmaticScrollInProgress = true
+                    programmaticScrollInProgress = true
+                    val animated = withTimeoutOrNull(FOLLOW_WAIT_MS) {
                         carouselState.animateScrollToItem(effectiveTargetIndex)
+                        true
+                    }
+                    if (animated == null && !fingerTrace.down && fingerTrace.grabPage == null) {
+                        CoverFollowLog.reset(songId, effectiveTargetIndex, "animation-timeout")
+                        snapToTarget()
+                        break
                     }
                 } catch (interrupted: CancellationException) {
-                    // This effect's own cancellation (a new target, the carousel leaving the composition) ends it here; another scroll taking over goes round again.
+                    // A competing scroll may cancel the animation without cancelling this binding.
                     currentCoroutineContext().ensureActive()
+                    yield()
                 }
             }
         } finally {
             programmaticScrollInProgress = false
         }
-        // B58 9 (#72): the follower used up its attempts and the cover is not on the target: the one line a report of "the big cover stopped following" needs
         if (attempts > MAX_FOLLOW_ATTEMPTS && !carouselState.isAtRestOn(effectiveTargetIndex)) {
-            CoverFollowLog.gaveUp(currentSong?.id, effectiveTargetIndex, queue.size, carouselState.currentItem, MAX_FOLLOW_ATTEMPTS)
+            CoverFollowLog.gaveUp(songId, effectiveTargetIndex, queue.size, carouselState.currentItem, MAX_FOLLOW_ATTEMPTS)
+            if (fingerTrace.down) {
+                fingerTrace.followAfterRelease = true
+                return@LaunchedEffect
+            }
+            if (!fingerTrace.holdsPage(pager.currentPage, effectiveTargetIndex)) snapToTarget()
         }
-        lastSettledSongId = currentSong?.id
-        // B56-1.1: where the cover ended up for the song that is playing, so a cover that stays on another image can be told from the log (#47).
+
+        // A requested jump is applied at the next measure. Only the diagnostic waits for layout.
+        if (!carouselState.isAtRestOn(effectiveTargetIndex) && !fingerTrace.holdsPage(pager.currentPage, effectiveTargetIndex) && isOnScreen()) {
+            withTimeoutOrNull(FOLLOW_WAIT_MS) {
+                snapshotFlow { carouselState.isAtRestOn(effectiveTargetIndex) }.first { it }
+            }
+        }
+        lastSettledSongId = songId
         val target = queue.getOrNull(effectiveTargetIndex)
-        Timber.tag("CoverBind").d(
+        Timber.tag(CoverFollowLog.TAG).d(
             "COVER_BIND song=%s art=%s page=%d target=%d of=%d rest=%b targetSong=%s",
-            currentSong?.id,
+            songId,
             target?.albumArtUriString?.takeLast(48),
             carouselState.currentItem,
             effectiveTargetIndex,
@@ -208,34 +263,19 @@ fun AlbumCarouselSection(
     }
 
     val hapticFeedback = LocalHapticFeedback.current
-    LaunchedEffect(carouselState, currentSongIndex, queue) {
-        snapshotFlow { carouselState.pagerState.isScrollInProgress }
-            .distinctUntilChanged()
+    LaunchedEffect(carouselState, songId, currentSongIndex, queue, resyncing) {
+        snapshotFlow { pager.isScrollInProgress || fingerTrace.down }
             .filter { !it }
             .collect {
-                // B23-P3: a carousel that is moving itself, or that nobody can see, has nobody swiping it.
                 if (resyncing || !isOnScreen()) return@collect
-                val settled = carouselState.pagerState.currentPage
-                if (ignoreNextSettledSelectionForPage == settled) {
-                    ignoreNextSettledSelectionForPage = null
-                    return@collect
-                }
-                // B48-fix1: only a drag chooses a song. A touch that stops a skip's animation makes the scroll end half way (that end is read here before the drag, if there is one,
-                // has begun), and the cover that is then let go settles on the previous page: neither is the listener asking for the previous song. And a drag that ends on the
-                // page it began on chose nothing either.
-                val dragged = fingerTrace.dragged
-                val grabbedOn = fingerTrace.grabPage
-                if (!fingerTrace.down) {
-                    fingerTrace.dragged = false
-                    fingerTrace.grabPage = null
-                }
-                if (!dragged || grabbedOn == settled) return@collect
-                if (settled != currentSongIndex) {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    fingerTrace.chosenPage = settled
-                    fingerTrace.chosenWhileTargetWas = currentSongIndex
-                    queue.getOrNull(settled)?.let { onSongSelected(it, settled) }
-                }
+                val grabbedOn = fingerTrace.grabPage ?: return@collect
+                fingerTrace.grabPage = null
+                val settled = pager.currentPage
+                if (grabbedOn == settled || settled == currentSongIndex) return@collect
+                val selected = queue.getOrNull(settled) ?: return@collect
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                fingerTrace.choice = CoverChoice(settled, songId, currentSongIndex, queue)
+                latestOnSongSelected(selected, settled)
             }
     }
 
@@ -249,7 +289,28 @@ fun AlbumCarouselSection(
 
         RoundedHorizontalMultiBrowseCarousel(
             state = carouselState,
-            modifier = Modifier.width(availableWidth).fillMaxHeight().align(androidx.compose.ui.Alignment.TopCenter),
+            modifier = Modifier.width(availableWidth).fillMaxHeight().align(androidx.compose.ui.Alignment.TopCenter)
+                .pointerInput(carouselState) {
+                    try {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val pressed = event.changes.any { it.pressed }
+                                if (pressed && event.changes.any { !it.previousPressed } && !resyncing && latestIsOnScreen()) {
+                                    fingerTrace.down = true
+                                } else if (!pressed && fingerTrace.down) {
+                                    if (event.changes.any { it.isConsumed } || !latestIsOnScreen()) {
+                                        resetFinger("pointer-cancelled-or-hidden")
+                                    } else {
+                                        fingerTrace.release()
+                                    }
+                                }
+                            }
+                        }
+                    } finally {
+                        resetFinger("pointer-input-ended")
+                    }
+                },
             itemSpacing = itemSpacing,
             itemCornerRadius = corner,
             suppressNoPeekSettleCorrection = requestedTargetIndex != null || programmaticScrollInProgress || resyncing,
@@ -284,15 +345,6 @@ fun AlbumCarouselSection(
     }
 }
 
-/**
- * B58 9 (#72): the two lines the cover follower writes, under the tag `CoverBind` (debug level, like `COVER_BIND`), for the one report that could not be reproduced: the big cover of the
- * full player that stopped following the song (seen once on the HONOR, cleared by restarting the app). **No behaviour changed**: these only say what it waited on and that it gave up.
- *
- * ```
- * COVER_BIND_WAIT song=<id> target=<index> attempt=<n> why=<finger down|scroll in progress|finger down and scroll in progress>
- * COVER_BIND_GAVE_UP song=<id> target=<index> of=<queue size> page=<where the cover is> attempts=<n>
- * ```
- */
 internal object CoverFollowLog {
     const val TAG = "CoverBind"
 
@@ -315,23 +367,55 @@ internal object CoverFollowLog {
     fun gaveUp(song: String?, target: Int, queueSize: Int, page: Int, attempts: Int) {
         Timber.tag(TAG).d(gaveUpLine(song, target, queueSize, page, attempts))
     }
+
+    fun reset(song: String?, target: Int, reason: String) {
+        Timber.tag(TAG).d("COVER_BIND_RESET song=%s target=%d reason=%s", song, target, reason)
+    }
 }
 
-/** How many times the follower looks again after another scroll took over from it: a listener poking at the cover is a few, never this many. */
 private const val MAX_FOLLOW_ATTEMPTS = 6
+private const val FOLLOW_WAIT_MS = 1_000L
 
-/**
- * B48-fix1: what the listener's finger did to the carousel, read by the follower and the settle collector. [dragged] is whether a drag has begun since the last settle was
- * looked at, [grabPage] the page the cover was nearest to when it began and [down] (observable) whether it is still going; [chosenPage] is a page the settle collector asked the player to play
- * while the current item was [chosenWhileTargetWas], so the follower does not pull the cover back from it before the player has answered. Touched only on the main thread.
- */
 private class FingerTrace {
+    // Raw pointer lifetime is independent of the interaction source's lossy buffer.
     var down by mutableStateOf(false)
-    var dragged = false
+    var activeDrag: DragInteraction.Start? = null
     var grabPage: Int? = null
-    var chosenPage: Int? = null
-    var chosenWhileTargetWas: Int? = null
+    var choice: CoverChoice? = null
+    var resyncOnShow = false
+    var followAfterRelease = false
+    var releaseGeneration by mutableIntStateOf(0)
+        private set
+
+    fun release() {
+        down = false
+        activeDrag = null
+        if (followAfterRelease) {
+            followAfterRelease = false
+            releaseGeneration++
+        }
+    }
+
+    fun cancel() {
+        grabPage = null
+        release()
+    }
+
+    fun acknowledge(song: String?, page: Int, queue: ImmutableList<Song>) {
+        val pending = choice ?: return
+        if (pending.fromSong != song || pending.fromPage != page || pending.queue != queue) choice = null
+    }
+
+    fun holdsPage(page: Int, target: Int): Boolean =
+        choice?.let { it.page == page && it.fromPage == target } == true
 }
+
+private data class CoverChoice(
+    val page: Int,
+    val fromSong: String?,
+    val fromPage: Int,
+    val queue: ImmutableList<Song>,
+)
 
 private fun resolveCurrentQueueIndex(
     currentSong: Song?,

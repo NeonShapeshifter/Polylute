@@ -16,6 +16,8 @@ import android.provider.Settings
 import android.view.KeyEvent
 import android.widget.Toast
 import com.decent.usbaudio.UsbAudioDevice
+import com.decent.usbaudio.UsbDeviceOwner
+import com.decent.usbaudio.UsbDiagnosticJournal
 import com.decent.usbaudio.UsbVolumeRange
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.dac.DacProfile
@@ -35,11 +37,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -55,6 +60,7 @@ import com.decent.usbaudio.media3.DirectSignalMode
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 data class SafetyVolumeState(
@@ -246,7 +252,17 @@ class SafetyVolumeController @Inject constructor(
     private var overLockActive = false
     private var overLockJob: Job? = null
     private val _state = MutableStateFlow(SafetyVolumeState())
-    val state: StateFlow<SafetyVolumeState> = _state.asStateFlow()
+    private val usbPreview = MutableStateFlow<UsbVolumeRequest?>(null)
+    @OptIn(ExperimentalForInheritanceCoroutinesApi::class)
+    val state: StateFlow<SafetyVolumeState> = object : StateFlow<SafetyVolumeState> {
+        override val value: SafetyVolumeState get() = displayVolume(_state.value, usbPreview.value)
+        override val replayCache: List<SafetyVolumeState> get() = listOf(value)
+
+        override suspend fun collect(collector: FlowCollector<SafetyVolumeState>): Nothing {
+            combine(_state, usbPreview, ::displayVolume).distinctUntilChanged().collect(collector)
+            error("Volume state flow completed")
+        }
+    }
     private val _hudEvent = MutableStateFlow(VolumeHudEvent())
 
     /**
@@ -299,13 +315,8 @@ class SafetyVolumeController @Inject constructor(
             .stateIn(appScope, SharingStarted.Eagerly, null)
 
         override fun setLevel(level: Int) {
-            // Like a key press: the DAC's own buttons may have moved it, so re-read before stepping.
-            if (_state.value.backend.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME) {
-                hardwareRefreshRequested = true
-                reconcile()
-            }
             refreshOverride()
-            val current = _state.value
+            val current = inputState()
             val ceiling = current.calibration?.ceilingRaw?.takeIf { current.safetyEnabled }
             val requested = remoteRequestedRaw(
                 requested = level,
@@ -335,7 +346,9 @@ class SafetyVolumeController @Inject constructor(
                 if (!VolumeKeyRepeatPolicy.remoteRaiseAllowed(now, lastRemoteRaiseAtMs)) return
                 lastRemoteRaiseAtMs = now
             }
-            setRawLevel(requested, origin = "remote")
+            if (current.backend.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME) {
+                enqueueUsbVolume(current.backend, requested, "remote", relative = requested - current.backend.rawLevel)
+            } else setRawLevel(requested, origin = "remote")
         }
     }
     private val calibrationNotice = SafetyCalibrationNotice()
@@ -350,6 +363,156 @@ class SafetyVolumeController @Inject constructor(
     private var lastRemoteRaiseAtMs = 0L
     private val usbDevice = UsbAudioDevice.getInstance(context)
     private val hardwareStore = UsbHardwareVolumeStore(context)
+    private val volumeDispatcher = UsbAudioDevice.volumeExecutor.asCoroutineDispatcher()
+
+    private data class UsbVolumeRequest(
+        val backend: VolumeBackendSnapshot,
+        val connection: Long,
+        val generation: Long,
+        val target: Int,
+        val targetUnits: Int?,
+        val origin: String,
+        val relative: Int?,
+    )
+
+    private val workLock = Any()
+    private var pendingVolume: UsbVolumeRequest? = null
+    private var pendingRefresh = false
+    private var pendingExternalChange = false
+    private var pendingDeviceChange = false
+    private var workScheduled = false
+    private var access: UsbDeviceOwner.AccessoryClaim? = null
+    private var accessConnection = -1L
+
+    private fun displayVolume(confirmed: SafetyVolumeState, request: UsbVolumeRequest?): SafetyVolumeState {
+        if (request == null || !sameOutput(confirmed.backend, request.backend) ||
+            request.connection != usbDevice.openGeneration || request.generation != usbDevice.owner.generation
+        ) return confirmed
+        val backend = confirmed.backend.copy(rawLevel = request.target, levelVerified = false)
+        return confirmed.copy(backend = backend, hardwareDecibels = hardwareDecibelsOf(backend))
+    }
+
+    private fun inputState(): SafetyVolumeState {
+        val current = state.value
+        val session = overrideSession
+        return if (session != null && SafetyOverridePolicy.isDue(
+                session, dualPlayerEngine.isPlayingFlow.value, SystemClock.elapsedRealtime(),
+            )
+        ) current.copy(temporaryOverride = false) else current
+    }
+
+    private fun enqueueUsbVolume(backend: VolumeBackendSnapshot, target: Int, origin: String, relative: Int? = null) {
+        val connection = usbDevice.openGeneration
+        val generation = usbDevice.owner.generation
+        synchronized(workLock) {
+            val previous = pendingVolume?.takeIf {
+                it.connection == connection && it.generation == generation && sameOutput(it.backend, backend)
+            }
+            val delta = when {
+                relative == null || (previous != null && previous.relative == null) -> null
+                else -> (previous?.relative ?: 0) + relative
+            }
+            val request = UsbVolumeRequest(backend, connection, generation, target,
+                hardwareRange?.let { UsbHardwareVolumePolicy.unitsFor(target, it) }, origin, delta)
+            pendingVolume = request
+            usbPreview.value = request
+            scheduleVolumeWork()
+        }
+    }
+
+    /** Call under workLock. The executor never holds that lock while touching USB. */
+    private fun scheduleVolumeWork() {
+        if (workScheduled) return
+        workScheduled = true
+        UsbAudioDevice.volumeExecutor.execute(::drainVolumeWork)
+    }
+
+    private fun drainVolumeWork() {
+        val work = synchronized(workLock) {
+            Triple(pendingVolume, pendingRefresh, pendingExternalChange to pendingDeviceChange).also {
+                pendingVolume = null
+                pendingRefresh = false
+                pendingExternalChange = false
+                pendingDeviceChange = false
+            }
+        }
+        val (request, refresh, flags) = work
+        try {
+            if (request != null) {
+                try {
+                    applyUsbVolume(request)
+                } finally {
+                    synchronized(workLock) {
+                        if (usbPreview.value === request) usbPreview.value = null
+                    }
+                }
+            }
+            if (refresh) reconcileOnVolumeThread(flags.first, flags.second)
+        } catch (e: RuntimeException) {
+            Timber.tag(TAG).e(e, "DAC volume work failed")
+        } finally {
+            synchronized(workLock) {
+                workScheduled = false
+                if (pendingVolume != null || pendingRefresh) scheduleVolumeWork()
+            }
+        }
+    }
+
+    private fun applyUsbVolume(request: UsbVolumeRequest) {
+        val manager = audioManager ?: return
+        val started = System.nanoTime()
+        val expected = request.backend
+        val applied = withHardwareAccess(request.connection, request.generation) {
+            val confirmed = _state.value
+            if (!sameOutput(confirmed.backend, expected) ||
+                dualPlayerEngine.audioRouteState.value.actualBackend != AudioBackend.USB_DIRECT
+            ) return@withHardwareAccess false
+            if (hardwareCacheGeneration != request.connection) {
+                requestReconcile(deviceChange = true)
+                return@withHardwareAccess false
+            }
+            val range = hardwareRange ?: return@withHardwareAccess false
+            var current = confirmed.backend
+            if (request.relative != null) {
+                val read = usbDevice.readHardwareVolume(request.origin) ?: return@withHardwareAccess false
+                if (!hardwareAccessCurrent()) return@withHardwareAccess false
+                hardwareUnitsCache = read
+                hardwareLevelUnverified = false
+                current = current.copy(rawLevel = UsbHardwareVolumePolicy.stepCeilFor(read, range), levelVerified = true)
+            }
+            val raw = request.relative?.let { current.rawLevel + it } ?: request.target
+            setRawLevelNow(manager, confirmed.copy(backend = current), raw, request.origin, skipUnchanged = request.relative != null)
+            hardwareAccessCurrent()
+        } == true
+        if (!applied) {
+            UsbDiagnosticJournal.control(request.connection, request.generation, UsbDiagnosticJournal.Control.VOLUME_DROPPED,
+                request.origin, request.targetUnits,
+                elapsedMs = (System.nanoTime() - started) / 1_000_000)
+            Timber.tag(TAG).w("Dropped DAC volume request from %s for step %d", request.origin, request.target)
+        }
+    }
+
+    private fun <T> withHardwareAccess(
+        connection: Long = usbDevice.openGeneration,
+        generation: Long = usbDevice.owner.generation,
+        block: () -> T,
+    ): T? {
+        if (connection != usbDevice.openGeneration || !usbDevice.hasHardwareVolume) return null
+        val claim = usbDevice.owner.tryClaimAccessory("volume", generation) ?: return null
+        return claim.use {
+            if (connection != usbDevice.openGeneration || !claim.isCurrent()) return@use null
+            access = claim
+            accessConnection = connection
+            try {
+                block()
+            } finally {
+                access = null
+            }
+        }
+    }
+
+    private fun hardwareAccessCurrent(): Boolean =
+        accessConnection == usbDevice.openGeneration && access?.isCurrent() == true
 
     /**
      * FIX-4: the temporary override, as a session with its own rules ([SafetyOverridePolicy]). It is
@@ -397,8 +560,8 @@ class SafetyVolumeController @Inject constructor(
         override fun onChange(selfChange: Boolean, uri: android.net.Uri?) = reconcile(externalVolumeChange = true)
     }
     private val deviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = reconcile()
-        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = reconcile()
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = requestReconcile(deviceChange = true)
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = requestReconcile(deviceChange = true)
     }
 
     @Synchronized
@@ -406,6 +569,7 @@ class SafetyVolumeController @Inject constructor(
         if (started || audioManager == null) return
         started = true
         usbDevice.volumeGuard = ::hardwareOpenTarget
+        usbDevice.volumeRestoredListener = { requestReconcile(deviceChange = true) }
         restoreOverride()
         // B12a-8 #3: judge a restored override only against the profile the store really holds. `profiles.currentState()`
         // is the store's own first read; the published state catches up to it a moment later.
@@ -436,22 +600,56 @@ class SafetyVolumeController @Inject constructor(
         appScope.launch { dualPlayerEngine.isPlayingFlow.collect(::onPlaybackChanged) }
         // The automatic Direct handoff resumes only on this verdict, never on DIRECT_ACTIVE alone.
         appScope.launch {
-            state.map(HandoffResumeSafety::verdict)
+            _state.map(HandoffResumeSafety::verdict)
                 .distinctUntilChanged()
                 .collect(dualPlayerEngine::onHandoffVolumeVerdict)
         }
         // B40-P1: a play the listener asked for after the DAC was shared waits only for a confirmed level, not for this verdict.
         appScope.launch {
-            state.map(HandoffResumeSafety::userPlayLevel)
+            _state.map(HandoffResumeSafety::userPlayLevel)
                 .distinctUntilChanged()
                 .collect(dualPlayerEngine::onUserPlayLevel)
         }
         reconcile()
     }
 
-    fun reconcile(externalVolumeChange: Boolean = false) {
-        val manager = audioManager ?: return
+    fun reconcile(externalVolumeChange: Boolean = false) = requestReconcile(externalVolumeChange)
+
+    private fun requestReconcile(externalVolumeChange: Boolean = false, deviceChange: Boolean = false) {
+        synchronized(workLock) {
+            pendingRefresh = true
+            pendingExternalChange = pendingExternalChange || externalVolumeChange
+            pendingDeviceChange = pendingDeviceChange || deviceChange
+            scheduleVolumeWork()
+        }
+    }
+
+    private var refreshAfterOwner: Job? = null
+
+    private fun reconcileOnVolumeThread(externalVolumeChange: Boolean, forceRead: Boolean = false, retryRead: Boolean = true): Boolean {
+        val manager = audioManager ?: return false
+        if (dualPlayerEngine.audioRouteState.value.actualBackend == AudioBackend.USB_DIRECT && usbDevice.hasHardwareVolume) {
+            val done = withHardwareAccess {
+                hardwareRefreshRequested = hardwareRefreshRequested || forceRead || externalVolumeChange
+                reconcileBackend(manager, externalVolumeChange)
+                true
+            } == true
+            if (!done && retryRead && refreshAfterOwner?.isActive != true) {
+                refreshAfterOwner = appScope.launch(volumeDispatcher) {
+                    delay(75)
+                    refreshAfterOwner = null
+                    requestReconcile(externalVolumeChange, deviceChange = forceRead)
+                }
+            }
+            return done
+        }
+        reconcileBackend(manager, externalVolumeChange)
+        return true
+    }
+
+    private fun reconcileBackend(manager: AudioManager, externalVolumeChange: Boolean) {
         val backend = resolveBackend(manager, dacProfiles.profiles.value, dacProfiles.connected.value)
+        if (access != null && !hardwareAccessCurrent()) return
         val selected = profiles.state.value.selectedProfile
         if (safetyOverrideContextChanged(
                 lastProfileId,
@@ -548,6 +746,7 @@ class SafetyVolumeController @Inject constructor(
             // B27-A3 (R-03): the level that is published is the one the DAC reported after the write. A write it refused leaves the level
             // above the ceiling and unverified, which the resume verdict reads as "wait". Not retried from here: the next event re-reads it.
             val write = setBackendRaw(manager, backend, clamp, "clamp")
+            if (access != null && !hardwareAccessCurrent()) return
             if (write.reductionFailed(backend.rawLevel)) announceVolumeWriteFailed()
             updateState(
                 backend.copy(rawLevel = write.publishedStep(backend.rawLevel), levelVerified = write.verified),
@@ -762,7 +961,7 @@ class SafetyVolumeController @Inject constructor(
             ceilingRaw,
             SafetyOverrideRamp.durationMs(from.rawLevel, ceilingRaw),
         )
-        rampJob = appScope.launch {
+        rampJob = appScope.launch(volumeDispatcher) {
             var level = from.rawLevel
             while (isActive && level > ceilingRaw) {
                 delay(SafetyOverrideRamp.STEP_INTERVAL_MS)
@@ -772,7 +971,14 @@ class SafetyVolumeController @Inject constructor(
                 // meanwhile: the ramp carries on from the real level, never from its own counter (B12a-8), so it
                 // can never write a level above the current one.
                 level = SafetyOverrideRamp.next(current.rawLevel, level, ceilingRaw) ?: break
-                val write = setBackendRaw(manager, current, level, "ramp")
+                val write = if (current.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME) {
+                    val step = withHardwareAccess { setBackendRaw(manager, current, level, "ramp") }
+                    if (step == null) {
+                        requestReconcile(deviceChange = true)
+                        break
+                    }
+                    step
+                } else setBackendRaw(manager, current, level, "ramp")
                 // B27-A3: a step the DAC did not take ends the fade; the level published is the one it reported (or the last known one).
                 val published = write.publishedStep(current.rawLevel)
                 _state.update {
@@ -816,16 +1022,10 @@ class SafetyVolumeController @Inject constructor(
         val now = SystemClock.uptimeMillis()
         if (!VolumeKeyRepeatPolicy.shouldStep(event.repeatCount, raising, lastKeyStepAtMs, now)) return true
         lastKeyStepAtMs = now
-        // A DAC's own buttons change its level without telling us. Stepping from a stale reading
-        // would turn "one step up" into a jump back to wherever it was before, so re-read first.
-        if (_state.value.backend.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME) {
-            hardwareRefreshRequested = true
-            reconcile()
-        }
         // An override the idle window has already ended must not be honoured by a press that arrives
         // before the timer got to run.
         refreshOverride()
-        val current = _state.value
+        val current = inputState()
         if (!current.backend.controllable) return false
 
         // The ceiling is only a ceiling while Safety Max is armed *and* the stored calibration
@@ -835,16 +1035,21 @@ class SafetyVolumeController @Inject constructor(
 
         if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             gesture.reset()
-            setRawLevel(current.backend.rawLevel - 1, origin = "key")
+            stepVolumeKey(current, -1, ceiling)
             announceHud(refusedBySafetyMax = false)
             return true
         }
 
         if (ceiling == null || current.temporaryOverride || current.backend.rawLevel < ceiling) {
             gesture.reset()
-            setRawLevel(current.backend.rawLevel + 1, origin = "key")
+            stepVolumeKey(current, 1, ceiling)
             announceHud(refusedBySafetyMax = false)
         } else {
+            if (current.backend.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME && usbPreview.value == null) {
+                // A knob on the DAC may have lowered it since the cached reading. The worker
+                // can take this step if the real level is below the ceiling.
+                enqueueUsbVolume(current.backend, current.backend.rawLevel, "key", relative = 1)
+            }
             // At the ceiling. The press is refused and counted; three inside the window raise the
             // confirmation. The readout says the press was refused either way. Only real presses
             // count: a key held against the ceiling must not add up to an override request.
@@ -855,6 +1060,14 @@ class SafetyVolumeController @Inject constructor(
             announceHud(refusedBySafetyMax = true)
         }
         return true
+    }
+
+    private fun stepVolumeKey(current: SafetyVolumeState, direction: Int, ceiling: Int?) {
+        val backend = current.backend
+        val target = SafetyVolumePolicy.requestedRaw(backend.rawLevel + direction, backend, ceiling, current.temporaryOverride)
+        if (backend.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME) {
+            enqueueUsbVolume(backend, target, "key", relative = target - backend.rawLevel)
+        } else setRawLevel(target, origin = "key")
     }
 
     private fun announceHud(refusedBySafetyMax: Boolean) {
@@ -874,12 +1087,39 @@ class SafetyVolumeController @Inject constructor(
      */
     fun setRawLevel(requested: Int, origin: String = "ui") {
         refreshOverride()
-        val current = _state.value
-        if (!current.backend.controllable || audioManager == null) return
-        val ceiling = current.calibration?.ceilingRaw?.takeIf { current.safetyEnabled }
-        val raw = SafetyVolumePolicy.requestedRaw(requested, current.backend, ceiling, current.temporaryOverride)
+        val current = inputState()
+        val manager = audioManager ?: return
+        if (!current.backend.controllable) return
+        if (current.backend.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME) {
+            val ceiling = current.calibration?.ceilingRaw?.takeIf { current.safetyEnabled }
+            val target = SafetyVolumePolicy.requestedRaw(requested, current.backend, ceiling, current.temporaryOverride)
+            enqueueUsbVolume(current.backend, target, origin)
+        } else setRawLevelNow(manager, current, requested, origin)
+    }
+
+    private fun setRawLevelNow(
+        manager: AudioManager,
+        current: SafetyVolumeState,
+        requested: Int,
+        origin: String,
+        skipUnchanged: Boolean = false,
+    ): Boolean {
+        val hardware = current.backend.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME
+        if (hardware && !hardwareAccessCurrent()) return false
+        val outcome = if (hardware) {
+            val selected = profiles.state.value.selectedProfile
+            val policy = selected?.safetyMax
+            val stored = policy?.calibrationFor(current.backend.outputContextId, current.backend.kind)
+            val ceiling = SafetyVolumePolicy.effectiveCalibration(stored, current.backend)?.ceilingRaw?.takeIf { policy?.enabled == true }
+            val override = evaluateOverride(SystemClock.elapsedRealtime(), current.backend, ceiling).active
+            ceiling to override
+        } else current.calibration?.ceilingRaw?.takeIf { current.safetyEnabled } to current.temporaryOverride
+        val (ceiling, overrideBefore) = outcome
+        val raw = SafetyVolumePolicy.requestedRaw(requested, current.backend, ceiling, overrideBefore)
         val generationBefore = usbDevice.openGeneration
-        val write = setBackendRaw(audioManager, current.backend, raw, origin)
+        val write = if (skipUnchanged && raw == current.backend.rawLevel) VolumeWrite(raw, raw)
+            else setBackendRaw(manager, current.backend, raw, origin)
+        if (hardware && (usbDevice.openGeneration != generationBefore || !hardwareAccessCurrent())) return false
         // B27-A3 (R-03): from here on the level is the one the backend reported, not the one that was asked for. A write the DAC
         // refused, or could not read back, publishes the last known level, unverified; a read-back that differs publishes that.
         val published = write.publishedStep(current.backend.rawLevel)
@@ -899,6 +1139,7 @@ class SafetyVolumeController @Inject constructor(
                 it.copy(backend = backend, hardwareDecibels = hardwareDecibelsOf(backend), temporaryOverride = override)
             }
         }
+        return write.verified
     }
 
     /** The same output: what a reading taken for one is good for (B27-A3). */
@@ -922,14 +1163,27 @@ class SafetyVolumeController @Inject constructor(
      * F-02: the DAC's hardware volume in steps while it is the active, controllable backend, with a
      * read-back of the DAC itself (a blocking control transfer: call off the main thread).
      */
-    fun pristineHardwareVolume(): PristineModePolicy.HardwareVolume? {
+    suspend fun pristineHardwareVolume(): PristineModePolicy.HardwareVolume? = withContext(volumeDispatcher) {
+        withHardwareAccess { readPristineHardwareVolume() }
+    }
+
+    private var duckConnection = -1L
+    private var duckGeneration = -1L
+
+    private fun readPristineHardwareVolume(): PristineModePolicy.HardwareVolume? {
         val current = _state.value
         val backend = current.backend
         if (backend.kind != SafetyVolumeBackendKind.USB_HARDWARE_VOLUME || !backend.controllable) return null
         val range = hardwareRange ?: return null
         val expected = UsbHardwareVolumePolicy.unitsFor(backend.rawLevel, range)
         // The read and the ticket are taken together: a write that lands after this read is a write the duck has not seen.
-        val (ticket, verified) = dacVolume.observe { usbDevice.readHardwareVolume() == expected }
+        if (duckConnection != usbDevice.openGeneration || duckGeneration != usbDevice.owner.generation) {
+            dacVolume.supersede()
+            duckConnection = usbDevice.openGeneration
+            duckGeneration = usbDevice.owner.generation
+        }
+        val (ticket, verified) = dacVolume.observe { usbDevice.readHardwareVolume("pristine") == expected }
+        if (!hardwareAccessCurrent()) return null
         return PristineModePolicy.HardwareVolume(
             currentStep = backend.rawLevel,
             minStep = backend.rawMin,
@@ -953,16 +1207,23 @@ class SafetyVolumeController @Inject constructor(
         return SafetyVolumePolicy.ceilingNow(
             profiles.state.value.selectedProfile?.safetyMax,
             current.backend,
-            current.temporaryOverride,
+            inputState().temporaryOverride,
         )
     }
 
     /** F-02: sets a DAC step (through the same ceiling clamp as any request) and reads it back. */
-    fun setHardwareStepVerified(step: Int): Boolean {
-        setRawLevel(step, origin = "pristine")
-        val range = hardwareRange ?: return false
-        val held = _state.value.backend.rawLevel
-        return held == step && usbDevice.readHardwareVolume() == UsbHardwareVolumePolicy.unitsFor(held, range)
+    suspend fun setHardwareStepVerified(step: Int): Boolean = withContext(volumeDispatcher) {
+        withHardwareAccess {
+            val range = hardwareRange ?: return@withHardwareAccess false
+            val manager = audioManager ?: return@withHardwareAccess false
+            val current = _state.value
+            if (current.backend.kind != SafetyVolumeBackendKind.USB_HARDWARE_VOLUME ||
+                !setRawLevelNow(manager, current, step, "pristine")
+            ) return@withHardwareAccess false
+            val held = _state.value.backend.rawLevel
+            held == step && usbDevice.readHardwareVolume("pristine") == UsbHardwareVolumePolicy.unitsFor(held, range) &&
+                hardwareAccessCurrent()
+        } == true
     }
 
     /**
@@ -979,7 +1240,14 @@ class SafetyVolumeController @Inject constructor(
      * the DAC above the Safety Max ceiling **as it is when the step is about to be written** is not written either
      * ([TemporaryWrite.ABOVE_CEILING]): the caller's own reading of the ceiling is only its plan.
      */
-    fun setHardwareStepTemporarily(step: Int, ticket: Long, expectedStep: Int): TemporaryWrite {
+    suspend fun setHardwareStepTemporarily(step: Int, ticket: Long, expectedStep: Int): TemporaryWrite =
+        withContext(volumeDispatcher) {
+            withHardwareAccess(duckConnection, duckGeneration) {
+                writeTemporaryStep(step, ticket, expectedStep)
+            } ?: TemporaryWrite.SUPERSEDED
+        }
+
+    private fun writeTemporaryStep(step: Int, ticket: Long, expectedStep: Int): TemporaryWrite {
         val range = hardwareRange
         return dacVolume.temporaryWrite(
             ticket = ticket,
@@ -990,13 +1258,14 @@ class SafetyVolumeController @Inject constructor(
                 val current = _state.value
                 if (range == null || current.backend.kind != SafetyVolumeBackendKind.USB_HARDWARE_VOLUME ||
                     !current.backend.controllable
-                ) null else usbDevice.readHardwareVolume()?.let { UsbHardwareVolumePolicy.stepFor(it, range) }
+                ) null else usbDevice.readHardwareVolume("duck")
+                    ?.takeIf { hardwareAccessCurrent() }?.let { UsbHardwareVolumePolicy.stepFor(it, range) }
             },
             writeStep = {
-                val written = range?.let {
-                    usbDevice.writeHardwareVolume(UsbHardwareVolumePolicy.unitsFor(step, it), "duck")
+                val written = range?.takeIf { hardwareAccessCurrent() }?.let {
+                    usbDevice.writeHardwareVolume(UsbHardwareVolumePolicy.unitsFor(step, it), "duck", access)
                 }
-                if (range == null || written == null) {
+                if (range == null || written == null || !hardwareAccessCurrent()) {
                     false
                 } else {
                     hardwareUnitsCache = written
@@ -1005,7 +1274,8 @@ class SafetyVolumeController @Inject constructor(
                         val backend = it.backend.copy(rawLevel = held)
                         it.copy(backend = backend, hardwareDecibels = hardwareDecibelsOf(backend))
                     }
-                    held == step && usbDevice.readHardwareVolume() == UsbHardwareVolumePolicy.unitsFor(held, range)
+                    held == step && usbDevice.readHardwareVolume("duck") == UsbHardwareVolumePolicy.unitsFor(held, range) &&
+                        hardwareAccessCurrent()
                 }
             },
         )
@@ -1024,19 +1294,18 @@ class SafetyVolumeController @Inject constructor(
      * ([SafetyMaxCalibrationPolicy]); anything else is [SafetyMaxCalibrationResult.OUTPUT_CHANGED].
      */
     fun useCurrentAsSafetyMax(onResult: (SafetyMaxCalibrationResult) -> Unit = {}) {
-        val tapped = _state.value
+        val tapped = state.value
         val basis = SafetyMaxCalibrationPolicy.basisOf(tapped, connectionOf(tapped.backend))
         if (basis == null) {
             onResult(SafetyMaxCalibrationResult.NOT_AVAILABLE)
             return
         }
         appScope.launch {
-            var current = _state.value
+            var current = state.value
             if (!current.backend.levelVerified && current.backend.kind == SafetyVolumeBackendKind.USB_HARDWARE_VOLUME) {
                 // A reading, not a write: the DAC is asked what it holds, and the level it answers is published like any other.
-                hardwareRefreshRequested = true
-                reconcile()
-                current = _state.value
+                withContext(volumeDispatcher) { reconcileOnVolumeThread(externalVolumeChange = false, forceRead = true, retryRead = false) }
+                current = state.value
             }
             val refusal = SafetyMaxCalibrationPolicy.refusal(basis, current, connectionOf(current.backend))
             if (refusal != null) {
@@ -1317,12 +1586,13 @@ class SafetyVolumeController @Inject constructor(
             var readBack: Int? = null
             // B15-F1: the listener's and Safety's write: serialised with a duck's steps, and it ends any duck.
             val held = dacVolume.listenerWrite {
-                readBack = usbDevice.writeHardwareVolume(units, origin)
+                if (!hardwareAccessCurrent()) return@listenerWrite null
+                readBack = usbDevice.writeHardwareVolume(units, origin, access)
                 // A write that failed part-way (one channel refused it) leaves the DAC at some level, and the loudest channel is what
                 // counts: ask it. A reading, not a second write: the level that is published is one the DAC reported.
-                readBack ?: usbDevice.readHardwareVolume()
+                readBack ?: if (hardwareAccessCurrent()) usbDevice.readHardwareVolume(origin) else null
             }
-            if (usbDevice.openGeneration != generation) {
+            if (usbDevice.openGeneration != generation || !hardwareAccessCurrent()) {
                 // The DAC was reopened (or swapped) during the write: nothing read belongs to the one the caller was writing.
                 Timber.tag(TAG).w("DAC changed during a volume write; not credited")
                 hardwareRefreshRequested = true
@@ -1445,10 +1715,8 @@ class SafetyVolumeController @Inject constructor(
         }
     }
 
-    // USB control transfers are blocking, up to 250 ms each, and reconcile runs on the main thread
-    // for every route, profile or Settings.System change. Reading the DAC there on every call froze
-    // the UI (measured: 35 % janky frames, p99 400 ms). The range is fixed for a connection, so it is
-    // read once per open; the level is re-read only on a new open, a key press, or after our write.
+    // The range is fixed for a connection. The volume executor owns this cache and refreshes it
+    // on each new open, after an unconfirmed write or when a caller explicitly asks for a read.
     private var hardwareCacheGeneration = -1L
     private var hardwareRangeCache: UsbVolumeRange? = null
     @Volatile
@@ -1470,11 +1738,12 @@ class SafetyVolumeController @Inject constructor(
             hardwareLevelUnverified = false
             return null to null
         }
+        if (!hardwareAccessCurrent()) return null to null
         val generation = usbDevice.openGeneration
         if (generation != hardwareCacheGeneration) {
             hardwareCacheGeneration = generation
             hardwareRangeCache = usbDevice.readHardwareVolumeRange()
-            hardwareUnitsCache = hardwareRangeCache?.let { usbDevice.readHardwareVolume() }
+            hardwareUnitsCache = hardwareRangeCache?.takeIf { hardwareAccessCurrent() }?.let { usbDevice.readHardwareVolume() }
             hardwareLevelUnverified = false  // a DAC opened afresh is read afresh; no reading at all is FIXED_OUTPUT below
         } else if (hardwareRefreshRequested && hardwareRangeCache != null) {
             val read = usbDevice.readHardwareVolume()

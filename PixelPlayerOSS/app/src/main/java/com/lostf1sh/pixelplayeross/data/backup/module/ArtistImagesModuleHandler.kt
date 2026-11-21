@@ -61,9 +61,13 @@ class ArtistImagesModuleHandler @Inject constructor(
     override suspend fun restore(payload: String) = withContext(Dispatchers.IO) {
         val type = TypeToken.getParameterized(List::class.java, ArtistImageBackupEntry::class.java).type
         val entries: List<ArtistImageBackupEntry> = gson.fromJson(payload, type)
+        val failed = mutableListOf<String>()
         entries.forEach { entry ->
             if (entry.genreKey != null) {
-                restoreGenre(entry)
+                try { restoreGenre(entry) } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    failed += entry.genreKey
+                }
                 return@forEach
             }
             val artistId = musicDao.getArtistIdByName(entry.artistName) ?: return@forEach
@@ -78,10 +82,13 @@ class ArtistImagesModuleHandler @Inject constructor(
                     file.writeBytes(bytes)
                     musicDao.updateArtistCustomImage(artistId, file.absolutePath)
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     Timber.tag(TAG).w(e, "Failed to restore custom image for artist: ${entry.artistName}")
+                    failed += entry.artistName
                 }
             }
         }
+        if (failed.isNotEmpty()) throw imageItemsFailed(failed)
     }
 
     /**
@@ -93,12 +100,19 @@ class ArtistImagesModuleHandler @Inject constructor(
     override suspend fun rollback(snapshot: String): Unit = withContext(Dispatchers.IO) {
         val type = TypeToken.getParameterized(List::class.java, ArtistImageBackupEntry::class.java).type
         val entries: List<ArtistImageBackupEntry> = gson.fromJson(snapshot, type) ?: emptyList()
+        val failed = mutableListOf<String>()
         val genreEntries = entries.filter { it.genreKey != null }
         val genreKeys = genreEntries.map { it.genreKey }.toSet()
         for (image in musicDao.getGenreImagesOnce()) {
-            if (image.genreKey !in genreKeys) genreImages.removeImage(image.genreKey)
+            if (image.genreKey !in genreKeys) try { genreImages.removeImage(image.genreKey) } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                failed += image.genreKey
+            }
         }
-        for (entry in genreEntries) restoreGenre(entry)
+        for (entry in genreEntries) try { restoreGenre(entry) } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            failed += entry.genreKey.orEmpty()
+        }
         val snapshotByName = entries.filter { it.genreKey == null }.associateBy { it.artistName }
 
         musicDao.getAllArtistsListRaw().forEach { artist ->
@@ -113,13 +127,17 @@ class ArtistImagesModuleHandler @Inject constructor(
                     file.writeBytes(bytes)
                     musicDao.updateArtistCustomImage(artist.id, file.absolutePath)
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     Timber.tag(TAG).w(e, "Failed to roll back custom image for artist: ${artist.name}")
+                    failed += artist.name
                 }
             } else {
-                File(context.filesDir, "artist_art_${artist.id}.jpg").delete()
-                musicDao.updateArtistCustomImage(artist.id, null)
+                val file = File(context.filesDir, "artist_art_${artist.id}.jpg")
+                if (file.exists() && !file.delete()) failed += artist.name
+                else musicDao.updateArtistCustomImage(artist.id, null)
             }
         }
+        if (failed.isNotEmpty()) throw imageItemsFailed(failed)
     }
 
     private suspend fun restoreGenre(entry: ArtistImageBackupEntry) {

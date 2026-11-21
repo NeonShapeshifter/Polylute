@@ -51,8 +51,9 @@ class MusicInfoHttp(
     }
     private val hosts = java.util.concurrent.ConcurrentHashMap<String, HostGate>()
 
-    /** Every request taken so far, for the tests and the privacy account: the address, in the order it went out. */
-    val sent: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+    /** A bounded diagnostic history; callers receive a snapshot, never the mutable storage. */
+    private val recentRequests = java.util.ArrayDeque<String>()
+    val sent: List<String> get() = synchronized(recentRequests) { recentRequests.toList() }
 
     private suspend fun <T> limited(url: HttpUrl, block: () -> T): T {
         require(url.isHttps) { "music info goes over HTTPS only" }
@@ -65,7 +66,10 @@ class MusicInfoHttp(
             val wait = interval - (nowMs() - host.lastStartedAt)
             if (wait > 0) sleep(wait)
             host.lastStartedAt = nowMs()
-            sent += url.toString()
+            synchronized(recentRequests) {
+                if (recentRequests.size == MAX_RECORDED_REQUESTS) recentRequests.removeFirst()
+                recentRequests.addLast(url.toString())
+            }
             try {
                 block().also { SourceWaits.clear(musicInfoSource(url.host)) }
             } catch (error: Exception) {
@@ -82,7 +86,8 @@ class MusicInfoHttp(
         client.newCall(request(url, "application/json")).execute().use { response ->
             if (response.code == 404) return@use null
             requireSuccess(response, url)
-            JSONObject(response.body.string())
+            val data = readLimited(response.body, MAX_JSON_BYTES) ?: throw IOException("JSON response exceeds the size limit")
+            JSONObject(data.toString(Charsets.UTF_8))
         }
     }
 
@@ -94,8 +99,24 @@ class MusicInfoHttp(
             if (response.body.contentType()?.type != "image") return@use null
             val declared = response.body.contentLength()
             if (declared > maxBytes) return@use null
-            val data = response.body.bytes()
-            data.takeIf { it.size <= maxBytes && it.isNotEmpty() }
+            readLimited(response.body, maxBytes)?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    private fun readLimited(body: okhttp3.ResponseBody, maxBytes: Long): ByteArray? {
+        require(maxBytes >= 0)
+        if (body.contentLength() > maxBytes) return null
+        body.byteStream().use { input ->
+            val output = java.io.ByteArrayOutputStream(minOf(maxBytes, 8192L).toInt())
+            val buffer = ByteArray(8192)
+            var total = 0L
+            while (true) {
+                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), maxBytes - total + 1).toInt())
+                if (read < 0) return output.toByteArray()
+                total += read
+                if (total > maxBytes) return null
+                output.write(buffer, 0, read)
+            }
         }
     }
 
@@ -118,6 +139,8 @@ class MusicInfoHttp(
 
     companion object {
         /** MusicBrainz asks for no more than one request per second. */
+        const val MAX_RECORDED_REQUESTS = 256
+        const val MAX_JSON_BYTES = 4L * 1024 * 1024
         const val MIN_INTERVAL_MS = 1_100L
     }
 }

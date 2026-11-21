@@ -279,4 +279,6 @@ data class ReplayGainRuntimeState(
     val applied: Boolean = false,
     val mediaId: String? = null,
     val multiplier: Float? = null,
+    /** Tags are being read, or the incoming factor is waiting for the crossfade to end. */
+    val pending: Boolean = false,
 )

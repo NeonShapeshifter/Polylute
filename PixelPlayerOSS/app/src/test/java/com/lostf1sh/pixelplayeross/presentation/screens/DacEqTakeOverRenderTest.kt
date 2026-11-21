@@ -58,7 +58,7 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * B31 P1.3 / P1.4 renders: the Resonance screen offering to take USER 3 over, listing the DAC's own presets by name (read, not read, locked,
  * the one selected), the card after the take-over with the way back, and the two confirmations. At the HONOR's 360 dp in English, Spanish
- * and Swedish; Robolectric renders over made-up data, **not phone screenshots**, under `analysis/.../B31-evidence/renders/`.
+ * and Swedish; Robolectric renders over made-up data, **not phone screenshots**, under `build/test-artifacts/B31/renders/`.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

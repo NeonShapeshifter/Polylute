@@ -451,6 +451,12 @@ class MusicRepositoryImpl @Inject constructor(
         }.conflate().flowOn(Dispatchers.IO)
     }
 
+    override suspend fun getAutoSourceSongsPage(albumId: Long?, artistId: Long?, limit: Int, offset: Int): List<Song> = withContext(Dispatchers.IO) {
+        val filter = cachedDirFilter.value
+        val albumArtist = userPreferencesRepository.groupByAlbumArtistFlow.first()
+        musicDao.getAutoSourceSongsPage(albumId, artistId, albumArtist, filter.allowedParentDirs, filter.applyFilter, limit, offset).map { it.toSong() }
+    }
+
     override fun getSongsForAlbum(albumId: Long): Flow<List<Song>> {
         return musicDao.getSongsByAlbumId(albumId).map { entities ->
             // Disc, then track (FIX-3): the track alone interleaves the discs of a multi-disc album.
@@ -753,7 +759,7 @@ class MusicRepositoryImpl @Inject constructor(
         }
     }
 
-    private val unreadableSongIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+    private val unreadableSongIds = com.lostf1sh.pixelplayeross.utils.boundedMemorySet<Long>(1024)
     private fun logUnreadableSong(id: Long, error: Exception) {
         if (unreadableSongIds.add(id)) Timber.tag("MusicRepo").w(error, "Skipped unreadable song %d", id)
     }

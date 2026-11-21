@@ -37,3 +37,18 @@ internal fun blockQueue(
     }
     return BlockQueue(ordered.firstOrNull()?.source, ordered.flatMap { it.songs }, ordered)
 }
+
+/** Hydration can remove missing placeholders; the remaining occurrences retain their own block. */
+internal fun <T> retainBlockValues(original: List<Song>, playable: List<Song>, values: List<T>): List<T> {
+    require(original.size == values.size)
+    var next = 0
+    val result = ArrayList<T>(playable.size)
+    original.forEachIndexed { index, song ->
+        if (next < playable.size && playable[next].id == song.id) {
+            result.add(values[index])
+            next++
+        }
+    }
+    require(next == playable.size)
+    return result
+}

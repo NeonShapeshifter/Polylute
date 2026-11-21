@@ -178,6 +178,7 @@ fun AutoCollectionDetailScreen(
         collection = collection,
         isHidden = isHidden,
         currentSongId = currentSongId,
+        playback = rememberLibraryPlaybackStates(playerViewModel),
         onHide = {
             id?.let(viewModel::hide)
             navController.popBackStack()
@@ -209,7 +210,13 @@ internal fun CollectionPage(
     /** A tap on a row: the song starts, with this collection as the queue. */
     onPlaySong: (com.lostf1sh.pixelplayeross.data.model.Song) -> Unit,
     onMore: (com.lostf1sh.pixelplayeross.data.model.Song) -> Unit,
+    /** B63 (owner 11-17): in the app the rows are the album page's, so the playing song wears the same card and moving bars. Render tests omit it. */
+    playback: LibraryPlaybackStates? = null,
 ) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val located = rememberSourceLocate(Screen.AutoCollection.createRoute(id?.key.orEmpty()), listState, collection != null) { songId ->
+        collection?.items?.indexOfFirst { it.song.id == songId }?.takeIf { it >= 0 }?.let { it + 3 + if (isHidden) 1 else 0 } ?: -1
+    }
     var menuOpen by remember { mutableStateOf(false) }
     val name = id?.nameText().orEmpty()
     val playLabel = stringResource(R.string.presentation_batch_b_play_it)
@@ -218,6 +225,7 @@ internal fun CollectionPage(
     // list, in B28-fix2 E4): its rows never run through the strip between the shell's mini player and the gesture bar.
     DapBackScaffold(Modifier.fillMaxSize()) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = DapSpacing.Gutter,
@@ -298,7 +306,15 @@ internal fun CollectionPage(
                         }
                         items(collection.items, key = { it.identity }) { item ->
                             val song = item.song
-                            DapMediaRow(
+                            if (playback != null) {
+                                LibraryPlaybackAwareSongItem(
+                                    song = song,
+                                    playback = playback,
+                                    isLocated = located == song.id,
+                                    onMoreOptionsClick = { onMore(it) },
+                                    onClick = { onPlaySong(song) },
+                                )
+                            } else DapMediaRow(
                                 title = item.title,
                                 subtitle = item.artistLine.ifBlank { null },
                                 duration = formatDuration(song.duration),

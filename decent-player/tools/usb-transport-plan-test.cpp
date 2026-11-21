@@ -48,6 +48,7 @@ static int todayFadeInFrames(int rate) { return rate * 15 / 1000; }
 // B46-B1 raised the lead from 40 ms (what B45's tree computed) to 60 ms; B47-A2 to 110 ms (with the ring at 128 URBs); B47-A3 adds a 50 ms
 // resume lead. Every other number here is still B45's.
 static int todaySilenceLeadFrames(int rate) { return rate * 110 / 1000; }
+// B63.5 adds a distinct 128ms stream-start lead; user resumes keep 50ms.
 static int todayResumeLeadFrames(int rate) { return rate * 50 / 1000; }
 static int todaySilenceChunkFrames(int rate) { return rate / 1000 + 1; }
 // RateSwitchPreroll.kt:53 `rateHz.toLong() * ms / 1000L`, :56 chunks of at most 8192 (CHUNK_FRAMES)
@@ -110,6 +111,7 @@ static void checkCell(int rate, int channels, int containerBytes, int sourceBits
               (long long)plan.queueSoftFrames, (long long)plan.queueHardFrames);
         CHECK(plan.silenceLeadFrames == todaySilenceLeadFrames(rate), "silence lead %d", plan.silenceLeadFrames);
         CHECK(plan.silenceChunkFrames == todaySilenceChunkFrames(rate), "silence chunk %d", plan.silenceChunkFrames);
+        CHECK(plan.startLeadFrames == rate * 128 / 1000, "start lead %d", plan.startLeadFrames);
         CHECK(plan.resumeLeadFrames == todayResumeLeadFrames(rate), "resume lead %d", plan.resumeLeadFrames);
         CHECK(plan.fadeOutFrames == todayFadeOutFrames(rate), "fade-out %d", plan.fadeOutFrames);
         CHECK(plan.fadeInFrames == todayFadeInFrames(rate), "fade-in %d", plan.fadeInFrames);
@@ -327,6 +329,7 @@ static void testArray() {
     int64_t out[USB_PLAN_FIELD_COUNT];
     usbTransportPlanToArray(plan, out);
     CHECK(out[USB_PLAN_FIELD_STATUS] == USB_PLAN_OK && out[USB_PLAN_FIELD_RING_URBS] == 128 && out[USB_PLAN_FIELD_NOMINAL_NUM] == 96000 &&
+              out[USB_PLAN_FIELD_START_LEAD_FRAMES] == 96000 * 128 / 1000 &&
               out[USB_PLAN_FIELD_RESUME_LEAD_FRAMES] == 96000 * 50 / 1000 && out[USB_PLAN_FIELD_FEEDBACK_START_GUARD_MS] == 500 &&
               out[USB_PLAN_FIELD_PREROLL_FRAMES] == 48000 && out[USB_PLAN_FIELD_PREROLL_BLOCKS] == 6 &&
               out[USB_PLAN_FIELD_QUEUE_HARD_FRAMES] == 96000 * 11900 / 1000 && out[USB_PLAN_FIELD_FEEDBACK_BYTES] == 4,

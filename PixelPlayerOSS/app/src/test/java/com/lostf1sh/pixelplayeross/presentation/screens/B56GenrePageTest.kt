@@ -49,7 +49,7 @@ class B56GenrePageTest {
     @get:Rule val compose = createComposeRule()
 
     private val calls = mutableListOf<String>()
-    private val out: File get() = File(System.getenv("B56_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B56-gates/renders").apply { mkdirs() }
+    private val out: File get() = File(System.getenv("B56_RENDERS") ?: "build/test-artifacts/B56/renders").apply { mkdirs() }
 
     private fun song(n: Int, title: String, artist: Long, album: Long) =
         Song.emptySong().copy(id = "$n", title = title, artist = "Artist $artist", artistId = artist, album = "Album $album", albumId = album)

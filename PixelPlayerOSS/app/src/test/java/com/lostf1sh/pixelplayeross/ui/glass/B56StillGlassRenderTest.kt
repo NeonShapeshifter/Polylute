@@ -27,7 +27,7 @@ class B56StillGlassRenderTest {
 
     private val phase = if (File("").absoluteFile.path.contains("B56-before")) "before" else "after"
     private val out: File
-        get() = File(System.getenv("B56_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B56-gates/renders").apply { mkdirs() }
+        get() = File(System.getenv("B56_RENDERS") ?: "build/test-artifacts/B56/renders").apply { mkdirs() }
 
     private fun render(name: String, cover: B41Renders.Cover, dark: Boolean) {
         val setup = B42Setup(cover, if (dark) DapBaseTheme.Graphite else DapBaseTheme.Light)

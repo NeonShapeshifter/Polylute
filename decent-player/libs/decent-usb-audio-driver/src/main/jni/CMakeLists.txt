@@ -13,13 +13,17 @@ add_library(decent_usb_audio SHARED
     seek-barrier.cpp
     usb-glitch.cpp
     usb-second-ring.cpp
+    usb-journal.cpp
     usb-cpu-watch.cpp
     usb-payload-validation.cpp
 )
 
+target_compile_definitions(decent_usb_audio PRIVATE $<$<CONFIG:Debug>:POLYLUTE_DEBUG_FAULTS=1>)
+
 find_library(log-lib log)
 target_link_libraries(decent_usb_audio
     ${log-lib}
+    z
 )
 
 # 16 KB page-size devices (B14-5, audit A-07). NDK r28+ already aligns the LOAD segments to 16 KB

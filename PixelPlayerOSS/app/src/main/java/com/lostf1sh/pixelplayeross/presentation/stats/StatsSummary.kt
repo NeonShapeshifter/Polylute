@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.stats
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,6 +58,7 @@ internal class StatsLook(
      * entry here shows its initials.
      */
     val artistImages: Map<String, String> = emptyMap(),
+    val locatedSongId: String? = null,
 )
 
 /**
@@ -213,6 +215,7 @@ internal fun RankingRows(kind: StatsList, report: StatsReport, look: StatsLook, 
 
 @Composable
 internal fun SongRankRow(rank: Int, row: SongRow, look: StatsLook) {
+    androidx.compose.foundation.layout.Box(Modifier.background(if (look.locatedSongId == row.item.song.id) Dap.panelRaised else androidx.compose.ui.graphics.Color.Transparent)) {
     RankRow(
         rank = rank,
         title = row.item.title,
@@ -222,6 +225,7 @@ internal fun SongRankRow(rank: Int, row: SongRow, look: StatsLook) {
         mode = look.mode,
         open = look.opener.song(row.item),
     ) { RowCover(row.item.song.albumArtUriString, row.item.title) }
+    }
 }
 
 @Composable

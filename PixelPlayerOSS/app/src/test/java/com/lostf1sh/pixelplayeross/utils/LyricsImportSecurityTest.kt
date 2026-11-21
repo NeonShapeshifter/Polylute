@@ -37,16 +37,17 @@ class LyricsImportSecurityTest {
     }
 
     @Test
-    fun validateImportedLyricsFile_rejectsUnsyncedLrcContent() {
+    fun validateImportedLyricsFile_acceptsUnsyncedLrcContent() {
         val result = LyricsImportSecurity.validateImportedLyricsFile(
             fileName = "track.lrc",
             mimeType = "text/plain",
             inputStream = "just plain text".byteInputStream()
         )
 
-        assertThat(result).isEqualTo(
-            LyricsImportValidationResult.Invalid(LyricsImportFailureReason.INVALID_LYRICS_CONTENT)
-        )
+        assertThat(result).isInstanceOf(LyricsImportValidationResult.Valid::class.java)
+        val valid = result as LyricsImportValidationResult.Valid
+        assertThat(valid.value.parsedLyrics.plain).containsExactly("just plain text")
+        assertThat(valid.value.parsedLyrics.synced.isNullOrEmpty()).isTrue()
     }
 
     @Test

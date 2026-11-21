@@ -1,5 +1,9 @@
 package com.lostf1sh.pixelplayeross.data.database
 
+import com.lostf1sh.pixelplayeross.data.worker.AlbumIdAllocator
+import com.lostf1sh.pixelplayeross.data.worker.albumProjection
+import com.lostf1sh.pixelplayeross.data.worker.withAlbumGrouping
+
 import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Insert
@@ -11,6 +15,7 @@ import androidx.sqlite.db.SimpleSQLiteQuery
 import com.lostf1sh.pixelplayeross.data.identity.ItemEvidence
 import com.lostf1sh.pixelplayeross.utils.AudioMeta
 import timber.log.Timber
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -388,6 +393,10 @@ interface MusicDao {
     @Query("SELECT id FROM songs")
     suspend fun getAllSongIds(): List<Long>
 
+    /** Cheap inventory of past file edits; no lyrics/artwork or tag files are loaded. */
+    @Query("SELECT id FROM songs WHERE source_type = 0 AND album_user_edited = 1")
+    suspend fun getEditedAlbumSongIds(): List<Long>
+
     @Query("SELECT id FROM songs WHERE source_type = 0")
     suspend fun getAllMediaStoreSongIds(): List<Long>
 
@@ -712,7 +721,33 @@ interface MusicDao {
         evidence: ItemEvidence,
         fileSize: Long,
         year: Int?,
+        albumArtist: String? = null,
+        preferAlbumArtist: Boolean = true,
+        artistDelimiters: List<String> = emptyList(),
+        wordDelimiters: List<String> = emptyList(),
+        albumArtwork: ((Long, List<SongEntity>) -> Pair<Boolean, String?>)? = null,
     ) {
+        val previous = getSongByLocatorOnce(songId) ?: error("Song disappeared during edit")
+        // null means the writer kept the old tag. An empty value is not a removal in the current writer.
+        val grouped = previous.copy(albumName = album,
+            albumArtist = albumArtist?.takeIf { it.isNotBlank() } ?: previous.albumArtist)
+            .withAlbumGrouping()
+        val albums = getAllAlbumsList(emptyList(), false, 0)
+        val targetId = AlbumIdAllocator(albums).idFor(grouped)
+        val owner = grouped.albumArtist ?: crossRefs.firstOrNull { it.isPrimary }
+            ?.let { ref -> (getAllArtistsListRaw() + artistsToEnsure).firstOrNull { it.id == ref.artistId }?.name }
+            ?: artist
+        val knownArtists = (getAllArtistsListRaw() + artistsToEnsure).toMutableList()
+        val ownerArtist = knownArtists.firstOrNull { it.name.equals(owner, ignoreCase = true) }
+            ?: ArtistEntity((knownArtists.maxOfOrNull { it.id } ?: 0L) + 1L, owner, 0, null, null)
+        insertArtistsIgnoreConflicts(artistsToEnsure + ownerArtist)
+        knownArtists += ownerArtist
+        val moved = grouped.copy(albumId = targetId, albumArtistId = ownerArtist.id, year = year ?: previous.year)
+        if (albums.none { it.id == targetId }) {
+            insertAlbumsIgnoreConflicts(listOf(albumProjection(listOf(moved), preferAlbumArtist,
+                knownArtists.associate { it.name to it.id }, artistDelimiters, wordDelimiters, previous.albumArtUriString)))
+        }
+        updateEditedAlbumGrouping(songId, targetId, moved.albumArtist, moved.albumArtistId, moved.albumGroupingKey, moved.isCompilation)
         updateSongMetadataAndArtistLinks(
             songId = songId,
             title = title,
@@ -731,7 +766,23 @@ interface MusicDao {
         }
         updateSongEvidenceColumns(songId, evidence.stableKey, fileSize)
         if (year != null) updateSongYear(songId, year)
+        listOf(previous.albumId, targetId).distinct().forEach { id ->
+            val songs = getSongsByAlbumId(id).first()
+            if (songs.isNotEmpty()) {
+                val recorded = albumArtwork?.invoke(id, songs)
+                val artwork = if (recorded?.first == true) recorded.second else
+                    albums.firstOrNull { it.id == id }?.albumArtUriString ?: songs.firstNotNullOfOrNull { it.albumArtUriString }
+                insertAlbums(listOf(albumProjection(songs, preferAlbumArtist,
+                    knownArtists.associate { it.name to it.id }, artistDelimiters, wordDelimiters, artwork)))
+            }
+        }
+        deleteOrphanedAlbums()
+        deleteOrphanedArtists()
+        refreshArtistTrackCounts()
     }
+
+    @Query("UPDATE songs SET album_id = :albumId, album_artist = :albumArtist, album_artist_id = :albumArtistId, album_grouping_key = :key, is_compilation = :compilation WHERE id = :songId")
+    suspend fun updateEditedAlbumGrouping(songId: Long, albumId: Long, albumArtist: String?, albumArtistId: Long, key: String, compilation: Boolean)
 
     /** B57 4.3: every album's total length from the songs already in the database: one grouped query, no file is read. */
     @Query("SELECT album_id AS albumId, SUM(duration) AS totalMs FROM songs WHERE source_type = 0 GROUP BY album_id")
@@ -1014,6 +1065,27 @@ interface MusicDao {
 
     @Query("SELECT " + SONG_LIST_PROJECTION + " FROM songs WHERE album_id = :albumId ORDER BY disc_number ASC, track_number ASC")
     fun getSongsByAlbumId(albumId: Long): Flow<List<SongEntity>>
+
+    /** Auto's own displayed order, reused unchanged to expand a play request. */
+    @Query("SELECT " + SONG_LIST_PROJECTION + """ FROM songs
+        LEFT JOIN (SELECT album_id, MAX(year) AS sort_year FROM songs GROUP BY album_id) auto_album
+            ON auto_album.album_id = songs.album_id
+        WHERE (:albumId IS NULL OR songs.album_id = :albumId)
+        AND (:artistId IS NULL OR
+            (:albumArtist = 1 AND songs.album_artist_id = :artistId) OR
+            (:albumArtist = 0 AND EXISTS (SELECT 1 FROM song_artist_cross_ref x WHERE x.song_id = songs.id AND x.artist_id = :artistId)))
+        AND (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
+        ORDER BY
+            CASE WHEN :artistId IS NOT NULL THEN auto_album.sort_year END DESC,
+            CASE WHEN :artistId IS NOT NULL THEN songs.album_name END COLLATE NOCASE ASC,
+            CASE WHEN :artistId IS NOT NULL THEN songs.album_id END ASC,
+            COALESCE(songs.disc_number, 1) ASC,
+            CASE WHEN songs.track_number > 0 THEN songs.track_number ELSE 2147483647 END ASC,
+            songs.title COLLATE NOCASE ASC, songs.id ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getAutoSourceSongsPage(albumId: Long?, artistId: Long?, albumArtist: Boolean,
+        allowedParentDirs: List<String>, applyDirectoryFilter: Boolean, limit: Int, offset: Int): List<SongEntity>
 
     @Query("SELECT " + SONG_LIST_PROJECTION + " FROM songs WHERE artist_id = :artistId ORDER BY title ASC")
     fun getSongsByArtistId(artistId: Long): Flow<List<SongEntity>>

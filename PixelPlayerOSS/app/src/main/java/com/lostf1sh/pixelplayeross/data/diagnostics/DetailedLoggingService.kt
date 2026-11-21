@@ -64,6 +64,7 @@ class DetailedLogging @Inject constructor(
     val state: StateFlow<DetailedLogState> = _state.asStateFlow()
 
     /** How a file becomes an address the share sheet can read: the app's file provider (a test puts its own). */
+    internal var journalReader: () -> String = { UsbIncidentJournal.read(context.filesDir) }
     internal var uriFor: (File) -> android.net.Uri = { FileProvider.getUriForFile(context, "${context.packageName}.provider", it) }
 
     private var samplerJob: Job? = null
@@ -128,13 +129,14 @@ class DetailedLogging @Inject constructor(
         if (!recorder.logFile.hasContent()) return@runCatching null
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(Date())
         val out = File(directory, SHARE_FILE)
-        out.writeText(
+        out.writeText(UsbIncidentJournal.attach(
             "POLYLUTE DETAILED LOG\nshared=$stamp\n" +
                 // a fact about the file, not about the switch: lines written while it was on are still in it when it is off (B40-fix1)
                 "includes song titles and file paths=${recorder.logFile.holdsTitlesAndPaths()}\n" +
                 "titles and paths switch now=${if (recorder.includesEverything) "on" else "off"}\n\n" +
                 recorder.logFile.readAll(),
-        )
+            journalReader(),
+        ))
         val uri = uriFor(out)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"

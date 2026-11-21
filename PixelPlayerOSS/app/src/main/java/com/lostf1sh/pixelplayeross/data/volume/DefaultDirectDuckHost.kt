@@ -6,6 +6,7 @@ import com.lostf1sh.pixelplayeross.data.service.player.DirectDuckHost
 import com.lostf1sh.pixelplayeross.data.service.player.DualPlayerEngine
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.runBlocking
 
 /** The app side of `DirectDuckController` (B14-3, audit A-05). */
 @Singleton
@@ -20,12 +21,14 @@ class DefaultDirectDuckHost @Inject constructor(
 
     override fun signalMode(): DirectSignalMode = engine.audioRouteState.value.signalMode
 
-    override fun hardwareVolume(): PristineModePolicy.HardwareVolume? = safetyVolume.get().pristineHardwareVolume()
+    // DirectDuckController calls the host from its application IO coroutine. A duck waits there
+    // for the same serial executor the listener uses to change the DAC's level.
+    override fun hardwareVolume(): PristineModePolicy.HardwareVolume? = runBlocking { safetyVolume.get().pristineHardwareVolume() }
 
     override fun ceilingStep(): Int? = safetyVolume.get().pristineCeilingStep()
 
     override fun setHardwareStepTemporarily(step: Int, ticket: Long, expectedStep: Int): TemporaryWrite =
-        safetyVolume.get().setHardwareStepTemporarily(step, ticket, expectedStep)
+        runBlocking { safetyVolume.get().setHardwareStepTemporarily(step, ticket, expectedStep) }
 
     override fun setDigitalDuckGain(gain: Float) = engine.setDirectDuckGain(gain)
 

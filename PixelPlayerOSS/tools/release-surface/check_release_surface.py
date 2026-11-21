@@ -86,14 +86,16 @@ RETIRED_PRODUCER = (
     "NativeAudioEngine", "native-audio-engine", "SET_FORCE_NATIVE_ENGINE", "NativeEnginePolicy",
 )
 
-def retired_producer_hits(path):
+DEBUG_NATIVE = ("B635_DEBUG_FAULT_INJECTION", "debug-rail", "debug-stuck", "debug-no-readings", "debug-plateau")
+
+def retired_producer_hits(path, candidates=RETIRED_PRODUCER):
     hits = []
     with zipfile.ZipFile(path) as archive:
         for info in archive.infolist():
             if not (is_inspected(info.filename) or info.filename.endswith(".so")):
                 continue
             data = archive.read(info)
-            for needle in RETIRED_PRODUCER:
+            for needle in candidates:
                 if needle.encode() in data or needle.encode("utf-16-le") in data:
                     hits.append((info.filename, needle))
     return hits
@@ -202,6 +204,10 @@ def main(argv):
     failed = False
     inspected_total = 0
     for path in args.files:
+        debug_native = retired_producer_hits(path, DEBUG_NATIVE)
+        for entry, needle in debug_native:
+            print(f"  FAIL {path}: debug fault trigger {needle} in {entry}")
+        failed = failed or bool(debug_native)
         retired = retired_producer_hits(path)
         for entry, needle in retired:
             print(f"  FAIL {path}: retired producer {needle} in {entry}")

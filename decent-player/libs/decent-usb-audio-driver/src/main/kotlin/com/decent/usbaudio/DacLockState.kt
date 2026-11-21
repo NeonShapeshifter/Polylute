@@ -4,7 +4,7 @@ package com.decent.usbaudio
  * B47-A5: what the native lock-up detector and its escalation say to the writer thread, one look.
  *
  * The native layer detects (the Melody's feedback railed beyond +-4.5 % for 1 500 ms, usb-glitch.h) and decides which step is next (one attempt per step per
- * episode, a 30 s cooldown between episodes); the platform work of a step is Kotlin's, because it goes through [UsbAudioDevice] and its level restore. [step]
+ * episode followed by slow reopen retries, a 30 s cooldown between episodes); the platform work of a step is Kotlin's, because it goes through [UsbAudioDevice] and its level restore. [step]
  * is what to do now: [STEP_NONE] almost always.
  */
 data class DacLockState(
@@ -18,7 +18,7 @@ data class DacLockState(
     val railPpm: Long,
     /** Completions that took longer than 20 ms during it. */
     val lateReaps: Long,
-    /** [STEP_NONE], [STEP_INTERFACE], [STEP_BUS_RESET], or [STEP_GAVE_UP] (already logged: nothing to do). */
+    /** [STEP_NONE], [STEP_INTERFACE], [STEP_BUS_RESET], or [STEP_REOPEN]. */
     val step: Int,
 ) {
     companion object {
@@ -29,7 +29,8 @@ data class DacLockState(
 
         /** Step 2: a bus reset and the claims again, the DAC's level restored by the rule of every open. */
         const val STEP_BUS_RESET = 2
-        const val STEP_GAVE_UP = 3
+        const val STEP_REOPEN = 3
+        const val STEP_GAVE_UP = 4 // retained for old diagnostics; the policy never stops retrying
 
         /** The native state array: `[locked, locks, railedMs, ppm, lateReaps, step]`. */
         fun of(raw: LongArray?): DacLockState {

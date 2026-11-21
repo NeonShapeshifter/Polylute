@@ -56,7 +56,7 @@ class B56AnimatedCoverRenderTest {
     @get:Rule val compose = createComposeRule()
 
     private val out: File
-        get() = File(System.getenv("B56_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B56-gates/renders").apply { mkdirs() }
+        get() = File(System.getenv("B56_RENDERS") ?: "build/test-artifacts/B56/renders").apply { mkdirs() }
 
     private fun pattern(colour: Int, box: Int): Bitmap = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888).also {
         val c = Canvas(it)

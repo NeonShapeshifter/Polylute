@@ -274,13 +274,20 @@ class ReadingNativeSources(unittest.TestCase):
         # nativeNoteDacRecovery, nativeSetDacRecoveryEnabled, nativeRequestDacRecovery, nativeGetDacRecoveryStats): 58 -> 65
         # B48-fix1: the feedback start guard's switch and its reading (nativeSetFeedbackStartGuardEnabled, nativeFeedbackStartGuardEnabled): 65 -> 67
         # B48-fix2: nativeNoteDataAltSet records the actual successful data SETINTERFACE: 67 -> 68
-        self.assertEqual(len(exports), 68)
+        # B63.5: stream generation and queue-timeout evidence: 68 -> 70.
+        # Recovery control, journal and startup configuration: 70 -> 71 -> 74 -> 75.
+        self.assertEqual(len(exports), 75)
         self.assertEqual(
             {owner: sum(e.cls == owner for e in exports) for owner in {e.cls for e in exports}},
-            {"com/decent/usbaudio/UsbAudioStream": 50, "com/decent/usbaudio/UsbTransportPlanner": 4,
+            {"com/decent/usbaudio/UsbAudioStream": 57, "com/decent/usbaudio/UsbTransportPlanner": 4,
              "androidx/media3/decoder/flac/FlacDecoderJni": 14},
         )
         self.assertIn(("com/decent/usbaudio/UsbAudioStream", "nativeGetSecondSummaries"), {(e.cls, e.method) for e in exports})
+        self.assertIn(("com/decent/usbaudio/UsbAudioStream", "nativeGetStreamSequence"), {(e.cls, e.method) for e in exports})
+        self.assertIn(("com/decent/usbaudio/UsbAudioStream", "nativeRecoveryControl"), {(e.cls, e.method) for e in exports})
+        for name in ("nativeConfigureUsbJournal", "nativeExportUsbJournal", "nativeUsbJournalPlatform", "nativeConfigureStartup"):
+            self.assertIn(("com/decent/usbaudio/UsbAudioStream", name), {(e.cls, e.method) for e in exports})
+        self.assertIn(("com/decent/usbaudio/UsbAudioStream", "nativeNoteQueueTimeout"), {(e.cls, e.method) for e in exports})
         self.assertIn(("com/decent/usbaudio/UsbTransportPlanner", "nativePlan"), {(e.cls, e.method) for e in exports})
 
 class ReadingADex(unittest.TestCase):

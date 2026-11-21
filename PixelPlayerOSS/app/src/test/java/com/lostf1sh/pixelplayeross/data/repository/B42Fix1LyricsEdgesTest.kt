@@ -29,7 +29,7 @@ import okhttp3.OkHttpClient
 import org.junit.jupiter.api.Test
 
 /**
- * B42-fix1, item 5: the two open faults of the outside review of B41-fix2 (`B41-fix2-revision-codex.md`, R1 and R2), whose three cases are here
+ * B42-fix1, item 5: the two lyrics edge cases, whose three cases are here
  * under the names the review gave them (ported from its `ReviewB41Fix2LyricsEdgesTest`), and what they need to be true.
  *
  *  - R1: nothing that fits this file, in a search where a strategy failed or was not examined, is not a permanent miss: after the cooldown it asks

@@ -62,7 +62,7 @@ class WaveformReduceBench {
             appendLine("ratio every-frame / strided: cold %.1f x, warm %.1f x".format(rows[0].second / rows[1].second, rows[0].third / rows[1].third))
         }
         println(table)
-        val out = File(System.getenv("B31_BENCH_OUT") ?: "../../../analysis/audit-2026-09-27/batches/B31-evidence/logs/waveform-reduce-host.txt")
+        val out = File(System.getenv("B31_BENCH_OUT") ?: "build/test-artifacts/B31/logs/waveform-reduce-host.txt")
         out.parentFile?.mkdirs()
         out.writeText(table)
     }

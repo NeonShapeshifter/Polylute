@@ -164,6 +164,7 @@ class SafetyOverrideGesture(
     private var firstPressAt = 0L
     private var lastEventAt = 0L
 
+    @Synchronized
     fun blockedVolumeUp(nowMs: Long): Boolean {
         val gap = nowMs - lastEventAt
         lastEventAt = nowMs
@@ -179,6 +180,7 @@ class SafetyOverrideGesture(
         return true
     }
 
+    @Synchronized
     fun reset() {
         count = 0
         firstPressAt = 0L

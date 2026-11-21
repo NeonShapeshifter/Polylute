@@ -963,14 +963,14 @@ class PlaylistViewModel @Inject constructor(
                     val m3uContent = m3uManager.generateM3u(playlist, songs)
                     val sanitizedName = sanitizeFileName(playlist.name)
                     shareFileName = "$sanitizedName.m3u"
-                    shareFile = File(context.cacheDir, shareFileName)
+                    shareFile = File(File(context.cacheDir, "shared_playlists").apply { mkdirs() }, shareFileName)
                     shareFile.writeText(m3uContent)
                     shareMimeType = "audio/mpegurl"
                     Timber.tag("PlaylistViewModel").d("Created M3U file: ${shareFile.absolutePath}, size: ${shareFile.length()} bytes")
                 } else {
                     val firstPlaylistName = sanitizeFileName(playlistsWithSongs.first().first.name)
                     val zipFileName = "Playlists_${firstPlaylistName}_and_${playlistsWithSongs.size - 1}_more.zip"
-                    shareFile = File(context.cacheDir, zipFileName)
+                    shareFile = File(File(context.cacheDir, "shared_playlists").apply { mkdirs() }, zipFileName)
                     val outputStream = FileOutputStream(shareFile)
 
                     java.util.zip.ZipOutputStream(outputStream).use { zipOut ->

@@ -130,6 +130,9 @@ class CheckNoiseMarkIsInTheRelease(unittest.TestCase):
         self.paths = [clean]
         self.assertEqual(check.missing_required(clean), [])
         self.assertEqual(check.main([clean]), 0)
+        injected = archive({**NOISE_MARK, "base/lib/arm64-v8a/libdecent_usb_audio.so": b"ELF B635_DEBUG_FAULT_INJECTION"})
+        self.paths.append(injected)
+        self.assertEqual(check.main([injected]), 1)
 
     def test_a_release_that_lost_the_row_or_the_native_call_fails(self):
         no_row = archive({"base/resources.pb": b"Polylute", "base/dex/classes.dex": b"nativeGetSecondSummaries nativeUsbResetForRebind"})

@@ -81,7 +81,7 @@ class B51AlbumArtworkRenderTest {
             val bitmap = B42Renders.screen(compose)
             assertThat(bitmap.width).isEqualTo(720)
             assertThat(bitmap.height).isEqualTo(1610)
-            val dir = File(System.getenv("B51_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B51-gates/png-after").apply { mkdirs() }
+            val dir = File(System.getenv("B51_RENDERS") ?: "build/test-artifacts/B51/png-after").apply { mkdirs() }
             File(dir, "album-cover.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             assertThat(uri).isNotNull()
             assertThat(image).isNotNull()

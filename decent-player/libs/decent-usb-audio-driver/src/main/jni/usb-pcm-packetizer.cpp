@@ -81,6 +81,7 @@ UsbTransportPolicy usbTransportDefaultPolicy() {
     policy.queueSoftMs = USB_TRANSPORT_QUEUE_SOFT_MS;
     policy.queueHardMs = USB_TRANSPORT_QUEUE_HARD_MS;
     policy.silenceLeadMs = USB_TRANSPORT_SILENCE_LEAD_MS;
+    policy.startLeadMs = USB_TRANSPORT_START_LEAD_MS;
     policy.resumeLeadMs = USB_TRANSPORT_RESUME_LEAD_MS;
     policy.feedbackStartGuardMs = USB_TRANSPORT_FEEDBACK_START_GUARD_MS;
     policy.pauseKeepaliveMs = USB_TRANSPORT_PAUSE_KEEPALIVE_MS;
@@ -106,7 +107,7 @@ static UsbTransportPlan unsupportedPlan(int reason) {
 
 static bool policyIsValid(const UsbTransportPolicy &policy) {
     return policy.ringUrbs > 0 && policy.queueSoftMs > 0 && policy.queueHardMs >= policy.queueSoftMs &&
-           policy.silenceLeadMs >= 0 && policy.resumeLeadMs >= 0 && policy.feedbackStartGuardMs >= 0 && policy.pauseKeepaliveMs >= 0 && policy.fadeOutMs >= 0 && policy.fadeInMs >= 0 && policy.prerollMs >= 0 &&
+           policy.startLeadMs >= 0 && policy.silenceLeadMs >= 0 && policy.resumeLeadMs >= 0 && policy.feedbackStartGuardMs >= 0 && policy.pauseKeepaliveMs >= 0 && policy.fadeOutMs >= 0 && policy.fadeInMs >= 0 && policy.prerollMs >= 0 &&
            policy.prerollBlockFrames > 0 && policy.feedbackCeilingPermille >= 0;
 }
 
@@ -191,6 +192,7 @@ UsbTransportPlan makeUsbTransportPlan(const UsbTransportFormat &format,
 
     plan.silenceLeadFrames = (int)usbFramesForMs(format.sampleRate, policy.silenceLeadMs);
     plan.silenceChunkFrames = format.sampleRate / 1000 + 1;
+    plan.startLeadFrames = (int)usbFramesForMs(format.sampleRate, policy.startLeadMs);
     plan.resumeLeadFrames = (int)usbFramesForMs(format.sampleRate, policy.resumeLeadMs);
     plan.fadeOutFrames = (int)usbFramesForMs(format.sampleRate, policy.fadeOutMs);
     plan.fadeInFrames = (int)usbFramesForMs(format.sampleRate, policy.fadeInMs);
@@ -252,6 +254,7 @@ void usbTransportPlanToArray(const UsbTransportPlan &plan, int64_t out[USB_PLAN_
     out[USB_PLAN_FIELD_RESUME_LEAD_FRAMES] = plan.resumeLeadFrames;
     out[USB_PLAN_FIELD_FEEDBACK_START_GUARD_MS] = plan.feedbackStartGuardMs;
     out[USB_PLAN_FIELD_PAUSE_KEEPALIVE_MS] = plan.pauseKeepaliveMs;
+    out[USB_PLAN_FIELD_START_LEAD_FRAMES] = plan.startLeadFrames;
 }
 
 void usbTransportPlanDescribe(const UsbTransportPlan &plan, char *out, int capacity) {
@@ -262,9 +265,9 @@ void usbTransportPlanDescribe(const UsbTransportPlan &plan, char *out, int capac
     snprintf(out, (size_t)capacity,
              "plan: interval=%d us (%d/s) nominal=%d/%d frames/interval %d B/frame maxPacket=%d B (%d frames) "
              "urb=%d pkt slot=%d B ring=%d low=%d queue=%lld/%lld frames silence=%d+%d frames resume=%d frames fade=%d/%d pre-roll=%lld frames in %d blocks "
-             "feedback=%d B startGuard=%d ms assumptions=0x%x",
+             "feedback=%d B startGuard=%d ms assumptions=0x%x startLead=%d frames",
              plan.serviceIntervalUs, plan.intervalsPerSecond, plan.nominalFramesNum, plan.nominalFramesDen, plan.bytesPerFrame,
              plan.maxPacketBytes, plan.maxFramesPerPacket, plan.packetsPerUrb, plan.urbSlotBytes, plan.ringUrbs, plan.lowRingUrbs,
              (long long)plan.queueSoftFrames, (long long)plan.queueHardFrames, plan.silenceLeadFrames, plan.silenceChunkFrames, plan.resumeLeadFrames, plan.fadeOutFrames,
-             plan.fadeInFrames, (long long)plan.prerollFrames, plan.prerollBlocks, plan.feedbackBytes, plan.feedbackStartGuardMs, plan.assumptions);
+             plan.fadeInFrames, (long long)plan.prerollFrames, plan.prerollBlocks, plan.feedbackBytes, plan.feedbackStartGuardMs, plan.assumptions, plan.startLeadFrames);
 }

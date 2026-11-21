@@ -971,7 +971,7 @@ static void expectAutoEarlyLetsGoSoonerAndKeepsFollowingATransient() {
     // frames above nominal per millisecond = (fpmf - nominal) x 8 microframes; the sum over the run is the surplus the packetizer was handed
     const double kMicroframesPerMs = 8.0;
     struct Case { const char *name; double nominal; double plateau; };
-    // The replayed plateaus of analysis/audio-investigation-2026-10-25/code-study/policy-window-results.jsonl
+    // The replayed feedback plateaus below
     const Case shakira = {"Shakira 44.1 kHz", 44100 / 8000.0, 5.55749512};
     const Case crimen = {"Crimen 48 kHz", 48000 / 8000.0, 6.04992676};
     const Case replayed[] = {shakira, crimen};

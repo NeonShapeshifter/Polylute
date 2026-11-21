@@ -83,7 +83,7 @@ open class LockScreenRenderTest {
     @Test fun `B44 lock transport puts repeat before shuffle`() {
         setLock()
         val bitmap = com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
-        val root = java.io.File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-evidence", System.getenv("B44_VARIANT") ?: "after")
+        val root = java.io.File("build/test-artifacts/B44", System.getenv("B44_VARIANT") ?: "after")
         root.mkdirs()
         java.io.File(root, "lock-transport-${palette.background.value}.png").outputStream().use {
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
@@ -104,7 +104,7 @@ open class LockScreenRenderTest {
         compose.onNodeWithText("04:40").assertIsDisplayed()
         compose.onNodeWithText("SNOWSKY Melody · USB Direct · 16 bits · 44,1 kHz").assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.lock_battery_percent, 33)).assertIsDisplayed()
-        compose.onNodeWithText(s(R.string.lock_screen_open_app)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(s(R.string.lock_screen_open_app)).assertIsDisplayed()
     }
 
     @Test
@@ -130,7 +130,7 @@ open class LockScreenRenderTest {
     @Test
     fun `the way-out button leaves`() {
         setLock()
-        compose.onNodeWithText(s(R.string.lock_screen_open_app)).performClick()
+        compose.onNodeWithContentDescription(s(R.string.lock_screen_open_app)).performClick()
         compose.waitForIdle()
         assertTrue(calls.list.toString(), calls.list.contains("dismiss"))
     }
@@ -153,7 +153,7 @@ open class LockScreenRenderTest {
         setLock(song = song(title = title))
         RenderChecks.assertInsideWindow(compose, "long title")
         RenderChecks.assertNoCutText(compose, "long title") { it == title || it.contains("USB Direct") }
-        compose.onNodeWithText(s(R.string.lock_screen_open_app)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(s(R.string.lock_screen_open_app)).assertIsDisplayed()
     }
 
     @Test

@@ -131,7 +131,7 @@ class ScreenOffOverrideBoundaryTest {
             .contains("screenOffGesture.reset()")
         assertThat(controller.substringAfter("if (safetyOverrideContextChanged(").substringBefore("lastProfileId = selected?.profileId"))
             .contains("screenOffGesture.reset()")
-        assertThat(controller.substringAfter("fun setRawLevel(requested: Int, origin: String = \"ui\") {").substringBefore("\n    }\n"))
+        assertThat(controller.substringAfter("private fun setRawLevelNow(").substringBefore("private fun sameOutput("))
             // B27-A3: the lowering that breaks the sequence is the one the DAC reported, not the one that was asked for.
             .contains("if (published < current.backend.rawLevel) screenOffGesture.reset()")
     }

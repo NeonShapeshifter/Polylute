@@ -193,9 +193,9 @@ class PurityWithDacTest {
         val dacWrites = mutableListOf<Int>()
         override fun gainContributors() = Triple(0.5f, null, 1f)
         override fun isDirectActive() = direct
-        override fun hardwareVolume() = step?.let { PristineModePolicy.HardwareVolume(it, 0, 200, 0.5f, true) }
+        override suspend fun hardwareVolume() = step?.let { PristineModePolicy.HardwareVolume(it, 0, 200, 0.5f, true) }
         override fun ceilingStep(): Int? = null
-        override fun setHardwareStep(step: Int): Boolean { dacWrites += step; this.step = step; return true }
+        override suspend fun setHardwareStep(step: Int): Boolean { dacWrites += step; this.step = step; return true }
         override suspend fun awaitContributorsApplied() = true
         override suspend fun lockState() = locked to lowered
         override suspend fun persist(locked: Boolean, loweredSteps: Int) { this.locked = locked; lowered = loweredSteps }

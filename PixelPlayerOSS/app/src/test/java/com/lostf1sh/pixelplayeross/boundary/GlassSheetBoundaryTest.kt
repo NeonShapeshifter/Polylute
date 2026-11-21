@@ -123,6 +123,7 @@ class GlassSheetBoundaryTest {
      * page, not wiring it, and half of that is worse than none (B42 rule 10).
      */
     private val leftOut = mapOf(
+        "presentation/components/ArtworkViewer.kt" to 1,                // B62.5: full-screen picture viewer; DS ground frames the complete artwork, like the cover cropper.
         "presentation/components/EditSongSheet.kt" to 2,               // the tag editor, and the cover cropper inside it (a tool over a picture)
         "presentation/components/EditMultipleSongsSheet.kt" to 1,      // the batch tag editor
         "presentation/components/EditAlbumSheet.kt" to 1,              // B57 1.3: the whole-album tag editor, a full-screen dialog like the two above

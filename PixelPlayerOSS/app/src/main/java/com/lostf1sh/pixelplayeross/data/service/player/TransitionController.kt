@@ -51,9 +51,16 @@ class TransitionController @Inject constructor(
     private var scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var transitionListener: Player.Listener? = null
     private var transitionSchedulerJob: Job? = null
+    private var swapScheduleJob: Job? = null
     private var currentObservedPlayer: Player? = null
 
     private val swapListener: (Player) -> Unit = { newPlayer ->
+        // The scheduler's settings collector holds its old player even with crossfade disabled.
+        // A paused replacement will not reschedule it, so cancel on every swap.
+        transitionSchedulerJob?.cancel()
+        transitionSchedulerJob = null
+        swapScheduleJob?.cancel()
+        swapScheduleJob = null
         Timber.tag("TransitionDebug").d("Controller detected player swap. Moving listener.")
         transitionListener?.let { listener ->
             currentObservedPlayer?.removeListener(listener)
@@ -63,7 +70,7 @@ class TransitionController @Inject constructor(
             if (newPlayer.isPlaying) {
                 val item = newPlayer.currentMediaItem
                 if (item != null) {
-                    scope.launch {
+                    swapScheduleJob = scope.launch {
                         delay(1_000L)
                         if (currentObservedPlayer === newPlayer &&
                             newPlayer.currentMediaItem?.mediaId == item.mediaId
@@ -397,6 +404,8 @@ class TransitionController @Inject constructor(
     fun release() {
         Timber.tag("TransitionDebug").d("Releasing controller.")
         transitionSchedulerJob?.cancel()
+        swapScheduleJob?.cancel()
+        swapScheduleJob = null
         engine.removePlayerSwapListener(swapListener)
         transitionListener?.let { currentObservedPlayer?.removeListener(it) }
         transitionListener = null

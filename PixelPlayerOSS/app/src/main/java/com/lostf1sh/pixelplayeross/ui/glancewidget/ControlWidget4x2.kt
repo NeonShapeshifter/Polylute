@@ -41,8 +41,9 @@ class ControlWidget4x2 : GlanceAppWidget() {
     override val stateDefinition = PlayerInfoStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val saved = loadWidgetSnapshot(context)
         provideContent {
-            val playerInfo = currentState<PlayerInfo>()
+            val playerInfo = widgetInfoForDisplay(currentState<PlayerInfo>(), saved)
             GlanceTheme {
                 ControlWidget4x2Content(playerInfo = playerInfo, context = context)
             }

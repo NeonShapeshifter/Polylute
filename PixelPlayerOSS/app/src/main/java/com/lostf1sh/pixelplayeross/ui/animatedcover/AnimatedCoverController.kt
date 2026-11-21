@@ -25,6 +25,9 @@ interface AnimatedCoverEngine {
     /** Play (true) or hold the frame it is on (false). The decoder stays. */
     fun setRunning(running: Boolean)
 
+    /** Viewer fits the complete artwork; cover surfaces crop. This never creates another decoder. */
+    fun setFit(fit: Boolean) {}
+
     /** Stops, releases the decoder, its threads and its surface. Safe to call twice. */
     fun release()
 }
@@ -99,6 +102,30 @@ class AnimatedCoverController(
     fun releaseView(token: Any) {
         viewClaims.remove(token)
         _viewOwner.value = viewClaims.lastOrNull()
+    }
+
+    // Active compositions own requests. Priority follows the surfaces: lock, full player, album.
+    // Releasing one request immediately restores the next, including when its cover is the same file.
+    private data class Request(val want: Want, val priority: Int, val inputs: String)
+    private val requests = LinkedHashMap<Any, Request>()
+    private val _surfaceOwner = MutableStateFlow<Any?>(null)
+    internal val surfaceOwner = _surfaceOwner.asStateFlow()
+
+    internal fun request(token: Any, want: Want, priority: Int, inputs: String) {
+        requests[token] = Request(want, priority, inputs)
+        reconcileRequests()
+    }
+
+    internal fun releaseRequest(token: Any) {
+        requests.remove(token)
+        reconcileRequests()
+    }
+
+    private fun reconcileRequests() {
+        val selected = requests.entries.filter { it.value.want.hold }.maxByOrNull { it.value.priority }
+        _surfaceOwner.value = selected?.key
+        val request = selected?.value ?: requests.values.maxByOrNull { it.priority }
+        update(request?.want ?: Want(null, 0, false, false, false), request?.inputs ?: "surface left")
     }
 
     private val failed = LinkedHashSet<String>()
@@ -218,6 +245,8 @@ class AnimatedCoverController(
 
     /** The owner leaves: the engine is released at once and nothing is made again. */
     fun release() {
+        requests.clear()
+        _surfaceOwner.value = null
         releaseCurrent("owner left")
     }
 

@@ -29,14 +29,15 @@ class RemoteRaiseGuardBoundaryTest {
 
     @Test
     fun `every volume write reaches the DAC with the origin that asked for it`() {
-        assertThat(controller).contains("setBackendRaw(audioManager, current.backend, raw, origin)")
+        assertThat(controller).contains("setBackendRaw(manager, current.backend, raw, origin)")
         // B27-A3: the same call, with the units worked out one line above it so the read-back can be compared with them.
         assertThat(controller).contains("val units = UsbHardwareVolumePolicy.unitsFor(raw, range)")
-        assertThat(controller).contains("usbDevice.writeHardwareVolume(units, origin)")
-        assertThat(controller).contains("setRawLevel(current.backend.rawLevel - 1, origin = \"key\")")
-        assertThat(controller).contains("setRawLevel(current.backend.rawLevel + 1, origin = \"key\")")
-        assertThat(controller).contains("setRawLevel(requested, origin = \"remote\")")
-        assertThat(controller).contains("setRawLevel(step, origin = \"pristine\")")
+        assertThat(controller).contains("usbDevice.writeHardwareVolume(units, origin, access)")
+        assertThat(controller).contains("stepVolumeKey(current, -1, ceiling)")
+        assertThat(controller).contains("stepVolumeKey(current, 1, ceiling)")
+        assertThat(controller).contains("enqueueUsbVolume(backend, target, \"key\", relative = target - backend.rawLevel)")
+        assertThat(controller).contains("enqueueUsbVolume(current.backend, requested, \"remote\",")
+        assertThat(controller).contains("setRawLevelNow(manager, current, step, \"pristine\")")
         assertThat(controller).contains("setBackendRaw(manager, backend, clamp, \"clamp\")")
     }
 }

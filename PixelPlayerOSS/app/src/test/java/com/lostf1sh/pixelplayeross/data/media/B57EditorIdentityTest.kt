@@ -192,7 +192,7 @@ class B57EditorIdentityTest {
         val itemsBefore = rig.items()
         val sizeBefore = file.length()
         val dao = spyk(rig.dao)
-        coEvery { dao.commitEditedSongMetadata(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws IllegalStateException("disk full")
+        coEvery { dao.commitEditedSongMetadata(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws IllegalStateException("disk full")
         val editor = SongMetadataEditor(rig.context, dao, rig.prefs, tagLibEnabled = false, rescanner = MediaRescanner { rig.store.reindex(it) })
 
         val result = edit(editor, 1, lyrics = longLyrics, cover = CoverArtUpdate(cover))

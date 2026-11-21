@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0-rc.2
+
+- **Android Auto.** Browse the local library by playlists, albums, artists and songs, and start playback from the car.
+- **Playback.** Improved queue restoration after a cold start, preserved the source of queued songs, and adjusted ReplayGain transitions.
+- **USB audio.** Improved recovery after interruptions and expanded the diagnostic record available from Mark noise now.
+- **Backups and tags.** Better handling of partial backup failures, safer file replacement when saving tags, and tighter checks on shared files and imported lyrics.
+- **Library and player.** Search within library tabs, jump back to the source of a track, open artwork at full size, and recover animated covers after a playback interruption.
+
 ## 1.4.0-rc.1
 
 - **DAC EQ on the Snowsky Melody.** Writing a curve to the Melody now works end to end: Polylute takes one of the DAC's user slots, writes your filters, saves them and reads them back to check. The filter editor is numbers only: tap a value to type it exactly (decimal keyboard, a +/− action for gain), hold an arrow to move faster, and press Done to send one write per finished edit. A curve the DAC cannot take safely is shown as refused before anything is sent.

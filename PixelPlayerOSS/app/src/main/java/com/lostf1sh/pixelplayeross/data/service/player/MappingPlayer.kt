@@ -78,15 +78,16 @@ class MappingPlayer(
 
     // ── Remote device volume (main thread, like every listener callback) ──────────────────
 
-    private val remoteListeners = mutableListOf<Player.Listener>()
+    private val remoteListeners = linkedSetOf<Player.Listener>()
+    private var detached = false
     private var remoteJob: Job? = null
     private var remote: RemoteVolumeState? = null
 
     override fun addListener(listener: Player.Listener) {
+        if (detached || !remoteListeners.add(listener)) return
         super.addListener(listener)
         val source = remoteVolume ?: return
         val scope = scope ?: return
-        remoteListeners += listener
         if (remoteJob == null) {
             remoteJob = scope.launch(Dispatchers.Main) { source.state.collect(::publishRemote) }
         }
@@ -99,6 +100,23 @@ class MappingPlayer(
             remoteJob?.cancel()
             remoteJob = null
         }
+    }
+
+    /** The session has moved on. Do not rely on every consumer removing its listener correctly. */
+    fun detach() {
+        if (detached) return
+        detached = true
+        remoteJob?.cancel()
+        remoteJob = null
+        remoteListeners.forEach { super.removeListener(it) }
+        remoteListeners.clear()
+        remote = null
+        (innerPlayer as? FadingPlayer)?.detach()
+    }
+
+    override fun release() {
+        detach()
+        super.release()
     }
 
     private fun publishRemote(next: RemoteVolumeState?) {

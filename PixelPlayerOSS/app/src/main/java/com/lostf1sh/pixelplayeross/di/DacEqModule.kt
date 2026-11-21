@@ -72,7 +72,7 @@ object DacEqModule {
         return DacEqController(
             attached = attached,
             directActive = directActive,
-            access = DacEqHidAccess(UsbFiioHidOpener(context), dispatcher),
+            access = DacEqHidAccess(UsbFiioHidOpener(context), dispatcher, usb.owner) { usb.openGeneration },
             clock = SystemClock::elapsedRealtime,
             log = { line -> Timber.tag("DAC_HID").i(line) },
             attachedNow = { AttachedFiioSelector.select(dacs.profiles.value, dacs.connected.value, usb.openedDevicePath) },

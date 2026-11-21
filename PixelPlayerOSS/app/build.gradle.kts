@@ -123,10 +123,10 @@ android {
         applicationId = "app.polylute"
         minSdk = 29
         targetSdk = 37
-        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.4.0-rc.1, code 8) and
+        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.4.0-rc.2, code 9) and
         // these are what is used when it holds none.
-        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 8
-        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.4.0-rc.1"
+        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 9
+        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.4.0-rc.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

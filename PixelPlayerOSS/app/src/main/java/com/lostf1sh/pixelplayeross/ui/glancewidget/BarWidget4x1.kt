@@ -40,8 +40,9 @@ class BarWidget4x1 : GlanceAppWidget() {
     override val stateDefinition = PlayerInfoStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val saved = loadWidgetSnapshot(context)
         provideContent {
-            val playerInfo = currentState<PlayerInfo>()
+            val playerInfo = widgetInfoForDisplay(currentState<PlayerInfo>(), saved)
             GlanceTheme {
                 BarWidget4x1Content(playerInfo = playerInfo, context = context)
             }

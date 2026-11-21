@@ -34,7 +34,10 @@ class B57Fix1ArtworkRoutingTest {
         assertThat(text("presentation/stats/StatsComponents.kt")).contains("ArtworkRequestSize.forCell(DapSizes.ThumbRow)")
         assertThat(text("presentation/screens/search/components/GenreCategoriesGrid.kt")).contains("ArtworkRequestSize.forCell(DapSizes.ThumbRow)")
         assertThat(text("presentation/screens/search/components/GenreCategoriesGrid.kt")).contains("ArtworkRequestSize.forColumns(2, DapSpacing.Gutter * 2 + 32.dp, 12.dp)")
-        assertThat(text("presentation/components/DailyMixSection.kt")).contains("ArtworkRequestSize.forCell(DapSizes.ThumbRow)")
+        // B64: Daily Mix uses the album's shared song row; that row sizes its image from the measured cell.
+        assertThat(text("presentation/components/DailyMixSection.kt")).contains("LibraryPlaybackAwareSongItem(")
+        assertThat(text("presentation/screens/LibraryPlaybackAwareSongItem.kt")).contains("EnhancedSongListItem(")
+        assertThat(text("presentation/components/subcomps/EnhancedSongListItem.kt")).contains("albumArtSize.roundToPx()")
     }
 
     @Test fun the_genre_tile_cover_is_what_the_tile_measures() {

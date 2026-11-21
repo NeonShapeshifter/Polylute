@@ -241,10 +241,10 @@ class B575AnimatedCoverByAlbumTest {
         assertThat(r.dir.listed).hasSize(2)
     }
 
-    // ── the log: one line per answer that took work, none for a cached one ───────────────────────────
+    // ── B63 log: one line per lookup, including the source of cached answers ───────────────────────────
 
     @Test
-    fun `an answer that took work says which folders were asked, what each said and the winner, once`() = runBlocking {
+    fun `every answer says which folders were asked and whether it came from cache`() = runBlocking {
         val r = albumOneRig()
         r.finder.find("$loose/Loose 1.flac", 7L)
         assertThat(r.lines).hasSize(1)
@@ -254,7 +254,8 @@ class B575AnimatedCoverByAlbumTest {
         assertThat(line).contains("$albumOne/cover.mp4")
         assertThat(line).contains("$albumOne (11 songs): cover found")
         repeat(5) { r.finder.find("$albumOne/$it.flac", 7L) }
-        assertThat(r.lines).hasSize(1)
+        assertThat(r.lines).hasSize(6)
+        assertThat(r.lines.last()).contains("source=cache")
     }
 
     @Test

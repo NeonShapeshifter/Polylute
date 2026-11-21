@@ -2,6 +2,8 @@
 
 package com.lostf1sh.pixelplayeross.presentation.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,7 +90,8 @@ fun LibraryFavoritesTab(
     onLocateCurrentSongVisibilityChanged: (Boolean) -> Unit = {},
     onRegisterLocateCurrentSongAction: ((() -> Unit)?) -> Unit = {},
     storageFilter: StorageFilter = StorageFilter.ALL,
-    hasCurrentSong: Boolean = false
+    hasCurrentSong: Boolean = false,
+    filtering: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val flinging = rememberFlingState(listState, listState.interactionSource)
@@ -102,6 +105,21 @@ fun LibraryFavoritesTab(
         }
     }
     val playbackStates = rememberLibraryPlaybackStates(playerViewModel)
+    val locateRequest by playerViewModel.libraryLocateRequest.collectAsStateWithLifecycle()
+    val locatedSongId by playerViewModel.locatedSongId.collectAsStateWithLifecycle()
+    val currentFiltering by androidx.compose.runtime.rememberUpdatedState(filtering)
+    val currentFavorites by androidx.compose.runtime.rememberUpdatedState(favoriteSongs)
+    LaunchedEffect(locateRequest?.token) {
+        val request = locateRequest?.takeIf { it.liked } ?: return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { !currentFiltering }.first { it }
+        androidx.compose.runtime.snapshotFlow { currentFavorites.itemCount }.first { it > 0 }
+        val index = playerViewModel.takeLibraryLocate(request)
+        if (index >= 0) kotlinx.coroutines.withTimeoutOrNull(1_500) {
+            androidx.compose.runtime.snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > index }
+        }
+        listState.scrollToItem(index.coerceAtLeast(0))
+        playerViewModel.completeLibraryLocate(request)
+    }
     var lastHandledFavoriteSortKey by remember { mutableStateOf(sortOption.storageKey) }
     var pendingFavoriteSortScrollReset by remember { mutableStateOf(false) }
     var favoriteSortSawRefreshLoading by remember { mutableStateOf(false) }
@@ -123,7 +141,7 @@ fun LibraryFavoritesTab(
         }
     }
 
-    LocateCurrentSongEffects(
+    if (!filtering) LocateCurrentSongEffects(
         listState = listState,
         currentSongId = currentSongId,
         itemCount = { favoriteSongs.itemCount },
@@ -156,7 +174,10 @@ fun LibraryFavoritesTab(
     val shouldShowInitialLoading = favoriteSongs.itemCount == 0 &&
         favoriteSongs.loadState.refresh is LoadState.Loading
 
-    if (shouldShowInitialLoading) {
+    val searchQuery = com.lostf1sh.pixelplayeross.presentation.components.LocalLibraryTabQueries.current[LibraryTabId.LIKED].orEmpty()
+    if (searchQuery.isNotBlank() && favoriteSongs.itemCount == 0 && favoriteSongs.loadState.refresh !is LoadState.Loading) {
+        com.lostf1sh.pixelplayeross.presentation.components.LibrarySearchNoResults(searchQuery)
+    } else if (shouldShowInitialLoading) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
@@ -227,6 +248,7 @@ fun LibraryFavoritesTab(
                                 LibraryPlaybackAwareSongItem(
                                     song = song,
                                     playback = playbackStates,
+                                    isLocated = locatedSongId == song.id,
                                     onMoreOptionsClick = { onMoreOptionsClick(song) },
                                     isSelected = selectedSongIds.contains(song.id),
                                     selectionIndex = if (isSelectionMode) getSelectionIndex(song.id) else null,
@@ -259,7 +281,7 @@ fun LibraryFavoritesTab(
                     else
                         bottomBarHeight + 16.dp
 
-                    ExpressiveScrollBar(
+                    if (!filtering) ExpressiveScrollBar(
                         contentEndMargin = 12.dp,
                         modifier = Modifier
                             .align(Alignment.CenterEnd)

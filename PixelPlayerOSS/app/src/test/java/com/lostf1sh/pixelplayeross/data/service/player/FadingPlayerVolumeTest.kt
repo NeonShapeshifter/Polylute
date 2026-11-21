@@ -65,7 +65,7 @@ class FadingPlayerVolumeTest {
     fun `a pause during the fade-in does not lower the next play's level`() {
         val player = FadingPlayer(inner, scope)
         player.play()
-        scope.advanceTimeBy(100) // part-way up the ramp
+        scope.advanceTimeBy(24) // part-way up the Android 72 ms ramp (B62)
         scope.runCurrent()
         assertThat(volume).isLessThan(0.8f)
         player.pause()

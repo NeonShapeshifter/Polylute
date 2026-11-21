@@ -43,7 +43,8 @@ internal fun FolderTabControls(
     showSourceSwitch: Boolean, source: FolderSource, onSourceChange: (FolderSource) -> Unit,
     query: String, onQueryChange: (String) -> Unit,
     volumeRoots: List<String> = emptyList(), selectedVolumeRoot: String = "", internalVolumeRoot: String = "",
-    onVolumeChange: (String) -> Unit = {}
+    onVolumeChange: (String) -> Unit = {},
+    showSearch: Boolean = true
 ) {
     val context=androidx.compose.ui.platform.LocalContext.current
     val descriptions=androidx.compose.runtime.remember(context,volumeRoots) { volumeRoots.associateWith { folderVolumeLabel(context,it,"") } }
@@ -69,7 +70,7 @@ internal fun FolderTabControls(
             stringResource(R.string.presentation_batch_d_storage_sd_card), source == FolderSource.SD_CARD
         ) { onSourceChange(if (it) FolderSource.SD_CARD else FolderSource.INTERNAL) }
         FolderSegments(stringResource(R.string.folders_tree), stringResource(R.string.presentation_batch_d_view_list), flatList, onFlatListChange)
-        OutlinedTextField(
+        if (showSearch) OutlinedTextField(
             value = query, onValueChange = onQueryChange,
             placeholder = { Text(stringResource(R.string.folders_search)) },
             singleLine = true, modifier = Modifier.fillMaxWidth().dapTextField()
@@ -79,16 +80,14 @@ internal fun FolderTabControls(
 
 @Composable
 private fun FolderSegments(first: String, second: String, selected: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().height(48.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(first, second).forEachIndexed { index, label ->
-            ToggleSegmentButton(
-                modifier = Modifier.weight(1f), active = selected == (index == 1),
-                activeColor = LocalDapAccent.current, inactiveColor = Dap.surfaceRaised,
-                activeContentColor = Dap.onFill, inactiveContentColor = Dap.secondaryText,
-                activeCornerRadius = DapRadius.Surface, onClick = { onChange(index == 1) }, text = label
-            )
-        }
-    }
+    // The DS segmented picker (Settings uses it): one quiet track, the chosen half filled. Not two big blocks.
+    DapSegmentedPicker(
+        options = listOf(false, true),
+        selected = selected,
+        onSelect = onChange,
+        label = { if (it) second else first },
+        fillWidth = true,
+    )
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)

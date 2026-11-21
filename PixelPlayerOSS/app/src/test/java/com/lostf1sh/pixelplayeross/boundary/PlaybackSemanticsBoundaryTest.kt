@@ -66,7 +66,7 @@ class PlaybackSemanticsBoundaryTest {
      */
     @Test
     fun `every player the session exposes is wrapped with the seek authority`() {
-        assertThat(service).contains("MediaSession.Builder(this, wrapFadingPlayer(engine.masterPlayer))")
+        assertThat(service).contains("MediaLibrarySession.Builder(this, wrapFadingPlayer(engine.masterPlayer), callback)")
         assertThat(service).contains("val wrappedPlayer = wrapFadingPlayer(player)")
         assertThat(service).contains("onPositionSeek = engine::notifyExternalSeekInitiated")
     }

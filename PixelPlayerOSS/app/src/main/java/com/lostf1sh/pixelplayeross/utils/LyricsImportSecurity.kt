@@ -121,7 +121,10 @@ object LyricsImportSecurity {
         }
 
         val parsed = LyricsUtils.parseLyrics(sanitized)
-        if (parsed.synced.isNullOrEmpty()) {
+        // A .lrc may contain static text, just like embedded plain lyrics. Metadata-only or
+        // unreadable content still has no lyric lines; timing is not a validity requirement.
+        val hasReadablePlain = parsed.plain.orEmpty().any { line -> line.any { it.isLetterOrDigit() } }
+        if (parsed.synced.isNullOrEmpty() && !hasReadablePlain) {
             return LyricsImportValidationResult.Invalid(LyricsImportFailureReason.INVALID_LYRICS_CONTENT)
         }
 
@@ -169,7 +172,9 @@ object LyricsImportSecurity {
 
         for (normalized in normalizationCandidates(decoded, format)) {
             val validation = validateImportedLrcContent(normalized)
-            if (validation is LyricsImportValidationResult.Valid) {
+            if (validation is LyricsImportValidationResult.Valid &&
+                (format == LyricsDocumentFormat.LRC || !validation.value.parsedLyrics.synced.isNullOrEmpty())
+            ) {
                 return validation
             }
         }

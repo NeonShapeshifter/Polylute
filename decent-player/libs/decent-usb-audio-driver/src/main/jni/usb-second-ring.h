@@ -28,11 +28,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define USB_SECOND_RING_CAPACITY 128
-#define USB_POLICY_EVENT_CAPACITY 64
+#define USB_SECOND_RING_CAPACITY 256
+#define USB_SECOND_RING_WINDOW_MS 128000
+#define USB_POLICY_EVENT_CAPACITY 8192
 
 /** One wall-clock second of the stream. */
 typedef struct {
+    int64_t stream;          /* native stream generation; seconds never mix generations */
+    int32_t rate;
     int64_t second;          /* monotonic ms / 1000 */
     int32_t readings;        /* feedback readings applied this second */
     int32_t refused;         /* readings beyond the plausible window, never applied */
@@ -74,7 +77,13 @@ enum UsbPolicyEventKind {
     USB_POLICY_RESUME = 8,        /* a resume */
     USB_POLICY_DAC_LOCKED = 9,    /* B47-A5 / B48-fix4: the rail or stuck watch fired; what says which */
     USB_POLICY_DAC_RECOVERY = 10, /* B47-A5: a recovery step ran (what = "step1 ok", "step2 failed", "gave-up", ...) */
-    USB_POLICY_EVENT_KIND_COUNT = 11,
+    USB_POLICY_QUEUE_TIMEOUT = 11,
+    USB_POLICY_OUTPUT_GAP = 12,
+    USB_POLICY_FEEDBACK_STATE = 13,
+    USB_POLICY_BACKOFF = 14,
+    USB_POLICY_REFERENCE = 15,
+    USB_POLICY_BEHAVIOR = 16,
+    USB_POLICY_EVENT_KIND_COUNT = 17,
 };
 
 typedef struct {
@@ -86,10 +95,17 @@ typedef struct {
     double fpmf;             /* the reading that began or ended it */
     double ppm;              /* ... its offset from nominal */
     double sentBefore, sentAfter;  /* what the packetizer was being given, and what it is given from now on */
+    uint32_t raw;
+    int32_t length, urbStatus, packetStatus;
+    int64_t delta, total, queueDepth, dryUs, burst;
     int32_t policy;          /* the UsbFeedbackPolicy in force */
 } UsbPolicyEvent;
 
 typedef struct {
+    int64_t stream;
+    int32_t rate;
+    int64_t sampleOverwrittenAtMs;
+    int64_t overwrittenAtMs; /* explicit evidence loss if even the expanded event ring wraps in-window */
     UsbSecondSample current;
     bool hasCurrent;
     UsbSecondSample ring[USB_SECOND_RING_CAPACITY];
@@ -101,7 +117,21 @@ typedef struct {
     int eventCount;
 } UsbSecondRing;
 
+/** A single frozen window; copying it never performs I/O or waits for a reader. */
+typedef struct {
+    int64_t atMs;
+    int samples, events;
+    int64_t sampleLostAtMs, eventLostAtMs;
+    UsbSecondSample sample[USB_SECOND_RING_CAPACITY + 1];
+    UsbPolicyEvent event[USB_POLICY_EVENT_CAPACITY];
+} UsbSecondFrozen;
+
+bool usbSecondRingFreeze(UsbSecondRing *r, int64_t nowMs, UsbSecondFrozen *out);
+
 void usbSecondRingInit(UsbSecondRing *r);
+void usbSecondRingStream(UsbSecondRing *r, int64_t nowMs, int64_t stream, int rate);
+int64_t usbSecondRingOverwrittenAt(UsbSecondRing *r);
+int64_t usbSecondRingSampleOverwrittenAt(UsbSecondRing *r);
 
 /** One applied feedback reading at [nowMs]. */
 void usbSecondRingFeedback(UsbSecondRing *r, int64_t nowMs, double fpmf, double nominalFpmf, bool deviating);
@@ -143,8 +173,8 @@ int usbSecondRingEvents(UsbSecondRing *r, int64_t nowMs, int64_t windowMs, UsbPo
 /**
  * One line per sample, `t-<seconds before now>s feedback n=... fpmf min=... max=... mean=... nominal=... deviating=... refused=... |
  * iso urbs=... packets=... errors=... short=... | fb held=... dropped urb=... packet=... length=... last=<urb>/<packet>/<length>
- * age=...ms | sent min=... max=... calls=... | wire frames=... packets=... applied=...`. Returns the bytes written (not counting
- * the terminator); a line that does not fit is left out whole.
+ * age=...ms | sent min=... max=... calls=... | wire frames=... packets=... applied=...`. Returns the required bytes (excluding the terminator), even when capacity is insufficient.
+ * A NULL output with zero capacity measures the exact size; the caller can grow and retry.
  */
 size_t usbSecondRingFormat(const UsbSecondSample *samples, int n, int64_t nowMs, char *out, size_t capacity);
 

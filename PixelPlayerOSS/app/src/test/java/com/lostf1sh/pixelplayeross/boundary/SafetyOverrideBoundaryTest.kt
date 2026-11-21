@@ -23,7 +23,7 @@ class SafetyOverrideBoundaryTest {
     private val policy = source("data/volume/SafetyOverridePolicy.kt")
     private val store = source("data/volume/SafetyOverrideStore.kt")
 
-    private val reconcile = controller.substringAfter("    fun reconcile(externalVolumeChange: Boolean = false) {")
+    private val reconcile = controller.substringAfter("    private fun reconcileBackend(")
         .substringBefore("    /** What the override did at one evaluation")
 
     @Test
@@ -44,7 +44,7 @@ class SafetyOverrideBoundaryTest {
 
     @Test
     fun `the DAC open guard keeps the level while an override stands for that DAC`() {
-        val guard = controller.substringAfter("private fun hardwareOpenTarget(").substringBefore("// USB control transfers are blocking")
+        val guard = controller.substringAfter("private fun hardwareOpenTarget(").substringBefore("private fun levelText(")
         assertThat(guard).contains("SafetyOverridePolicy.coversOpen(")
         assertThat(guard).contains("overrideSession")
         assertThat(guard).contains("currentUnits, saved, ceilingUnits.takeUnless { overrideStands }, firstUseUnits,")
@@ -74,13 +74,16 @@ class SafetyOverrideBoundaryTest {
         // ask first.
         val keys = controller.substringAfter("fun handleVolumeKey(event: KeyEvent): Boolean {").substringBefore("private fun announceHud")
         assertThat(keys.indexOf("refreshOverride()")).isAtLeast(0)
-        assertThat(keys.indexOf("refreshOverride()")).isLessThan(keys.indexOf("val current = _state.value\n        if (!current.backend.controllable) return false"))
+        assertThat(keys.indexOf("refreshOverride()")).isLessThan(keys.indexOf("val current = inputState()"))
         val remote = controller.substringAfter("override fun setLevel(level: Int) {").substringBefore("\n        }\n    }")
-        assertThat(remote.indexOf("refreshOverride()")).isLessThan(remote.indexOf("val current = _state.value"))
+        assertThat(remote.indexOf("refreshOverride()")).isLessThan(remote.indexOf("val current = inputState()"))
         val setRaw = controller.substringAfter("fun setRawLevel(requested: Int, origin: String = \"ui\") {").substringBefore("\n    }\n")
         assertThat(setRaw).contains("refreshOverride()")
         // Lowering is judged on the level just written, so lowering to the ceiling ends it at once.
-        assertThat(setRaw).contains("evaluateOverride(SystemClock.elapsedRealtime(), lowered, ceiling)")
+        val writer = controller.substringAfter("private fun setRawLevelNow(").substringBefore("private fun sameOutput(")
+        assertThat(writer).contains("evaluateOverride(SystemClock.elapsedRealtime(), lowered, ceiling)")
+        assertThat(controller.substringAfter("private fun inputState()").substringBefore("private fun enqueueUsbVolume("))
+            .contains("SafetyOverridePolicy.isDue(")
     }
 
     @Test

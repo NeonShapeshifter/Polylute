@@ -106,7 +106,7 @@ class B52DownloaderRenderTest {
         if(id.startsWith("G")) assertThat(bitmap.getPixel(1,160)).isEqualTo(android.graphics.Color.rgb(247,247,248))
         assertThat(bitmap.width).isEqualTo(720)
         assertThat(bitmap.height).isEqualTo(1610)
-        val dir = File(System.getenv("B52_RENDERS") ?: "/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B52-gates/png-after")
+        val dir = File(System.getenv("B52_RENDERS") ?: "build/test-artifacts/B52/png-after")
         dir.mkdirs(); File(dir,"$id.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
         bitmap.recycle()
     }

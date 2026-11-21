@@ -52,7 +52,7 @@ abstract class B55HomeRenderBase {
     private val now=Kit.at(2026,11,2,20)
     private val context get()=ApplicationProvider.getApplicationContext<android.content.Context>()
     private val lang get()=context.resources.configuration.locales[0].language
-    private val out get()=File(System.getenv("B55_RENDERS") ?: "/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B55-gates/png-after/home",lang)
+    private val out get()=File(System.getenv("B55_RENDERS") ?: "build/test-artifacts/B55/png-after/home",lang)
     private val songs=SyntheticHistory.songs(800).mapIndexed { index,s -> s.copy(title="Canción ${index+1}",
         artist="Artista ${index%16}",artists=listOf(ArtistRef((index%16).toLong(),"Artista ${index%16}",true)),dateAdded=index.toLong()) }
     private data class World(val mixes:HomeMixes,val listening:HomeListeningState,val artists:List<Artist>)
@@ -170,7 +170,14 @@ abstract class B55HomeRenderBase {
         shuffles[1].performClick()
         verify { player.playSongsShuffled(w.mixes.daily.map { it.song },context.getString(R.string.presentation_batch_g_daily_mix_queue_name),startAtZero=true,source=ListenSource(ListenSourceKind.HOME_MIX,"daily_mix")) }
         verify(exactly=0) { nav.navigate(Screen.AutoCollection.createRoute("daily_mix"),any<NavOptionsBuilder.()->Unit>()) }
-        compose.onNodeWithText(context.getString(R.string.presentation_batch_g_daily_mix_see_all,context.getString(R.string.collection_name_daily_mix))).performClick()
+        compose.onNodeWithText(context.getString(R.string.presentation_batch_g_daily_mix_see_all,context.getString(R.string.collection_name_daily_mix))).performScrollTo()
+        // B64: taller album rows put See all under the fixture's overlaid bottom navigation.
+        // Scroll beyond that overlay before injecting the real tap; performScrollTo only sees the viewport.
+        compose.onNodeWithTag("home-scroll").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.ScrollBy) {
+            it(0f, (DapHeights.Nav.value + 16f) * context.resources.displayMetrics.density)
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText(context.getString(R.string.presentation_batch_g_daily_mix_see_all,context.getString(R.string.collection_name_daily_mix))).assertIsDisplayed().performClick()
         verify { nav.navigate(Screen.AutoCollection.createRoute("daily_mix"),any<NavOptionsBuilder.()->Unit>()) }
         compose.onNodeWithTag("home-scroll").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.ScrollBy) { it(0f,100000f) }
         compose.onNodeWithText(context.getString(R.string.presentation_batch_g_stats_overview_title)).performClick()

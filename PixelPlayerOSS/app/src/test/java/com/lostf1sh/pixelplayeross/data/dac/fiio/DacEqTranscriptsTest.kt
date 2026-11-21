@@ -51,7 +51,7 @@ class DacEqTranscriptsTest {
     }
 
     private fun out(name: String, lines: List<String>) {
-        val dir = File(System.getenv("B31_TRANSCRIPTS_OUT") ?: "../../../analysis/audit-2026-09-27/batches/B31-evidence/fake-transcripts")
+        val dir = File(System.getenv("B31_TRANSCRIPTS_OUT") ?: "build/test-artifacts/B31/fake-transcripts")
         dir.mkdirs()
         File(dir, "$name.txt").writeText(lines.joinToString("\n") + "\n")
     }

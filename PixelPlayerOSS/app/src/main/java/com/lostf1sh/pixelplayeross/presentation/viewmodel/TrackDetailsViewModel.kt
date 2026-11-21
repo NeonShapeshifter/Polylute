@@ -91,15 +91,22 @@ internal fun resolveEqualizerState(
 /** Band count at which the graphic equalizer is the 15-band variant rather than the 10-band one. */
 internal const val GRAPHIC_15_BAND_COUNT = 15
 
-enum class ReplayGainState { NOT_REQUESTED, TRACK_APPLIED, ALBUM_APPLIED, REQUESTED_NOT_APPLIED }
+enum class ReplayGainState {
+    NOT_REQUESTED, TRACK_APPLIED, ALBUM_APPLIED, REQUESTED_NOT_APPLIED,
+    PENDING, WAITING_FOR_TRACK, UNITY_APPLIED,
+}
 
 internal fun resolveReplayGain(
     state: ReplayGainRuntimeState,
     route: AudioRouteState,
+    shownMediaId: String? = state.mediaId,
 ): ReplayGainState = when {
     !state.requested -> ReplayGainState.NOT_REQUESTED
-    !state.applied || route.actualBackend != AudioBackend.ANDROID_AUDIO ->
-        ReplayGainState.REQUESTED_NOT_APPLIED
+    shownMediaId != state.mediaId -> ReplayGainState.WAITING_FOR_TRACK
+    route.actualBackend != AudioBackend.ANDROID_AUDIO -> ReplayGainState.REQUESTED_NOT_APPLIED
+    state.pending -> ReplayGainState.PENDING
+    !state.applied -> ReplayGainState.REQUESTED_NOT_APPLIED
+    state.multiplier == 1f -> ReplayGainState.UNITY_APPLIED
     state.useAlbumGain -> ReplayGainState.ALBUM_APPLIED
     else -> ReplayGainState.TRACK_APPLIED
 }
@@ -385,7 +392,7 @@ class TrackDetailsViewModel @Inject constructor(
                     bandCount = settings.bandCount
                 )
                 _uiState.update {
-                    it.copy(equalizer = equalizer, replayGain = resolveReplayGain(replayGain, route))
+                    it.copy(equalizer = equalizer, replayGain = resolveReplayGain(replayGain, route, it.song?.id))
                 }
             }
         }
@@ -414,6 +421,11 @@ class TrackDetailsViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 song = song,
+                replayGain = resolveReplayGain(
+                    dualPlayerEngine.replayGainRuntimeState.value,
+                    dualPlayerEngine.audioRouteState.value,
+                    song.id,
+                ),
                 source = SourceDetails(
                     durationMs = reading?.durationMs ?: song.duration.takeIf { it > 0 }
                 ),

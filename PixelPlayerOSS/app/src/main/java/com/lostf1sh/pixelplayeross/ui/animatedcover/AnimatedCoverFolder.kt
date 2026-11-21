@@ -34,6 +34,8 @@ class AnimatedCoverFolder(
     override fun documentUriOf(file: File) = current().documentUriOf(file)
     override fun isUnreachable(dir: File) = current().isUnreachable(dir)
     override fun identity() = current().identity()
+    override fun cachesNegativeAnswers() = current().cachesNegativeAnswers()
+    override fun grantState() = current().grantState()
 
     companion object {
         /** The directory to read covers with from a place that has no injected one (the library scan's worker): the same answer, from the same stored folder. */
@@ -96,21 +98,27 @@ internal class TreeAnimatedCoverDirectory(
     }
 
     override fun stamp(dir: File): Long {
-        val id = documentIdOf(dir) ?: return 0L
+        val id = documentIdOf(dir) ?: return -1L
         return try {
             resolver.query(
                 DocumentsContract.buildDocumentUriUsingTree(tree, id),
                 arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null,
-            )?.use { if (it.moveToFirst()) it.getLong(0) else 0L } ?: 0L
+            )?.use { if (it.moveToFirst()) it.getLong(0) else -1L } ?: -1L
         } catch (e: Exception) {
-            0L
+            -1L
         }
     }
+
+    override fun cachesNegativeAnswers() = false
+
+    override fun grantState(): String = try {
+        if (resolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }) "held" else "missing"
+    } catch (e: Exception) { "unknown" }
 
     /** Outside the chosen folder: no document to ask for, so "nothing here" is final. (Inside it, a failed query is a failed read.) */
     override fun isUnreachable(dir: File): Boolean = documentIdOf(dir) == null
 
-    override fun identity(): String = "tree|$tree|$rootPath"
+    override fun identity(): String = "tree|$tree|$rootPath|grant=${grantState()}"
 
     private fun entryOf(file: File): Entry? = synchronized(listings) { listings[file.parent.orEmpty()]?.get(file.name) }
 

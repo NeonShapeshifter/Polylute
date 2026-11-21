@@ -62,7 +62,7 @@ open class B44Fix2HomePermissionTest {
         com.lostf1sh.pixelplayeross.ui.glass.B42Renders.settle(compose)
         val bitmap = compose.onNodeWithTag("home-fixture").captureToImage().asAndroidBitmap()
         val phase = if (File(".").canonicalPath.contains("B44-fix2-before")) "before" else "after"
-        val folder = File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-fix2-evidence/$phase").apply { mkdirs() }
+        val folder = File("build/test-artifacts/B44-fix2/$phase").apply { mkdirs() }
         File(folder, "home-permission-${bitmap.width}x${bitmap.height}.png").outputStream().use {
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }

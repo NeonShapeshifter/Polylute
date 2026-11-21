@@ -518,4 +518,14 @@
     <string name="folders_actions">Acciones de la carpeta</string>
     <string name="lyrics_folder_title">Guardar letras junto a tu música</string>
     <string name="lyrics_reason_existing_file">ya existe un archivo de letras</string>
+    <string name="playback_open_to_resume">Abre Polylute para reanudar la reproducción</string>
+    <string name="track_details_rg_pending">Solicitado · esperando la ganancia</string>
+    <string name="track_details_rg_waiting">Solicitado · esperando esta pista</string>
+    <string name="track_details_rg_unity">Sin corrección · ×1,0</string>
+    <string name="library_search_tab">Buscar en esta pestaña</string>
+    <string name="library_search_close">Cerrar búsqueda</string>
+    <string name="library_search_no_results">Sin resultados para «%1$s»</string>
+    <string name="metadata_edit_safe_write_failed">No se pudieron guardar los cambios; el archivo no se ha tocado.</string>
+    <string name="backup_error_image_items_failed">No se pudieron restaurar las imágenes de: %1$s.</string>
+    <string name="backup_error_export_module_limit">El módulo %1$s supera el límite de la copia de seguridad de %2$d MiB.</string>
 </resources>

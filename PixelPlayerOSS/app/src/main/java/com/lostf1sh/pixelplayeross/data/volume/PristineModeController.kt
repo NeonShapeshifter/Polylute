@@ -5,10 +5,10 @@ interface PristineModeHost {
     /** userDigitalGain, replayGainFactor, profileCompensation. */
     fun gainContributors(): Triple<Float, Float?, Float>
     fun isDirectActive(): Boolean
-    fun hardwareVolume(): PristineModePolicy.HardwareVolume?
+    suspend fun hardwareVolume(): PristineModePolicy.HardwareVolume?
     fun ceilingStep(): Int?
     /** Writes the DAC step and reads it back; true only if the DAC holds it. */
-    fun setHardwareStep(step: Int): Boolean
+    suspend fun setHardwareStep(step: Int): Boolean
     /** After the lock is released: true once the digital contributors are applied again. */
     suspend fun awaitContributorsApplied(): Boolean
     suspend fun lockState(): Pair<Boolean, Int>

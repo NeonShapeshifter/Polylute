@@ -129,6 +129,7 @@ class B44Android10Test {
         every { prefs.artistDelimitersFlow } returns flowOf(listOf(","))
         every { prefs.artistWordDelimitersFlow } returns flowOf(emptyList())
         every { prefs.extractArtistsFromTitleFlow } returns flowOf(false)
+        every { prefs.groupByAlbumArtistFlow } returns flowOf(true)
         return SongMetadataEditor(app, dao, prefs).editSongMetadata(44, "Edited on Android 10", "Artist", "Album",
             newGenre = "Rock", newLyrics = "Local words", newTrackNumber = 1, newDiscNumber = 1)
     }

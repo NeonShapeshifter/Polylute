@@ -23,6 +23,11 @@ data class Genre(
          * and "unknown" for the unknown genre. One definition for the repository that lists the genres and for whatever has to name one
          * (B32-Q2: Stats opens a genre by the name its rows carry).
          */
+        /** The page and source navigation accept the same id, name and historical spellings. */
+        fun resolve(genres: List<Genre>, idOrName: String): Genre? =
+            genres.find { it.id.equals(idOrName, ignoreCase = true) }
+                ?: genres.find { GenreNames.key(it.name) == GenreNames.key(idOrName) }
+
         fun idFor(name: String): String =
             if (name.isBlank() || name.equals(UNKNOWN_NAME, ignoreCase = true)) UNKNOWN_ID
             else name.lowercase().replace(" ", "_").replace("/", "_")

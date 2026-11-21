@@ -84,7 +84,7 @@ class B51FoldersRenderTest {
         val image = B42Renders.screen(compose)
         assertThat(image.width).isEqualTo(720)
         assertThat(image.height).isEqualTo(1610)
-        val dir = File(System.getenv("B51_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B51-gates/png-after").apply { mkdirs() }
+        val dir = File(System.getenv("B51_RENDERS") ?: "build/test-artifacts/B51/png-after").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
     @Test fun `compact tree starts at included music root and one volume hides source switch`() {

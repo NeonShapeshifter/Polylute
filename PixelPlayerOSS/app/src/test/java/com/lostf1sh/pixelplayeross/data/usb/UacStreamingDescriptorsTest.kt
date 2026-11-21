@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test
  * - Capture interfaces were mixed in, and alts were matched by alt number alone (AUD-058).
  *
  * Descriptors below are synthetic but follow UAC2 byte layouts; the DS2 set mirrors
- * `analysis/usb-dac-descriptors.md` (alt1 16-bit/200, alt3 32-bit/400).
+ * the captured descriptor fixture (alt1 16-bit/200, alt3 32-bit/400).
  */
 class UacStreamingDescriptorsTest {
 

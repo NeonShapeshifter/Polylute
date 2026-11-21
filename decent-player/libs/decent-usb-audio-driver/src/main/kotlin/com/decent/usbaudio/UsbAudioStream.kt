@@ -56,6 +56,65 @@ class UsbAudioStream(
     @Volatile
     private var nativeHandle: Long = 0L
     private val handleLock = Any()
+    private val recoveryFormat = intArrayOf(fd, interfaceId, endpointOut, endpointFeedback,
+        sampleRate, channelCount, bitDepth, maxPacketSize, endpointInterval, feedbackPacketBytes)
+    @Volatile private var recoveryControl = 0L
+    private var frameBase = 0L
+    private var recreatedForRecovery = false
+    private var journalConnection = 0L
+    private var journalGeneration = 0L
+    private var journalAlt = 0
+    private var journalLevel = Int.MIN_VALUE
+    private var journalVerified = 0
+
+    fun setFeedbackIdentity(key: String) = synchronized(handleLock) {
+        if (nativeHandle != 0L) nativeConfigureStartup(nativeHandle, key, 0)
+    }
+
+    /** A queued rate-change pre-roll contributes to the initial lead before the first write. */
+    fun creditStartupPreroll(frames: Int) = synchronized(handleLock) {
+        if (nativeHandle != 0L && frames > 0) nativeConfigureStartup(nativeHandle, null, frames)
+    }
+
+    private external fun nativeConfigureStartup(handle: Long, key: String?, prerollFrames: Int)
+
+    fun noteJournalFormat(connection: Long, generation: Long, alt: Int, level: Int, verified: Int) {
+        journalConnection = connection; journalGeneration = generation; journalAlt = alt
+        journalLevel = level; journalVerified = verified
+        UsbDiagnosticJournal.platform(connection, generation, recoveryFormat[4], recoveryFormat[6], alt,
+            level, verified, diagnosticSequence, reason = 6, channels = recoveryFormat[5])
+    }
+    @Volatile var transportReady = true
+        private set
+
+    /** Close every native transport resource before closing its device connection. Policy survives. */
+    fun closeForRecovery(): Boolean = synchronized(handleLock) {
+        if (nativeHandle == 0L) return@synchronized recoveryControl != 0L
+        recoveryControl = nativeRecoveryControl(nativeHandle, recoveryControl, 0, 0, 0)
+        if (recoveryControl == 0L) return@synchronized false
+        frameBase = nativeGetFramesWritten(nativeHandle)
+        nativeUsbAudioStop(nativeHandle)
+        nativeDrainUrbs(nativeHandle)
+        nativeUsbAudioDestroy(nativeHandle)
+        nativeHandle = 0L
+        transportReady = false
+        true
+    }
+
+    fun reopenForRecovery(fd: Int): Boolean = synchronized(handleLock) {
+        if (nativeHandle != 0L || recoveryControl == 0L) return@synchronized false
+        val c = recoveryFormat
+        nativeHandle = nativeUsbAudioCreate(fd, c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9])
+        if (nativeHandle == 0L) return@synchronized false
+        if (!nativeUsbAudioStart(nativeHandle, c[4])) {
+            nativeUsbAudioDestroy(nativeHandle); nativeHandle = 0L
+            return@synchronized false
+        }
+        nativeRecoveryControl(nativeHandle, recoveryControl, 1, 0, 0)
+        recreatedForRecovery = true
+        noteJournalFormat(journalConnection, journalGeneration, journalAlt, journalLevel, journalVerified)
+        true
+    }
 
     init {
         nativeHandle = nativeUsbAudioCreate(
@@ -82,11 +141,11 @@ class UsbAudioStream(
 
     /** True when the stream is actively running (after start, before stop/error). */
     val isAlive: Boolean
-        get() = synchronized(handleLock) { nativeHandle != 0L && nativeIsRunning(nativeHandle) }
+        get() = synchronized(handleLock) { recoveryControl != 0L || (nativeHandle != 0L && nativeIsRunning(nativeHandle)) }
 
     /** Total frames written to USB since last start(). Used for position tracking. */
     val framesWritten: Long
-        get() = synchronized(handleLock) { if (nativeHandle != 0L) nativeGetFramesWritten(nativeHandle) else 0L }
+        get() = synchronized(handleLock) { if (nativeHandle != 0L) nativeGetFramesWritten(nativeHandle) else frameBase }
 
     /**
      * URB ownership reading for the diagnostics: total, reusable, inFlight, discards requested /
@@ -173,7 +232,7 @@ class UsbAudioStream(
      * @param pcmBuffer Interleaved float PCM; length = frameCount * channelCount
      */
     fun write(pcmBuffer: FloatArray) {
-        if (nativeHandle == 0L) return
+        if (nativeHandle == 0L || !transportReady) return
         nativeUsbAudioWrite(nativeHandle, pcmBuffer)
     }
 
@@ -188,7 +247,7 @@ class UsbAudioStream(
      * @param encoding  Media3 PCM encoding constant (C.ENCODING_PCM_16BIT, etc.)
      */
     fun writeRaw(pcmBuffer: ByteArray, encoding: Int) {
-        if (nativeHandle == 0L) return
+        if (nativeHandle == 0L || !transportReady) return
         val inputBitDepth = when (encoding) {
             2 -> 16   // C.ENCODING_PCM_16BIT
             0x15 -> 24 // C.ENCODING_PCM_24BIT
@@ -213,6 +272,7 @@ class UsbAudioStream(
      */
     fun flush() {
         if (nativeHandle == 0L) return
+        frameBase = 0L
         nativeFlush(nativeHandle)
     }
 
@@ -220,6 +280,12 @@ class UsbAudioStream(
      * The writer is about to idle on purpose (a pause): the ring will run dry, and the first write
      * after the resume must not be counted as a starvation by `USB_GLITCH RING_EMPTY` (AUD-140).
      */
+    val diagnosticSequence: Long get() = if (nativeHandle == 0L) 0 else nativeGetStreamSequence(nativeHandle)
+
+    fun noteQueueTimeout(total: Long, depth: Int, burst: Long) {
+        if (nativeHandle != 0L) nativeNoteQueueTimeout(nativeHandle, total, depth, burst)
+    }
+
     fun markIdle() {
         if (nativeHandle == 0L) return
         nativeMarkIdle(nativeHandle)
@@ -269,7 +335,7 @@ class UsbAudioStream(
      * buffers is kept natively for [resumeAfterPause].
      */
     fun beginPauseFade(): Boolean {
-        if (nativeHandle == 0L) return false
+        if (nativeHandle == 0L || !transportReady) return false
         return nativePipelineBeginPause(nativeHandle)
     }
 
@@ -280,7 +346,7 @@ class UsbAudioStream(
      * Repeated seeks coalesce into one fade-out.
      */
     fun beginSeek(): Int {
-        if (nativeHandle == 0L) return SEEK_NONE
+        if (nativeHandle == 0L || !transportReady) return SEEK_NONE
         return nativePipelineBeginSeek(nativeHandle)
     }
 
@@ -296,7 +362,7 @@ class UsbAudioStream(
 
     /** Leaving a pause: replays what the pause kept, faded in, and arms the fade-in for what follows. */
     fun resumeAfterPause() {
-        if (nativeHandle == 0L) return
+        if (nativeHandle == 0L || !transportReady) return
         nativePipelineResume(nativeHandle)
     }
 
@@ -306,32 +372,61 @@ class UsbAudioStream(
      * some. False when the stream failed.
      */
     fun feedSilenceStep(): Boolean {
-        if (nativeHandle == 0L) return false
+        if (nativeHandle == 0L || !transportReady) return false
         return nativePipelineFeedSilence(nativeHandle)
     }
 
     // ── A locked-up DAC (B47-A5) ───────────────────────────────────────────────────────────────
     //
     // Writer thread only, like the barrier above. [dacLockState] is where the native policy looks: call it when the stream is playing and neither paused nor in a seek.
-    // A step is [dacRecoveryBegin] (the faded tail plays out, the ring is drained with the seek barrier's own drain), the interface work (UsbAudioDevice), then
-    // [dacRecoveryEnd] (the feedback tracking is armed as a start arms it, the frame count and the gesture state are kept) and [resumeAfterPause].
+    // A step drains queued music without changing its samples, restores the transport, then arms
+    // feedback again. Full reopen preserves the logical frame count and policy across native contexts.
+    // It creates no fade, silence feed or player pause.
 
     /** The detector's state and the step to take now. */
     fun dacLockState(): DacLockState {
-        if (nativeHandle == 0L) return DacLockState.NONE
+        if (nativeHandle == 0L) {
+            if (recoveryControl == 0L) return DacLockState.NONE
+            return DacLockState(true, 0, 0, 0, 0, nativeRecoveryControl(0, recoveryControl, 3, 0, 0).toInt())
+        }
+        if (recoveryControl != 0L && !nativeIsRunning(nativeHandle)) {
+            transportReady = false
+            nativeRecoveryControl(nativeHandle, recoveryControl, 5, 0, 0)
+        }
         return DacLockState.of(nativeDacLockState(nativeHandle))
     }
 
     /** The first half of a recovery step: the ring is empty and nothing is in flight when it returns true. */
-    fun dacRecoveryBegin(): Boolean = nativeHandle != 0L && nativeDacRecoveryBegin(nativeHandle)
+    fun dacRecoveryBegin(): Boolean {
+        if (nativeHandle == 0L) return recoveryControl != 0L
+        recoveryControl = nativeRecoveryControl(nativeHandle, recoveryControl, 0, 0, 0)
+        if (recoveryControl == 0L) return false
+        transportReady = false
+        nativeRecoveryControl(nativeHandle, recoveryControl, 5, 0, 0)
+        return nativeDacRecoveryBegin(nativeHandle)
+    }
 
     /** The second half: the stream is armed again. False when the stream is not running. */
-    fun dacRecoveryEnd(): Boolean = nativeHandle != 0L && nativeDacRecoveryEnd(nativeHandle)
+    fun dacRecoveryEnd(): Boolean {
+        if (nativeHandle == 0L) return false
+        val ready = if (recreatedForRecovery) {
+            recreatedForRecovery = false
+            nativeRecoveryControl(nativeHandle, recoveryControl, 6, 0, 0)
+            true
+        } else nativeDacRecoveryEnd(nativeHandle)
+        transportReady = ready
+        return ready
+    }
+
+    fun noteDacRecoverySuperseded(step: Int) {
+        nativeRecoveryControl(nativeHandle, recoveryControl, 7, step, 0)
+    }
 
     /** A step ended: [ran] false when its platform work failed. Logs `DAC_RECOVERY step=N result=ran|failed` and starts the verdict clock. */
     fun noteDacRecovery(step: Int, ran: Boolean, elapsedMs: Long) {
-        if (nativeHandle == 0L) return
-        nativeNoteDacRecovery(nativeHandle, step, if (ran) 0 else 1, elapsedMs)
+        if (!ran) {
+            nativeRecoveryControl(nativeHandle, recoveryControl, 4, step, elapsedMs)
+        } else if (nativeHandle != 0L) nativeNoteDacRecovery(nativeHandle, step, 0, elapsedMs)
     }
 
     /**
@@ -375,8 +470,12 @@ class UsbAudioStream(
             nativeHandle = 0L
             current
         }
-        if (handle == 0L) return
-        nativeUsbAudioDestroy(handle)
+        if (handle != 0L) nativeUsbAudioDestroy(handle)
+        if (recoveryControl != 0L) {
+            nativeRecoveryControl(0, recoveryControl, 2, 0, 0)
+            recoveryControl = 0L
+        }
+        frameBase = 0L
         Log.i(TAG, "UsbAudioStream released")
     }
 
@@ -387,6 +486,7 @@ class UsbAudioStream(
             sampleRate: Int, channelCount: Int, bitDepth: Int, maxPacketSize: Int,
             endpointInterval: Int, feedbackPacketBytes: Int
     ): Long
+    private external fun nativeRecoveryControl(handle: Long, control: Long, operation: Int, step: Int, elapsedMs: Long): Long
     private external fun nativeGetTransportPlan(handle: Long, prerollMs: Int): LongArray
 
     private external fun nativeUsbAudioSetAltSetting(handle: Long, altSetting: Int): Boolean
@@ -396,6 +496,8 @@ class UsbAudioStream(
     private external fun nativeUsbAudioWriteRaw(handle: Long, pcmBuffer: ByteArray, inputBitDepth: Int)
     private external fun nativeUsbAudioStop(handle: Long)
     private external fun nativeFlush(handle: Long)
+    private external fun nativeGetStreamSequence(handle: Long): Long
+    private external fun nativeNoteQueueTimeout(handle: Long, total: Long, depth: Int, burst: Long)
     private external fun nativeMarkIdle(handle: Long)
     private external fun nativeDrainEndOfStream(handle: Long): Boolean
     private external fun nativeDrainUrbs(handle: Long): Int
@@ -422,6 +524,11 @@ class UsbAudioStream(
 
     companion object {
         private const val TAG = "UsbAudioStream"
+
+        @JvmStatic external fun nativeConfigureUsbJournal(directory: String): Boolean
+        @JvmStatic external fun nativeExportUsbJournal(): String
+        @JvmStatic external fun nativeUsbJournalPlatform(facts: LongArray, reason: Int)
+
 
         /** [beginSeek]: nothing audible is on its way to the DAC. */
         const val SEEK_NONE = 0

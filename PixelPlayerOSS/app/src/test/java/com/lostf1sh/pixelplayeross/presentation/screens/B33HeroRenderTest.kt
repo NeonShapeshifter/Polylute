@@ -108,6 +108,7 @@ open class B33HeroRenderTest {
     )
 
     private val player = mockk<PlayerViewModel>(relaxed = true).also {
+        every { it.sheetState } returns MutableStateFlow(com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState.COLLAPSED)
         every { it.stablePlayerState } returns MutableStateFlow(StablePlayerState())
         every { it.favoriteSongIds } returns MutableStateFlow(emptySet())
         every { it.navBarCompactMode } returns MutableStateFlow(false)

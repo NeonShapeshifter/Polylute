@@ -96,6 +96,9 @@ int usbUrbSlotBytes(int maxPacketSize);
  * when the ring has played out; a resume that finds the pause's tail still queued adds only the missing part.
  */
 #define USB_TRANSPORT_RESUME_LEAD_MS 50
+// B63.5: first-audible-URB measurements at 50/100/128ms favour the full 128ms ring.
+// +78ms on a fresh stream; a 175ms stall still leaves ~47ms dry. User resumes keep 50ms.
+#define USB_TRANSPORT_START_LEAD_MS 128
 /**
  * Optional 500 ms guard from the first URB after a stream/recovery start; `follow` bypasses it.
  * B48-fix2 leaves it off by default: the train starts under the guard reached +4.4 % and then beyond +5 %.
@@ -154,6 +157,7 @@ struct UsbTransportPolicy {
     int queueSoftMs;
     int queueHardMs;
     int silenceLeadMs;
+    int startLeadMs;             // B63.5: new stream only
     int resumeLeadMs;            // B47-A3
     int feedbackStartGuardMs;    // B48-fix1: nominal-rate packets for this long after the interface (re)starts
     int pauseKeepaliveMs;        // B48-fix2
@@ -230,6 +234,7 @@ struct UsbTransportPlan {
     // Silence and transitions.
     int silenceLeadFrames;
     int silenceChunkFrames;
+    int startLeadFrames;             // B63.5: initial stream lead, distinct from user resume
     int resumeLeadFrames;            // B47-A3: the silence a resume submits first when the ring has played out; B48-fix1: and every start of audio
     int fadeOutFrames;
     int fadeInFrames;
@@ -307,6 +312,7 @@ enum UsbPlanField {
     USB_PLAN_FIELD_RESUME_LEAD_FRAMES,   // B47-A3, appended: the indexes before it did not move
     USB_PLAN_FIELD_FEEDBACK_START_GUARD_MS,   // B48-fix1, appended
     USB_PLAN_FIELD_PAUSE_KEEPALIVE_MS,   // B48-fix2, appended
+    USB_PLAN_FIELD_START_LEAD_FRAMES, // B63.5, appended; earlier indexes stay the same
     USB_PLAN_FIELD_COUNT,
 };
 

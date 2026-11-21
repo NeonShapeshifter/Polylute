@@ -242,7 +242,7 @@ class B47PlayerLineTest {
     private fun save(name: String) {
         val bitmap = com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
         val phase = if (File(".").canonicalPath.contains("B47-before-ui")) "before" else "after"
-        val folder = File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B47-evidence/$phase")
+        val folder = File("build/test-artifacts/B47/$phase")
         folder.mkdirs()
         File(folder, "$name-${bitmap.width}x${bitmap.height}.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }

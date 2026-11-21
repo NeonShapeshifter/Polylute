@@ -109,7 +109,7 @@ open class B43PlayerRedesignTest {
             com.lostf1sh.pixelplayeross.data.model.SyncedLine(0, "Sung line"), com.lostf1sh.pixelplayeross.data.model.SyncedLine(100000, "Next line"))))
     private fun save(name: String) {
         val bitmap = com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
-        val root = java.io.File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-fix1-evidence", "regressions").apply { mkdirs() }
+        val root = java.io.File("build/test-artifacts/B44-fix1", "regressions").apply { mkdirs() }
         java.io.File(root, "$name-${bitmap.width}x${bitmap.height}.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
     private var hostView: android.view.View? = null

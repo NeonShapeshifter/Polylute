@@ -3,6 +3,7 @@ package com.lostf1sh.pixelplayeross.presentation.lockscreen
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import com.google.common.truth.Truth.assertThat
@@ -77,8 +78,9 @@ class B58LockScreenLayoutTest {
         if (B58Renders.phase == "after") {
             assertThat(dp(clock.top)).isAtMost(20f)
             assertThat(dp(clock.height)).isAtMost(62f)
-            assertThat(dp(cover.width)).isAtLeast(260f)
-            assertThat(dp(cover.width)).isAtMost(280.5f)
+            // owner 11-20: nearly edge to edge, 8 dp each side (no system bars in this test, so 344 dp)
+            assertThat(dp(cover.width)).isAtLeast(330f)
+            assertThat(dp(cover.width)).isAtMost(344.5f)
             assertThat(cover.width).isWithin(1f).of(cover.height)
         }
         // whatever the size: the cover is square, centred, below the clock and wholly on the screen
@@ -92,8 +94,11 @@ class B58LockScreenLayoutTest {
     @Test fun nothing_else_is_pushed_out_the_title_the_controls_and_the_way_out_are_still_on_the_screen() {
         show(DapPalette.Graphite)
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
-        listOf(song.title, context.getString(R.string.lock_screen_open_app)).forEach { text ->
-            val b = compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot
+        listOf(
+            compose.onNodeWithText(song.title),
+            compose.onNodeWithContentDescription(context.getString(R.string.lock_screen_open_app)),
+        ).forEach { node ->
+            val b = node.fetchSemanticsNode().boundsInRoot
             assertThat(b.bottom).isAtMost(root.bottom)
             assertThat(b.top).isAtLeast(coverBounds().bottom)
         }

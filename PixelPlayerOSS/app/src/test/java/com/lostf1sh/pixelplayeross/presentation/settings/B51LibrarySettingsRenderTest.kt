@@ -43,7 +43,7 @@ class B51LibrarySettingsRenderTest {
             }
         }
         val image = B42Renders.screen(compose)
-        val dir = File(System.getenv("B51_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B51-gates/png-after").apply { mkdirs() }
+        val dir = File(System.getenv("B51_RENDERS") ?: "build/test-artifacts/B51/png-after").apply { mkdirs() }
         File(dir, "library-settings.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
         compose.onAllNodesWithText("Usar la carátula de la carpeta del álbum (cover.jpg…)")[1].performScrollTo().assertIsDisplayed()
         compose.onAllNodes(isToggleable())[0].assertIsOn().performClick()

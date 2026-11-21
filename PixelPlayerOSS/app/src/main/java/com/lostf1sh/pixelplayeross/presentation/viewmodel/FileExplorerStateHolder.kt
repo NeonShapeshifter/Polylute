@@ -118,9 +118,9 @@ class FileExplorerStateHolder(
     private val _selectedStorageIndex = MutableStateFlow(0)
     val selectedStorageIndex: StateFlow<Int> = _selectedStorageIndex.asStateFlow()
 
-    private val directoryChildrenCache = ConcurrentHashMap<String, List<RawDirectoryEntry>>()
-    private val prefetchedDirectoryKeys = ConcurrentHashMap.newKeySet<String>()
-    private val resolvedDirectoryKeys = ConcurrentHashMap.newKeySet<String>()
+    private val directoryChildrenCache = com.lostf1sh.pixelplayeross.utils.boundedMemoryMap<String, List<RawDirectoryEntry>>(256)
+    private val prefetchedDirectoryKeys = com.lostf1sh.pixelplayeross.utils.boundedMemorySet<String>(256)
+    private val resolvedDirectoryKeys = com.lostf1sh.pixelplayeross.utils.boundedMemorySet<String>(256)
 
     private val _currentPath = MutableStateFlow(visibleRoot)
     val currentPath: StateFlow<File> = _currentPath.asStateFlow()

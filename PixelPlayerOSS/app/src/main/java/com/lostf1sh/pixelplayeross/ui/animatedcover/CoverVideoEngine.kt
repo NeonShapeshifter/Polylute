@@ -63,6 +63,8 @@ internal class CoverVideoEngine(
     private var player: ExoPlayer? = CoverVideoPlayer.build(context, thread.looper)
     private var released = false
 
+    override fun setFit(fit: Boolean) { frame.setFit(fit) }
+
     override val view: View get() = frame
     override val firstFrame: StateFlow<Boolean> = first.asStateFlow()
 
@@ -140,6 +142,7 @@ internal class CoverVideoEngine(
     internal val playerForTest: ExoPlayer? get() = player
 
     internal companion object {
+
         const val NO_FRAME_TIMEOUT_MS = 4_000L
     }
 }
@@ -194,6 +197,11 @@ internal object CoverVideoPlayer {
 internal class CoverCropFrame(context: Context) : FrameLayout(context) {
     val texture = TextureView(context)
     private var aspect = 1f
+    private var fit = false
+
+    fun setFit(value: Boolean) {
+        if (fit != value) { fit = value; requestLayout() }
+    }
 
     init {
         clipChildren = true
@@ -212,20 +220,25 @@ internal class CoverCropFrame(context: Context) : FrameLayout(context) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val h = MeasureSpec.getSize(heightMeasureSpec)
         setMeasuredDimension(w, h)
-        val (cw, ch) = cropped(w, h, aspect)
+        val (cw, ch) = if (fit) fitted(w, h, aspect) else cropped(w, h, aspect)
         texture.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val w = r - l
         val h = b - t
-        val (cw, ch) = cropped(w, h, aspect)
+        val (cw, ch) = if (fit) fitted(w, h, aspect) else cropped(w, h, aspect)
         val left = (w - cw) / 2
         val top = (h - ch) / 2
         texture.layout(left, top, left + cw, top + ch)
     }
 
     internal companion object {
+        fun fitted(w: Int, h: Int, aspect: Float): Pair<Int, Int> {
+            if (w <= 0 || h <= 0 || aspect <= 0f) return 0 to 0
+            return if (aspect >= w.toFloat() / h) w to (w / aspect).roundToInt() else (h * aspect).roundToInt() to h
+        }
+
         /** The size a [aspect] (width over height) picture takes to cover a [w] x [h] box exactly, cropped at the middle. */
         fun cropped(w: Int, h: Int, aspect: Float): Pair<Int, Int> {
             if (w <= 0 || h <= 0) return 0 to 0

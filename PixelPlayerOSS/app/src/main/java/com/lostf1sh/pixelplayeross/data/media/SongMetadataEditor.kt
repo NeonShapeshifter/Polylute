@@ -68,6 +68,7 @@ private const val TAG = "SongMetadataEditor"
  */
 enum class MetadataEditError {
     FILE_NOT_FOUND,
+    SAFE_WRITE_UNAVAILABLE,
     NO_WRITE_PERMISSION,
     INVALID_INPUT,
     UNSUPPORTED_FORMAT,
@@ -248,6 +249,7 @@ class SongMetadataEditor(
     /** Off only on a host that cannot load TagLib's native library (JVM tests): the writer then falls back to JAudioTagger, as it does on the phone when TagLib declines a file. */
     private val tagLibEnabled: Boolean = true,
     private val rescanner: MediaRescanner = AndroidMediaRescanner(context),
+    private val replaceMetadataFile: (File, File) -> Unit = { source, target -> MetadataFileReplacement.replace(source, target) },
 ) {
 
     /** The tag writers, each with the formats it is responsible for. */
@@ -344,6 +346,7 @@ class SongMetadataEditor(
         evidence: ItemEvidence,
         fileSize: Long,
         year: Int?,
+        albumArtist: String?,
     ) {
         val existingArtists = musicDao.getAllArtistsListRaw()
         val existingByNormalizedName =
@@ -406,6 +409,7 @@ class SongMetadataEditor(
 
         // The `songs` row, the artist links and the item's evidence are one transaction (B57 1.1): a
         // write the library row does not know about is what made the next scan mint a new identity.
+        val previousAlbumId = musicDao.getSongByLocatorOnce(songId)?.albumId
         musicDao.commitEditedSongMetadata(
             songId = songId,
             title = title,
@@ -422,6 +426,16 @@ class SongMetadataEditor(
             evidence = evidence,
             fileSize = fileSize,
             year = year,
+            albumArtist = albumArtist,
+            preferAlbumArtist = userPreferencesRepository.groupByAlbumArtistFlow.first(),
+            artistDelimiters = artistDelimiters,
+            wordDelimiters = wordDelimiters,
+            albumArtwork = { id, songs ->
+                val recorded = (AlbumArtUtils.recordedAlbumCover(context, id)
+                    ?: previousAlbumId?.let { AlbumArtUtils.recordedAlbumCover(context, it) })
+                    ?.takeIf { songs.any { AlbumArtUtils.hasDiscCover(context, it.id) } }
+                (recorded != null) to recorded?.uri
+            },
         )
     }
 
@@ -674,6 +688,7 @@ class SongMetadataEditor(
                 title = newTitle,
                 artist = newArtist,
                 album = newAlbum,
+                albumArtist = newAlbumArtist,
                 genre = normalizedGenre,
                 trackNumber = newTrackNumber,
                 discNumber = newDiscNumber,
@@ -698,6 +713,9 @@ class SongMetadataEditor(
 
             Timber.tag(TAG).d("METADATA_EDIT: Successfully updated metadata for songId: $songId")
             SongMetadataEditResult(success = true, updatedAlbumArtUri = storedCoverArtUri, coverNote = report.coverNote)
+        } catch (e: SafeMetadataWriteUnavailable) {
+            SongMetadataEditResult(false, null, MetadataEditError.SAFE_WRITE_UNAVAILABLE,
+                context.getString(com.lostf1sh.pixelplayeross.R.string.metadata_edit_safe_write_failed))
         } catch (e: RecoverableSecurityException) {
             SongMetadataEditResult(
                 success = false,
@@ -784,6 +802,8 @@ class SongMetadataEditor(
                 "METADATA_EDIT: Restored ${tempFile.length()} edited bytes back to $originalPath"
             )
             true
+        } catch (e: SafeMetadataWriteUnavailable) {
+            throw e
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "METADATA_EDIT: Extension-swap pipeline failed for $originalPath")
             false
@@ -794,49 +814,9 @@ class SongMetadataEditor(
         }
     }
 
-    /**
-     * Replaces [target]'s content with [source]'s bytes as atomically as the filesystem allows:
-     * the bytes are first copied (and fsynced) to a sibling temp file in [target]'s directory,
-     * then renamed over [target], so an interruption (crash, ENOSPC) can never leave [target]
-     * truncated. [source] typically lives in cacheDir — a different filesystem than the music
-     * file — which is why a direct rename of [source] itself is not possible. Falls back to a
-     * direct truncate+overwrite only when the sibling cannot be created or renamed (e.g.
-     * scoped-storage grants that cover the file but not its directory).
-     */
+    /** No in-place fallback. Preparation, fsync and rename either succeed or leave the original intact. */
     private fun replaceFileContentSafely(source: File, target: File) {
-        val parent = target.parentFile
-        if (parent != null) {
-            val sibling = File(parent, "${target.name}.${System.nanoTime()}.tmp")
-            try {
-                source.inputStream().use { input ->
-                    FileOutputStream(sibling).use { out ->
-                        input.copyTo(out)
-                        out.fd.sync()
-                    }
-                }
-                if (sibling.renameTo(target)) {
-                    return
-                }
-                Timber.tag(TAG).w(
-                    "METADATA_EDIT: Atomic rename onto ${target.path} failed; falling back to in-place overwrite"
-                )
-            } catch (e: Exception) {
-                Timber.tag(TAG).w(
-                    e,
-                    "METADATA_EDIT: Sibling temp write for ${target.path} failed; falling back to in-place overwrite"
-                )
-            } finally {
-                if (sibling.exists() && !sibling.delete()) {
-                    Timber.tag(TAG).w("METADATA_EDIT: Could not delete temp file ${sibling.absolutePath}")
-                }
-            }
-        }
-        source.inputStream().use { input ->
-            FileOutputStream(target, false).use { out ->
-                input.copyTo(out)
-                out.fd.sync()
-            }
-        }
+        replaceMetadataFile(source, target)
     }
 
     private enum class DetectedContainer(val canonicalExtension: String) {

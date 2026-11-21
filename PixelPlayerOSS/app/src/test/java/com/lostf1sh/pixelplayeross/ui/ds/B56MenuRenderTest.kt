@@ -72,7 +72,7 @@ class B56MenuRenderTest {
     private enum class Scene { LIBRARY, DETAIL }
 
     private val out: File
-        get() = File(System.getenv("B56_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B56-gates/renders").apply { mkdirs() }
+        get() = File(System.getenv("B56_RENDERS") ?: "build/test-artifacts/B56/renders").apply { mkdirs() }
 
     @Composable
     private fun Items(scene: Scene, old: Boolean) {

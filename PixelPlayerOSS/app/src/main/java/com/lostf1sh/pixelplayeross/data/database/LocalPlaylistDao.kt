@@ -27,6 +27,17 @@ interface LocalPlaylistDao {
     @Query("SELECT COUNT(*) FROM playlists")
     suspend fun getPlaylistCount(): Int
 
+    @Query("SELECT * FROM playlists ORDER BY last_modified DESC, id ASC LIMIT :limit OFFSET :offset")
+    suspend fun getPlaylistsPage(limit: Int, offset: Int): List<PlaylistEntity>
+
+    @Query("""
+        SELECT COALESCE(
+            (SELECT s.id FROM songs s WHERE s.library_item_id = playlist_songs.library_item_id
+             AND playlist_songs.library_item_id <> '' LIMIT 1), CAST(playlist_songs.song_id AS INTEGER))
+        FROM playlist_songs WHERE playlist_id = :playlistId ORDER BY sort_order ASC LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getPlaylistLocatorsResolvedPage(playlistId: String, limit: Int, offset: Int): List<Long>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertPlaylist(entity: PlaylistEntity)
 

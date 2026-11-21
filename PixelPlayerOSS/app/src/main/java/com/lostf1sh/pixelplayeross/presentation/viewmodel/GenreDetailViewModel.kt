@@ -111,8 +111,7 @@ class GenreDetailViewModel @Inject constructor(
 
     /** A genre by its id, its name or any spelling of it: "hip-hop" from a Stats row opens the merged Hip Hop (B56-5). */
     private fun findGenre(genres: List<Genre>, idOrName: String): Genre? =
-        genres.find { it.id.equals(idOrName, ignoreCase = true) }
-            ?: genres.find { com.lostf1sh.pixelplayeross.data.model.GenreNames.key(it.name) == com.lostf1sh.pixelplayeross.data.model.GenreNames.key(idOrName) }
+        Genre.resolve(genres, idOrName)
 
     /** Plays of each song as the listening ledger counts them, by locator (the song's id); nothing when the ledger cannot be read. */
     private suspend fun playsBySong(): Map<String, Int> = try {

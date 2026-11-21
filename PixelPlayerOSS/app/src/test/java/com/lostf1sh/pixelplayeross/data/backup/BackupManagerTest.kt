@@ -133,7 +133,7 @@ class BackupManagerTest {
 
     @Test
     fun `inspectBackup skips oversized module preview validation`() = runTest {
-        val oversizedModule = BackupReader.MAX_MODULE_PAYLOAD_BYTES + 1L
+        val oversizedModule = BackupReader.maxModulePayloadBytes(BackupSection.PLAYBACK_HISTORY.key) + 1L
         val plan = restorePlan(
             selectedModules = setOf(BackupSection.PLAYBACK_HISTORY),
             moduleSizeBytes = oversizedModule

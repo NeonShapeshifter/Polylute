@@ -146,7 +146,7 @@ class DacRecoveryThreadTest {
         UsbStreamingThread(writer, initiallyPaused = paused, channelCount = 2, dacRecovery = host)
 
     @Test
-    fun `a step fades out like a pause, restarts the interface, re arms the stream and resumes`() {
+    fun `a recovery restarts the interface without a pause fade or artificial resume`() {
         val writer = RecoveryWriter(rampFrames)
         val host = Host(true, writer.events)
         val thread = thread(writer, host)
@@ -156,12 +156,10 @@ class DacRecoveryThreadTest {
             assertThat(waitFor { writer.events.contains("W0") }).isTrue()
             writer.nextStep.set(DacLockState.STEP_INTERFACE)   // the policy: the DAC is locked up, take step 1
             for (tag in 1..4) thread.enqueueRaw(raw(tag), encoding)
-            assertThat(waitFor { writer.events.contains("RESUME") }).isTrue()
-            assertThat(waitFor { writer.events.contains("IN2") || writer.events.contains("IN3") || writer.events.contains("IN4") || writer.events.any { it.startsWith("IN") } }).isTrue()
-
+            assertThat(waitFor { writer.events.contains("NOTE1:true") }).isTrue()
+            assertThat(waitFor { writer.events.contains("W4") }).isTrue()
             val e = writer.events.toList()
-            // the order of one step: the pause's fade (the continuation ramped, the rest of its block kept), the announced idle, the drain, the platform's work, the re-arm, the report, the resume
-            val order = listOf("PAUSEFADE", "IDLE", "BEGIN", "HOST1", "END", "NOTE1:true", "RESUME")
+            val order = listOf("BEGIN", "HOST1", "END", "NOTE1:true")
             var at = -1
             for (event in order) {
                 val next = e.indexOf(event)
@@ -169,8 +167,8 @@ class DacRecoveryThreadTest {
                 at = next
             }
             assertThat(e.count { it == "HOST1" }).isEqualTo(1)
-            // the buffer after the resume fades in (the stream's resume owes it): the thread did not write it as it was
-            assertThat(e.subList(e.indexOf("RESUME"), e.size).any { it.startsWith("IN") }).isTrue()
+            assertThat(e).containsNoneOf("PAUSEFADE", "IDLE", "RESUME")
+            assertThat(e.none { it.startsWith("OUT") || it.startsWith("IN") }).isTrue()
         } finally {
             thread.stop()
         }
@@ -182,7 +180,7 @@ class DacRecoveryThreadTest {
     }
 
     @Test
-    fun `a step the platform could not do is reported as failed and the stream is armed again all the same`() {
+    fun `a failed platform step is reported without rearming an unverified transport`() {
         val writer = RecoveryWriter(rampFrames)
         val host = Host(false, writer.events)
         val thread = thread(writer, host)
@@ -196,7 +194,7 @@ class DacRecoveryThreadTest {
             val e = writer.events.toList()
             assertThat(host.steps).containsExactly(2)
             // the stream is never left half restarted: the drain was followed by the re-arm whatever the platform said
-            assertThat(e.indexOf("END")).isGreaterThan(e.indexOf("HOST2"))
+            assertThat(e).doesNotContain("END")
             assertThat(e.indexOf("BEGIN")).isLessThan(e.indexOf("HOST2"))
         } finally {
             thread.stop()

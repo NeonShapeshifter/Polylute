@@ -1,4 +1,5 @@
 #include "usb-second-ring.h"
+#include "usb-journal.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -27,17 +28,57 @@ static void advance(UsbSecondRing *r, int64_t nowMs) {
         r->current.ageMs = r->lastValidMs > 0 ? (r->current.second + 1) * 1000 - r->lastValidMs : -1;
         if (r->current.ageMs < 0 && r->lastValidMs > 0) r->current.ageMs = 0;
         pthread_mutex_lock(&gSecondRingLock);
+        if (r->count == USB_SECOND_RING_CAPACITY) r->sampleOverwrittenAtMs = r->ring[r->head].second * 1000;
         r->ring[r->head] = r->current;
         r->head = (r->head + 1) % USB_SECOND_RING_CAPACITY;
         if (r->count < USB_SECOND_RING_CAPACITY) r->count++;
         pthread_mutex_unlock(&gSecondRingLock);
+        usbJournalSecond(&r->current, nowMs);
     }
     clearSample(&r->current, second, r->hasCurrent ? r->current.nominalFpmf : 0.0);
+    r->current.stream = r->stream;
+    r->current.rate = r->rate;
     r->hasCurrent = true;
 }
 
 void usbSecondRingInit(UsbSecondRing *r) {
     memset(r, 0, sizeof(*r));
+}
+
+// A format switch can happen within the same wall second. Close the old sample first.
+void usbSecondRingStream(UsbSecondRing *r, int64_t nowMs, int64_t stream, int rate) {
+    if (r->stream == stream) return;
+    advance(r, nowMs);
+    if (r->hasCurrent && (r->current.readings || r->current.isoUrbs || r->current.sentCalls ||
+                         r->current.wirePackets || r->current.dropUrb || r->current.dropPacket || r->current.dropLength)) {
+        r->current.ageMs = r->lastValidMs > 0 ? nowMs - r->lastValidMs : -1;
+        pthread_mutex_lock(&gSecondRingLock);
+        if (r->count == USB_SECOND_RING_CAPACITY) r->sampleOverwrittenAtMs = r->ring[r->head].second * 1000;
+        r->ring[r->head] = r->current;
+        r->head = (r->head + 1) % USB_SECOND_RING_CAPACITY;
+        if (r->count < USB_SECOND_RING_CAPACITY) r->count++;
+        pthread_mutex_unlock(&gSecondRingLock);
+        usbJournalSecond(&r->current, nowMs);
+    }
+    r->stream = stream;
+    r->rate = rate;
+    r->lastValidMs = 0;
+    r->hasCurrent = false;
+    advance(r, nowMs);
+}
+
+int64_t usbSecondRingOverwrittenAt(UsbSecondRing *r) {
+    pthread_mutex_lock(&gSecondRingLock);
+    const int64_t at = r->overwrittenAtMs;
+    pthread_mutex_unlock(&gSecondRingLock);
+    return at;
+}
+
+int64_t usbSecondRingSampleOverwrittenAt(UsbSecondRing *r) {
+    pthread_mutex_lock(&gSecondRingLock);
+    const int64_t at = r->sampleOverwrittenAtMs;
+    pthread_mutex_unlock(&gSecondRingLock);
+    return at;
 }
 
 void usbSecondRingFeedback(UsbSecondRing *r, int64_t nowMs, double fpmf, double nominalFpmf, bool deviating) {
@@ -106,10 +147,35 @@ void usbSecondRingIso(UsbSecondRing *r, int64_t nowMs, int packets, int packetEr
 
 void usbSecondRingPolicyEvent(UsbSecondRing *r, const UsbPolicyEvent *event) {
     pthread_mutex_lock(&gSecondRingLock);
+    if (r->eventCount == USB_POLICY_EVENT_CAPACITY) r->overwrittenAtMs = r->events[r->eventHead].atMs;
     r->events[r->eventHead] = *event;
     r->eventHead = (r->eventHead + 1) % USB_POLICY_EVENT_CAPACITY;
     if (r->eventCount < USB_POLICY_EVENT_CAPACITY) r->eventCount++;
     pthread_mutex_unlock(&gSecondRingLock);
+    usbJournalEvent(r, event);
+}
+
+bool usbSecondRingFreeze(UsbSecondRing *r, int64_t nowMs, UsbSecondFrozen *out) {
+    if (pthread_mutex_trylock(&gSecondRingLock) != 0) return false;
+    out->atMs = nowMs; out->samples = out->events = 0;
+    out->eventLostAtMs = r->overwrittenAtMs; out->sampleLostAtMs = r->sampleOverwrittenAtMs;
+    const int64_t first = nowMs - USB_SECOND_RING_WINDOW_MS;
+    for (int i = 0; i < r->count; ++i) {
+        const UsbSecondSample &s = r->ring[(r->head - r->count + i + USB_SECOND_RING_CAPACITY) % USB_SECOND_RING_CAPACITY];
+        if ((s.second + 1) * 1000 > first && s.second * 1000 <= nowMs) out->sample[out->samples++] = s;
+    }
+    // Faults are announced on the recording thread: its current partial second is stable here.
+    if (r->hasCurrent) {
+        UsbSecondSample s = r->current;
+        s.ageMs = r->lastValidMs > 0 ? nowMs - r->lastValidMs : -1;
+        out->sample[out->samples++] = s;
+    }
+    for (int i = 0; i < r->eventCount; ++i) {
+        const UsbPolicyEvent &e = r->events[(r->eventHead - r->eventCount + i + USB_POLICY_EVENT_CAPACITY) % USB_POLICY_EVENT_CAPACITY];
+        if (e.atMs >= first && e.atMs <= nowMs) out->event[out->events++] = e;
+    }
+    pthread_mutex_unlock(&gSecondRingLock);
+    return true;
 }
 
 int usbSecondRingLast(UsbSecondRing *r, int64_t nowMs, int64_t windowMs, UsbSecondSample *out, int max) {
@@ -140,27 +206,22 @@ int usbSecondRingEvents(UsbSecondRing *r, int64_t nowMs, int64_t windowMs, UsbPo
 }
 
 size_t usbSecondRingFormat(const UsbSecondSample *samples, int n, int64_t nowMs, char *out, size_t capacity) {
-    if (capacity == 0) return 0;
     size_t used = 0;
-    out[0] = '\0';
+    if (capacity) out[0] = '\0';
     const int64_t nowSecond = nowMs / 1000;
-    for (int i = 0; i < n && used + 1 < capacity; i++) {
+    for (int i = 0; i < n; i++) {
         const UsbSecondSample *s = &samples[i];
         const double mean = s->readings > 0 ? s->fpmfSum / s->readings : 0.0;
         const double applied = s->wirePackets > 0 ? (double)s->wireFrames / (double)s->wirePackets : 0.0;
         const int wrote = snprintf(
-            out + used, capacity - used,
+            used < capacity ? out + used : NULL, used < capacity ? capacity - used : 0,
             "t-%llds feedback n=%d fpmf min=%.5f max=%.5f mean=%.5f nominal=%.5f deviating=%d refused=%d | iso urbs=%d packets=%d errors=%d short=%d"
-            " | fb held=%d dropped urb=%d packet=%d length=%d last=%d/%d/%d age=%lldms | sent min=%.5f max=%.5f calls=%d | wire frames=%lld packets=%lld applied=%.5f\n",
+            " | fb held=%d dropped urb=%d packet=%d length=%d last=%d/%d/%d age=%lldms | sent min=%.5f max=%.5f calls=%d | wire frames=%lld packets=%lld applied=%.5f stream=%lld rate=%d\n",
             (long long)(nowSecond - s->second), s->readings, s->fpmfMin, s->fpmfMax, mean, s->nominalFpmf, s->deviating, s->refused,
             s->isoUrbs, s->isoPackets, s->isoPacketErrors, s->isoShortPackets,
             s->held, s->dropUrb, s->dropPacket, s->dropLength, s->lastUrbStatus, s->lastPacketStatus, s->lastLength, (long long)s->ageMs,
-            s->sentMin, s->sentMax, s->sentCalls, (long long)s->wireFrames, (long long)s->wirePackets, applied);
+            s->sentMin, s->sentMax, s->sentCalls, (long long)s->wireFrames, (long long)s->wirePackets, applied, (long long)s->stream, s->rate);
         if (wrote < 0) break;
-        if ((size_t)wrote >= capacity - used) {  // truncated: say so rather than cut a line in half
-            used = capacity - 1;
-            break;
-        }
         used += (size_t)wrote;
     }
     return used;
@@ -179,32 +240,39 @@ static const char *eventKindName(int kind) {
         case USB_POLICY_RESUME: return "resume";
         case USB_POLICY_DAC_LOCKED: return "dac-locked";
         case USB_POLICY_DAC_RECOVERY: return "dac-recovery";
+        case USB_POLICY_QUEUE_TIMEOUT: return "queue-timeout";
+        case USB_POLICY_OUTPUT_GAP: return "OUTPUT_GAP";
+        case USB_POLICY_FEEDBACK_STATE: return "feedback-state";
+        case USB_POLICY_REFERENCE: return "reference";
+        case USB_POLICY_BEHAVIOR: return "behavior";
+        case USB_POLICY_BACKOFF: return "backoff";
         default: return "?";
     }
 }
 
 size_t usbSecondRingFormatEvents(const UsbPolicyEvent *events, int n, int64_t nowMs, const char *(*policyName)(int), char *out, size_t capacity) {
-    if (capacity == 0) return 0;
     size_t used = 0;
-    out[0] = '\0';
-    for (int i = 0; i < n && used + 1 < capacity; i++) {
+    if (capacity) out[0] = '\0';
+    for (int i = 0; i < n; i++) {
         const UsbPolicyEvent *e = &events[i];
         const int64_t agoMs = nowMs - e->atMs;
         const bool gesture = e->kind >= USB_POLICY_STREAM_START;
-        const int wrote = gesture
-            ? snprintf(out + used, capacity - used, "event t-%lld.%03llds stream=%lld rate=%d %s %s policy=%s sending=%.5f\n",
+        const int wrote = e->kind == USB_POLICY_FEEDBACK_STATE
+            ? snprintf(used < capacity ? out + used : NULL, used < capacity ? capacity - used : 0,
+                "event t-%lld.%03llds stream=%lld rate=%d feedback-state %s raw=0x%08x length=%d status=%d/%d\n",
+                (long long)(agoMs / 1000), (long long)(agoMs % 1000), (long long)e->stream, e->rate,
+                e->what ? e->what : "", e->raw, e->length, e->urbStatus, e->packetStatus)
+            : gesture
+            ? snprintf(used < capacity ? out + used : NULL, used < capacity ? capacity - used : 0, "event t-%lld.%03llds stream=%lld rate=%d %s %s policy=%s sentBefore=%.5f sentAfter=%.5f raw=0x%08x length=%d status=%d/%d delta=%lld total=%lld depth=%lld dryUs=%lld burstCount=%lld\n",
                        (long long)(agoMs / 1000), (long long)(agoMs % 1000), (long long)e->stream, e->rate, eventKindName(e->kind),
-                       e->what != NULL ? e->what : "", policyName != NULL ? policyName(e->policy) : "?", e->sentBefore)
-            : snprintf(out + used, capacity - used,
+                       e->what != NULL ? e->what : "", policyName != NULL ? policyName(e->policy) : "?", e->sentBefore, e->sentAfter, e->raw, e->length, e->urbStatus, e->packetStatus,
+                       (long long)e->delta, (long long)e->total, (long long)e->queueDepth, (long long)e->dryUs, (long long)e->burst)
+            : snprintf(used < capacity ? out + used : NULL, used < capacity ? capacity - used : 0,
                        "event t-%lld.%03llds stream=%lld rate=%d %s %s reading=%.5f %+.0fppm policy=%s sending=%.5f->%.5f\n",
                        (long long)(agoMs / 1000), (long long)(agoMs % 1000), (long long)e->stream, e->rate, eventKindName(e->kind),
                        e->what != NULL ? e->what : "", e->fpmf, e->ppm, policyName != NULL ? policyName(e->policy) : "?", e->sentBefore,
                        e->sentAfter);
         if (wrote < 0) break;
-        if ((size_t)wrote >= capacity - used) {
-            used = capacity - 1;
-            break;
-        }
         used += (size_t)wrote;
     }
     return used;

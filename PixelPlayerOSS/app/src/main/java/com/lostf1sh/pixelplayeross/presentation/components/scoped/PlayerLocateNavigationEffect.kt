@@ -28,20 +28,14 @@ internal fun PlayerLocateNavigationEffect(
             sheetMotionController.snapCollapsed(latestSheetCollapsedTargetY)
             playerViewModel.collapsePlayerSheet()
 
-            if (request.albumId > 0L) {
-                // B57 2.4: the song's album page, the song highlighted and scrolled into view (the page takes this request; see AlbumLocateRequests)
-                AlbumLocateRequests.request(request.albumId, request.songId)
-                navController.navigateSafelyReplacing(
-                    route = Screen.AlbumDetail.createRoute(request.albumId),
-                    patternToPop = Screen.AlbumDetail.route
-                )
-            } else {
-                // a song with no album id: the Library's Songs list, as in B56
-                navController.navigateSafelyReplacing(
-                    route = Screen.LibraryLocate.createRoute(request.songId),
-                    patternToPop = Screen.LibraryLocate.route
-                )
+            val target = if (request.source == null) com.lostf1sh.pixelplayeross.presentation.navigation.listeningDestination(null, request.albumId, request.songId) { true } else playerViewModel.listeningDestination(request)
+            if (target.pattern == Screen.AlbumDetail.route) {
+                val albumId = target.route.substringAfterLast('/').toLong()
+                AlbumLocateRequests.request(albumId, request.songId)
+            } else if (target.pattern != Screen.LibraryLocate.route) {
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.SourceLocateRequests.request(target.route, request.songId, request.source)
             }
+            navController.navigateSafelyReplacing(route = target.route, patternToPop = target.pattern)
         }
     }
 }

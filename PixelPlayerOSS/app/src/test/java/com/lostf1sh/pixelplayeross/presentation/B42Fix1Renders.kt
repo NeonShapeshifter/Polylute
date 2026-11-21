@@ -7,10 +7,10 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.onRoot
 import java.io.File
 
-/** Where the B42-fix1 renders go: `B42_RENDERS`, or `analysis/.../batches/B42-fix1-evidence` next to the result. */
+/** Where the B42-fix1 renders go: `B42_RENDERS`, or `build/test-artifacts/B42-fix1`. */
 object B42Fix1Renders {
     private val root: File
-        get() = File(System.getenv("B42FIX1_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B42-fix1-evidence").apply { mkdirs() }
+        get() = File(System.getenv("B42FIX1_RENDERS") ?: "build/test-artifacts/B42-fix1").apply { mkdirs() }
 
     /** A screen already captured (one with windows of their own composited over the activity's). */
     fun save(bitmap: Bitmap, name: String) {

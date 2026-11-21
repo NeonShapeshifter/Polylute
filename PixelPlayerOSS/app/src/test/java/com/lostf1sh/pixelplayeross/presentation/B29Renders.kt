@@ -9,16 +9,16 @@ import java.io.File
 
 /**
  * B29: where the renders for the owner go. Robolectric images of the screens over made-up data (not phone screenshots), saved
- * under `analysis/.../B29-evidence/renders/` so they can be looked at without the phone. `B29_RENDERS` overrides the folder (the
+ * under `build/test-artifacts/B29/renders/` so they can be looked at without the phone. `B29_RENDERS` overrides the folder (the
  * "before" renders are taken from a copy of the tree at B28-fix2 with the same test, into another folder).
  */
 object B29Renders {
     private val root: File
-        get() = File(System.getenv("B29_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B29-evidence/renders").apply { mkdirs() }
+        get() = File(System.getenv("B29_RENDERS") ?: "build/test-artifacts/B29/renders").apply { mkdirs() }
 
     /** B29-fix1: the same, into `B29-fix1-evidence/renders/` (`B29_FIX1_RENDERS` overrides the folder, for the "before" renders). */
     private val fix1Root: File
-        get() = File(System.getenv("B29_FIX1_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B29-fix1-evidence/renders").apply { mkdirs() }
+        get() = File(System.getenv("B29_FIX1_RENDERS") ?: "build/test-artifacts/B29-fix1/renders").apply { mkdirs() }
 
     fun save(compose: ComposeContentTestRule, name: String) {
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()

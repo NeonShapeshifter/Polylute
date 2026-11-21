@@ -176,6 +176,7 @@ import com.lostf1sh.pixelplayeross.presentation.components.PlayerNavigationRail
 import com.lostf1sh.pixelplayeross.presentation.components.UnifiedPlayerSheetV2
 import com.lostf1sh.pixelplayeross.presentation.components.calculatePlayerSheetCollapsedTargetY
 import com.lostf1sh.pixelplayeross.presentation.components.resolveNavBarOccupiedHeight
+import com.lostf1sh.pixelplayeross.presentation.components.chromeBottomInset
 import com.lostf1sh.pixelplayeross.presentation.components.resolveNavBarSurfaceHeight
 import com.lostf1sh.pixelplayeross.presentation.components.sanitizeNavigationBarBottomInset
 import com.lostf1sh.pixelplayeross.presentation.navigation.DAP_DETAIL_HOST_ROUTE
@@ -2015,7 +2016,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                         translationY = (componentHeightPx + bottomBarPaddingPx) * hideFraction
                                         alpha = 1f
                                     }
-                                    .height(DapHeights.Nav + systemNavBarInset),
+                                    .height(DapHeights.Nav + chromeBottomInset(systemNavBarInset)),
                                 // B42-fix3 (item 8): the bar paints its own frosted surface (`DapBottomNav`); a second one here would be two veils
                                 color = androidx.compose.ui.graphics.Color.Transparent
                             ) {
@@ -2027,7 +2028,7 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                                     onSelect = { index ->
                                         onRootTabSelected(commonNavItems[index].screen.route)
                                     },
-                                    contentPadding = PaddingValues(bottom = systemNavBarInset),
+                                    contentPadding = PaddingValues(bottom = chromeBottomInset(systemNavBarInset)),
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }

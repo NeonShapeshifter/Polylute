@@ -5,13 +5,17 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.os.Looper
+import android.os.StrictMode
 import android.util.Log
+import java.util.concurrent.Executors
 
 
 /**
@@ -30,8 +34,11 @@ import android.util.Log
  */
 class UsbAudioDevice private constructor(private val context: Context) : StreamingDeviceOps {
 
+    private val debug = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
     private var usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+    @Volatile
     private var connection: UsbDeviceConnection? = null
+    @Volatile
     private var currentDevice: UsbDevice? = null
     private var claimedInterface: UsbInterface? = null
     private var claimedControlInterface: UsbInterface? = null
@@ -68,7 +75,41 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
     /** Outcome of the last claim's level restore; the sink refuses Direct on UNVERIFIED. */
     @Volatile
     var openLevelCheck: OpenLevelCheck = OpenLevelCheck.NO_HARDWARE_VOLUME
+        private set(value) { field = value; journalVolume(value) }
+
+    @Volatile var diagnosticLevelUnits: Int = Int.MIN_VALUE
         private set
+
+    val diagnosticVolumeState: Int
+        get() = if (!openLevelSettled) 0 else when (openLevelCheck) {
+            OpenLevelCheck.VERIFIED -> 1
+            OpenLevelCheck.UNVERIFIED -> 0
+            OpenLevelCheck.NO_HARDWARE_VOLUME -> -1
+        }
+
+    /** A private reference key: no serial, device path or display name is persisted. */
+    fun feedbackReferenceKey(rate: Int, bits: Int, channels: Int): String? {
+        val device = currentDevice ?: return null
+        val serial = runCatching { device.serialNumber }.getOrNull().orEmpty()
+        val identity = "b635|${device.vendorId}|${device.productId}|${serial.length}:$serial|$rate|$bits|$channels"
+        return java.security.MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
+
+    private var journalReportedVolume: List<Long>? = null
+
+    private fun journalVolume(check: OpenLevelCheck) {
+        val state = when (check) {
+            OpenLevelCheck.VERIFIED -> 1
+            OpenLevelCheck.UNVERIFIED -> 0
+            OpenLevelCheck.NO_HARDWARE_VOLUME -> -1
+        }
+        val stamp = listOf(openGeneration, owner.generation, diagnosticLevelUnits.toLong(), state.toLong())
+        if (stamp == journalReportedVolume) return
+        journalReportedVolume = stamp
+        UsbDiagnosticJournal.platform(openGeneration, owner.generation, 0, 0, 0,
+            diagnosticLevelUnits, state, reason = if (state == 1) 3 else if (state == 0) 4 else 5)
+    }
 
     /**
      * B40-fix1: a bus reset restarted the DAC and its level could not be confirmed, so the device was kept claimed instead of being given
@@ -90,10 +131,13 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
     private var selectedStreamingInterfaceNumber = -1
 
     companion object {
+        val volumeExecutor = Executors.newSingleThreadExecutor { task ->
+            Thread(task, "DacVolume").apply { isDaemon = true }
+        }
         private const val TAG = "UsbAudioDevice"
         /** UAC2 Feature Unit control selector FU_VOLUME_CONTROL. */
         private const val FU_VOLUME_CONTROL = 0x02
-        /** Short: these run on UI-driven paths, and a DAC that does not answer must not stall them. */
+        /** The URB timeout starts after the kernel gives the ioctl access to the device. */
         private const val VOLUME_TIMEOUT_MS = 250
         private const val ACTION_USB_PERMISSION_SUFFIX = ".USB_AUDIO_PERMISSION"
 
@@ -448,6 +492,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         )
         cachedDeviceInfo = info
         openGeneration++
+        UsbDiagnosticJournal.platform(openGeneration, owner.generation, 0, 0, 0, Int.MIN_VALUE, 0, reason = 1)
         restoreDirectLevelOnOpen()
         return info
     }
@@ -628,6 +673,10 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
     @Volatile
     var volumeGuard: ((range: UsbVolumeRange, currentUnits: Int) -> Int?)? = null
 
+    /** Requests a host refresh when the result of a transport-level volume guard changes. */
+    @Volatile
+    var volumeRestoredListener: (() -> Unit)? = null
+
     val hasHardwareVolume: Boolean
         get() = connection != null && volumeTopology != null
 
@@ -639,6 +688,15 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         val controlInterfaceId = cachedDeviceInfo?.audioControlInterfaceId ?: return null
         if (controlInterfaceId < 0) return null
         return (topology.unitId shl 8) or controlInterfaceId
+    }
+
+    private fun UsbDeviceConnection.controlTransferChecked(type: Int, request: Int, value: Int, index: Int,
+                                                           data: ByteArray, length: Int, timeoutMs: Int): Int {
+        if (debug && Looper.getMainLooper().thread === Thread.currentThread()) {
+            StrictMode.noteSlowCall("USB control transfer on the main thread")
+            Log.e(TAG, "USB control transfer on the main thread", IllegalStateException())
+        }
+        return controlTransfer(type, request, value, index, data, length, timeoutMs)
     }
 
     /**
@@ -656,7 +714,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         var result: UsbVolumeRange? = null
         for (channel in topology.channels) {
             val payload = ByteArray(8)
-            val ret = conn.controlTransfer(
+            val ret = conn.controlTransferChecked(
                 0xA1,
                 0x02,    // RANGE
                 (FU_VOLUME_CONTROL shl 8) or channel,
@@ -692,26 +750,33 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
      * against. A partial read is not an answer.
      */
     @Synchronized
-    fun readHardwareVolume(): Int? {
-        val loudest = readHardwareVolumeUnits() ?: return null
+    fun readHardwareVolume(origin: String = "reconcile"): Int? {
+        val loudest = readHardwareVolumeUnits(origin) ?: return null
         levelGuard.onRead("read", loudest)
         // A stable read is remembered as the Direct level; a read before the open restore is what
         // the Android route left behind, often near 0 dB, and must not become the saved level. Nor
         // one between a reconfigure and its restore (AUD-126): the DAC's firmware reset, not ours.
-        if (openLevelSettled) rememberDirectLevel(loudest)
+        if (openLevelSettled) {
+            rememberDirectLevel(loudest)
+            journalVolume(OpenLevelCheck.VERIFIED)
+        }
         return loudest
     }
 
     /** The Feature Unit transfers of [readHardwareVolume], with no logging or remembering. */
     @Synchronized
-    private fun readHardwareVolumeUnits(): Int? {
+    private fun readHardwareVolumeUnits(origin: String = "open-restore"): Int? =
+        recordVolumeIo(UsbDiagnosticJournal.Control.VOLUME_READ, origin, null, ::readFeatureUnit)
+
+    private fun readFeatureUnit(): Int? {
+        diagnosticLevelUnits = Int.MIN_VALUE
         val conn = connection ?: return null
         val topology = volumeTopology ?: return null
         val wIndex = volumeWIndex(topology) ?: return null
         var loudest: Int? = null
         for (channel in topology.channels) {
             val data = ByteArray(2)
-            val ret = conn.controlTransfer(
+            val ret = conn.controlTransferChecked(
                 0xA1,
                 0x01,    // GET_CUR
                 (FU_VOLUME_CONTROL shl 8) or channel,
@@ -727,6 +792,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
             val units = data.le16s(0)
             loudest = loudest?.let { maxOf(it, units) } ?: units
         }
+        diagnosticLevelUnits = loudest ?: Int.MIN_VALUE
         return loudest
     }
 
@@ -736,27 +802,50 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
      * @return the level the DAC reports afterwards, or null if any transfer failed.
      */
     @Synchronized
-    fun writeHardwareVolume(units: Int, origin: String = "host"): Int? {
-        if (connection == null || volumeTopology == null) return null
-        val range = readHardwareVolumeRange() ?: return null
-        val target = range.clamp(units)
-        val readBack = writeFeatureUnit(target)
-        // Every write, with its origin (AUD-126).
-        levelGuard.onWrite(origin, units, target, readBack)
-        // Our own write is the Direct level from now on (AUD-118).
-        readBack?.let(::rememberDirectLevel)
-        return readBack
-    }
+    fun writeHardwareVolume(units: Int, origin: String = "host", claim: UsbDeviceOwner.AccessoryClaim? = null): Int? =
+        recordVolumeIo(UsbDiagnosticJournal.Control.VOLUME_WRITE, origin, units) {
+            val connectionBefore = openGeneration
+            val mayWrite = { openGeneration == connectionBefore && (claim == null || claim.isCurrent()) }
+            if (connection == null || volumeTopology == null || !mayWrite()) return@recordVolumeIo null
+            val range = readHardwareVolumeRange() ?: return@recordVolumeIo null
+            val target = range.clamp(units)
+            val readBack = writeFeatureUnitAndReadBack(target, origin, mayWrite)
+            levelGuard.onWrite(origin, units, target, readBack)
+            if (!mayWrite()) return@recordVolumeIo null
+            readBack?.let(::rememberDirectLevel)
+            readBack
+        }
 
     /** SET_CUR of [target] on every controlled channel, then the level read back; null on failure. */
     @Synchronized
-    private fun writeFeatureUnit(target: Int): Int? {
+    private fun writeFeatureUnit(target: Int, origin: String = "open-restore"): Int? =
+        recordVolumeIo(UsbDiagnosticJournal.Control.VOLUME_WRITE, origin, target) {
+            writeFeatureUnitAndReadBack(target, origin) { true }
+        }
+
+    private fun recordVolumeIo(operation: UsbDiagnosticJournal.Control, origin: String, target: Int?, io: () -> Int?): Int? {
+        val connection = openGeneration
+        val generation = owner.generation
+        val started = System.nanoTime()
+        if (operation == UsbDiagnosticJournal.Control.VOLUME_WRITE) {
+            UsbDiagnosticJournal.control(connection, generation, UsbDiagnosticJournal.Control.VOLUME_WRITE_BEGIN, origin, target)
+        }
+        var result: Int? = null
+        try {
+            return io().also { result = it }
+        } finally {
+            UsbDiagnosticJournal.control(connection, generation, operation, origin, target, result, (System.nanoTime() - started) / 1_000_000)
+        }
+    }
+
+    private fun writeFeatureUnitAndReadBack(target: Int, origin: String, mayWrite: () -> Boolean): Int? {
         val conn = connection ?: return null
         val topology = volumeTopology ?: return null
         val wIndex = volumeWIndex(topology) ?: return null
         val data = byteArrayOf((target and 0xFF).toByte(), ((target shr 8) and 0xFF).toByte())
         for (channel in topology.channels) {
-            val ret = conn.controlTransfer(
+            if (!mayWrite()) return null
+            val ret = conn.controlTransferChecked(
                 0x21,
                 0x01,    // SET_CUR
                 (FU_VOLUME_CONTROL shl 8) or channel,
@@ -770,7 +859,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
                 return null
             }
         }
-        return readHardwareVolumeUnits()
+        return if (mayWrite()) readHardwareVolumeUnits(origin) else null
     }
 
     /**
@@ -787,6 +876,8 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
     override fun restoreLevelAfterReconfigure(reason: String): OpenLevelCheck {
         if (volumeTopology == null) {
             openLevelSettled = true
+            journalVolume(OpenLevelCheck.NO_HARDWARE_VOLUME)
+            volumeRestoredListener?.invoke()
             return OpenLevelCheck.NO_HARDWARE_VOLUME
         }
         val range = readHardwareVolumeRange()
@@ -803,6 +894,8 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         }
         val check = levelGuard.restoreAfterReconfigure(port, savedDirectLevel(), guardTarget, reason)
         openLevelSettled = check != OpenLevelCheck.UNVERIFIED
+        journalVolume(check)
+        volumeRestoredListener?.invoke()
         return check
     }
 
@@ -822,7 +915,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
             return
         }
         val range = readHardwareVolumeRange()
-        val current = readHardwareVolume()
+        val current = readHardwareVolume("open-restore")
         if (range == null || current == null) {
             openLevelCheck = OpenLevelCheck.UNVERIFIED
             Log.e(TAG, "DAC opened key=$openDeviceKey current=unreadable target=unknown — level UNVERIFIED")
@@ -888,7 +981,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
             for (channel in unit.volumeChannels) {
                 val value = if (controlInterfaceId < 0) null else {
                     val data = ByteArray(2)
-                    val ret = conn.controlTransfer(
+                    val ret = conn.controlTransferChecked(
                         0xA1, 0x01, (FU_VOLUME_CONTROL shl 8) or channel,
                         (unit.unitId shl 8) or controlInterfaceId, data, data.size, VOLUME_TIMEOUT_MS,
                     )
@@ -921,6 +1014,14 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
      * claims nothing after this (its generation is no longer the current one); the stream's facts are cleared with it.
      */
     fun releaseToAndroid() {
+        if (Looper.getMainLooper().thread === Thread.currentThread()) {
+            val connection = openGeneration
+            val generation = owner.generation
+            volumeExecutor.execute {
+                if (owner.generation == generation && openGeneration == connection) releaseToAndroid()
+            }
+            return
+        }
         owner.exclusive("hand-back") {
             owner.clearStream()
             handBackToAndroid()
@@ -1114,6 +1215,8 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
     }
 
     fun closeDevice() {
+        if (connection != null) UsbDiagnosticJournal.platform(openGeneration, owner.generation, 0, 0, 0,
+            diagnosticLevelUnits, 0, reason = 2)
         levelOwedAfterReset = false
         volumeTopology = null
         cachedDeviceInfo = null
@@ -1166,7 +1269,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         }
 
         val wIndex = (clockSourceId shl 8) or controlInterfaceId
-        val ret = conn.controlTransfer(
+        val ret = conn.controlTransferChecked(
                 0x21,    // bmRequestType: Host-to-Device, Class, Interface
                 0x01,    // bRequest: SET_CUR
                 0x0100,  // wValue: CS_SAM_FREQ_CONTROL
@@ -1199,7 +1302,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         }
 
         val wIndex = (clockSourceId shl 8) or controlInterfaceId
-        val ret = conn.controlTransfer(
+        val ret = conn.controlTransferChecked(
                 0xA1,    // bmRequestType: Device-to-Host, Class, Interface
                 0x01,    // bRequest: GET_CUR
                 0x0100,  // wValue: CS_SAM_FREQ_CONTROL
@@ -1235,7 +1338,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
 
         val wIndex = (clockSourceId shl 8) or controlInterfaceId
         val countBuffer = ByteArray(2)
-        val countResult = conn.controlTransfer(
+        val countResult = conn.controlTransferChecked(
             0xA1,
             0x02,    // RANGE
             0x0100,  // CS_SAM_FREQ_CONTROL
@@ -1257,7 +1360,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         }
 
         val payload = ByteArray(2 + count * 12)
-        val result = conn.controlTransfer(
+        val result = conn.controlTransferChecked(
             0xA1,
             0x02,    // RANGE
             0x0100,  // CS_SAM_FREQ_CONTROL
@@ -1311,7 +1414,7 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         }
 
         val wIndex = (clockSourceId shl 8) or controlInterfaceId
-        val ret = conn.controlTransfer(
+        val ret = conn.controlTransferChecked(
                 0xA1,    // bmRequestType: Device-to-Host, Class, Interface
                 0x01,    // bRequest: GET_CUR
                 0x0200,  // wValue: CS=0x02 (CLOCK_VALID_CONTROL), CN=0x00

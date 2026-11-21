@@ -51,4 +51,4 @@ object AlbumLocateRequests {
 }
 
 /** A title tap in the player: the song, and the album it belongs to (0 when unknown, which falls back to the Library's Songs list). */
-data class SongLocateRequest(val songId: String, val albumId: Long)
+data class SongLocateRequest(val songId: String, val albumId: Long, val source: com.lostf1sh.pixelplayeross.data.stats.ListenSource? = null)

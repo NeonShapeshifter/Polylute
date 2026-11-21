@@ -8,6 +8,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,6 +62,8 @@ internal fun rememberLibraryPlaybackStates(playerViewModel: PlayerViewModel): Li
 internal fun LibraryPlaybackAwareSongItem(
     song: Song,
     playback: LibraryPlaybackStates,
+    modifier: Modifier = Modifier,
+    showMoreOptionsButton: Boolean = true,
     albumArtSize: Dp = 50.dp,
     showAlbumArt: Boolean = true,
     /** B32-Q2: the song Stats or a collection asked the Library to show: its row is raised for a few seconds, whatever is playing. */
@@ -79,6 +82,8 @@ internal fun LibraryPlaybackAwareSongItem(
     }
 
     EnhancedSongListItem(
+        modifier = modifier,
+        showMoreOptionsButton = showMoreOptionsButton,
         song = song,
         isPlaying = playbackUiState.isPlaying,
         isCurrentSong = playbackUiState.isCurrentSong,

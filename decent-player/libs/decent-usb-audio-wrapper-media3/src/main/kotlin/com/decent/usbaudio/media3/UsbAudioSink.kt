@@ -1955,6 +1955,7 @@ class UsbAudioSink(
     private val streamingSequence = StreamingInterfaceSequence(usbAudioDevice, log = { Log.i(TAG, it) })
 
     private fun configureUsbBitPerfect(sampleRate: Int, channelCount: Int, encoding: Int): Boolean {
+        com.decent.usbaudio.UsbDiagnosticJournal.configure(context.filesDir)
 
         // Cache check — avoid needless USB stream recreation
         // The cached stream's container must also hold this source: after a track whose rate forced
@@ -2039,6 +2040,9 @@ class UsbAudioSink(
             )
         }
 
+        com.decent.usbaudio.UsbDiagnosticJournal.platform(usbAudioDevice.openGeneration,
+            usbAudioDevice.owner.generation, sampleRate, bitDepth, altSetting,
+            usbAudioDevice.diagnosticLevelUnits, usbAudioDevice.diagnosticVolumeState, reason = 6, channels = channelCount)
         var stream = UsbAudioStream(
             fd = deviceInfo.fd,
             interfaceId = deviceInfo.interfaceId,
@@ -2115,6 +2119,7 @@ class UsbAudioSink(
         }
         val confirmedSampleRate = reconfigured.confirmedSampleRate
 
+        usbAudioDevice.feedbackReferenceKey(sampleRate, bitDepth, channelCount)?.let(stream::setFeedbackIdentity)
         if (!stream.start(usbAudioDevice.owner.previousStreamRateHz)) {
             Log.e(TAG, "USB stream start failed")
             stream.release()
@@ -2136,6 +2141,8 @@ class UsbAudioSink(
         DirectPathTelemetry.usbAltSetting = altSetting
         // B48-1: this stream's generation and its rate and alt, fixed here for the recovery of this stream (and no other).
         val facts = usbAudioDevice.owner.publishStream(sampleRate, altSetting)
+        stream.noteJournalFormat(usbAudioDevice.openGeneration, facts.generation, altSetting,
+            usbAudioDevice.diagnosticLevelUnits, usbAudioDevice.diagnosticVolumeState)
         Log.i(TAG, "USB stream published: gen=${facts.generation} rate=${facts.sampleRateHz} alt=${facts.altSetting}")
         DirectPathTelemetry.usbRequestedRateHz = sampleRate
         // Read back from the DAC rather than assumed: GET_CUR is what makes the rate a measurement
@@ -2231,7 +2238,31 @@ class UsbAudioSink(
             Log.w(TAG, "No published stream for this writer thread: its DAC recovery is off")
             return null
         }
-        return OwnedRecoveryHost(usbAudioDevice.owner, streamingSequence, facts.generation) { Log.i(TAG, it) }
+        // Keep this attachment even after close clears openedDevicePath. Never reopen a different DAC.
+        val recoveryDevice = usbAudioDevice.findUsbAudioDevice()?.takeIf {
+            it.deviceName == usbAudioDevice.openedDevicePath
+        }
+        return OwnedRecoveryHost(usbAudioDevice.owner, streamingSequence, facts.generation,
+            fullReopen = { claim ->
+                val device = recoveryDevice
+                var reopened: com.decent.usbaudio.UsbAudioDeviceInfo? = null
+                if (device == null) com.decent.usbaudio.RestartOutcome.SUPERSEDED
+                else com.decent.usbaudio.FullStreamReopen(object : com.decent.usbaudio.FullStreamReopen.Ops {
+                    override fun closeStream(): Boolean = stream.closeForRecovery()
+                    override fun closeDevice() = usbAudioDevice.closeDevice()
+                    override fun openDevice(): Boolean {
+                        reopened = usbAudioDevice.openDevice(device)
+                        return reopened != null && usbAudioDevice.openLevelCheck != OpenLevelCheck.UNVERIFIED
+                    }
+                    override fun configure(rate: Int, alt: Int): Boolean =
+                        streamingSequence.reconfigure(rate, alt, "dac-recovery full-reopen").failure == null
+                    override fun openStream(): Boolean {
+                        stream.noteJournalFormat(usbAudioDevice.openGeneration, claim.facts.generation,
+                            claim.facts.altSetting, usbAudioDevice.diagnosticLevelUnits, usbAudioDevice.diagnosticVolumeState)
+                        return reopened?.let { stream.reopenForRecovery(it.fd) } ?: false
+                    }
+                }).run(claim)
+            }, log = { Log.i(TAG, it) })
     }
 
     /** B12a-4: a stream was rebuilt for [newRateHz] after [previousRateHz]: what the host asked for becomes owed silence. */
@@ -2258,6 +2289,7 @@ class UsbAudioSink(
         if (ms <= 0) return
         pendingPrerollMs = 0
         val plan = stream.transportPlan(prerollMs = ms) ?: return
+        stream.creditStartupPreroll(plan.prerollFrames.toInt())
         val frames = RateSwitchPreroll.enqueue(thread, plan, currentChannelCount.takeIf { it > 0 } ?: STEREO)
         DirectPathTelemetry.rateSwitchPrerolls.incrementAndGet()
         DirectPathTelemetry.lastRateSwitchPrerollMs = ms

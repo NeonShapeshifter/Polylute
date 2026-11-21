@@ -59,7 +59,7 @@ class B56BackgroundMotionCostProbe {
         lines += "live path (Android 13+): per frame = one clock read + two uniform sets + one drawRect; no list, no array, no allocation of its own"
         lines += "frame rate: ${LiveBlobs.FPS} a second (${LiveBlobs.FRAME_NANOS} ns between steps)"
 
-        val out = File(System.getenv("B56_GATES") ?: "../../../analysis/audit-2026-09-27/batches/B56-gates")
+        val out = File(System.getenv("B56_GATES") ?: "build/test-artifacts/B56")
         out.mkdirs()
         File(out, "phase7-1-frame-cost.log").writeText(lines.joinToString("\n", postfix = "\n"))
         assertThat(stillCost.first).isLessThan(2_000.0)

@@ -66,7 +66,7 @@ class B51ExistingBehaviorTest {
             }
         }
         val bitmap = B42Renders.screen(compose)
-        val dir = File(System.getenv("B51_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B51-gates/png-after").apply { mkdirs() }
+        val dir = File(System.getenv("B51_RENDERS") ?: "build/test-artifacts/B51/png-after").apply { mkdirs() }
         File(dir, "tree.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         compose.onNodeWithText("Árbol").assertIsDisplayed()
         compose.onNodeWithText("Lista").assertIsDisplayed()

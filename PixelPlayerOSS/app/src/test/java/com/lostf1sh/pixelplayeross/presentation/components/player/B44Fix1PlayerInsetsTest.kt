@@ -112,7 +112,7 @@ open class B44Fix1PlayerInsetsTest {
     private fun save(name: String) {
         val bitmap = com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
         val phase = if (java.io.File(".").canonicalPath.contains("B44-fix1-before")) "before" else "after"
-        val root = java.io.File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-fix1-evidence", phase).apply { mkdirs() }
+        val root = java.io.File("build/test-artifacts/B44-fix1", phase).apply { mkdirs() }
         java.io.File(root, "$name-${bitmap.width}x${bitmap.height}.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
     private var hostView: android.view.View? = null

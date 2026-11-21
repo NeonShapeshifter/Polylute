@@ -98,6 +98,11 @@ fun SmartCollectionsScreen(
     viewModel: SmartCollectionsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val sourceLocate by com.lostf1sh.pixelplayeross.presentation.viewmodel.SourceLocateRequests.request.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(sourceLocate?.token) {
+        val request = sourceLocate?.takeIf { it.route == com.lostf1sh.pixelplayeross.presentation.navigation.Screen.SmartCollections.route } ?: return@LaunchedEffect
+        request.source?.ref?.removePrefix("rule:")?.toLongOrNull()?.let(viewModel::open)
+    }
 
     Scaffold(
         topBar = {
@@ -160,8 +165,16 @@ fun SmartCollectionsContent(
      * every other track list in the Library uses, so a row here behaves like a row anywhere else.
      */
     onSongMoreOptions: ((com.lostf1sh.pixelplayeross.data.model.Song) -> Unit)? = null,
+    query: String = "",
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val rawState by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by androidx.compose.runtime.produceState(initialValue = rawState, rawState, query) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            rawState.copy(
+                collections = com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryTabSearch.filter(rawState.collections, query) { it.name },
+            )
+        }
+    }
     var editing by remember { mutableStateOf<SmartCollection?>(null) }
     var creating by remember { mutableStateOf(false) }
 
@@ -356,7 +369,12 @@ private fun CollectionResult(
     onSongMoreOptions: ((com.lostf1sh.pixelplayeross.data.model.Song) -> Unit)?,
 ) {
     val result = state.result
+    val listState = rememberLazyListState()
+    val located = rememberSourceLocate(com.lostf1sh.pixelplayeross.presentation.navigation.Screen.SmartCollections.route, listState, !state.isLoading) { id ->
+        state.resultSongs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.plus(1) ?: -1
+    }
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomContentPadding),
     ) {
@@ -423,6 +441,7 @@ private fun CollectionResult(
             EnhancedSongListItem(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 song = song,
+                containerColorOverride = if (located == song.id) Dap.panelRaised else null,
                 isCurrentSong = currentSongId == song.id,
                 isPlaying = currentSongId == song.id && isPlaying,
                 onClick = { onPlaySong(song) },

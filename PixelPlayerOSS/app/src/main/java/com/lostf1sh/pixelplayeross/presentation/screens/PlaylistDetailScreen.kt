@@ -247,6 +247,7 @@ fun PlaylistDetailScreen(
     var localReorderableSongs by remember(songsInPlaylist) { mutableStateOf(songsInPlaylist) }
 
     val listState = rememberLazyListState()
+    val located = rememberSourceLocate(Screen.PlaylistDetail.createRoute(android.net.Uri.encode(playlistId)), listState, currentPlaylist?.id == playlistId && !uiState.isLoading) { id -> localReorderableSongs.indexOfFirst { it.id == id } }
     val scope = rememberCoroutineScope()
     val view = LocalView.current
     val appHapticsConfig = LocalAppHapticsConfig.current
@@ -573,6 +574,7 @@ fun PlaylistDetailScreen(
                                         QueuePlaylistSongItem(
                                             modifier = Modifier
                                                 .fillMaxWidth()
+                                                .background(if (located == song.id) com.lostf1sh.pixelplayeross.ui.ds.Dap.panelRaised else Color.Transparent)
                                                 .padding(horizontal = 0.dp)
                                                 .graphicsLayer {
                                                     scaleX = scale

@@ -9,6 +9,7 @@ internal data class TrustedMediaItemsResolution(
 
 internal fun resolveMediaItemsWithTrustedArtworkGrants(
     requestedItems: List<MediaItem>,
+    preservePlaybackOrigin: Boolean = false,
     trustedItemResolver: (String) -> MediaItem?
 ): TrustedMediaItemsResolution {
     val resolvedItems = ArrayList<MediaItem>(requestedItems.size)
@@ -17,7 +18,13 @@ internal fun resolveMediaItemsWithTrustedArtworkGrants(
     requestedItems.forEach { requestedItem ->
         val trustedItem = trustedItemResolver(requestedItem.mediaId)
         if (trustedItem != null) {
-            resolvedItems += trustedItem
+            // An ID may occur in several source blocks; copy from this exact request occurrence.
+            // Only the app's own controller may supply provenance, never an external raw-id request.
+            resolvedItems += if (preservePlaybackOrigin) {
+                com.lostf1sh.pixelplayeross.data.model.PlaybackOrigin.attach(
+                    trustedItem, com.lostf1sh.pixelplayeross.data.model.PlaybackOrigin.from(requestedItem)
+                )
+            } else trustedItem
             trustedArtworkGrantItems += trustedItem
         } else {
             resolvedItems += requestedItem

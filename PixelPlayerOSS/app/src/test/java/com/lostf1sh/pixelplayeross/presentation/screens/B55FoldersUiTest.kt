@@ -80,17 +80,13 @@ class B55FoldersUiTest {
         val after=compose.onNodeWithText("Folder60").fetchSemanticsNode().boundsInRoot.top
         assertThat(after).isWithin(1f).of(before)
     }
-    @OptIn(InternalComposeApi::class)
     @Composable private fun ActionRow(onSort:()->Unit) {
-        // Invoke the existing private composable without changing visibility in the before tree.
-        val method=Class.forName("com.lostf1sh.pixelplayeross.presentation.screens.LibraryScreenKt").declaredMethods
-            .single { it.name=="DapLibraryActionRow" }.apply { isAccessible=true }
-        val noop:()->Unit={}
-        val folderClick:(String)->Unit={}
-        val args=mutableListOf<Any?>(noop,true,null,false,true,Modifier,onSort,noop,false,false,noop,null,
-            "/synthetic","Music",emptyList<MusicFolder>(),folderClick,noop,false,StorageFilter.ALL,noop,currentComposer)
-        repeat(method.parameterCount-args.size) { args+=0 }
-        method.invoke(null,*args.toTypedArray())
+        // B62.5: the row is internal for its render tests; named arguments survive adding inline search.
+        DapLibraryActionRow(
+            onMainActionClick = {}, showSortButton = true, currentSortOption = null,
+            isPlaylistTab = false, isFoldersTab = true, onSortClick = onSort,
+            showImportButton = false, folderRootPath = "/synthetic", folderRootLabel = "Music",
+        )
     }
     @Test fun `F02 Sort is reachable alongside breadcrumbs in default Tree view`() {
         var opened=0

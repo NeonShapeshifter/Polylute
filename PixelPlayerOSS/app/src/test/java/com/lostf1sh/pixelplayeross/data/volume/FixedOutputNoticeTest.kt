@@ -163,7 +163,9 @@ class FixedOutputNoticeTest {
         // B40-fix2: the gate is two steps, the route and the DAC (allowPlay), then what is due for that DAC (allowPlayFor)
         val gate = notice.substringAfter("fun allowPlay(): Boolean {").substringBefore("\n    }\n")
         assertThat(gate).contains("route.desiredBackend != AudioBackend.USB_DIRECT")
-        assertThat(gate).contains("return allowPlayFor(dac)")
+        assertThat(gate).contains("false -> allowPlayFor(fixedOutput(device, key))")
+        assertThat(gate).doesNotContain("readVolumeDescriptor(")
+        assertThat(notice).contains("withContext(volumeDispatcher) { readVolumeDescriptor(device, key) }")
         assertThat(notice.substringAfter("internal fun allowPlayFor(dac: FixedOutputDac): Boolean {").substringBefore("\n    }\n"))
             .contains("ledger.due(dac.key, hasVolumeControl = false)")
         // the only way the app's own volume is touched is the lowering start; nothing sets a level or raises it

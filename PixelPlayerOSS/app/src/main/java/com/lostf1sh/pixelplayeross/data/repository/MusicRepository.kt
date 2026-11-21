@@ -200,6 +200,10 @@ interface MusicRepository {
      */
     fun getSongsForArtist(artistId: Long): Flow<List<Song>>
 
+    /** Bounded album/artist browser rows. Production uses LIMIT/OFFSET, including play expansion. */
+    suspend fun getAutoSourceSongsPage(albumId: Long?, artistId: Long?, limit: Int, offset: Int): List<Song> =
+        throw UnsupportedOperationException("Source paging unavailable")
+
     /**
      * Returns a list of songs by their IDs.
      * @param songIds List of song IDs.

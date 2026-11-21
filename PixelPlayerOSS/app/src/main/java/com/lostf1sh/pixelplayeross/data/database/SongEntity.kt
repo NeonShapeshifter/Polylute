@@ -174,7 +174,7 @@ private fun SongEntity.toSongInternal(
     artists: List<ArtistRef>,
     artworkAbsent: (Long) -> Boolean = { false }
 ): Song {
-    return Song(
+    return com.lostf1sh.pixelplayeross.data.model.SongSnapshots.share(Song(
         id = this.id.toString(),
         libraryItemId = this.libraryItemId,
         title = this.title.normalizeMetadataTextOrEmpty(),
@@ -209,7 +209,7 @@ private fun SongEntity.toSongInternal(
         bitrate = this.bitrate,
         sampleRate = this.sampleRate,
         musicBrainzIds = com.lostf1sh.pixelplayeross.data.model.MusicBrainzIds(mbRecordingId, mbReleaseId, mbReleaseGroupId, mbArtistId, mbAlbumArtistId),
-    )
+    ))
 }
 
 fun SongEntity.toSong(artworkAbsent: (Long) -> Boolean = { false }): Song {

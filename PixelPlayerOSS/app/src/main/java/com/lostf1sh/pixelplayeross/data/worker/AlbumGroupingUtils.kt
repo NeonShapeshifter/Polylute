@@ -58,6 +58,9 @@ internal fun buildAlbumGroupingKey(song: SongEntity): AlbumGroupingKey {
 
 internal fun buildAlbumGroupingKeys(album: AlbumEntity): List<AlbumGroupingKey> {
     val albumKeys = mutableListOf<AlbumGroupingKey>()
+    if (album.groupingKey.isNotBlank()) albumKeys += AlbumGroupingKey(
+        MetadataNormalizer.normalizeForMatching(album.title).orEmpty(), album.groupingKey
+    )
 
     albumKeys += buildAlbumGroupingKey(
         albumName = album.title,
@@ -182,4 +185,68 @@ private fun buildAlbumGroupingKey(
         normalizedTitle = normalizedTitle,
         identity = identity
     )
+}
+
+/** Shared scan/editor projection. The identity fingerprint is deliberately outside this function. */
+internal fun SongEntity.withAlbumGrouping(): SongEntity {
+    val owner = resolveAlbumArtist(albumArtist, null)
+    val compilation = MetadataNormalizer.isCompilation(null, owner, 0)
+    val normalized = copy(albumArtist = owner, isCompilation = compilation)
+    return normalized.copy(albumGroupingKey = buildAlbumGroupingKey(normalized).identity)
+}
+
+/** Keeps an existing group's id, and never reuses the id of a different occupied group. */
+internal class AlbumIdAllocator(existing: List<AlbumEntity>) {
+    private val ids = mutableMapOf<AlbumGroupingKey, Long>()
+    private val occupied = existing.mapTo(mutableSetOf()) { it.id }
+    init {
+        existing.sortedBy { it.id }.forEach { album ->
+            buildAlbumGroupingKeys(album).forEach { ids.putIfAbsent(it, album.id) }
+        }
+    }
+    fun idFor(song: SongEntity): Long {
+        val key = buildAlbumGroupingKey(song)
+        return ids.getOrPut(key) {
+            var id = song.albumId
+            if (id in occupied) {
+                id = MetadataNormalizer.stableHash(key.identity).toULong(16).and(Long.MAX_VALUE.toULong()).toLong()
+                while (id in occupied) id = if (id == Long.MAX_VALUE) 1 else id + 1
+            }
+            occupied += id
+            id
+        }
+    }
+}
+
+/** The album row produced by both a scan and a successful edit; no tag or artwork reads. */
+internal fun albumProjection(
+    songs: List<SongEntity>,
+    preferAlbumArtist: Boolean,
+    artistNameToId: Map<String, Long>,
+    artistDelimiters: List<String>,
+    wordDelimiters: List<String>,
+    artwork: String?,
+    year: Int = MetadataNormalizer.albumYear(songs.map { it.year }),
+): AlbumEntity {
+    require(songs.isNotEmpty())
+    val first = songs.first()
+    val displayArtist = chooseAlbumDisplayArtist(songs, preferAlbumArtist)
+    return AlbumEntity(
+        id = first.albumId, title = first.albumName,
+        artistName = displayArtist,
+        artistId = resolveAlbumDisplayArtistId(displayArtist, songs, artistNameToId, artistDelimiters, wordDelimiters),
+        albumArtUriString = artwork, songCount = songs.size, dateAdded = first.dateAdded,
+        year = year,
+        albumArtist = songs.mapNotNull { it.albumArtist?.takeIf(String::isNotBlank) }
+            .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key,
+        groupingKey = first.albumGroupingKey, isCompilation = songs.any { it.isCompilation },
+    )
+}
+
+/** MediaStore is a candidate hint; only discrepant past edits get a fresh tag read on sync. */
+internal fun needsEditedAlbumRepair(song: SongEntity, mediaStoreAlbumArtist: String?): Boolean {
+    if (!song.albumUserEdited) return false
+    val reportedOwner = resolveAlbumArtist(mediaStoreAlbumArtist, null)
+    return (reportedOwner != null && reportedOwner != resolveAlbumArtist(song.albumArtist, null)) ||
+        song.albumGroupingKey != song.withAlbumGrouping().albumGroupingKey
 }

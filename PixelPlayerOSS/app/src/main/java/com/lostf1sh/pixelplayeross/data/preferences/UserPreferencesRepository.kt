@@ -1670,8 +1670,8 @@ constructor(
     /** The player shelf and undo bar keep the full-width inset. */
     val navBarStyleFlow: Flow<String> = flowOf(NavBarStyle.DEFAULT)
 
-    /** The bar keeps its standard height, and screens keep the standard bottom clearance. */
-    val navBarCompactModeFlow: Flow<Boolean> = flowOf(false)
+    /** Owner 11-21: icons only, no labels, so the bar is shorter; screens take the compact bottom clearance. */
+    val navBarCompactModeFlow: Flow<Boolean> = flowOf(true)
 
     /** The carousel keeps its no-peek layout. */
     val carouselStyleFlow: Flow<String> = flowOf(CarouselStyle.NO_PEEK)

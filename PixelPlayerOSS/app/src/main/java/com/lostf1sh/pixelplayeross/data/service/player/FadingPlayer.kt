@@ -10,26 +10,30 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.IdentityHashMap
 
 /**
  * Wraps the session-facing player so play/pause ramp the volume over a short fade instead
  * of cutting the audio hard.
  *
- * The fade target is captured from the inner player at fade start: ReplayGain writes its
- * normalized volume directly on the engine's master player (not through this wrapper), so
- * tracking only wrapper-side [setVolume] calls would make every fade end at full volume and
- * defeat the normalization. [getVolume] reports the logical volume during a fade rather
- * than the transient mid-ramp value.
+ * Android transport ramps own the output while ReplayGain updates their composed target via
+ * [setComposedVolume]. A metadata event cannot write full gain over a ramp step. Direct uses the
+ * existing transport behaviour; [smoothAndroid] is supplied from the actual route by the service.
+ * [getVolume] reports the logical target during a fade, never a transient step.
  */
 @OptIn(UnstableApi::class)
 class FadingPlayer(
     val innerPlayer: Player,
     private val scope: CoroutineScope,
+    private val smoothAndroid: () -> Boolean = { true },
 ) : ForwardingPlayer(innerPlayer) {
 
     private var fadeJob: Job? = null
     // Volume the player should sit at when no fade is running.
     private var logicalVolume = innerPlayer.volume
+    private var androidRampActive = false
+    private var rampFraction = 1f
+    private var rampGeneration = 0L
 
     override fun setVolume(volume: Float) {
         logicalVolume = volume
@@ -43,6 +47,11 @@ class FadingPlayer(
     }
 
     override fun play() {
+        if (smoothAndroid()) {
+            playAndroid()
+            return
+        }
+        forgetAndroidRamp()
         val wasFading = fadeJob?.isActive == true
         fadeJob?.cancel()
         if (isPlaying) {
@@ -73,6 +82,11 @@ class FadingPlayer(
     }
 
     override fun pause() {
+        if (smoothAndroid()) {
+            pauseAndroid()
+            return
+        }
+        forgetAndroidRamp()
         val wasFading = fadeJob?.isActive == true
         fadeJob?.cancel()
         if (!isPlaying) {
@@ -109,6 +123,61 @@ class FadingPlayer(
         }
     }
 
+    private fun playAndroid() {
+        val active = androidRampActive
+        if (isPlaying && !active) { super.play(); return }
+        if (!active) logicalVolume = innerPlayer.volume
+        val from = if (active) rampFraction else 0f
+        // Register before play(), which can synchronously publish metadata and reapply RG.
+        startAndroidRamp(from, 1f, ANDROID_PLAY_DURATION_MS, ANDROID_PLAY_STEPS, pauseAtEnd = false)
+        super.play()
+    }
+
+    private fun pauseAndroid() {
+        if (!isPlaying) {
+            val active = androidRampActive
+            fadeJob?.cancel()
+            forgetAndroidRamp()
+            if (active) rampSet(logicalVolume)
+            super.pause()
+            return
+        }
+        if (!androidRampActive) logicalVolume = innerPlayer.volume
+        val from = if (androidRampActive) rampFraction else 1f
+        startAndroidRamp(from, 0f, PAUSE_FADE_DURATION_MS, PAUSE_FADE_STEPS, pauseAtEnd = true)
+    }
+
+    private fun startAndroidRamp(from: Float, to: Float, durationMs: Long, steps: Int, pauseAtEnd: Boolean) {
+        val generation = ++rampGeneration
+        fadeJob?.cancel()
+        androidRampActive = true
+        activeAndroidRamps[innerPlayer] = this
+        rampFraction = from
+        rampSet(logicalVolume * from)
+        fadeJob = scope.launch(Dispatchers.Main) {
+            try {
+                for (step in 1..steps) {
+                    delay(durationMs / steps)
+                    rampFraction = from + (to - from) * step.toFloat() / steps
+                    // Read the live composed target, never a captured old ReplayGain value.
+                    rampSet(logicalVolume * rampFraction)
+                }
+                if (pauseAtEnd) {
+                    super.pause()
+                    rampSet(logicalVolume)
+                }
+            } finally {
+                if (rampGeneration == generation) forgetAndroidRamp()
+            }
+        }
+    }
+
+    private fun forgetAndroidRamp() {
+        androidRampActive = false
+        if (activeAndroidRamps[innerPlayer] === this) activeAndroidRamps.remove(innerPlayer)
+    }
+
+
     /**
      * Writes one ramp step. Marked so volume observers can tell a ramp step from a real change:
      * ExoPlayer reports `onVolumeChanged` synchronously inside the write, on this same thread.
@@ -122,7 +191,35 @@ class FadingPlayer(
         }
     }
 
+    /** Stops this session wrapper without releasing the engine-owned player (also used on swaps). */
+    fun detach() {
+        ++rampGeneration
+        fadeJob?.cancel()
+        fadeJob = null
+        forgetAndroidRamp()
+    }
+
+    override fun release() {
+        detach()
+        super.release()
+    }
+
     companion object {
+        // Entries exist only during an Android transport ramp; completion/cancel/release removes them.
+        private val activeAndroidRamps = IdentityHashMap<Player, FadingPlayer>()
+
+        /** Main thread. The ramp owns the output; RG may update its target, never its envelope. */
+        internal fun setComposedVolume(player: Player, gain: Float): Boolean {
+            val ramp = activeAndroidRamps[player] ?: return false
+            if (!ramp.smoothAndroid()) { ramp.forgetAndroidRamp(); return false }
+            ramp.logicalVolume = gain
+            return true
+        }
+
+        // A short de-click ramp removes the old half-second low-volume start on Android/A2DP.
+        private const val ANDROID_PLAY_DURATION_MS = 72L
+        private const val ANDROID_PLAY_STEPS = 12
+
         // Main-thread only, like every write in this class.
         private var rampWriteDepth = 0
 

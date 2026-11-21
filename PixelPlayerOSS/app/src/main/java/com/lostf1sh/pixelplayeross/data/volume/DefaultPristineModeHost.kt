@@ -24,11 +24,11 @@ class DefaultPristineModeHost @Inject constructor(
 
     override fun isDirectActive(): Boolean = engine.audioRouteState.value.actualBackend == AudioBackend.USB_DIRECT
 
-    override fun hardwareVolume(): PristineModePolicy.HardwareVolume? = safetyVolume.pristineHardwareVolume()
+    override suspend fun hardwareVolume(): PristineModePolicy.HardwareVolume? = safetyVolume.pristineHardwareVolume()
 
     override fun ceilingStep(): Int? = safetyVolume.pristineCeilingStep()
 
-    override fun setHardwareStep(step: Int): Boolean = safetyVolume.setHardwareStepVerified(step)
+    override suspend fun setHardwareStep(step: Int): Boolean = safetyVolume.setHardwareStepVerified(step)
 
     /**
      * The unlocked requirements reach the engine through the service's flow, and the sink then

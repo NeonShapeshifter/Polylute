@@ -450,6 +450,23 @@ class DualPlayerEngine @Inject constructor(
      */
     private var directClaimAttempted = false
 
+    // A replacement player has no decoder format yet. Forgetting the same item's known format
+    // made DirectFailureLatch block it as unknown during the deferred replay, reversing the route
+    // and rebuilding the entire queue again. Never carry the fact across a different source.
+    private var routeSourceItem: MediaItem? = null
+    private var routeSourceFormat: AudioFormatSnapshot? = null
+
+    private fun sourceFormatForRoute(): AudioFormatSnapshot? {
+        val item = if (::playerA.isInitialized) playerA.currentMediaItem else null
+        if (routeSourceItem?.mediaId != item?.mediaId ||
+            routeSourceItem?.localConfiguration != item?.localConfiguration
+        ) {
+            routeSourceItem = item
+            routeSourceFormat = null
+        }
+        return currentAudioFormatSnapshot()?.also { routeSourceFormat = it } ?: routeSourceFormat
+    }
+
     /**
      * Keeps the rebuild from being re-entered by the route reevaluation it triggers itself.
      *
@@ -1164,7 +1181,7 @@ class DualPlayerEngine @Inject constructor(
      * Writes a per-invocation trace of the automatic route decision to a file the host can read
      * back — this device's OEM logging stack does not surface app logs through `adb logcat`. It
      * changes nothing about the decision; it records the inputs it was made from. Remove once the
-     * trace has been captured (see analysis/dogfood-prelibrary/bug2-usb-direct/).
+     * trace has been captured.
      */
     /**
      * Route trace (AUD-035): an in-memory append here; the file is written on its own thread. The
@@ -1262,7 +1279,7 @@ class DualPlayerEngine @Inject constructor(
                 maintenanceForceAndroid = maintenanceOverrides.current().forcedAndroidAudio(),
                 maintenanceDirectDisabled = maintenanceOverrides.current().directTransitionDisabled(),
                 dacReleasedForSharing = dacReleasedForSharing,
-                directFailedForSource = currentAudioFormatSnapshot().let { source ->
+                directFailedForSource = sourceFormatForRoute().let { source ->
                     directFailureLatch.blocks(
                         device?.deviceName,
                         source?.sampleRate?.takeIf { it > 0 },
@@ -1980,6 +1997,7 @@ class DualPlayerEngine @Inject constructor(
             format: Format,
             decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
         ) {
+            sourceFormatForRoute()
             // A latched Direct failure is keyed by source rate, which is only known once the new
             // track decodes; re-evaluate then so a rate Direct can carry gets its one retry.
             if (directFailureLatch.isLatched) {
@@ -2520,13 +2538,12 @@ class DualPlayerEngine @Inject constructor(
         }
         abandonTransitionForRebuild()
 
-        if (::playerA.isInitialized) {
-            removeMasterPlayerListeners(playerA)
-            onPlayerAboutToBeReleasedListener?.invoke(playerA)
-            try { releasePlayer(playerA) } catch (e: Exception) { }
-        }
         playerB?.let { try { releasePlayer(it) } catch (e: Exception) { } }
         playerB = null
+        if (::playerA.isInitialized) {
+            removeMasterPlayerListeners(playerA)
+            try { releasePlayer(playerA) } catch (e: Exception) { }
+        }
 
         playerA = buildPlayer(allowDirect = desiredBackend == AudioBackend.USB_DIRECT)
         recordDirectCapability()
@@ -2806,7 +2823,8 @@ class DualPlayerEngine @Inject constructor(
         // Counted, not acted on. A rebuild count is how a session record distinguishes "converged
         // once" from "oscillating", and it has to be counted where the rebuild is authorised rather
         // than inferred from route traces after the fact.
-        masterRebuildCount.incrementAndGet()
+        val rebuildNumber = masterRebuildCount.incrementAndGet()
+        Timber.tag("DualPlayerEngine").i("Master rebuild #%d: %s", rebuildNumber, logMessage)
         com.decent.usbaudio.media3.DirectPathTelemetry.recordIfCapturing("REBUILD") { logMessage }
         var replayDeferredReevaluation = false
         try {
@@ -2819,6 +2837,10 @@ class DualPlayerEngine @Inject constructor(
             // evaluation reads the facts the rebuild produced rather than the ones that authorised
             // it. Those facts are a fixed point, which is what keeps the replay from rebuilding.
             reevaluateAutomaticRoute("$logMessage: deferred route reevaluation")
+            Timber.tag("DualPlayerEngine").i(
+                "Master rebuild #%d deferred replay: additionalRebuilds=%d",
+                rebuildNumber, masterRebuildCount.get() - rebuildNumber,
+            )
         }
     }
 
@@ -2835,7 +2857,7 @@ class DualPlayerEngine @Inject constructor(
         // B17-H1: and with the shuffle order it had, or the rebuild would deal the shuffle again.
         val captured = captureQueue()
         val currentIndex = captured.currentIndex.coerceAtLeast(0)
-        val mediaItems = ArrayList<MediaItem>(captured.items)
+        val mediaItems = captured.items
         val repeatMode = playerA.repeatMode
         val shuffleMode = playerA.shuffleModeEnabled
         val volume = playerA.volume
@@ -2843,10 +2865,11 @@ class DualPlayerEngine @Inject constructor(
         val playbackParameters: PlaybackParameters = playerA.playbackParameters
 
         removeMasterPlayerListeners(playerA)
-        onPlayerAboutToBeReleasedListener?.invoke(playerA)
-        releasePlayer(playerA)
+        // Retire the auxiliary first: clearing the master notifies the transition controller,
+        // which can otherwise clear the displayed incoming queue before its wrapper is detached.
         playerB?.let(::releasePlayer)
         playerB = null
+        releasePlayer(playerA)
         // Leaving Direct: hand the DAC back to Android (release both interfaces, reattach
         // snd-usb-audio, close) instead of keeping it claimed, which left the Android path playing
         // to the speaker or a dead route (AUD-003). No-op when nothing is open.
@@ -3101,10 +3124,16 @@ class DualPlayerEngine @Inject constructor(
     }
 
     private fun releasePlayer(player: ExoPlayer) {
+        // Any released player may be the session's displayed incoming crossfade player.
+        onPlayerAboutToBeReleasedListener?.invoke(player)
         playerUsbSinks.remove(player)?.let { sink ->
             sink.setDiagnosticsListener(null)
             sink.detachFromPlayer()
         }
+        // ExoPlayer.release() stops its threads but retains its playlist snapshots and timeline.
+        // Retire those before allocating the replacement's 5,000 MaskingMediaSources. The master
+        // queue/order/position have already been captured and its session wrapper detached.
+        player.clearMediaItems()
         player.release()
     }
 
@@ -3593,13 +3622,12 @@ class DualPlayerEngine @Inject constructor(
         cancelAudioOffloadFallback()
         scope.coroutineContext[Job]?.cancel()
         abandonAudioFocus()
-        if (::playerA.isInitialized) {
-            removeMasterPlayerListeners(playerA)
-            onPlayerAboutToBeReleasedListener?.invoke(playerA)
-            releasePlayer(playerA)
-        }
         playerB?.let(::releasePlayer)
         playerB = null
+        if (::playerA.isInitialized) {
+            removeMasterPlayerListeners(playerA)
+            releasePlayer(playerA)
+        }
         playerUsbSinks.clear()
         if (audioOutputsCallbackRegistered) {
             context.getSystemService(AudioManager::class.java)?.unregisterAudioDeviceCallback(audioOutputsCallback)

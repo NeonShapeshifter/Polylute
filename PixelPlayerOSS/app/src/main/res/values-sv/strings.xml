@@ -483,4 +483,14 @@
     <string name="folders_actions">Mappåtgärder</string>
     <string name="lyrics_folder_title">Spara låttexter bredvid din musik</string>
     <string name="lyrics_reason_existing_file">det finns redan en låttextfil</string>
+    <string name="playback_open_to_resume">Öppna Polylute för att återuppta uppspelningen</string>
+    <string name="track_details_rg_pending">Begärd · väntar på förstärkning</string>
+    <string name="track_details_rg_waiting">Begärd · väntar på det här spåret</string>
+    <string name="track_details_rg_unity">Ingen korrigering · ×1,0</string>
+    <string name="library_search_tab">Sök på den här fliken</string>
+    <string name="library_search_close">Stäng sökning</string>
+    <string name="library_search_no_results">Inga resultat för ”%1$s”</string>
+    <string name="metadata_edit_safe_write_failed">Det gick inte att spara ändringarna. Filen har inte ändrats.</string>
+    <string name="backup_error_image_items_failed">Det gick inte att återställa bilder för: %1$s.</string>
+    <string name="backup_error_export_module_limit">Modulen %1$s överskrider säkerhetskopians gräns på %2$d MiB.</string>
 </resources>

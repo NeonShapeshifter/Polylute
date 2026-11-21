@@ -138,7 +138,7 @@ class B52EntriesRenderTest {
     private fun save(id:String) {
         val b=B52Renders.screen(compose)
         assertThat(b.width).isEqualTo(720);assertThat(b.height).isEqualTo(1610)
-        val dir=File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B52-gates/png-after");dir.mkdirs()
+        val dir=File("build/test-artifacts/B52/png-after");dir.mkdirs()
         File(dir,"$id.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG,100,it) };b.recycle()
     }
     @Test fun `entries settings about credits and page results render in Spanish`() {

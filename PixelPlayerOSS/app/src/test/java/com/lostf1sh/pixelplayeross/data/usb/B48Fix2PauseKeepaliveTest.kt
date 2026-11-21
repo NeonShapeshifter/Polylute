@@ -6,6 +6,7 @@ import com.decent.usbaudio.StreamingDeviceOps
 import com.decent.usbaudio.StreamingInterfaceSequence
 import com.decent.usbaudio.UsbAudioStream
 import com.decent.usbaudio.UsbDeviceOwner
+import com.decent.usbaudio.UsbTransportPlan
 import com.decent.usbaudio.UsbTransportPlanner
 import com.decent.usbaudio.media3.OwnedRecoveryHost
 import com.decent.usbaudio.media3.UsbStreamingThread
@@ -212,9 +213,9 @@ class B48Fix2PauseKeepaliveTest {
     }
 
     @Test
-    fun `the native transport plan exports the two second pause window in the next free field`() {
+    fun `the native transport plan exports the two second pause window at its original field index`() {
         val plan = UsbTransportPlanner.plan(48_000, 2, 4, sourceBits = 24, maxPacketBytes = 400, bInterval = 1, hasFeedback = true, feedbackBytes = 4)
         assertThat(plan.pauseKeepaliveMs).isEqualTo(2000)
-        assertThat(plan.toArray().last()).isEqualTo(2000)
+        assertThat(plan.toArray()[UsbTransportPlan.Field.PAUSE_KEEPALIVE_MS]).isEqualTo(2000)
     }
 }

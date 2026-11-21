@@ -87,6 +87,7 @@ struct FeedbackAnswer {
     int urbStatus = 0;
     int packetStatus = 0;
     int length = 4;
+    int64_t completeAfterUs = 1000;
 };
 
 /** B41-fix1: one audio URB as the kernel received it: when, how many frames in how many packets, and whether the output called the feedback stuck then. */
@@ -320,7 +321,7 @@ extern "C" int ioctl(int fd, unsigned long request, ...) {
                 u->iso_frame_desc[0].status = (unsigned int)scripted.packetStatus;
                 u->status = scripted.urbStatus;
                 p.feedback = true;
-                p.completeAtUs = now + 1000;
+                p.completeAtUs = now + scripted.completeAfterUs;
             } else {
                 const uint8_t *bytes = static_cast<const uint8_t *>(u->buffer);
                 g_usb.capture.insert(g_usb.capture.end(), bytes, bytes + u->buffer_length);
@@ -887,6 +888,9 @@ struct Writer {
     JNIEnv env;
     jlong usb = 0;
     UsbAudioContext *ctx = nullptr;
+#ifdef B635_FULL_RECOVERY
+    UsbRecoveryControl *savedRecovery = nullptr;
+#endif
     // The sources as ExoPlayer's FLAC decoder hands them over (24-bit LE), converted once: a buffer used to convert the whole
     // source again, so the writer's cost per 300-frame buffer grew with the file and a slow host starved the ring (B27-A0).
     std::map<const Pcm *, std::vector<uint8_t>> packedSources;
@@ -912,6 +916,9 @@ struct Writer {
         Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStop(nullptr, nullptr, usb);
         Java_com_decent_usbaudio_UsbAudioStream_nativeDrainUrbs(nullptr, nullptr, usb);
         Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioDestroy(nullptr, nullptr, usb);
+#ifdef B635_FULL_RECOVERY
+        delete savedRecovery;
+#endif
     }
     /** B48-fix1: the silence the stream's first write primed the ring with (frames), the one place every stream differs from its designed bytes on purpose. */
     int64_t startSilenceFrames = 0;
@@ -3371,7 +3378,7 @@ struct LockRun {
     int64_t lockToStepEndMs = -1;        // ... to the end of the first step
     int64_t lockToUnlockedMs = -1;       // ... to the fake DAC being out of it
     int stepsRun = 0;
-    int step1 = 0, step2 = 0, gaveUp = 0;
+    int step1 = 0, step2 = 0, step3 = 0, gaveUp = 0;
     int setInterfaceCalls = 0, resetCalls = 0;
     int64_t stepsMs = 0;                 // wall (virtual) time the steps took, writer side
     bool bytesExact = false;
@@ -3384,17 +3391,27 @@ struct LockRun {
 std::vector<std::string> g_logLinesSeen;
 
 void runOneStep(Writer &w, const Pcm &src, int &next, int step, int block, const std::function<void()> &afterRestart = nullptr) {
-    // performPause: the fade of the continuation behind the ring, then the writer idles (announced)
-    if (w.beginPause()) {
-        while (w.fadingOut() && next + block <= src.frames()) {
-            w.write(src, next, block);
-            next += block;
-        }
-        if (w.fadingOut()) w.endFadeOut();
-    }
-    w.markIdle();
+    (void)src; (void)next; (void)block; // recovery never consumes a faded continuation
     const int64_t startUs = nowUs();
     CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDacRecoveryBegin(nullptr, nullptr, w.usb) == JNI_TRUE, "the recovery's first half did not empty the ring");
+#ifdef B635_FULL_RECOVERY
+    if (step == 3) {
+        const int rate = w.ctx->sampleRate;
+        w.savedRecovery = usbSaveRecoveryControl(w.ctx, w.savedRecovery);
+        CHECK(w.savedRecovery != nullptr, "reopen control unavailable");
+        Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStop(nullptr, nullptr, w.usb);
+        Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioDestroy(nullptr, nullptr, w.usb);
+        // Device close/open is modelled here; JVM FullStreamReopen tests prove its real owner ordering.
+        sleepMs(150); // UsbAudioDevice.openDevice (100ms) + StreamingInterfaceSequence PLL (50ms)
+        w.usb = createStream(rate, 32, rate);
+        w.ctx = reinterpret_cast<UsbAudioContext *>(w.usb);
+        usbBindRecoveryControl(w.ctx, w.savedRecovery);
+        w.savedRecovery->unavailable = false;
+        Java_com_decent_usbaudio_UsbAudioStream_nativeNoteDacRecovery(nullptr, nullptr, w.usb, step, 0, (nowUs() - startUs) / 1000);
+        if (afterRestart) afterRestart();
+        return;
+    }
+#endif
     // UsbAudioDevice.setAltSetting(0), then the format's alt again (the same SETINTERFACE the sink makes)
     usbdevfs_setinterface si = {};
     si.interface = 1;
@@ -3407,10 +3424,11 @@ void runOneStep(Writer &w, const Pcm &src, int &next, int step, int block, const
     }
     si.altsetting = 1;
     ioctl(kFakeFd, USBDEVFS_SETINTERFACE, &si);
+    sleepMs(50); // the real StreamingInterfaceSequence PLL wait
     CHECK(Java_com_decent_usbaudio_UsbAudioStream_nativeDacRecoveryEnd(nullptr, nullptr, w.usb) == JNI_TRUE, "the recovery's second half did not re-arm the stream");
     Java_com_decent_usbaudio_UsbAudioStream_nativeNoteDacRecovery(nullptr, nullptr, w.usb, step, 0, (nowUs() - startUs) / 1000);
     if (afterRestart) afterRestart();   // B48-fix1: a test's moment "the interface has restarted" (the start of the guard and of the stall after the first URB)
-    w.resume();   // the kept block of the fade, faded in, after the priming silence
+    // The next write carries the original music bytes, without resume silence or fades.
 }
 
 LockRun runLockedDac(int rate, int lockMode, int playMs) {
@@ -3445,12 +3463,12 @@ LockRun runLockedDac(int rate, int lockMode, int playMs) {
         usbDacLockState(w.ctx, state);
         if (state[0] != 0 && detectedAtUs < 0) detectedAtUs = nowUs();
         const int step = (int)state[5];
-        if (step == USB_DAC_STEP_INTERFACE || step == USB_DAC_STEP_BUS_RESET) {
+        if (step >= USB_DAC_STEP_INTERFACE && step <= 3) {
             const int64_t t0 = nowUs();
             runOneStep(w, src, next, step, kBlock);
             stepMs += (nowUs() - t0) / 1000;
             out.stepsRun++;
-            if (step == 1) out.step1++; else out.step2++;
+            if (step == 1) out.step1++; else if (step == 2) out.step2++; else out.step3++;
             if (firstStepEndUs < 0) firstStepEndUs = nowUs();
         } else if (step == USB_DAC_STEP_GIVE_UP) {
             out.gaveUp++;
@@ -3500,7 +3518,7 @@ LockRun runLockedDac(int rate, int lockMode, int playMs) {
     }
     (void)wi;
     (void)inOrder;
-    out.bytesExact = unmatched <= 2 * (int64_t)(w.ctx->plan.fadeOutFrames + w.ctx->plan.fadeInFrames) * (out.stepsRun + 1) && unmodified > 0;
+    out.bytesExact = unmatched == 0 && unmodified > 0;
     return out;
 }
 
@@ -3533,7 +3551,7 @@ void testLockedDacRecovery() {
                       r.stepsRun, r.resetCalls, r.gaveUp);
                 CHECK(r.lockToUnlockedMs >= 0 && r.lockToUnlockedMs <= 5500, "%d Hz: out of it %lld ms after the underrun", rate, (long long)r.lockToUnlockedMs);
             } else {
-                CHECK(r.step2 == 1 && r.stepsRun == 2 && r.gaveUp == 1 && r.resetCalls == 1, "%d Hz: a DAC that never recovers: step 2 x%d, steps %d, gave up %d, reset x%d", rate, r.step2,
+                CHECK(r.step2 == 1 && r.step3 == 1 && r.stepsRun == 3 && r.gaveUp == 0 && r.resetCalls == 1, "%d Hz: a DAC that never recovers: step 2 x%d, steps %d, gave up %d, reset x%d", rate, r.step2,
                       r.stepsRun, r.gaveUp, r.resetCalls);
             }
         }
@@ -3751,7 +3769,7 @@ StartRun runFirstStart(int rate) {
     sleepMs(300);
     StartRun out;
     out.primedFrames = w.startSilenceFrames;
-    out.expectedPrime = silenceToReach(w.ctx->plan.resumeLeadFrames, w.ctx->plan.silenceChunkFrames, 0);
+    out.expectedPrime = silenceToReach(w.ctx->plan.startLeadFrames, w.ctx->plan.silenceChunkFrames, 0);
     out.audibleEqual = wire == toUsb32(src);
     std::lock_guard<std::mutex> lock(g_usb.mu);
     out.gaps = g_usb.gaps;
@@ -3851,11 +3869,11 @@ void testEveryStartPrimesTheRing() {
             printf("B48-1 %6d Hz, recovery step %d resume, writer stalled 10 ms after the restart's first URB: fake DAC dry after the restart %d x (max %.1f ms), OUTPUT_GAP=%zu, "
                    "RING_EMPTY=%d, priming %lld frames (the plan's %lld)\n",
                    rate, step, r.gaps, r.maxGapUs / 1000.0, r.modelLines, r.ringEmpty, (long long)r.primedFrames, (long long)r.expectedPrime);
-            CHECK(r.gaps == 0, "%d Hz step %d: the recovery's resume left the DAC dry %d times (max %.1f ms)", rate, step, r.gaps, r.maxGapUs / 1000.0);
-            CHECK(r.ringEmpty == 0 && r.modelLines == 0, "%d Hz step %d: the resume reported %d RING_EMPTY and %zu OUTPUT_GAP lines", rate, step, r.ringEmpty, r.modelLines);
-            CHECK(r.primedFrames == r.expectedPrime && r.expectedPrime > 0, "%d Hz step %d: the resume primed %lld frames, the plan's amount is %lld", rate, step,
-                  (long long)r.primedFrames, (long long)r.expectedPrime);
-            CHECK(r.primeLogged && r.startGuardLogged, "%d Hz step %d: the recovery's restart did not log its priming and its guard", rate, step);
+            // Owner 11-18: recovery has no silence lead. A modelled 10ms scheduling stall at
+            // the first audible URB therefore has 9ms of dry bus; do not disguise it with zeros.
+            CHECK(r.gaps == 1 && r.maxGapUs >= 8000 && r.maxGapUs <= 11000, "%d Hz step %d: recovery stall model changed", rate, step);
+            CHECK(r.primedFrames == 0, "%d Hz step %d: recovery inserted silence", rate, step);
+            CHECK(r.startGuardLogged, "%d Hz step %d: recovery lost its existing guard configuration", rate, step);
         }
     }
 }
@@ -4172,7 +4190,7 @@ void testTrainFeedback() {
                 if (state[0] && detectedMs < 0) detectedMs = (nowUs() - t0) / 1000 - railMs;
                 const int step = (int)state[5];
                 if (step >= 1 && step <= 3) steps[step]++;
-                if (cure != 0 && (step == 1 || step == 2)) {
+                if (cure != 0 && (step >= 1 && step <= 3)) {
                     runOneStep(w, src, next, step, 128, [&] {
                         restarts++;
                         restartUs = nowUs();
@@ -4557,7 +4575,7 @@ void testStuckDacRecovery() {
             usbDacLockState(w.ctx, state);
             const int step = (int)state[5];
             if (step >= USB_DAC_STEP_INTERFACE && step <= USB_DAC_STEP_GIVE_UP) steps[step]++;
-            if (step == USB_DAC_STEP_INTERFACE || step == USB_DAC_STEP_BUS_RESET) {
+            if (step >= USB_DAC_STEP_INTERFACE && step <= 3) {
                 if (decisionUs < 0) decisionUs = nowUs();
                 runOneStep(w, src, next, step, kBlock, [&] {
                     restarts++;
@@ -4568,7 +4586,7 @@ void testStuckDacRecovery() {
             // The four-second verdict cannot announce success while a renewed five-second
             // frozen run is still awaiting classification (including the usual start ramp).
             if (c.cure >= 2 && restarts > 0 && (c.cure == 3 || restarts == 1)) {
-                CHECK(w.ctx->dacPolicy.awaitingStep != 0 || w.ctx->feedbackWatch.stuck,
+                CHECK((w.ctx->recoveryControl ? w.ctx->recoveryControl->policy.awaitingStep : w.ctx->dacPolicy.awaitingStep) != 0 || w.ctx->feedbackWatch.stuck,
                       "%s reported ok before renewed freeze reached its hold", c.name);
             }
         }
@@ -4599,7 +4617,7 @@ void testStuckDacRecovery() {
                 printf("B48-fix4 %s t=%lldms %s\n", c.name, (long long)((entry.first - t0) / 1000), line.c_str());
             }
         }
-        CHECK(stuckLocks == (c.cure >= 2 ? (c.cure == 3 ? 3 : 2) : 1) && railLocks == 0,
+        CHECK(stuckLocks == (c.cure >= 2 ? (c.cure == 3 ? 4 : 2) : 1) && railLocks == 0,
               "%s watches stuck=%d rail=%d", c.name, stuckLocks, railLocks);
         CHECK(firstLockUs / 1000 - t0 / 1000 >= hold, "lock before its hold");
         if (!c.pause && c.cure != 0) {
@@ -4648,7 +4666,7 @@ void testStuckDacRecovery() {
         setFeedbackScript([&](int64_t atUs) {
             FeedbackAnswer a;
             const int64_t ms = (atUs - t0) / 1000;
-            a.fpmf = restarts == 0 || ms >= kSecondFaultMs ? kFrozen :
+            a.fpmf = restarts == 0 ? kFrozen : ms >= kSecondFaultMs ? kFrozen + 1.0 / 65536.0 :
                 (ms % kDitherPeriodMs == 0 ? kBlip : kNominal);
             return a;
         });

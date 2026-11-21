@@ -75,7 +75,7 @@ class B27WiringBoundaryTest {
 
     @Test
     fun `A3 no write publishes the level that was asked for`() {
-        val setRaw = body(safety, "fun setRawLevel(requested: Int, origin: String = \"ui\")")
+        val setRaw = body(safety, "private fun setRawLevelNow(")
         assertThat(setRaw).contains("write.publishedStep(")
         assertThat(setRaw).contains("sameOutput(")
         // the old shape: the requested level written into the state unconditionally

@@ -58,9 +58,12 @@ class UsbDeviceOwner(
     private var exclusiveThread: Thread? = null
     private var exclusiveDepth = 0
     private var exclusiveWho = ""
+    private var exclusiveWaiters = 0
 
     /** The recovery that holds the device, if one does. */
     private var recovery: RecoveryClaim? = null
+    private var accessory: AccessoryClaim? = null
+    private var hidSettlesAtMs = Long.MIN_VALUE
 
     /** The current generation. Lock-free; read by anybody. */
     val generation: Long get() = generationValue
@@ -92,29 +95,36 @@ class UsbDeviceOwner(
                 return
             }
             generationValue++
-            var waitedFor = ""
-            while ((exclusiveThread != null || recovery != null) && nowMs() - startedMs < exclusiveWaitMs) {
-                waitedFor = heldBy()
-                monitor.wait((exclusiveWaitMs - (nowMs() - startedMs)).coerceAtLeast(1L))
+            exclusiveWaiters++
+            try {
+                var waitedFor = ""
+                while (accessory != null || exclusiveThread != null || (recovery != null && nowMs() - startedMs < exclusiveWaitMs)) {
+                    waitedFor = heldBy()
+                    if (accessory != null || exclusiveThread != null) monitor.wait()
+                    else monitor.wait((exclusiveWaitMs - (nowMs() - startedMs)).coerceAtLeast(1L))
+                }
+                if (recovery != null) {
+                    log("OWNER_FORCED who=$who waitedMs=${nowMs() - startedMs} stillHeldBy=${heldBy()}: the bound passed, going on as before B48")
+                } else if (waitedFor.isNotEmpty()) {
+                    log("OWNER_WAITED who=$who waitedMs=${nowMs() - startedMs} for=$waitedFor gen=$generationValue")
+                }
+                exclusiveThread = me
+                exclusiveDepth = 1
+                exclusiveWho = who
+            } finally {
+                exclusiveWaiters--
             }
-            if (exclusiveThread != null || recovery != null) {
-                log("OWNER_FORCED who=$who waitedMs=${nowMs() - startedMs} stillHeldBy=${heldBy()}: the bound passed, going on as before B48")
-            } else if (waitedFor.isNotEmpty()) {
-                log("OWNER_WAITED who=$who waitedMs=${nowMs() - startedMs} for=$waitedFor gen=$generationValue")
-            }
-            exclusiveThread = me
-            exclusiveDepth = 1
-            exclusiveWho = who
         }
     }
 
-    private fun heldBy(): String = if (exclusiveThread != null) exclusiveWho else "recovery step ${recovery?.step}"
+    private fun heldBy(): String = accessory?.who ?: if (exclusiveThread != null) exclusiveWho else "recovery step ${recovery?.step}"
 
     private fun leave() {
         synchronized(monitor) {
             if (--exclusiveDepth == 0) {
                 exclusiveThread = null
                 exclusiveWho = ""
+                hidSettlesAtMs = nowMs() + HID_SETTLE_MS
                 monitor.notifyAll()
             }
         }
@@ -142,7 +152,7 @@ class UsbDeviceOwner(
         synchronized(monitor) {
             previousStreamRateValue = 0
             // Said on every refresh of the bus while no DAC is there: only a stream, a recovery or a section in flight has anything to stop.
-            if (factsValue == null && recovery == null && exclusiveThread == null) return
+            if (factsValue == null && recovery == null && exclusiveThread == null && accessory == null) return
             generationValue++
             detachCount++
             factsValue = null
@@ -155,7 +165,16 @@ class UsbDeviceOwner(
      * The writer's recovery asks to take the device for [step], for the stream of [generation] (the thread's own, fixed when it was made). Null when it is superseded: the
      * generation is not the current one, the DAC is gone, or a section holds the device. It never waits. The claim must be [RecoveryClaim.close]d.
      */
-    fun claimForRecovery(generation: Long, step: Int): RecoveryClaim? {
+    fun claimForRecovery(generation: Long, step: Int): RecoveryClaim? =
+        (tryClaimForRecovery(generation, step) as? RecoveryAttempt.Acquired)?.claim
+
+    sealed interface RecoveryAttempt {
+        data class Acquired(val claim: RecoveryClaim) : RecoveryAttempt
+        data object Busy : RecoveryAttempt
+        data object Superseded : RecoveryAttempt
+    }
+
+    fun tryClaimForRecovery(generation: Long, step: Int): RecoveryAttempt {
         val gone = deviceGone()   // outside the monitor: it asks the bus
         val why: String
         synchronized(monitor) {
@@ -169,20 +188,48 @@ class UsbDeviceOwner(
                 else -> ""
             }
             if (why.isEmpty()) {
+                if (accessory != null) return RecoveryAttempt.Busy
                 val claim = RecoveryClaim(this, facts!!, step, detachCount)
                 recovery = claim
-                return claim
+                return RecoveryAttempt.Acquired(claim)
             }
         }
         log("DAC_RECOVERY step=$step result=superseded gen=$generation now=$generationValue by=$why")
-        return null
+        return RecoveryAttempt.Superseded
     }
 
     private fun releaseRecovery(claim: RecoveryClaim) {
         synchronized(monitor) {
             if (recovery === claim) {
                 recovery = null
+                hidSettlesAtMs = nowMs() + HID_SETTLE_MS
                 monitor.notifyAll()
+            }
+        }
+    }
+
+    /** A short owner check followed by a lease across a complete command sequence. */
+    fun tryClaimAccessory(who: String, expectedGeneration: Long, settled: Boolean = false): AccessoryClaim? {
+        if (deviceGone()) return null
+        return synchronized(monitor) {
+            if (generationValue != expectedGeneration || exclusiveWaiters != 0 || exclusiveThread != null ||
+                recovery != null || accessory != null || (settled && nowMs() < hidSettlesAtMs)
+            ) return@synchronized null
+            AccessoryClaim(this, who, expectedGeneration).also { accessory = it }
+        }
+    }
+
+    class AccessoryClaim internal constructor(
+        private val owner: UsbDeviceOwner,
+        internal val who: String,
+        val generation: Long,
+    ) : AutoCloseable {
+        fun isCurrent(): Boolean = owner.generation == generation && !owner.deviceGone()
+
+        override fun close() = synchronized(owner.monitor) {
+            if (owner.accessory === this) {
+                owner.accessory = null
+                owner.monitor.notifyAll()
             }
         }
     }
@@ -205,6 +252,8 @@ class UsbDeviceOwner(
 
     /** The recovery's hold on the device for one step. It knows the facts of its own generation. */
     class RecoveryClaim internal constructor(private val owner: UsbDeviceOwner, val facts: StreamFacts, val step: Int, internal val detachCountAtClaim: Long) : AutoCloseable {
+        fun isCurrent(): Boolean = owner.generation == facts.generation && owner.facts?.generation == facts.generation && owner.detachCount == detachCountAtClaim
+
         /** Before the first device call: false = superseded (the generation moved, or the DAC is gone); make no call. The owner has logged the one line. */
         fun commit(what: String): Boolean = owner.mayTouch(this, what, first = true)
 
@@ -220,5 +269,6 @@ class UsbDeviceOwner(
          * (a bus reset re-enumerates in a few seconds), and 3 s stays below the 8 s a track's tail may take to play out before a rebuild.
          */
         const val EXCLUSIVE_WAIT_MS = 3_000L
+        const val HID_SETTLE_MS = 2_000L
     }
 }

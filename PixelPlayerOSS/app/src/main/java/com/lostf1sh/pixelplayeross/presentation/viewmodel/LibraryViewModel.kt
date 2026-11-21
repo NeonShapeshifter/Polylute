@@ -11,6 +11,8 @@ class LibraryViewModel @Inject constructor(
     private val libraryStateHolder: LibraryStateHolder
 ) : ViewModel() {
 
+    val tabSearch get() = libraryStateHolder.tabSearch
+
     val songsPagingFlow = libraryStateHolder.songsPagingFlow.cachedIn(viewModelScope)
 
     val albumsPagingFlow = libraryStateHolder.albumsPagingFlow.cachedIn(viewModelScope)

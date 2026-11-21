@@ -8,12 +8,12 @@ import androidx.compose.ui.test.onRoot
 import java.io.File
 
 /**
- * B60: where the renders go. Robolectric images over made-up data (not phone screenshots), saved under `analysis/.../B60-gates/renders/` as `<name>-after.png`; the same test run in
+ * B60: where the renders go. Robolectric images over made-up data (not phone screenshots), saved under `build/test-artifacts/B60/renders/` as `<name>-after.png`; the same test run in
  * the scratch copy of the tree as it was (`B60-before`) writes `<name>-before.png`. `B60_RENDERS` overrides the folder.
  */
 object B60Renders {
     private val root: File
-        get() = File(System.getenv("B60_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B60-gates/renders").apply { mkdirs() }
+        get() = File(System.getenv("B60_RENDERS") ?: "build/test-artifacts/B60/renders").apply { mkdirs() }
 
     val phase: String get() = if (File("").absoluteFile.path.contains("B60-before") || System.getenv("B60_PHASE") == "before") "before" else "after"
 

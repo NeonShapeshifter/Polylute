@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
-import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -334,7 +333,7 @@ object MediaItemBuilder {
         }
 
         return runCatching {
-            FileProvider.getUriForFile(context, "${context.packageName}.provider", canonicalFile)
+            SharedArtworkFiles.uri(context, canonicalFile)
         }.getOrNull()
     }
 

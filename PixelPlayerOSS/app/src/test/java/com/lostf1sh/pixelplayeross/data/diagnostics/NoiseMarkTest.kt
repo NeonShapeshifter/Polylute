@@ -74,8 +74,8 @@ class NoiseMarkTest {
     }
 
     @Test
-    fun `the default window is the thirty seconds the output is asked for`() {
-        assertThat(NoiseMark.DEFAULT_SECONDS).isEqualTo(30)
+    fun `the default window preserves all 128 seconds`() {
+        assertThat(NoiseMark.DEFAULT_SECONDS).isEqualTo(128)
     }
 
     @Test

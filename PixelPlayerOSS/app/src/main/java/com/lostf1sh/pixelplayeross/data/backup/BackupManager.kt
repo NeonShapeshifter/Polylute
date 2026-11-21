@@ -162,7 +162,7 @@ class BackupManager @Inject constructor(
 
             plan.availableModules.toList().sortedBy { it.key }.forEach { section ->
                 val moduleInfo = plan.manifest.modules[section.key]
-                if (moduleInfo != null && moduleInfo.sizeBytes > BackupReader.MAX_MODULE_PAYLOAD_BYTES) {
+                if (moduleInfo != null && moduleInfo.sizeBytes > BackupReader.maxModulePayloadBytes(section.key)) {
                     warnings.add(
                         BackupMessage.of(
                             R.string.backup_warning_preview_skipped,

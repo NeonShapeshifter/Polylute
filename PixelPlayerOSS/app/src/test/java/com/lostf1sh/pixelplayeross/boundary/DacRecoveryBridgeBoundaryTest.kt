@@ -5,7 +5,7 @@ import java.io.File
 import org.junit.jupiter.api.Test
 
 /**
- * B47-A5: the debug bridge of the locked-up DAC's recovery. `SET_DAC_RECOVERY --ez enabled false|true` and `RECOVER_DAC_NOW --ei step 1|2`: declared in the debug manifest ONLY,
+ * B47-A5: the debug bridge of the locked-up DAC's recovery. `SET_DAC_RECOVERY --ez enabled false|true` and `RECOVER_DAC_NOW --ei step 1|2|3`: declared in the debug manifest ONLY,
  * their extras required, process-only like SET_FEEDBACK_POLICY, and the recovery itself on by default in debug and release.
  */
 class DacRecoveryBridgeBoundaryTest {
@@ -22,7 +22,7 @@ class DacRecoveryBridgeBoundaryTest {
 
     @Test
     fun `both actions are declared in the debug manifest and nowhere else`() {
-        for (action in listOf("SET_DAC_RECOVERY", "RECOVER_DAC_NOW")) {
+        for (action in listOf("SET_DAC_RECOVERY", "RECOVER_DAC_NOW", "INJECT_DAC_FAULT")) {
             assertThat(debugManifest).contains("com.lostf1sh.pixelplayeross.debug.$action")
             assertThat(mainManifest).doesNotContain(action)
             assertThat(receiver).contains("\"com.lostf1sh.pixelplayeross.debug.$action\"")
@@ -33,6 +33,7 @@ class DacRecoveryBridgeBoundaryTest {
             val body = file.readText()
             assertThat(body).doesNotContain("SET_DAC_RECOVERY")
             assertThat(body).doesNotContain("RECOVER_DAC_NOW")
+            assertThat(body).doesNotContain("INJECT_DAC_FAULT")
         }
     }
 
@@ -43,8 +44,8 @@ class DacRecoveryBridgeBoundaryTest {
         assertThat(set).contains("SET_DAC_RECOVERY needs --ez enabled true|false; unchanged")   // (logged with Timber: lint's baseline counts `Log` per file)
         assertThat(set).contains("UsbAudioStream.nativeSetDacRecoveryEnabled(")
         val now = receiver.substringAfter("ACTION_RECOVER_DAC_NOW ->").substringBefore("ACTION_SET_RATE_SWITCH_PREROLL ->")
-        assertThat(now).contains("step != 1 && step != 2")
-        assertThat(now).contains("RECOVER_DAC_NOW needs --ei step 1|2; nothing asked")
+        assertThat(now).contains("step !in 1..3")
+        assertThat(now).contains("RECOVER_DAC_NOW needs --ei step 1|2|3; nothing asked")
         assertThat(now).contains("UsbAudioStream.nativeRequestDacRecovery(step)")
         for (persisted in listOf("SharedPreferences", "DataStore", "putString", "putInt", ".edit")) {
             assertThat(set).doesNotContain(persisted)
@@ -66,15 +67,17 @@ class DacRecoveryBridgeBoundaryTest {
     }
 
     @Test
-    fun `the writer asks the policy only when it is playing, and a step is the pause machinery plus the ordinary reconfigure`() {
+    fun `the writer asks only while playing and recovery drains music without a synthetic pause`() {
         val thread = File(appRoot, "../../decent-player/libs/decent-usb-audio-wrapper-media3/src/main/kotlin/com/decent/usbaudio/media3/UsbStreamingThread.kt")
             .canonicalFile.readText().replace("\r\n", "\n")
         val gate = thread.substringAfter("private fun dacRecoveryStepToTake()").substringBefore("private fun performDacRecovery")
         for (guard in listOf("dacRecovery == null", "paused", "seekOwed", "fadeInProgress", "!running")) assertThat(gate).contains(guard)
         val step = thread.substringAfter("private fun performDacRecovery").substringBefore("/** The next audio a pause can ramp down")
-        for (call in listOf("usbStream.beginPauseFade()", "usbStream.markIdle()", "usbStream.dacRecoveryBegin()", "host.restartInterface(step)",
-            "usbStream.dacRecoveryEnd()", "usbStream.noteDacRecovery(", "usbStream.resumeAfterPause()")) assertThat(step).contains(call)
-        // the sink's step is its ordinary reconfigure, not a second implementation
+        for (call in listOf("usbStream.dacRecoveryBegin()", "host.restartInterface(step)",
+            "usbStream.dacRecoveryEnd()", "usbStream.noteDacRecovery(")) assertThat(step).contains(call)
+        // Owner decision 11-18 removes fault fades and the synthetic player pause.
+        for (call in listOf("usbStream.beginPauseFade()", "usbStream.markIdle()", "usbStream.resumeAfterPause()", "usbStream.feedSilenceStep()")) assertThat(step).doesNotContain(call)
+        // the sink's step uses its ordinary reconfigure
         val sink = File(appRoot, "../../decent-player/libs/decent-usb-audio-wrapper-media3/src/main/kotlin/com/decent/usbaudio/media3/UsbAudioSink.kt")
             .canonicalFile.readText().replace("\r\n", "\n")
         // B48-1: the one sequence lives in the driver (StreamingInterfaceSequence); the sink's start-up and the recovery host both call it

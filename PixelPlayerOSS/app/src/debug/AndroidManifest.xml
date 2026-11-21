@@ -95,6 +95,7 @@
                   B47-A5: runs recovery step 1 (restart the streaming interface) or 2 (bus reset, claims again) at the writer's next look (extra: step = 1 or 2), to test each by hand
                   on the real DAC when it is locked up. Not while paused or in a seek.
                 -->
+                <action android:name="com.lostf1sh.pixelplayeross.debug.INJECT_DAC_FAULT" />
                 <action android:name="com.lostf1sh.pixelplayeross.debug.RECOVER_DAC_NOW" />
                 <!--
                   B48-fix1: the feedback start guard (the first 500 ms after the streaming interface starts go out at the nominal rate whatever the feedback reads): extra enabled = true

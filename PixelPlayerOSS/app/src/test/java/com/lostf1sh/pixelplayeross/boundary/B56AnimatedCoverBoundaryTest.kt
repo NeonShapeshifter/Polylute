@@ -18,7 +18,7 @@ class B56AnimatedCoverBoundaryTest {
             .filter { it.readText().let { t -> t.contains("AnimatedCoverLayer(") || t.contains("rememberAnimatedCoverHost(") } }
             .map(::rel)
         // B61 item 5 (#70): and Polylute's own lock screen, when the listener turned "Also on the lock screen" on (it is the one other surface that shows the cover, through the same controller)
-        assertThat(users).containsExactly("presentation/components/player/PlayerCoverSurface.kt", "presentation/lockscreen/DapLockScreen.kt")
+        assertThat(users).containsExactly("presentation/components/player/PlayerCoverSurface.kt", "presentation/lockscreen/DapLockScreen.kt", "presentation/components/ArtworkViewer.kt", "presentation/screens/AlbumDetailScreen.kt")
     }
 
     @Test
@@ -31,6 +31,8 @@ class B56AnimatedCoverBoundaryTest {
             // B61 item 5 (#70): the lock screen's cover (one file of its package)
             "presentation/lockscreen/DapLockScreen.kt",
             "utils/FolderArtworkSession.kt",
+            "presentation/components/ArtworkViewer.kt",
+            "presentation/screens/AlbumDetailScreen.kt",
         )
         // the rest of the lock screen's package (the clock, the progress, the transport row, the surface that hosts it), the widgets, the mini player, Home and the service still never mention it
         val lockOthers = kotlinFiles().filter { rel(it).startsWith("presentation/lockscreen") && rel(it) != "presentation/lockscreen/DapLockScreen.kt" }

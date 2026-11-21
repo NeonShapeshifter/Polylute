@@ -9,13 +9,13 @@ import java.io.File
 
 /**
  * B33: where the renders for the owner go. Robolectric images of the screens over made-up data (not phone screenshots), saved under
- * `analysis/.../B33-evidence/renders/` so they can be looked at without the phone. `B33_RENDERS` overrides the folder and `B33_PREFIX`
+ * `build/test-artifacts/B33/renders/` so they can be looked at without the phone. `B33_RENDERS` overrides the folder and `B33_PREFIX`
  * names the run (`after` by default; the "before" renders are taken from a copy of the tree as it was at the start of the batch, with the
  * same test, into the same folder under `before`).
  */
 object B33Renders {
     private val root: File
-        get() = File(System.getenv("B33_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B33-evidence/renders").apply { mkdirs() }
+        get() = File(System.getenv("B33_RENDERS") ?: "build/test-artifacts/B33/renders").apply { mkdirs() }
 
     val prefix: String get() = System.getenv("B33_PREFIX") ?: "after"
 

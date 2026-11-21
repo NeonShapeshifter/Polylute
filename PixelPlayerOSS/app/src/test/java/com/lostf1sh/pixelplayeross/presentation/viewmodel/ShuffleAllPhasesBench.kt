@@ -89,7 +89,7 @@ class ShuffleAllPhasesBench {
             for (row in rows) appendLine("%-78s cold %8.2f   warm %8.3f".format(row.phase, row.cold, row.warm))
         }
         println(table)
-        val out = File(System.getenv("B31_BENCH_OUT") ?: "../../../analysis/audit-2026-09-27/batches/B31-evidence/logs/shuffle-all-phases-host-$path.txt")
+        val out = File(System.getenv("B31_BENCH_OUT") ?: "build/test-artifacts/B31/logs/shuffle-all-phases-host-$path.txt")
         out.parentFile?.mkdirs()
         out.writeText(table)
     }

@@ -155,7 +155,7 @@ class RevealFrameBench {
             for (row in rows) appendLine("%-72s %9.2f %9.2f %9.2f %9.2f".format(row.label, row.prepass, row.lift, row.draw, row.lift + row.draw))
         }
         println(table)
-        val out = File(System.getenv("B31_BENCH_OUT") ?: "../../../analysis/audit-2026-09-27/batches/B31-evidence/logs/reveal-frame-host.txt")
+        val out = File(System.getenv("B31_BENCH_OUT") ?: "build/test-artifacts/B31/logs/reveal-frame-host.txt")
         out.parentFile?.mkdirs()
         out.writeText(table)
     }

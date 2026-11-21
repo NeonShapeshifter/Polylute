@@ -2,6 +2,11 @@
 
 package com.lostf1sh.pixelplayeross.presentation.screens
 
+import com.lostf1sh.pixelplayeross.presentation.components.LibraryMiniSearch
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryTabSearch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+
 import com.lostf1sh.pixelplayeross.data.stats.ListenSource
 import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
 import com.lostf1sh.pixelplayeross.utils.currentLocale
@@ -81,6 +86,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -260,6 +267,7 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapAlbumRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapArtistRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapArtworkPlaceholder
 import com.lostf1sh.pixelplayeross.ui.ds.DapBackButton
+import com.lostf1sh.pixelplayeross.ui.ds.DapIconButton
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
 import com.lostf1sh.pixelplayeross.ui.ds.DapDivider
 import com.lostf1sh.pixelplayeross.ui.ds.DapIcon
@@ -384,6 +392,16 @@ fun LibraryScreen(
     val allTabTitles by playerViewModel.libraryAllTabsFlow.collectAsStateWithLifecycle()
     val hiddenTabTitles by playerViewModel.libraryHiddenTabsFlow.collectAsStateWithLifecycle()
     val currentTabId by playerViewModel.currentLibraryTabId.collectAsStateWithLifecycle()
+    val appliedQueries by libraryViewModel.tabSearch.queries.collectAsStateWithLifecycle()
+    val openSearchTabs = remember { mutableStateMapOf<LibraryTabId, Boolean>() }
+    val searchEdits = remember { mutableStateMapOf<LibraryTabId, String>() }
+    val searchOpen = openSearchTabs[currentTabId] == true
+    val searchEdit = searchEdits[currentTabId].orEmpty()
+    LaunchedEffect(currentTabId, searchEdit, searchOpen) {
+        if (searchOpen) { kotlinx.coroutines.delay(150); libraryViewModel.tabSearch.set(currentTabId, searchEdit) }
+    }
+    DisposableEffect(libraryViewModel) { onDispose { libraryViewModel.tabSearch.clear() } }
+
     val libraryNavigationMode by playerViewModel.libraryNavigationMode.collectAsStateWithLifecycle()
     val isCompactNavigation = libraryNavigationMode == LibraryNavigationMode.COMPACT_PILL
     val tabCount = tabTitles.size.coerceAtLeast(1)
@@ -444,7 +462,11 @@ fun LibraryScreen(
     val songsTabHiddenMessage = stringResource(R.string.library_locate_songs_tab_hidden)
     LaunchedEffect(locateRequest?.token) {
         if (locateRequest == null) return@LaunchedEffect
-        val songsTabIndex = tabTitles.indexOfFirst { it.toLibraryTabIdOrNull() == LibraryTabId.SONGS }
+        val locateTab = if (locateRequest?.liked == true) LibraryTabId.LIKED else LibraryTabId.SONGS
+        openSearchTabs.remove(locateTab)
+        searchEdits.remove(locateTab)
+        libraryViewModel.tabSearch.set(locateTab, "")
+        val songsTabIndex = tabTitles.indexOfFirst { it.toLibraryTabIdOrNull() == if (locateRequest?.liked == true) LibraryTabId.LIKED else LibraryTabId.SONGS }
         if (songsTabIndex < 0) {
             playerViewModel.clearLibraryLocate()
             playerViewModel.sendToast(songsTabHiddenMessage)
@@ -770,14 +792,15 @@ fun LibraryScreen(
                         else -> playerViewModel.playLibraryFromStart()
                     }
                 },
-                showLocate = fabShowLocate,
+                showLocate = fabShowLocate && appliedQueries[fabTab].isNullOrBlank(),
                 onLocateClick = { fabLocate?.invoke() },
-                showShuffle = fabTab != LibraryTabId.PLAYLISTS && fabTab != LibraryTabId.FOLDERS,
+                showShuffle = fabTab != LibraryTabId.PLAYLISTS && fabTab != LibraryTabId.FOLDERS && fabTab != LibraryTabId.COLLECTIONS,
                 onShuffleClick = {
                     when (fabTab) {
                         LibraryTabId.LIKED -> playerViewModel.shuffleFavoriteSongs()
                         LibraryTabId.ALBUMS -> playerViewModel.shuffleRandomAlbum()
                         LibraryTabId.ARTISTS -> playerViewModel.shuffleRandomArtist()
+                        LibraryTabId.GENRES -> playerViewModel.shuffleRandomGenre()
                         else -> playerViewModel.shuffleAllSongs()
                     }
                 }
@@ -942,7 +965,10 @@ fun LibraryScreen(
                         }
 
                         val playlistUiState by playlistViewModel.uiState.collectAsStateWithLifecycle()
-                        val visiblePlaylists = playlistUiState.playlists
+                        val playlistQuery = appliedQueries[LibraryTabId.PLAYLISTS].orEmpty()
+                        val visiblePlaylists by produceState(initialValue = playlistUiState.playlists, playlistUiState.playlists, playlistQuery) {
+                            value = withContext(Dispatchers.Default) { LibraryTabSearch.filter(playlistUiState.playlists, playlistQuery) { it.name }.toImmutableList() }
+                        }
                         val allSongsLazyPagingItems = libraryViewModel.songsPagingFlow.collectAsLazyPagingItems()
                         val albumsLazyPagingItems = libraryViewModel.albumsPagingFlow.collectAsLazyPagingItems()
                         val artistsLazyPagingItems = libraryViewModel.artistsPagingFlow.collectAsLazyPagingItems()
@@ -1090,6 +1116,7 @@ fun LibraryScreen(
                                             LibraryTabId.LIKED -> playerViewModel.shuffleFavoriteSongs()
                                             LibraryTabId.ALBUMS -> playerViewModel.shuffleRandomAlbum()
                                             LibraryTabId.ARTISTS -> playerViewModel.shuffleRandomArtist()
+                        LibraryTabId.GENRES -> playerViewModel.shuffleRandomGenre()
                                             else -> playerViewModel.shuffleAllSongs()
                                         }
                                     },
@@ -1100,6 +1127,11 @@ fun LibraryScreen(
                                     // control, and that control changed nothing.
                                     showSortButton = availableSortOptions.isNotEmpty(),
                                     currentSortOption = currentSelectedSortOption,
+                                    searchOpen = searchOpen,
+                                    searchQuery = searchEdit,
+                                    onSearchOpen = { openSearchTabs[currentTabId] = true },
+                                    onSearchQuery = { searchEdits[currentTabId] = it },
+                                    onSearchClose = { openSearchTabs[currentTabId] = false; searchEdits[currentTabId] = ""; libraryViewModel.tabSearch.set(currentTabId, "") },
                                     showLocateButton = showLocateButton,
                                     onSortClick = { playerViewModel.showSortingSheet() },
                                     onLocateClick = { locateAction?.invoke() },
@@ -1200,6 +1232,7 @@ fun LibraryScreen(
                             )
                         }
 
+                        androidx.compose.runtime.CompositionLocalProvider(com.lostf1sh.pixelplayeross.presentation.components.LocalLibraryTabQueries provides appliedQueries) {
                         Column(modifier = Modifier.fillMaxSize()) {
                             LibraryInlineSyncIndicator(
                                 visible = inlineSyncVisible && !isLibraryContentEmpty,
@@ -1229,8 +1262,10 @@ fun LibraryScreen(
                                         // not typing anything, which is not somewhere a listener
                                         // would look for browsing their library.
                                         val genres by playerViewModel.genres.collectAsStateWithLifecycle()
+                                        val genreQuery = appliedQueries[LibraryTabId.GENRES].orEmpty()
+                                        val shownGenres by produceState(initialValue = genres, genres, genreQuery) { value = withContext(Dispatchers.Default) { LibraryTabSearch.filter(genres, genreQuery) { it.name }.toImmutableList() } }
                                         GenreCategoriesGrid(
-                                            genres = genres,
+                                            genres = shownGenres,
                                             bottomContentPadding = bottomBarHeightDp + LocalDapPlayerShelfHeight.current + floatingActionsGap,
                                             onGenreClick = { genre ->
                                                 navController.navigateSafely(
@@ -1248,6 +1283,7 @@ fun LibraryScreen(
                                         SmartCollectionsContent(
                                             playerViewModel = playerViewModel,
                                             onSongMoreOptions = stableOnMoreOptionsClick,
+                                            query = appliedQueries[LibraryTabId.COLLECTIONS].orEmpty(),
                                             bottomContentPadding = bottomBarHeightDp + LocalDapPlayerShelfHeight.current + floatingActionsGap,
                                         )
                                     }
@@ -1255,6 +1291,7 @@ fun LibraryScreen(
                                     LibraryTabId.SONGS -> {
                                         LibrarySongsTab(
                                             songs = allSongsLazyPagingItems,
+                                            filtering = !appliedQueries[LibraryTabId.SONGS].isNullOrBlank(),
                                             isLoading = isLibraryLoading,
                                             playerViewModel = playerViewModel,
                                             bottomBarHeight = bottomBarHeightDp,
@@ -1290,6 +1327,7 @@ fun LibraryScreen(
                                         }
                                         LibraryAlbumsTab(
                                             albums = albumsLazyPagingItems,
+                                            filtering = !appliedQueries[LibraryTabId.ALBUMS].isNullOrBlank(),
                                             isLoading = isLoading,
                                             playerViewModel = playerViewModel,
                                             bottomBarHeight = bottomBarHeightDp,
@@ -1313,6 +1351,7 @@ fun LibraryScreen(
 
                                         LibraryArtistsTab(
                                             artists = artistsLazyPagingItems,
+                                            filtering = !appliedQueries[LibraryTabId.ARTISTS].isNullOrBlank(),
                                             isLoading = isLoading,
                                             playerViewModel = playerViewModel,
                                             bottomBarHeight = bottomBarHeightDp,
@@ -1334,6 +1373,7 @@ fun LibraryScreen(
                                         LibraryPlaylistsTab(
                                             playlistUiState = playlistUiState,
                                             filteredPlaylists = visiblePlaylists,
+                                            query = playlistQuery,
                                             navController = navController,
                                             playerViewModel = playerViewModel,
                                             bottomBarHeight = bottomBarHeightDp,
@@ -1350,6 +1390,7 @@ fun LibraryScreen(
                                     LibraryTabId.LIKED -> {
                                         LibraryFavoritesTab(
                                             favoriteSongs = favoritePagingItems,
+                                            filtering = !appliedQueries[LibraryTabId.LIKED].isNullOrBlank(),
                                             playerViewModel = playerViewModel,
                                             bottomBarHeight = bottomBarHeightDp,
                                             extraBottomGap = floatingActionsGap,
@@ -1412,7 +1453,7 @@ fun LibraryScreen(
                                             showSourceSwitch = playerUiState.showFolderSourceSwitch,
                                             source = playerUiState.folderSource,
                                             onSourceChange = playerViewModel::setFoldersSource,
-                                            query = playerUiState.folderQuery,
+                                            query = appliedQueries[LibraryTabId.FOLDERS].orEmpty(),
                                             onQueryChange = playerViewModel::setFolderQuery,
                                             volumeRoots = playerUiState.folderVolumeRoots,
                                             selectedVolumeRoot = playerUiState.folderSourceRootPath,
@@ -1471,6 +1512,7 @@ fun LibraryScreen(
                                         )
                                 )
                             }
+                        }
                         }
                     }
                 if (
@@ -2345,7 +2387,7 @@ fun LibraryFoldersTab(
         )
     }
     Column(Modifier.fillMaxSize()) {
-        FolderTabControls(flatList, onFlatListChange, showSourceSwitch, source, onSourceChange, folderQuery, { localFolderQuery = it; onQueryChange(it) }, volumeRoots, selectedVolumeRoot, internalVolumeRoot, onVolumeChange)
+        FolderTabControls(flatList, onFlatListChange, showSourceSwitch, source, onSourceChange, folderQuery, { localFolderQuery = it; onQueryChange(it) }, volumeRoots, selectedVolumeRoot, internalVolumeRoot, onVolumeChange, showSearch = query == null)
         AnimatedContent(
             targetState = Pair(isPlaylistView, currentFolder?.path ?: FOLDER_NAVIGATION_ROOT_KEY),
             label = "FolderNavigation",
@@ -2375,7 +2417,7 @@ fun LibraryFoldersTab(
 
                 val flattenedFolders = remember(folders, currentSortOption, folderQuery) {
                     sortMusicFoldersByOption(flattenFolders(folders).map { it.copy(name = File(it.path).name) }, currentSortOption)
-                        .filter { it.name.contains(folderQuery, true) || folderRelativePath(it).contains(folderQuery, true) }
+                        .filter { LibraryTabSearch.matchesQuery(folderQuery, it.name, folderRelativePath(it)) }
                 }
 
                 val isRoot = targetPath == FOLDER_NAVIGATION_ROOT_KEY
@@ -2392,14 +2434,14 @@ fun LibraryFoldersTab(
                         flatList -> emptyList()
                         activeFolder != null -> sortMusicFoldersByOption(activeFolder.subFolders, currentSortOption)
                         else -> sortMusicFoldersByOption(folders, currentSortOption)
-                    }.filter { it.name.contains(folderQuery, true) || folderRelativePath(it).contains(folderQuery, true) }
+                    }.filter { LibraryTabSearch.matchesQuery(folderQuery, it.name, folderRelativePath(it)) }
                 }.toImmutableList()
 
-                val songsToShow = remember(activeFolder, currentSortOption, folderQuery) {
-                    sortSongsForFolderView(activeFolder?.songs ?: emptyList(), currentSortOption).filter {
-                        it.title.contains(folderQuery,true) || it.artist.contains(folderQuery,true) || it.album.contains(folderQuery,true) || it.path.contains(folderQuery,true)
+                val songsToShow by produceState<ImmutableList<Song>>(initialValue = persistentListOf<Song>(), activeFolder, currentSortOption, folderQuery) {
+                    value = withContext(Dispatchers.Default) {
+                        sortSongsForFolderView(activeFolder?.songs ?: emptyList(), currentSortOption).filter { LibraryTabSearch.songMatches(folderQuery, it) }.toImmutableList()
                     }
-                }.toImmutableList()
+                }
                 val currentSong = stablePlayerState.currentSong
                 val currentSongId = currentSong?.id
                 val currentSongIndexInSongs = remember(songsToShow, currentSongId) {
@@ -2606,7 +2648,7 @@ fun LibraryFoldersTab(
                                     else
                                         bottomBarHeight + 16.dp
 
-                                    ExpressiveScrollBar(
+                                    if (folderQuery.isBlank()) ExpressiveScrollBar(
                                         contentEndMargin = 12.dp,
                                         modifier = Modifier
                                             .align(Alignment.CenterEnd)
@@ -3028,13 +3070,18 @@ private fun DapFloatingLibraryAction(
 }
 
 @Composable
-private fun DapLibraryActionRow(
+internal fun DapLibraryActionRow(
     onMainActionClick: () -> Unit,
     showSortButton: Boolean,
     currentSortOption: SortOption?,
     isPlaylistTab: Boolean,
     isFoldersTab: Boolean,
     modifier: Modifier = Modifier,
+    searchOpen: Boolean = false,
+    searchQuery: String = "",
+    onSearchOpen: () -> Unit = {},
+    onSearchQuery: (String) -> Unit = {},
+    onSearchClose: () -> Unit = {},
     onSortClick: () -> Unit = {},
     onLocateClick: () -> Unit = {},
     showLocateButton: Boolean = false,
@@ -3050,82 +3097,26 @@ private fun DapLibraryActionRow(
     currentStorageFilter: StorageFilter = StorageFilter.ALL,
     onStorageFilterClick: () -> Unit = {},
 ) {
-    val accent = LocalDapAccent.current
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = DapSpacing.Gutter - DapSpacing.Sm),
-        verticalArrangement = Arrangement.spacedBy(DapSpacing.Xs)
+    // B63 (owner 11-16): the sort on the left; on the right, actions as glyphs of one size with one gap. Text actions in a run
+    // ("Name ↑ New playlist Import") read as one sentence. The open search field keeps a gap from the sort and from the list.
+    Row(
+        modifier.fillMaxWidth().padding(start = DapSpacing.Gutter - DapSpacing.Sm, end = DapSpacing.Gutter - DapSpacing.Sm, top = DapSpacing.Xs, bottom = DapSpacing.Sm),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isFoldersTab) {
-            Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) {
-                    DapFolderBreadcrumbs(
-                        currentFolder = currentFolder,
-                        rootPath = folderRootPath,
-                        rootLabel = folderRootLabel,
-                        tree = folderTree,
-                        onFolderClick = onFolderClick,
-                        onNavigateBack = onNavigateBack
-                    )
-                }
-                if (showSortButton) DapLibrarySortAction(option = currentSortOption, onClick = onSortClick)
-            }
+        if (showSortButton) DapLibrarySortAction(option = currentSortOption, onClick = onSortClick)
+        if (searchOpen) {
+            if (showSortButton) Spacer(Modifier.width(DapSpacing.Md))
+        } else if (isFoldersTab && currentFolder != null) {
+            // Inside a folder: back + the path. At the root the path is only the storage's name, which read as a stray filter.
+            Box(Modifier.weight(1f)) { DapFolderBreadcrumbs(currentFolder, folderRootPath, folderRootLabel, folderTree, onFolderClick, onNavigateBack) }
         } else {
-            // One quiet line of content controls. Shuffle is a word here, not a filled button:
-            // the list below it is the subject of the screen, not this row.
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(DapSpacing.Lg),
-                verticalArrangement = Arrangement.spacedBy(DapSpacing.Xs),
-                itemVerticalAlignment = Alignment.CenterVertically
-            ) {
-                // "Shuffle" here is a command — start shuffled playback of this tab — not a
-                // toggle. Tinting it with the accent whenever global shuffle happened to be on
-                // made it read as a switch that was already thrown, so tapping it looked like it
-                // should turn shuffle off, which it never did. The accent on this row means "a
-                // toggle is in a non-default state" (see the storage filter below); a one-shot
-                // command does not qualify.
-                // PHASE 14.0 — the tab's main action left this row.
-                //
-                // Shuffle used to be a text action here, and adding the fourth item ("Locate")
-                // pushed this FlowRow onto a second line and took 104 px off the song list
-                // (measured, LIBRARY_CONTROLS_RECON.md). Shuffle is now a floating action over the
-                // list, so the row that remains cannot wrap. Playlists keep "New" here: it is
-                // genuinely tab-specific and appears nowhere else.
-                if (isPlaylistTab) {
-                    DapTextAction(
-                        label = stringResource(R.string.library_action_new),
-                        onClick = onMainActionClick,
-                        color = Dap.secondaryText
-                    )
-                }
-                if (isPlaylistTab && showImportButton) {
-                    DapTextAction(
-                        label = stringResource(R.string.import_file),
-                        onClick = onImportM3uClick
-                    )
-                }
-                if (showSortButton) {
-                    // The sort action names what is currently applied. It used to say only "Sort
-                    // by", so the active key and direction were invisible until the sheet was
-                    // opened — and after a change there was nothing on screen to confirm it took.
-                    DapLibrarySortAction(
-                        option = currentSortOption,
-                        onClick = onSortClick,
-                    )
-                }
-                // PHASE 14.0 — Locate left this row for a floating action (it is conditional, so
-                // as a row item it changed the row's line count whenever it appeared), and the
-                // storage filter was removed entirely: recon proved it selects the same rows in
-                // both states, because every row in the database is local audio.
-                //
-                // `showLocateButton`, `showStorageFilterButton` and `currentStorageFilter` are
-                // still accepted by this composable so no caller has to change; they are simply
-                // no longer rendered here.
+            Spacer(Modifier.weight(1f))
+            if (isPlaylistTab) {
+                DapIconButton(DapIconKind.Add, stringResource(R.string.library_action_new), onMainActionClick)
+                if (showImportButton) DapIconButton(DapIconKind.Import, stringResource(R.string.import_file), onImportM3uClick)
             }
         }
+        LibraryMiniSearch(searchOpen, searchQuery, onSearchOpen, onSearchQuery, onSearchClose, if (searchOpen) Modifier.weight(1f) else Modifier)
     }
 }
 

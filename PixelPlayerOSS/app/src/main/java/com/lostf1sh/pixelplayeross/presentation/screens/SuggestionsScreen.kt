@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.presentation.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
@@ -39,9 +40,11 @@ fun SuggestionsScreen(playerViewModel:PlayerViewModel) {
 
 @Composable
 internal fun SuggestionsPage(songs:List<Song>,ready:Boolean,fallback:Boolean,onPlay:()->Unit,onShuffle:()->Unit,onSong:(Song)->Unit) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val located = rememberSourceLocate(com.lostf1sh.pixelplayeross.presentation.navigation.Screen.Suggestions.route, listState, ready) { id -> songs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.plus(2) ?: -1 }
     val shelf=LocalDapPlayerShelfHeight.current
     DapBackScaffold {
-        LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(start=DapSpacing.Gutter,end=DapSpacing.Gutter,
+        LazyColumn(Modifier.fillMaxSize(),state=listState,contentPadding=PaddingValues(start=DapSpacing.Gutter,end=DapSpacing.Gutter,
             top=DapSpacing.Sm,bottom=shelf+DapSpacing.SectionGap),verticalArrangement=Arrangement.spacedBy(DapSpacing.Sm)) {
             item("title") { DapScreenTitle(stringResource(R.string.home_your_mix_heading)) }
             if(!ready) item("loading") { DapSkeletonList(count=6,showArt=true) }
@@ -57,6 +60,7 @@ internal fun SuggestionsPage(songs:List<Song>,ready:Boolean,fallback:Boolean,onP
                 }
                 items(songs,key={it.id}) { song ->
                     DapMediaRow(title=songTitleLabel(song),subtitle=songArtistLabel(song),
+                        modifier=Modifier.then(if(located==song.id) Modifier.background(Dap.panelRaised) else Modifier),
                         leading={OptimizedAlbumArt(song.albumArtUriString,songTitleLabel(song),Modifier.size(DapSizes.ThumbRow),targetSize=com.lostf1sh.pixelplayeross.utils.ArtworkRequestSize.forCell(DapSizes.ThumbRow))},
                         onClick={onSong(song)})
                 }

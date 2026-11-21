@@ -56,7 +56,7 @@ class B44GenreRowsTest {
     }
     private fun save(name: String) {
         val bitmap = B42Renders.screen(compose)
-        val root = File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-evidence", System.getenv("B44_VARIANT") ?: "after")
+        val root = File("build/test-artifacts/B44", System.getenv("B44_VARIANT") ?: "after")
         root.mkdirs()
         File(root, name).outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }

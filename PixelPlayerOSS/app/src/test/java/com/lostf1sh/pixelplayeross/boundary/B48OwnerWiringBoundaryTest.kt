@@ -29,7 +29,7 @@ class B48OwnerWiringBoundaryTest {
         // the recovery reads its own generation's facts: the sink's mutable rate and alt are not what a recovery restarts
         assertThat(sink).doesNotContain("currentAltSetting")
         assertThat(sink).doesNotContain("dacRecoveryHost")
-        assertThat(sink).contains("OwnedRecoveryHost(usbAudioDevice.owner, streamingSequence, facts.generation)")
+        assertThat(sink).contains("OwnedRecoveryHost(usbAudioDevice.owner, streamingSequence, facts.generation,")
     }
 
     @Test
@@ -59,7 +59,7 @@ class B48OwnerWiringBoundaryTest {
     @Test
     fun `the writer takes the device before it touches the ring and always lets go`() {
         val step = thread.substringAfter("private fun performDacRecovery(step: Int)").substringBefore("/** The next audio a pause can ramp down")
-        assertThat(step.indexOf("host.begin(step)")).isLessThan(step.indexOf("usbStream.beginPauseFade()"))
+        assertThat(step.indexOf("host.tryBegin(step)")).isLessThan(step.indexOf("usbStream.dacRecoveryBegin()"))
         assertThat(step).contains("host.end(step)")
         assertThat(step.indexOf("} finally {")).isGreaterThan(step.indexOf("recoverWithTheDevice(host, step)"))
         assertThat(step).contains("recoveryOver = true")

@@ -113,7 +113,6 @@ class LockRevealStallTest {
     private fun centreOf(description: String): Offset =
         compose.onNodeWithContentDescription(description).fetchSemanticsNode().boundsInRoot.center
 
-    private fun centreOfText(text: String): Offset = compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot.center
 
     // ── a real thumb: the moves arrive in one batch after the long frame ──────────────────────────────────
 
@@ -193,7 +192,7 @@ class LockRevealStallTest {
     @Test
     fun `a flick that starts on the way-out button opens it once and presses nothing else`() {
         setShell()
-        val from = centreOfText(context.getString(R.string.lock_screen_open_app))
+        val from = centreOf(context.getString(R.string.lock_screen_open_app))
         touch.deliverOnePerFrame(injected(from, -700f, 150))
         assertThat(controlCalls).isEmpty()
         assertThat(dismissed).isEqualTo(1)

@@ -15,6 +15,7 @@ import androidx.navigation.navArgument
 import com.google.common.truth.Truth.assertThat
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryLocator
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -280,6 +281,8 @@ class B32LibraryLocateTest {
     @Test
     fun `the destination asks the Library for the song, and Back leaves Stats where it was and takes the request back`() {
         val player = mockk<PlayerViewModel>(relaxed = true)
+        every { player.libraryLocateRequest } returns kotlinx.coroutines.flow.MutableStateFlow(
+            com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryLocator.Request("42", 7L))
         lateinit var nav: NavHostController
         compose.setContent {
             nav = rememberNavController()
@@ -302,7 +305,7 @@ class B32LibraryLocateTest {
         compose.waitForIdle()
         assertThat(nav.currentBackStackEntry?.destination?.route).isEqualTo(Screen.Stats.route)
         compose.onNodeWithText("stats page").assertExists()
-        verify(exactly = 1) { player.clearLibraryLocate() }
+        verify(exactly = 1) { player.clearLibraryLocate(7L) }
     }
 
     @Test

@@ -506,6 +506,44 @@ class PlayerViewModelTest {
         }
 
         @Test
+        fun `B63 the tab search only finds - Shuffle uses the whole songs and liked lists`() = runTest {
+            val library = libraryOf(80)
+            val listed = library.reversed()
+            theLibraryListsThese(listed, everySong = library)
+            val search = LibraryTabSearch()
+            every { mockLibraryStateHolder.tabSearch } returns search
+            search.set(com.lostf1sh.pixelplayeross.data.model.LibraryTabId.SONGS, "000")
+            playerViewModel.shuffleAllSongs()
+            untilShuffled()
+            assertEquals(listed.map { it.id }, capturedQueue().map { it.id })
+            clearMocks(mockQueueStateHolder, answers = false)
+            search.set(com.lostf1sh.pixelplayeross.data.model.LibraryTabId.LIKED, "007")
+            playerViewModel.shuffleFavoriteSongs()
+            untilShuffled()
+            assertEquals(listed.map { it.id }, capturedQueue().map { it.id })
+            assertEquals(listed.map { it.id }, playerViewModel.getSongsForCurrentLibrarySelection().map { it.id })
+        }
+
+        @Test
+        fun `B63 a song found by the tab search plays inside the whole library`() = runTest {
+            val listed = libraryOf(100).reversed()
+            theLibraryListsThese(listed)
+            val search = LibraryTabSearch()
+            every { mockLibraryStateHolder.tabSearch } returns search
+            search.set(com.lostf1sh.pixelplayeross.data.model.LibraryTabId.SONGS, "000")
+            val found = listed.filter { it.title.contains("000") }
+            coEvery { mockMusicRepository.getSong(any()) } answers { flowOf(listed.first { it.id == firstArg<String>() }) }
+            letItSettle()
+            playerViewModel.showAndPlaySongFromLibrary(found[2])
+            val limit = System.nanoTime() + 10_000_000_000L
+            while (playerViewModel.playerUiState.value.currentPlaybackQueue.isEmpty() && System.nanoTime() < limit) {
+                testScheduler.advanceUntilIdle(); Thread.sleep(20)
+            }
+            letItSettle()
+            assertEquals(listed.map { it.id }, playerViewModel.playerUiState.value.currentPlaybackQueue.map { it.id })
+        }
+
+        @Test
         fun `shuffleAllSongs on the whole library hands the player the full list in the order the Library lists it`() = runTest {
             val library = libraryOf(4_870)
             // The Library is sorted by title descending here: the order is the query's, not the id order and not a random one.

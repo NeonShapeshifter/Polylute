@@ -3,7 +3,6 @@ package com.lostf1sh.pixelplayeross.presentation.lockscreen
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
@@ -78,7 +77,6 @@ class LockFlickGestureTest {
     private fun centreOf(description: String): Offset =
         compose.onNodeWithContentDescription(description).fetchSemanticsNode().boundsInRoot.center
 
-    private fun centreOfText(text: String): Offset = compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot.center
 
     private val midScreen = Offset(360f, 800f)
 
@@ -183,7 +181,7 @@ class LockFlickGestureTest {
 
     private fun flickFromWayOut(delivery: Delivery) {
         setLock()
-        swipe(centreOfText(wayOut), -450f, 100, delivery)
+        swipe(centreOf(wayOut), -450f, 100, delivery)
         // once: the flick opens it, and the button under the finger does not open it a second time
         assertThat(controlCalls).isEmpty()
         assertThat(dismissed).isEqualTo(1)
@@ -248,7 +246,7 @@ class LockFlickGestureTest {
     @Test
     fun `a tap on the way-out button opens the app, once`() {
         setLock()
-        tap(centreOfText(wayOut))
+        tap(centreOf(wayOut))
         assertThat(calls).containsExactly("dismiss")
     }
 

@@ -174,6 +174,17 @@ fun RecentlyPlayedScreen(
                 ContainedLoadingIndicator()
             }
         } else {
+            val located = rememberSourceLocate(com.lostf1sh.pixelplayeross.presentation.navigation.Screen.RecentlyPlayed.route, lazyListState) { id ->
+                var at = 3
+                var result = -1
+                groupedSongs.forEach { group ->
+                    at++
+                    val index = group.songs.indexOfFirst { it.song.id == id }
+                    if (index >= 0) result = at + index
+                    at += group.songs.size
+                }
+                result
+            }
             LazyColumn(
                 state = lazyListState,
                 modifier = Modifier.fillMaxSize(),
@@ -240,6 +251,7 @@ fun RecentlyPlayedScreen(
                             EnhancedSongListItem(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 song = item.song,
+                                containerColorOverride = if (located == item.song.id) com.lostf1sh.pixelplayeross.ui.ds.Dap.panelRaised else null,
                                 isCurrentSong = currentSongId == item.song.id,
                                 isPlaying = currentSongId == item.song.id && isPlaying,
                                 onClick = {

@@ -51,7 +51,7 @@ class B44Fix2GenreRenderTest {
     private fun save(name: String): Bitmap {
         val bitmap = com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
         val phase = if (File(".").canonicalPath.contains("B44-fix2-before")) "before" else "after"
-        val folder = File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B44-fix2-evidence/$phase").apply { mkdirs() }
+        val folder = File("build/test-artifacts/B44-fix2/$phase").apply { mkdirs() }
         File(folder, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         return bitmap
     }

@@ -248,7 +248,8 @@ internal fun MiniPlayerContentInternal(
                 positionProvider = seekPositionProvider!!,
                 durationMs = seekDurationMs,
                 onSeek = onSeek!!,
-                modifier = Modifier.align(Alignment.TopStart),
+                // Owner 11-21: the mini-player is a bubble with 20 dp corners; the line runs along its straight top edge only
+                modifier = Modifier.align(Alignment.TopStart).padding(horizontal = 20.dp),
                 activeProvider = seekActiveProvider,
             )
         }

@@ -1,5 +1,8 @@
 package com.lostf1sh.pixelplayeross.presentation.components
 
+import com.lostf1sh.pixelplayeross.presentation.collections.nameRes
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryTabSearch
+
 import com.lostf1sh.pixelplayeross.ui.ds.dapDismissKeyboardActions
 import com.lostf1sh.pixelplayeross.ui.ds.dapTextField
 import com.lostf1sh.pixelplayeross.presentation.navigation.navigateSafely
@@ -110,6 +113,7 @@ fun PlaylistContainer(
     selectedPlaylistIds: Set<String> = emptySet(),
     onPlaylistLongPress: (Playlist) -> Unit = {},
     onPlaylistSelectionToggle: (Playlist) -> Unit = {},
+    query: String = "",
 ) {
     val listBottom = bottomBarHeight + playerShelfHeight + 30.dp
     if (isAddingToPlaylist) {
@@ -127,6 +131,7 @@ fun PlaylistContainer(
     val collections by collectionsViewModel.state.collectAsStateWithLifecycle()
     PlaylistsList(
         collections = collections,
+        query = query,
         playlists = filteredPlaylists,
         playlistsLoading = playlistUiState.isLoading,
         currentSortOption = currentSortOption,
@@ -171,13 +176,18 @@ internal fun PlaylistsList(
     onOpenPlaylist: (Playlist) -> Unit,
     onPlaylistLongPress: (Playlist) -> Unit,
     onOpenRuleCollections: () -> Unit,
+    query: String = "",
 ) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val visibleCollections = remember(collections, query, configuration) { collections.visible.filter { LibraryTabSearch.matchesQuery(query, resources.getString(it.id.nameRes())) } }
+    val hiddenCollections = remember(collections, query, configuration) { collections.hiddenCollections.filter { LibraryTabSearch.matchesQuery(query, resources.getString(it.id.nameRes())) } }
     var showHidden by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     // The row the first of your playlists sits at, so the fast-scroll label names playlists and not collections.
-    val hiddenShown = if (showHidden) collections.hiddenCollections.size else 0
-    val collectionRows = if (collections.isReady) collections.visible.size + hiddenShown else SkeletonRows
+    val hiddenShown = if (showHidden) hiddenCollections.size else 0
+    val collectionRows = if (collections.isReady) visibleCollections.size + hiddenShown else SkeletonRows
     val firstPlaylistIndex = 1 + collectionRows + 1
     val labelProvider = remember(playlists, currentSortOption, firstPlaylistIndex) {
         { index: Int ->
@@ -225,7 +235,7 @@ internal fun PlaylistsList(
                 if (!collections.isReady) {
                     item(key = "collections-loading") { DapSkeletonList(count = SkeletonRows) }
                 } else {
-                    items(collections.visible, key = { "collection-${it.id.key}" }) { collection ->
+                    items(visibleCollections, key = { "collection-${it.id.key}" }) { collection ->
                         AutoCollectionRow(
                             collection = collection,
                             hidden = false,
@@ -235,7 +245,7 @@ internal fun PlaylistsList(
                         )
                     }
                     if (showHidden) {
-                        items(collections.hiddenCollections, key = { "hidden-${it.id.key}" }) { collection ->
+                        items(hiddenCollections, key = { "hidden-${it.id.key}" }) { collection ->
                             AutoCollectionRow(
                                 collection = collection,
                                 hidden = true,
@@ -308,7 +318,7 @@ internal fun PlaylistsList(
             }
         }
 
-        ExpressiveScrollBar(
+        if (query.isBlank()) ExpressiveScrollBar(
             contentEndMargin = DapSpacing.Gutter,
             modifier = Modifier
                 .align(Alignment.CenterEnd)

@@ -342,7 +342,8 @@ class B48RecoveryOwnershipTest {
             assertThat(tookMs).isLessThan(UNPLUG_BOUND_MS)                         // the bound: neither the pause nor the detach waits for the recovery (it is blocked in a device call here)
             println("B48 unplug: pauseStreaming + deviceDetached took $tookMs ms while the recovery was inside a device call")
             block.release.countDown()
-            assertThat(waitFor { writer.stub.events.contains("END") }).isTrue()
+            assertThat(waitFor { rig.logs.any { it.startsWith("DAC_RECOVERY step=2 result=superseded") } }).isTrue()
+            assertThat(writer.stub.events).doesNotContain("END")
         } finally {
             writer.stop()
         }

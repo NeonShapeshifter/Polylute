@@ -5,7 +5,7 @@ object LyricsTextPolicy {
     const val MAX_CHARACTERS = 50_000
     const val MAX_BYTES = 200_000
     private val blobRun = Regex("[A-Za-z0-9+/=_-]{512,}")
-    private val dropped = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+    private val dropped = com.lostf1sh.pixelplayeross.utils.boundedMemorySet<Long>(1024)
 
     fun rejection(text: String): String? {
         if (text.length > MAX_CHARACTERS) return "too long"

@@ -49,6 +49,10 @@ enum class DapIconKind(@DrawableRes internal val resId: Int) {
     /** Root navigation. 20 x 20. */
     Home(R.drawable.dap_ic_home),
     Search(R.drawable.dap_ic_search),
+    /** B63: New playlist (Library action row). */
+    Add(R.drawable.dap_ic_add),
+    /** B63: Import a playlist file (Library action row). */
+    Import(R.drawable.dap_ic_import),
     Library(R.drawable.dap_ic_library),
 
     /** Queue. 18 x 14. */
@@ -132,7 +136,7 @@ private fun aspectOf(kind: DapIconKind): Float = when (kind) {
     DapIconKind.Chevron -> 10f / 16f
     DapIconKind.ChevronRight -> 8f / 14f
     DapIconKind.ChevronDown, DapIconKind.ChevronUp -> 16f / 10f
-    DapIconKind.Home, DapIconKind.Search, DapIconKind.Library -> 1f
+    DapIconKind.Home, DapIconKind.Search, DapIconKind.Library, DapIconKind.Add, DapIconKind.Import -> 1f
     DapIconKind.List -> 18f / 14f
     DapIconKind.More -> 18f / 4f
     DapIconKind.SkipPrevious, DapIconKind.SkipNext -> 22f / 18f

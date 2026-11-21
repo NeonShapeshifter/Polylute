@@ -37,6 +37,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.animate
+import androidx.compose.runtime.mutableFloatStateOf
+import com.lostf1sh.pixelplayeross.presentation.components.ArtworkViewer
+import com.lostf1sh.pixelplayeross.presentation.components.DetailArtwork
+import com.lostf1sh.pixelplayeross.presentation.components.AlbumHeaderScrollConnection
+import com.lostf1sh.pixelplayeross.ui.animatedcover.AnimatedCoverHost
+import com.lostf1sh.pixelplayeross.ui.animatedcover.rememberAnimatedCoverHost
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -236,7 +243,8 @@ fun AlbumDetailScreen(
                 // B57 2.4: a title tap in the player lands here with the song to show: scrolled into view and highlighted for a few seconds. The request is taken once, by token.
                 val locateRequest by com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.request.collectAsStateWithLifecycle()
                 var highlightedSongId by remember { mutableStateOf<String?>(null) }
-                LaunchedEffect(locateRequest?.token, songs.size) {
+                LaunchedEffect(locateRequest?.token, songs.size, about.isEmpty) {
+                    highlightedSongId = null
                     val request = locateRequest ?: return@LaunchedEffect
                     if (request.albumId.toString() != albumId || songs.isEmpty()) return@LaunchedEffect
                     if (!com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.isFresh(request)) {
@@ -246,13 +254,13 @@ fun AlbumDetailScreen(
                     val index = com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.listIndexOf(
                         request.songId, songsByDisc.map { (_, discSongs) -> discSongs.map { it.id } }, hasAbout = !about.isEmpty
                     )
-                    com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.consume(request.token)
                     if (index >= 0) {
                         highlightedSongId = request.songId
                         lazyListState.scrollToItem(index)
-                        kotlinx.coroutines.delay(3_000)
+                        kotlinx.coroutines.delay(com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryLocator.DEFAULT_MARK_MS)
                         if (highlightedSongId == request.songId) highlightedSongId = null
-                    }
+                    } else lazyListState.scrollToItem(0)
+                    com.lostf1sh.pixelplayeross.presentation.viewmodel.AlbumLocateRequests.consume(request.token)
                 }
 
                 val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -272,57 +280,41 @@ fun AlbumDetailScreen(
                     )
                 }
 
-                val topBarHeight = remember { Animatable(maxTopBarHeightPx) }
+                var topBarHeight by remember { mutableFloatStateOf(maxTopBarHeightPx) }
                 val collapseFraction by remember(minTopBarHeightPx, maxTopBarHeightPx) {
                     derivedStateOf {
-                        1f - ((topBarHeight.value - minTopBarHeightPx) / (maxTopBarHeightPx - minTopBarHeightPx)).coerceIn(
+                        1f - ((topBarHeight - minTopBarHeightPx) / (maxTopBarHeightPx - minTopBarHeightPx)).coerceIn(
                             0f,
                             1f
                         )
                     }
                 }
 
-                val nestedScrollConnection = remember {
-                    object : NestedScrollConnection {
-                        override fun onPreScroll(
-                            available: Offset,
-                            source: NestedScrollSource
-                        ): Offset {
-                            val delta = available.y
-                            val isScrollingDown = delta < 0
-
-                            if (!isScrollingDown && (lazyListState.firstVisibleItemIndex > 0 || lazyListState.firstVisibleItemScrollOffset > 0)) {
-                                return Offset.Zero
-                            }
-
-                            val previousHeight = topBarHeight.value
-                            val newHeight =
-                                (previousHeight + delta).coerceIn(minTopBarHeightPx, maxTopBarHeightPx)
-                            val consumed = newHeight - previousHeight
-
-                            if (consumed.roundToInt() != 0) {
-                                coroutineScope.launch {
-                                    topBarHeight.snapTo(newHeight)
-                                }
-                            }
-
-                            val canConsumeScroll = !(isScrollingDown && newHeight == minTopBarHeightPx)
-                            return if (canConsumeScroll) Offset(0f, consumed) else Offset.Zero
-                        }
-
-                        override suspend fun onPostFling(
-                            consumed: Velocity,
-                            available: Velocity
-                        ): Velocity {
-                            return super.onPostFling(consumed, available)
-                        }
-                    }
+                val pageWidthPx = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width.toFloat()
+                val nestedScrollConnection = remember(lazyListState, minTopBarHeightPx, maxTopBarHeightPx, pageWidthPx) {
+                    AlbumHeaderScrollConnection(
+                        height = { topBarHeight }, setHeight = { topBarHeight = it },
+                        atTop = { lazyListState.firstVisibleItemIndex == 0 && lazyListState.firstVisibleItemScrollOffset == 0 },
+                        min = minTopBarHeightPx, rest = maxTopBarHeightPx, pageWidth = pageWidthPx,
+                    )
                 }
+                val playerSheetState by playerViewModel.sheetState.collectAsStateWithLifecycle()
+                var showArtworkViewer by remember(albumId) { mutableStateOf(false) }
+                val headerVisible by remember { derivedStateOf { collapseFraction < 0.49f } }
+                val animatedCover = rememberAnimatedCoverHost(
+                    songPath = songs.firstOrNull()?.path.orEmpty(), isPlaying = { true },
+                    playerExpanded = playerSheetState == com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerSheetState.COLLAPSED, coverPageShowing = headerVisible || showArtworkViewer,
+                    albumId = album.id, discNumber = songs.firstOrNull()?.discNumber ?: 0, albumSurface = true,
+                )
+                if (showArtworkViewer) ArtworkViewer(
+                    album.albumArtUriString, stringResource(R.string.album_cover_for, album.title),
+                    onDismiss = { showArtworkViewer = false }, animated = animatedCover,
+                )
 
                 LaunchedEffect(lazyListState.isScrollInProgress) {
                     if (!lazyListState.isScrollInProgress) {
                         val shouldExpand =
-                            topBarHeight.value > (minTopBarHeightPx + maxTopBarHeightPx) / 2
+                            topBarHeight > (minTopBarHeightPx + maxTopBarHeightPx) / 2
                         val canExpand =
                             lazyListState.firstVisibleItemIndex == 0 && lazyListState.firstVisibleItemScrollOffset == 0
 
@@ -332,13 +324,8 @@ fun AlbumDetailScreen(
                             minTopBarHeightPx
                         }
 
-                        if (topBarHeight.value != targetValue) {
-                            coroutineScope.launch {
-                                topBarHeight.animateTo(
-                                    targetValue,
-                                    spring(stiffness = Spring.StiffnessMedium)
-                                )
-                            }
+                        if (topBarHeight != targetValue) {
+                            animate(topBarHeight, targetValue, animationSpec = spring(stiffness = Spring.StiffnessMedium)) { value, _ -> topBarHeight = value }
                         }
                     }
                 }
@@ -349,7 +336,7 @@ fun AlbumDetailScreen(
                         .background(Dap.page)
                         .nestedScroll(nestedScrollConnection)
                 ) {
-                    val currentTopBarHeightDp = with(density) { topBarHeight.value.toDp() }
+                    val currentTopBarHeightDp = with(density) { topBarHeight.toDp() }
                     val showScrollBar =
                         collapseFraction > 0.95f &&
                             (lazyListState.canScrollForward || lazyListState.canScrollBackward)
@@ -360,7 +347,7 @@ fun AlbumDetailScreen(
                             .fillMaxSize()
                             .offset {
                                 val extraHeight =
-                                    (topBarHeight.value - minTopBarHeightPx).roundToInt()
+                                    (topBarHeight - minTopBarHeightPx).roundToInt()
                                 IntOffset(0, extraHeight)
                             },
                         contentPadding = PaddingValues(
@@ -448,6 +435,8 @@ fun AlbumDetailScreen(
                             collapseFraction = collapseFraction,
                             headerHeight = currentTopBarHeightDp,
                             headerImageRequestSize = headerImageRequestSize,
+                            animatedCover = if (showArtworkViewer) null else animatedCover,
+                            onArtworkClick = { showArtworkViewer = true },
                             onHeaderArtworkState = { state ->
                                 if (state is AsyncImagePainter.State.Success) {
                                     headerArtworkLoaded = true
@@ -486,6 +475,8 @@ fun AlbumDetailScreen(
                             collapseFraction = collapseFraction,
                             headerHeight = currentTopBarHeightDp,
                             headerImageRequestSize = headerImageRequestSize,
+                            animatedCover = if (showArtworkViewer) null else animatedCover,
+                            onArtworkClick = { showArtworkViewer = true },
                             onHeaderArtworkState = { state ->
                                 if (state is AsyncImagePainter.State.Success) {
                                     headerArtworkLoaded = true
@@ -646,7 +637,7 @@ fun AlbumDetailScreen(
 }
 
 @Composable
-private fun SharedAlbumTopBarProbe(
+internal fun SharedAlbumTopBarProbe(
     album: Album,
     songsCount: Int,
     durationMs: Long = 0L,
@@ -656,7 +647,9 @@ private fun SharedAlbumTopBarProbe(
     onHeaderArtworkState: ((AsyncImagePainter.State) -> Unit)? = null,
     onBackPressed: () -> Unit,
     onPlayClick: () -> Unit,
-    onShuffleClick: () -> Unit
+    onShuffleClick: () -> Unit,
+    animatedCover: AnimatedCoverHost? = null,
+    onArtworkClick: () -> Unit = {},
 ) {
     // The page ground the artwork fades into; the scrim and the list below resolve to the same one.
     val backgroundColor = Dap.background
@@ -697,13 +690,10 @@ private fun SharedAlbumTopBarProbe(
             .clipToBounds()
     ) {
         if (showExpandedContent) {
-            SmartImage(
-                model = album.albumArtUriString,
-                contentDescription = stringResource(R.string.album_cover_for, album.title),
-                contentScale = ContentScale.Crop,
+            DetailArtwork(
+                model = album.albumArtUriString, animated = animatedCover, onClick = onArtworkClick,
+                description = stringResource(R.string.album_cover_for, album.title),
                 targetSize = headerImageRequestSize,
-                allowHardware = true,
-                crossfadeDurationMillis = 0,
                 alpha = expandedContentAlpha,
                 onState = onHeaderArtworkState,
                 modifier = Modifier.fillMaxSize()
@@ -794,7 +784,9 @@ private fun CollapsingAlbumTopBar(
     onHeaderArtworkState: ((AsyncImagePainter.State) -> Unit)? = null,
     onBackPressed: () -> Unit,
     onPlayClick: () -> Unit,
-    onShuffleClick: () -> Unit
+    onShuffleClick: () -> Unit,
+    animatedCover: AnimatedCoverHost? = null,
+    onArtworkClick: () -> Unit = {},
 ) {
     val backgroundColor = Dap.background
     val statusBarColor =
@@ -843,13 +835,10 @@ private fun CollapsingAlbumTopBar(
                 .background(Dap.bar.let { it.copy(alpha = it.alpha * backgroundAlpha) })
         ) {
             if (showExpandedContent) {
-                SmartImage(
-                    model = album.albumArtUriString,
-                    contentDescription = stringResource(R.string.album_cover_for, album.title),
-                    contentScale = ContentScale.Crop,
+                DetailArtwork(
+                    model = album.albumArtUriString, animated = animatedCover, onClick = onArtworkClick,
+                    description = stringResource(R.string.album_cover_for, album.title),
                     targetSize = headerImageRequestSize,
-                    allowHardware = true,
-                    crossfadeDurationMillis = 0,
                     alpha = headerContentAlpha,
                     onState = onHeaderArtworkState,
                     modifier = Modifier.fillMaxSize()

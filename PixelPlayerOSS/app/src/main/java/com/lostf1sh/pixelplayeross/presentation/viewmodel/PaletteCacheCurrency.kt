@@ -1,6 +1,5 @@
 package com.lostf1sh.pixelplayeross.presentation.viewmodel
 
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -30,31 +29,46 @@ class PaletteCacheCurrency {
         /** Moves whenever a forced generation begins or ends (and on an invalidation): an ordinary one writes only if it did not move. */
         @Volatile internal var epoch = 0L
         @Volatile internal var forcedInFlight = 0
+        internal var inFlight = 0
         val writeLock = Mutex()
     }
 
     /** What a generation noted when it began; give it back to [mayWrite] and [end]. */
-    class Ticket internal constructor(internal val key: String, internal val begins: Long, internal val epoch: Long, internal val forced: Boolean)
+    class Ticket internal constructor(internal val key: String, internal val begins: Long, internal val epoch: Long, internal val forced: Boolean, internal val entry: Entry)
 
-    private val entries = ConcurrentHashMap<String, Entry>()
+    // Keep at most 8,192 entries after work ends. Pin entries while a caller holds a ticket:
+    // evicting an active key would split its write lock and let stale IO race a newer write.
+    private val entries = LinkedHashMap<String, Entry>(128, 0.75f, true)
 
-    fun entry(key: String): Entry = entries.getOrPut(key) { Entry() }
+    private fun trimIdleEntries() {
+        val iterator = entries.entries.iterator()
+        while (entries.size > 8192 && iterator.hasNext()) {
+            if (iterator.next().value.inFlight == 0) iterator.remove()
+        }
+    }
 
-    fun begin(key: String, forced: Boolean): Ticket {
-        val entry = entry(key)
+    fun entry(key: String): Entry = synchronized(entries) {
+        entries.getOrPut(key) { Entry() }.also { trimIdleEntries() }
+    }
+
+    fun begin(key: String, forced: Boolean): Ticket = synchronized(entries) {
+        val entry = entries.getOrPut(key) { Entry() }
+        entry.inFlight++
+        trimIdleEntries()
         synchronized(entry) {
             if (forced) {
                 entry.begins++
                 entry.epoch++
                 entry.forcedInFlight++
             }
-            return Ticket(key, entry.begins, entry.epoch, forced)
+            return Ticket(key, entry.begins, entry.epoch, forced, entry)
         }
     }
 
     /** True while [ticket] is still the generation whose result belongs in the cache. Call with [Entry.writeLock] held, right before writing. */
     fun mayWrite(ticket: Ticket): Boolean {
-        val entry = entry(ticket.key)
+        val entry = ticket.entry
+        if (synchronized(entries) { entries[ticket.key] !== entry }) return false
         synchronized(entry) {
             return if (ticket.forced) {
                 entry.begins == ticket.begins
@@ -66,24 +80,27 @@ class PaletteCacheCurrency {
     }
 
     /** The generation is over, whatever it came to. */
-    fun end(ticket: Ticket) {
-        if (!ticket.forced) return
-        val entry = entry(ticket.key)
+    fun end(ticket: Ticket) = synchronized(entries) {
+        val entry = ticket.entry
         synchronized(entry) {
-            entry.forcedInFlight--
-            entry.epoch++
+            if (ticket.forced) {
+                entry.forcedInFlight--
+                entry.epoch++
+            }
+            entry.inFlight--
         }
+        trimIdleEntries()
     }
 
     /** Everything cached for [keyPrefix] was removed: no generation that began before this may write it back. */
     fun invalidate(keyPrefix: String) {
-        entries.forEach { (key, entry) ->
+        synchronized(entries) { entries.forEach { (key, entry) ->
             if (key.startsWith(keyPrefix)) {
                 synchronized(entry) {
                     entry.begins++
                     entry.epoch++
                 }
             }
-        }
+        } }
     }
 }

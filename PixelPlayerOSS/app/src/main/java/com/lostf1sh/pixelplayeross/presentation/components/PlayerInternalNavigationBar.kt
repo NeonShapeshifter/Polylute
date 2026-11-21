@@ -34,7 +34,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal val NavBarContentHeight = 58.dp
-internal val NavBarCompactContentHeight = 52.dp
+internal val NavBarCompactContentHeight = 44.dp  // icons only (owner 11-21: the bar looked too big)
+
+/**
+ * Owner 11-21: under a gesture handle (an inset of at most [GestureHandleMaxInset]) the bar does not reserve the whole inset; it keeps
+ * [GestureHandleClearance] for the handle and lets the icons sit lower (in Dedicated mode the handle is not even drawn). Three-button
+ * navigation keeps its whole inset.
+ */
+internal val GestureHandleMaxInset = 32.dp
+internal val GestureHandleClearance = 8.dp
+internal fun chromeBottomInset(systemNavBarInset: Dp): Dp =
+    if (systemNavBarInset <= GestureHandleMaxInset) minOf(systemNavBarInset, GestureHandleClearance) else systemNavBarInset
 
 
 internal val MaxNavigationBarBottomInset = 96.dp
@@ -73,7 +83,7 @@ internal fun resolveNavBarSurfaceHeight(
 ): Dp {
     val contentHeight = resolveNavBarContentHeight(compactMode)
     return if (navBarStyle == NavBarStyle.FULL_WIDTH) {
-        contentHeight + systemNavBarInset
+        contentHeight + chromeBottomInset(systemNavBarInset)
     } else {
         contentHeight
     }
@@ -82,7 +92,7 @@ internal fun resolveNavBarSurfaceHeight(
 internal fun resolveNavBarOccupiedHeight(
     systemNavBarInset: Dp,
     compactMode: Boolean
-): Dp = resolveNavBarContentHeight(compactMode) + systemNavBarInset
+): Dp = resolveNavBarContentHeight(compactMode) + chromeBottomInset(systemNavBarInset)
 
 @Composable
 private fun PlayerInternalNavigationItemsRow(

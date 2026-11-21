@@ -54,7 +54,7 @@ class ArtistImageRepository @Inject constructor(
     
     private val prefetchSemaphore = Semaphore(PREFETCH_CONCURRENCY)
     
-    private val failedFetches = mutableSetOf<String>()
+    private val failedFetches = com.lostf1sh.pixelplayeross.utils.boundedMemorySet<String>(8192)
 
     @Volatile
     private var deezerRetired = false

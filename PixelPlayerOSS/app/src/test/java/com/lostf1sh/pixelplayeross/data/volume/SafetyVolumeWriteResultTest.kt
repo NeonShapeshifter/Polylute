@@ -3,6 +3,7 @@ package com.lostf1sh.pixelplayeross.data.volume
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.decent.usbaudio.UsbAudioDevice
+import com.decent.usbaudio.UsbDeviceOwner
 import com.decent.usbaudio.UsbVolumeRange
 import com.google.common.truth.Truth.assertThat
 import com.lostf1sh.pixelplayeross.data.dac.DacProfile
@@ -20,6 +21,7 @@ import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteState
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteTransition
 import com.lostf1sh.pixelplayeross.data.service.player.DualPlayerEngine
 import com.lostf1sh.pixelplayeross.data.service.player.HandoffVolumeVerdict
+import java.util.concurrent.TimeUnit
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -71,10 +73,11 @@ class SafetyVolumeWriteResultTest {
     @Before
     fun setUp() {
         usb = mockk(relaxed = true)
+        every { usb.owner } returns UsbDeviceOwner()
         every { usb.openGeneration } answers { generation }
         every { usb.hasHardwareVolume } returns true
-        every { usb.writeHardwareVolume(any(), any()) } answers { writes += firstArg<Int>(); writeAnswer(firstArg()) }
-        every { usb.readHardwareVolume() } answers { readAnswer() }
+        every { usb.writeHardwareVolume(any(), any(), any()) } answers { writes += firstArg<Int>(); writeAnswer(firstArg()) }
+        every { usb.readHardwareVolume(any()) } answers { readAnswer() }
         every { usb.readHardwareVolumeRange() } returns range
         singleton(usb)
 
@@ -113,6 +116,10 @@ class SafetyVolumeWriteResultTest {
         controller = SafetyVolumeController(context, headphones, dacs, engine, CoroutineScope(Job().apply { cancel() }))
         publish(contextId = "dac:melody", raw = 40)
         controllerField("hardwareRange").set(controller, range)
+        controllerField("hardwareCacheGeneration").set(controller, generation)
+        controllerField("hardwareRangeCache").set(controller, range)
+        controllerField("hardwareUnitsCache").set(controller, units(40))
+        controllerField("hardwareRefreshRequested").set(controller, true)
     }
 
     @After
@@ -127,7 +134,7 @@ class SafetyVolumeWriteResultTest {
     fun `a write the DAC takes is credited, and a level at the ceiling resumes`() {
         writeAnswer = { it }
 
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         assertThat(writes).containsExactly(units(20))
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(20)
@@ -139,7 +146,7 @@ class SafetyVolumeWriteResultTest {
         writeAnswer = { null }
         readAnswer = { null }
 
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         assertThat(writes).containsExactly(units(20))                    // asked once; never retried from here
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(40) // the last level that was known, not the one asked for
@@ -151,7 +158,7 @@ class SafetyVolumeWriteResultTest {
         writeAnswer = { null }
         readAnswer = { null }
 
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         // the verdict alone, before anything else is asserted: on B26 it is RESUME for a DAC that never confirmed 20
         assertThat(HandoffResumeSafety.verdict(controller.state.value)).isNotEqualTo(HandoffVolumeVerdict.RESUME)
@@ -162,7 +169,7 @@ class SafetyVolumeWriteResultTest {
         writeAnswer = { null }                                            // a channel refused it
         readAnswer = { units(40) }                                        // and the DAC still reports the loud one
 
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(40)
         assertThat(HandoffResumeSafety.verdict(controller.state.value)).isNotEqualTo(HandoffVolumeVerdict.RESUME)
@@ -172,7 +179,7 @@ class SafetyVolumeWriteResultTest {
     fun `a read-back higher than the level asked for is the level published`() {
         writeAnswer = { units(30) }
 
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(30)
         assertThat(HandoffResumeSafety.verdict(controller.state.value)).isNotEqualTo(HandoffVolumeVerdict.RESUME)
@@ -182,7 +189,7 @@ class SafetyVolumeWriteResultTest {
     fun `a read-back between two steps counts as the louder one`() {
         writeAnswer = { units(20) + 100 }
 
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(21)
         assertThat(HandoffResumeSafety.verdict(controller.state.value)).isNotEqualTo(HandoffVolumeVerdict.RESUME)
@@ -192,7 +199,7 @@ class SafetyVolumeWriteResultTest {
     fun `a different level than asked for, lower, is the level the DAC reported`() {
         writeAnswer = { units(10) }
 
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(10)
     }
@@ -206,7 +213,7 @@ class SafetyVolumeWriteResultTest {
             it
         }
 
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         val backend = controller.state.value.backend
         assertThat(backend.outputContextId).isEqualTo("dac:other")
@@ -218,8 +225,8 @@ class SafetyVolumeWriteResultTest {
         writeAnswer = { null }
         readAnswer = { null }
 
-        controller.setRawLevel(20)
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
+        setLevelAndWait(20)
 
         assertThat(writes).containsExactly(units(20), units(20))        // one per request, none of its own
     }
@@ -231,7 +238,7 @@ class SafetyVolumeWriteResultTest {
         readAnswer = { units(40) }
         writeAnswer = { null }
 
-        controller.reconcile()
+        reconcileAndWait()
 
         assertThat(writes).containsExactly(units(20))                    // one clamp, asked once
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(40) // the DAC is still where it was
@@ -243,7 +250,7 @@ class SafetyVolumeWriteResultTest {
         readAnswer = { units(40) }
         writeAnswer = { it }
 
-        controller.reconcile()
+        reconcileAndWait()
 
         assertThat(writes).containsExactly(units(20))
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(20)
@@ -255,23 +262,23 @@ class SafetyVolumeWriteResultTest {
         readAnswer = { units(40) }
         writeAnswer = { null }
 
-        controller.reconcile()
+        reconcileAndWait()
         assertThat(writes).hasSize(1)
-        controller.reconcile()                                           // the next event: it reads the DAC again and asks again
+        reconcileAndWait()                                           // the next event: it reads the DAC again and asks again
 
         assertThat(writes).hasSize(2)
     }
 
     @Test
     fun `a native step above the ceiling stays unsafe through repeated reconciles`() {
-        controller.reconcile()
+        reconcileAndWait()
         writeAnswer = { units(20) + range.resolutionUnits }
         readAnswer = { units(20) + range.resolutionUnits }
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(21)
         assertThat(HandoffResumeSafety.verdict(controller.state.value)).isEqualTo(HandoffVolumeVerdict.WAIT)
         repeat(4) {
-            controller.reconcile()
+            reconcileAndWait()
             assertThat(controller.state.value.backend.rawLevel).isEqualTo(21)
             assertThat(controller.state.value.backend.levelVerified).isTrue()
             assertThat(HandoffResumeSafety.verdict(controller.state.value)).isEqualTo(HandoffVolumeVerdict.WAIT)
@@ -282,7 +289,7 @@ class SafetyVolumeWriteResultTest {
     fun `an initial native step above the ceiling is never safe`() {
         readAnswer = { units(20) + range.resolutionUnits }
         writeAnswer = { null }
-        controller.reconcile()
+        reconcileAndWait()
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(21)
         assertThat(HandoffResumeSafety.verdict(controller.state.value)).isEqualTo(HandoffVolumeVerdict.WAIT)
     }
@@ -292,7 +299,7 @@ class SafetyVolumeWriteResultTest {
         for (rawUnits in listOf(units(20), units(19), units(19) + range.resolutionUnits)) {
             generation += 1
             readAnswer = { rawUnits }
-            controller.reconcile()
+            reconcileAndWait()
             assertThat(HandoffResumeSafety.verdict(controller.state.value)).isEqualTo(HandoffVolumeVerdict.RESUME)
         }
         assertThat(writes).isEmpty()
@@ -305,11 +312,11 @@ class SafetyVolumeWriteResultTest {
             generation += 1
             writeAnswer = { native }
             readAnswer = { native }
-            controller.reconcile()
-            controller.setRawLevel(20)
+            reconcileAndWait()
+            setLevelAndWait(20)
             repeat(3) {
                 assertThat(HandoffResumeSafety.verdict(controller.state.value)).isEqualTo(HandoffVolumeVerdict.WAIT)
-                controller.reconcile()
+                reconcileAndWait()
             }
         }
     }
@@ -334,6 +341,7 @@ class SafetyVolumeWriteResultTest {
     private fun tap(): SafetyMaxCalibrationResult? {
         var answer: SafetyMaxCalibrationResult? = null
         controller.useCurrentAsSafetyMax { answer = it }
+        awaitVolume()
         shadowOf(Looper.getMainLooper()).idle()
         return answer
     }
@@ -350,7 +358,7 @@ class SafetyVolumeWriteResultTest {
         publish(contextId = "dac:melody", raw = level)
         writeAnswer = { null }
         readAnswer = { null }
-        controller.setRawLevel(asked)
+        setLevelAndWait(asked)
         assertThat(controller.state.value.backend.rawLevel).isEqualTo(level)
         assertThat(controller.state.value.backend.levelVerified).isFalse()
         writes.clear()
@@ -401,7 +409,7 @@ class SafetyVolumeWriteResultTest {
         activeScope()
         recordCalibrations()
         readAnswer = { units(0) }
-        controller.reconcile()
+        reconcileAndWait()
         assertThat(controller.state.value.backend.levelVerified).isTrue()
 
         assertThat(tap()).isEqualTo(SafetyMaxCalibrationResult.LEVEL_ZERO)
@@ -414,7 +422,7 @@ class SafetyVolumeWriteResultTest {
         recordCalibrations()
         writeAnswer = { it }
         readAnswer = { units(20) }
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
         writes.clear()
 
         assertThat(tap()).isEqualTo(SafetyMaxCalibrationResult.SAVED)
@@ -447,7 +455,7 @@ class SafetyVolumeWriteResultTest {
         recordCalibrations()
         writeAnswer = { it }
         readAnswer = { units(20) }
-        controller.setRawLevel(20)                                       // a confirmed 20 on dac:melody
+        setLevelAndWait(20)                                       // a confirmed 20 on dac:melody
 
         var answer: SafetyMaxCalibrationResult? = null
         controller.useCurrentAsSafetyMax { answer = it }                 // queued: the save has not run
@@ -466,7 +474,7 @@ class SafetyVolumeWriteResultTest {
         recordCalibrations()
         writeAnswer = { it }
         readAnswer = { units(20) }
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         var answer: SafetyMaxCalibrationResult? = null
         controller.useCurrentAsSafetyMax { answer = it }
@@ -485,7 +493,7 @@ class SafetyVolumeWriteResultTest {
         recordCalibrations()
         writeAnswer = { it }
         readAnswer = { units(20) }
-        controller.setRawLevel(20)
+        setLevelAndWait(20)
 
         var answer: SafetyMaxCalibrationResult? = null
         controller.useCurrentAsSafetyMax { answer = it }
@@ -508,6 +516,20 @@ class SafetyVolumeWriteResultTest {
     }
 
     // ── harness ────────────────────────────────────────────────────────────────────────────────────
+
+    private fun setLevelAndWait(level: Int) {
+        controller.setRawLevel(level)
+        awaitVolume()
+    }
+
+    private fun reconcileAndWait() {
+        controller.reconcile()
+        awaitVolume()
+    }
+
+    private fun awaitVolume() {
+        repeat(2) { UsbAudioDevice.volumeExecutor.submit {}.get(3, TimeUnit.SECONDS) }
+    }
 
     private fun calibrationFor(contextId: String) = SafetyMaxCalibration(
         outputContextId = contextId,

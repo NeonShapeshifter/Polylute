@@ -137,7 +137,7 @@ class B19WiringBoundaryTest {
         assertThat(service).contains("publicationMeter?.let { mediaSession?.player?.addListener(it.end) }")
         assertThat(service).contains("publicationMeter?.let { wrappedPlayer.addListener(it.end) }")
         assertThat(service).contains(").also { player -> publicationMeter?.let { player.addListener(it.begin) } }")
-        val build = block(service, "        mediaSession = MediaSession.Builder(this, wrapFadingPlayer(engine.masterPlayer))", "        val localOnlyProvider")
+        val build = block(service, "        mediaSession = MediaLibrarySession.Builder(this, wrapFadingPlayer(engine.masterPlayer), callback)", "        val localOnlyProvider")
         assertThat(build.indexOf(".build()")).isLessThan(build.indexOf("mediaSession?.player?.addListener(it.end)"))
         val swap = block(service, "    private fun publishMediaSessionPlayer(", "    private fun syncLocalListeningStatsFromPlayer(")
         assertThat(swap.indexOf("session.player = wrappedPlayer")).isLessThan(swap.indexOf("wrappedPlayer.addListener(it.end)"))

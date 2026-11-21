@@ -73,14 +73,14 @@ fun DetailNavigation(
             // this is the top of the stack, the Library goes to its Songs tab and finds the song, and Back pops this and shows the page below.
             composable(
                 route = Screen.LibraryLocate.route,
-                arguments = listOf(navArgument("songId") { type = NavType.StringType }),
+                arguments = listOf(navArgument("songId") { type = NavType.StringType }, navArgument("liked") { type = NavType.BoolType; defaultValue = false }),
                 enterTransition = { androidx.compose.animation.EnterTransition.None },
                 exitTransition = { androidx.compose.animation.ExitTransition.None },
                 popEnterTransition = { androidx.compose.animation.EnterTransition.None },
                 popExitTransition = { androidx.compose.animation.ExitTransition.None },
             ) { backStackEntry ->
                 val songId = backStackEntry.arguments?.getString("songId").orEmpty()
-                LibraryLocateEffect(songId = songId, playerViewModel = playerViewModel)
+                LibraryLocateEffect(songId = songId, playerViewModel = playerViewModel, liked = backStackEntry.arguments?.getBoolean("liked") == true)
             }
             composable(
                 Screen.Settings.route,
@@ -569,7 +569,15 @@ fun DetailNavigation(
 
 /** Holds the request for the Library while this destination is on the stack, and takes it back when it is left (Back, or a tab pressed). */
 @Composable
-internal fun LibraryLocateEffect(songId: String, playerViewModel: PlayerViewModel) {
-    androidx.compose.runtime.LaunchedEffect(songId) { if (songId.isNotBlank()) playerViewModel.requestLibraryLocate(songId) }
-    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { playerViewModel.clearLibraryLocate() } }
+internal fun LibraryLocateEffect(songId: String, playerViewModel: PlayerViewModel, liked: Boolean = false) {
+    val ownedToken = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Long?>(null) }
+    androidx.compose.runtime.LaunchedEffect(songId, liked) {
+        if (songId.isNotBlank()) {
+            playerViewModel.requestLibraryLocate(songId, liked)
+            ownedToken.value = playerViewModel.libraryLocateRequest.value?.token
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { ownedToken.value?.let { playerViewModel.clearLibraryLocate(it) } }
+    }
 }

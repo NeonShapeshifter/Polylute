@@ -23,7 +23,7 @@ import kotlin.math.min
  */
 object B41Renders {
     private val root: File
-        get() = File(System.getenv("B41_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B41-evidence").apply { mkdirs() }
+        get() = File(System.getenv("B41_RENDERS") ?: "build/test-artifacts/B41").apply { mkdirs() }
 
     fun save(compose: ComposeContentTestRule, name: String) {
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()

@@ -75,12 +75,15 @@ class UsbStreamingThread(
      * B48-1: the host belongs to **one stream** (the generation the thread was made for) and the device has one owner. The thread calls [begin] before it does anything to
      * the ring, [restartInterface] at the point the interface is to be restarted, and [end] when the step is over, whatever happened.
      */
+    enum class RecoveryStart { ACQUIRED, DEFERRED, SUPERSEDED }
+
     interface DacRecoveryHost {
         /** A replaced generation must stop feeding pause silence without claiming the device. */
         fun streamIsCurrent(): Boolean = true
 
         /** Takes the device for [step]. False = superseded (the stream was replaced, handed back or unplugged first): the thread then does nothing at all and never asks again. */
         fun begin(step: Int): Boolean
+        fun tryBegin(step: Int): RecoveryStart = if (begin(step)) RecoveryStart.ACQUIRED else RecoveryStart.SUPERSEDED
 
         /** The interface restart, on the writer thread, with the ring empty. */
         fun restartInterface(step: Int): RestartOutcome
@@ -93,11 +96,14 @@ class UsbStreamingThread(
     interface PcmWriter {
         fun write(pcmBuffer: FloatArray)
         fun writeRaw(pcmBuffer: ByteArray, encoding: Int)
+        val transportReady: Boolean get() = true
         val framesWritten: Long
         fun flush()
         fun drainEndOfStream(): Boolean
 
         /** The thread is about to idle on purpose; the DAC running dry is then not a starvation (AUD-140). */
+        val diagnosticSequence: Long get() = 0L
+        fun noteQueueTimeout(total: Long, depth: Int, burst: Long) {}
         fun markIdle() {}
 
         /** Zero for older writers without a transport plan. */
@@ -151,14 +157,18 @@ class UsbStreamingThread(
 
         /** A step ended; [ran] is false when its platform work failed. */
         fun noteDacRecovery(step: Int, ran: Boolean, elapsedMs: Long) {}
+        fun noteDacRecoverySuperseded(step: Int) {}
     }
 
     private class UsbAudioStreamWriter(private val stream: UsbAudioStream) : PcmWriter {
         override fun write(pcmBuffer: FloatArray) = stream.write(pcmBuffer)
         override fun writeRaw(pcmBuffer: ByteArray, encoding: Int) = stream.writeRaw(pcmBuffer, encoding)
+        override val transportReady: Boolean get() = stream.transportReady
         override val framesWritten: Long get() = stream.framesWritten
         override fun flush() = stream.flush()
         override fun drainEndOfStream(): Boolean = stream.drainEndOfStream()
+        override val diagnosticSequence: Long get() = stream.diagnosticSequence
+        override fun noteQueueTimeout(total: Long, depth: Int, burst: Long) = stream.noteQueueTimeout(total, depth, burst)
         override fun markIdle() = stream.markIdle()
         override val pauseKeepaliveMs: Long = stream.transportPlan()?.pauseKeepaliveMs ?: 0L
         override fun requestPause() = stream.requestPause()
@@ -174,6 +184,7 @@ class UsbStreamingThread(
         override fun dacRecoveryBegin(): Boolean = stream.dacRecoveryBegin()
         override fun dacRecoveryEnd(): Boolean = stream.dacRecoveryEnd()
         override fun noteDacRecovery(step: Int, ran: Boolean, elapsedMs: Long) = stream.noteDacRecovery(step, ran, elapsedMs)
+        override fun noteDacRecoverySuperseded(step: Int) = stream.noteDacRecoverySuperseded(step)
     }
 
     /**
@@ -324,7 +335,13 @@ class UsbStreamingThread(
     /** Writer thread only: a recovery of this thread's stream was superseded, so no later one can be this stream's (B48-1). */
     private var recoveryOver = false
 
+    @Volatile private var hasWrittenAudio = false
+    @Volatile private var endedGeneration = -1L
+    private var streamUnderruns = 0L
+    private var underrunBurst = 0L
+
     fun start() {
+        endedGeneration = -1L
         running = true
         endOfStreamQueued = false
         endOfStreamDrained = false
@@ -333,25 +350,32 @@ class UsbStreamingThread(
         thread = Thread({
             // B23-P2: the writer raises itself, from inside, before it can submit anything. Logged once.
             Log.i(TAG, "USB streaming thread priority: ${writerPriority.raiseCurrentThread()}")
+            DirectPathTelemetry.streamUnderrunSummary = "stream=${usbStream.diagnosticSequence} total=0 lastMonoNs=none"
             while (running) {
                 // A flush left a seek owed (a seek, a skip, an item start): the ring plays out, the
                 // continuation is ramped down and the DAC is kept fed with silence (B9-2). Before the
                 // pause, as in the engine: a seek delivered while paused still has to act on the ring.
                 val seek = takeSeekRequest()
                 if (seek != null) {
+                    underrunBurst = 0L
                     performSeek(seek)
                     continue
                 }
                 // B12a-6: `paused`, or a pause the stream acted on inside the block it was writing (its fade is
                 // already queued; the user may even have resumed since, and the kept rest of the block must replay).
                 if (paused || usbStream.consumePauseApplied()) {
+                    underrunBurst = 0L
                     performPause()
                     continue
                 }
                 // B47-A5: a locked-up DAC. Only a writer that is playing (not paused, no seek owed, no fade under way) asks the policy for a step.
                 val recoveryStep = dacRecoveryStepToTake()
-                if (recoveryStep != DacLockState.STEP_NONE) {
-                    performDacRecovery(recoveryStep)
+                if (recoveryStep != DacLockState.STEP_NONE && performDacRecovery(recoveryStep)) continue
+                if (!usbStream.transportReady) {
+                    // An actual failed open/level check, not a fault quarantine. Keep the PCM queue
+                    // intact while the same native policy schedules retries. No pause or zero feed.
+                    if (dacRecovery?.streamIsCurrent() == false) { running = false; continue }
+                    Thread.sleep(10)
                     continue
                 }
                 val qBefore = audioQueue.size
@@ -384,6 +408,7 @@ class UsbStreamingThread(
                         }
                     }
                     is AudioBuffer.EndOfStream -> {
+                        endedGeneration = buf.generation
                         endOfStreamDrained = buf.generation == streamGeneration && usbStream.drainEndOfStream()
                         Log.i(TAG, "Natural EOS residual drain success=$endOfStreamDrained")
                         synchronized(endOfStreamLock) {
@@ -395,8 +420,18 @@ class UsbStreamingThread(
                     null -> {
                         // Nothing to send for a whole poll period while the thread is running: the
                         // producer is behind the DAC's consumption rate. This is the dropout.
-                        DirectPathTelemetry.underruns.incrementAndGet()
-                        Log.w(TAG, "Queue EMPTY — poll timeout")
+                        // A timeout is evidence of producer starvation only during live audio. EOS,
+                        // startup and a pause/seek/stop delivered while poll was waiting are intentional.
+                        if (running && hasWrittenAudio && !paused && !seekOwed && !endOfStreamQueued && endedGeneration != streamGeneration) {
+                            streamUnderruns++
+                            underrunBurst++
+                            DirectPathTelemetry.underruns.incrementAndGet()
+                            val depth = audioQueue.size
+                            DirectPathTelemetry.streamUnderrunSummary =
+                                "stream=${usbStream.diagnosticSequence} delta=1 total=$streamUnderruns burstCount=$underrunBurst lastMonoNs=${nowNs()} depth=$depth OUTPUT_GAP=unknown-until-submit"
+                            usbStream.noteQueueTimeout(streamUnderruns, depth, underrunBurst)
+                            Log.w(TAG, "Queue EMPTY — poll timeout streamDelta=$streamUnderruns depth=$depth")
+                        }
                     }
                 }
             }
@@ -411,6 +446,10 @@ class UsbStreamingThread(
 
     /** Writes one buffer: the stage, then the stream (which ramps it when a gesture owes it a ramp). */
     private fun writeBuffer(buf: AudioBuffer) {
+        if (buf is AudioBuffer.FloatBuffer || buf is AudioBuffer.RawBuffer) {
+            hasWrittenAudio = true
+            underrunBurst = 0L
+        }
         when (buf) {
             is AudioBuffer.FloatBuffer -> {
                 inFlightFrames = framesOf(buf)
@@ -634,76 +673,85 @@ class UsbStreamingThread(
     // ── A locked-up DAC (B47-A5) ───────────────────────────────────────────────────────────────
 
     /**
-     * The native policy's step 1 or 2 when the detector has called the DAC locked up (or the debug bridge asked), else 0. Not asked while paused, while a seek is owed or a
+     * The native policy's step 1, 2 or 3 when the detector has called the DAC locked up (or the debug bridge asked), else 0. Not asked while paused, while a seek is owed or a
      * fade is being written (a skip, a seek, a pause in progress), with nothing to recover into, or without a host to do the work: the policy then does not look, and a manual
      * request waits for the writer to be playing again.
      */
+    private var deferredRecoveryStep = DacLockState.STEP_NONE
+
     private fun dacRecoveryStepToTake(): Int {
         if (dacRecovery == null || recoveryOver || paused || seekOwed || fadeInProgress || !running) return DacLockState.STEP_NONE
+        if (deferredRecoveryStep != DacLockState.STEP_NONE) return deferredRecoveryStep
         val step = usbStream.dacLockStep()
-        return if (step == DacLockState.STEP_INTERFACE || step == DacLockState.STEP_BUS_RESET) step else DacLockState.STEP_NONE
+        return if (step in DacLockState.STEP_INTERFACE..DacLockState.STEP_REOPEN) step else DacLockState.STEP_NONE
     }
 
-    /**
-     * Brings a locked-up DAC back: what the listener hears is a short fade-out, a gap, and a fade-in at the same position of the song.
-     *  1. the fade of a pause (the same code path: [UsbAudioStream.beginPauseFade]; the continuation is ramped to zero behind the ring, the rest of its block is kept);
-     *  2. the ring plays out and is drained (native, the seek barrier's own drain), the platform restarts the interface ([DacRecoveryHost]), the feedback is armed again (native);
-     *  3. the resume of a pause: the kept block replays faded in, after the resume lead's silence.
-     * The frame count is never reset, so Media3's position (a function of it) neither jumps nor repeats. A seek or a pause that arrives meanwhile takes over at the end, as it
-     * would after any pause; once the ring has been drained the two native halves always both run, so the stream is never left half restarted.
+    /** Drain unmodified music, restore the transport and continue with the same frame counter.
+     * A user pause/seek received meanwhile is handled by its ordinary gesture path afterward.
      */
-    private fun performDacRecovery(step: Int) {
-        val host = dacRecovery ?: return
+    private fun performDacRecovery(step: Int): Boolean {
+        val host = dacRecovery ?: return false
         // B48-1: the device first. A stream that has been replaced, handed back or unplugged since the policy decided is not recovered: no fade, no drain, nothing, and this
         // thread (which belongs to that stream) never asks the policy again, so its escalation cannot report a step that was never taken.
-        if (!host.begin(step)) {
+        val start = host.tryBegin(step)
+        if (start == RecoveryStart.DEFERRED) {
+            deferredRecoveryStep = step
+            return false
+        }
+        deferredRecoveryStep = DacLockState.STEP_NONE
+        if (start == RecoveryStart.SUPERSEDED) {
             recoveryOver = true
+            usbStream.noteDacRecoverySuperseded(step)
             Log.i(TAG, "DAC recovery step $step: superseded before anything was done; this stream's recovery is over")
-            return
+            return true
         }
         try {
             recoverWithTheDevice(host, step)
         } finally {
             host.end(step)
         }
+        return true
     }
 
     private fun recoverWithTheDevice(host: DacRecoveryHost, step: Int) {
-        val startedNs = System.nanoTime()
-        Log.i(TAG, "DAC recovery step $step: fade out, restart the interface, resume at the same position")
-        if (usbStream.beginPauseFade()) {
-            fadeInProgress = true
-            while (running && !seekOwed && usbStream.isFadingOut) {
-                val next = nextContinuation() ?: break
-                writeBuffer(next)
-            }
-            if (!seekOwed && usbStream.isFadingOut) usbStream.endFadeOut()
-            if (!seekOwed) fadeFinished()
-        }
-        usbStream.markIdle()
+        val previousSequence = usbStream.diagnosticSequence
+        val startedNs = nowNs()
+        Log.i(TAG, "DAC recovery step $step: drain queued music, restore the transport, keep playing")
         var outcome = RestartOutcome.FAILED
         if (running) {
             val drained = usbStream.dacRecoveryBegin()
-            if (!drained) Log.w(TAG, "DAC recovery step $step: the ring did not drain completely; going on as the seek barrier does")
-            outcome = try {
+            if (!drained) Log.w(TAG, "DAC recovery step $step: incomplete transport barrier; interface work refused")
+            if (drained) outcome = try {
                 host.restartInterface(step)
             } catch (e: RuntimeException) {
                 Log.e(TAG, "DAC recovery step $step: the platform work threw", e)
                 RestartOutcome.FAILED
             }
-            usbStream.dacRecoveryEnd()
+            if (outcome == RestartOutcome.RAN && host.streamIsCurrent()) {
+                if (!usbStream.dacRecoveryEnd()) outcome = RestartOutcome.FAILED
+            } else if (!host.streamIsCurrent()) outcome = RestartOutcome.SUPERSEDED
         }
-        val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000
+        val sequence = usbStream.diagnosticSequence
+        if (outcome == RestartOutcome.RAN && sequence != previousSequence) {
+            // Full reopen creates a new native generation on this same logical writer. Its
+            // underruns start at zero and do not begin before its first actual music write.
+            streamUnderruns = 0L
+            underrunBurst = 0L
+            hasWrittenAudio = false
+            DirectPathTelemetry.streamUnderrunSummary = "stream=$sequence total=0 lastMonoNs=none"
+        }
+        val elapsedMs = (nowNs() - startedNs) / 1_000_000
         if (outcome == RestartOutcome.SUPERSEDED) {
             // The owner has said so in the log (`DAC_RECOVERY step=… result=superseded gen=… now=…`); the stream this thread writes to is going away, so the native policy is not
             // told a step ran or failed, and the thread asks for no more.
             recoveryOver = true
+            usbStream.noteDacRecoverySuperseded(step)
         } else {
             usbStream.noteDacRecovery(step, outcome == RestartOutcome.RAN, elapsedMs)
         }
         DirectPathTelemetry.dacRecoveries.incrementAndGet()
         Log.i(TAG, "DAC recovery step $step: ${outcome.name} in $elapsedMs ms (paused=$paused seekOwed=$seekOwed)")
-        if (running && !paused && !seekOwed) usbStream.resumeAfterPause()
+        // No fault fade, silence pre-roll or synthetic pause/resume (owner decision 11-18).
     }
 
     /** The next audio a pause can ramp down, or null: nothing queued, or the track ends there. */
@@ -868,6 +916,7 @@ class UsbStreamingThread(
      * continues with) and drops what was queued since, which is the position that seek had moved to.
      */
     fun flush() {
+        hasWrittenAudio = false
         synchronized(gestureLock) {
             streamGeneration++
             val drained = ArrayList<AudioBuffer>()

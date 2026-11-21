@@ -612,7 +612,7 @@ class ListeningStatsTracker @Inject constructor(
     /** The context a session opens with: what the player knows (an external item, shuffle) and where the queue came from. */
     private fun withQueueSource(context: ListenContext?): ListenContext? {
         val source = queueSource
-        if (context?.kind == ListenSourceKind.EXTERNAL_VIEW || source == null) return context
+        if (context?.kind != null || source == null) return context
         return (context ?: ListenContext()).copy(kind = source.kind, ref = source.ref)
     }
 

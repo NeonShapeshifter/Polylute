@@ -44,6 +44,7 @@ class MetadataEditStateHolder @Inject constructor(
          */
         fun getUserFriendlyErrorMessage(): String {
             return when (error) {
+                MetadataEditError.SAFE_WRITE_UNAVAILABLE -> errorMessage ?: "Couldn't save the changes; the file was not touched."
                 MetadataEditError.FILE_NOT_FOUND -> "The song file could not be found. It may have been moved or deleted."
                 MetadataEditError.NO_WRITE_PERMISSION -> "Cannot edit this file. You may need to grant additional permissions or the file is on read-only storage."
                 MetadataEditError.INVALID_INPUT -> errorMessage ?: "Invalid input provided."

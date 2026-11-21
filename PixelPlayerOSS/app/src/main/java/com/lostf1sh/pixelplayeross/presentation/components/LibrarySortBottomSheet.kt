@@ -1,62 +1,27 @@
 package com.lostf1sh.pixelplayeross.presentation.components
 
-import androidx.compose.animation.animateColor
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.updateTransition
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.R
-import com.lostf1sh.pixelplayeross.presentation.model.methodLabelRes
 import com.lostf1sh.pixelplayeross.data.model.SortDirection
 import com.lostf1sh.pixelplayeross.data.model.SortOption
-import com.lostf1sh.pixelplayeross.ui.theme.RoundedSans
-import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
+import com.lostf1sh.pixelplayeross.presentation.model.methodLabelRes
+import com.lostf1sh.pixelplayeross.ui.ds.*
 import kotlinx.collections.immutable.ImmutableList
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,373 +45,73 @@ fun LibrarySortBottomSheet(
     mountInputBridge: Boolean = true,
 ) {
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
-
-    val selectedColor = MaterialTheme.colorScheme.secondaryContainer
-    val unselectedColor = MaterialTheme.colorScheme.surfaceContainerLow
-
-    val boxBackgroundColor by animateColorAsState(
-        targetValue = if (viewToggleChecked) MaterialTheme.colorScheme.tertiary else unselectedColor,
-        label = "boxBackgroundColorAnimation"
-    )
-
-    val boxCornerRadius by animateDpAsState(
-        targetValue = if (viewToggleChecked) 18.dp else 50.dp,
-        label = "boxCornerRadiusAnimation"
-    )
-
-    GlassModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 8.dp
-    ) {
-        // This window is its own surface, so the activity's volume-key path does not
-        // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
-        if (mountInputBridge) {
-            ModalInputBridge()
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 0.dp)
-                .selectableGroup(),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontFamily = RoundedSans,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 2.dp, top = 0.dp, bottom = 16.dp)
-            )
-
-            @Suppress("UNCHECKED_CAST")
-            val safeOptions = remember(options) {
-                (options as List<SortOption?>).filterNotNull()
-            }
-            val resolvedSelectedOption = remember(safeOptions, selectedOption) {
-                safeOptions.firstOrNull { option ->
-                    option.storageKey == selectedOption?.storageKey
-                } ?: selectedOption ?: safeOptions.firstOrNull()
-            }
-            val methodOptions = remember(safeOptions) {
-                safeOptions
-                    .map { it.methodOption() }
-                    .distinctBy { it.methodKey }
-            }
-            val selectedDirection = resolvedSelectedOption?.direction
-            val shouldShowDirectionToggle = remember(methodOptions) {
-                methodOptions.any { it.canFlipDirection }
-            }
-
-            if (shouldShowDirectionToggle && resolvedSelectedOption != null) {
-                val directionLabel = when (selectedDirection) {
-                    SortDirection.Descending -> stringResource(R.string.presentation_batch_g_sort_descending)
-                    SortDirection.Ascending -> stringResource(R.string.presentation_batch_g_sort_ascending)
-                    null -> stringResource(R.string.presentation_batch_g_sort_original_order)
-                }
-                val isDescending = selectedDirection == SortDirection.Descending
-
-                LibrarySheetSortDirectionCard(
-                    modifier = Modifier.padding(bottom = 12.dp),
-                    label = directionLabel,
-                    isDescending = isDescending,
-                    enabled = resolvedSelectedOption.canFlipDirection,
-                    onClick = {
-                        onDirectionToggle(resolvedSelectedOption.flipDirection())
-                    }
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .clip(
-                        shape = RoundedCornerShape(
-                            topStart = 20.dp,
-                            topEnd = 20.dp,
-                            bottomStart = 20.dp,
-                            bottomEnd = 20.dp
-                        )
-                    ),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                methodOptions.forEach { option ->
-                    val isSelected = resolvedSelectedOption?.methodKey == option.methodKey
-                    val containerColor = remember(isSelected) {
-                        if (isSelected) selectedColor else unselectedColor
-                    }
-
-                    Surface(
-                        color = containerColor,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 0.dp)
-                            .clip(
-                                shape = RoundedCornerShape(
-                                    topStart = 8.dp,
-                                    topEnd = 8.dp,
-                                    bottomStart = 8.dp,
-                                    bottomEnd = 8.dp
-                                )
-                            )
-                            .selectable(
-                                selected = isSelected,
-                                onClick = {
-                                    onOptionSelected(option.resolveForDirection(selectedDirection))
-                                },
-                                role = Role.RadioButton
-                            )
-                            .semantics { this.selected = isSelected }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 20.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = stringResource(option.methodLabelRes()),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
-                            )
-                            RadioButton(
-                                selected = isSelected,
-                                onClick = null
-                            )
-                        }
-                    }
-                }
-            }
-
+    GlassModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        if (mountInputBridge) ModalInputBridge()
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = DapSpacing.Gutter)) {
+            Text(title, style = DapType.Heading, color = Dap.primaryText)
+            Spacer(Modifier.height(DapSpacing.Sm))
+            LibrarySortChoices(options, selectedOption, onOptionSelected, onDirectionToggle)
             if (showViewToggle || viewToggleContent != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = viewSectionTitle,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontFamily = RoundedSans,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 8.dp)
-                )
-
-                if (viewToggleContent != null) {
-                    viewToggleContent()
-                } else {
-                    LibrarySheetToggleCard(
-                        label = viewToggleLabel,
-                        checked = viewToggleChecked,
-                        boxBackgroundColor = boxBackgroundColor,
-                        boxCornerRadius = boxCornerRadius,
-                        onCheckedChange = onViewToggleChange
-                    )
-                }
+                Spacer(Modifier.height(DapSpacing.Md))
+                Text(viewSectionTitle, style = DapType.Heading, color = Dap.primaryText)
+                if (viewToggleContent != null) viewToggleContent()
+                else DapSwitchRow(label = viewToggleLabel, checked = viewToggleChecked, onCheckedChange = onViewToggleChange)
             }
-
             if (sourceToggleContent != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.presentation_batch_g_sort_source),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontFamily = RoundedSans,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 8.dp)
-                )
+                Text(stringResource(R.string.presentation_batch_g_sort_source), style = DapType.Heading, color = Dap.primaryText)
                 sourceToggleContent()
             }
-
-            if (extraContent != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                extraContent()
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
+            extraContent?.invoke()
+            Spacer(Modifier.height(DapSpacing.Lg))
         }
     }
 }
 
+/** Same choice-list rows as ThemeSelectorItem's sheet in Audio / Appearance. */
 @Composable
-private fun LibrarySheetSortDirectionCard(
-    modifier: Modifier = Modifier,
-    label: String,
-    isDescending: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    val transition = updateTransition(
-        targetState = isDescending,
-        label = "sortDirectionTransition"
-    )
-    val containerColor by transition.animateColor(
-        transitionSpec = {
-            spring(
-                dampingRatio = 0.82f,
-                stiffness = Spring.StiffnessMediumLow
+internal fun LibrarySortChoices(options: List<SortOption>, selectedOption: SortOption?, onOptionSelected: (SortOption) -> Unit, onDirectionToggle: (SortOption) -> Unit) {
+    @Suppress("UNCHECKED_CAST")
+    val safe = (options as List<SortOption?>).filterNotNull()
+    val selection = safe.firstOrNull { it.storageKey == selectedOption?.storageKey } ?: selectedOption ?: safe.firstOrNull()
+    val methods = safe.map { it.methodOption() }.distinctBy { it.methodKey }
+    // B63 (reviewer on the HONOR 11-16): the methods first, as plain choices (no chevron: nothing opens), then the direction as
+    // a two-way picker with fixed words. The old switch named the *current* direction while "on" meant descending, so "Title ↑"
+    // showed as "Ascending: off".
+    Column(Modifier.selectableGroup()) {
+        methods.forEach { option ->
+            val chosen = selection?.methodKey == option.methodKey
+            DapNavRow(
+                label = stringResource(option.methodLabelRes()),
+                onClick = { onOptionSelected(option.resolveForDirection(selection?.direction)) },
+                modifier = Modifier.semantics { selected = chosen; role = Role.RadioButton },
+                trailing = if (chosen) { { DapState(kind = DapStateKind.Selected, label = stringResource(R.string.presentation_batch_f_cd_selected)) } } else { {} },
             )
-        },
-        label = "sortDirectionContainerColor"
-    ) { descending ->
-        when {
-            !enabled -> MaterialTheme.colorScheme.surfaceContainerLow
-            descending -> MaterialTheme.colorScheme.tertiaryContainer
-            else -> MaterialTheme.colorScheme.primaryContainer
         }
     }
-    val contentColor by transition.animateColor(
-        transitionSpec = {
-            spring(
-                dampingRatio = 0.86f,
-                stiffness = Spring.StiffnessMediumLow
+    if (selection != null && methods.any { it.canFlipDirection }) {
+        Spacer(Modifier.height(DapSpacing.Md))
+        val orderLabel = stringResource(R.string.presentation_batch_g_sort_order)
+        val direction = selection.direction
+        if (direction == null) {
+            DapNavRow(label = orderLabel, value = stringResource(R.string.presentation_batch_g_sort_original_order), valueStyle = DapType.CaptionMedium, trailing = {}, divider = false)
+        } else {
+            val ascending = stringResource(R.string.presentation_batch_g_sort_ascending)
+            val descending = stringResource(R.string.presentation_batch_g_sort_descending)
+            DapSegmentedRow(
+                label = orderLabel,
+                options = listOf(SortDirection.Ascending, SortDirection.Descending),
+                selected = direction,
+                onSelect = { if (it != direction) onDirectionToggle(selection.flipDirection()) },
+                optionLabel = { if (it == SortDirection.Ascending) ascending else descending },
+                enabled = selection.canFlipDirection,
+                divider = false,
             )
-        },
-        label = "sortDirectionContentColor"
-    ) { descending ->
-        when {
-            !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-            descending -> MaterialTheme.colorScheme.onTertiaryContainer
-            else -> MaterialTheme.colorScheme.onPrimaryContainer
-        }
-    }
-    val iconContainerColor by animateColorAsState(
-        targetValue = contentColor.copy(alpha = if (enabled) 0.16f else 0.1f),
-        label = "sortDirectionIconContainerColor"
-    )
-    val iconRotation by transition.animateFloat(
-        transitionSpec = {
-            spring(
-                dampingRatio = 0.7f,
-                stiffness = Spring.StiffnessLow
-            )
-        },
-        label = "sortDirectionIconRotation"
-    ) { descending ->
-        if (descending) 0f else 180f
-    }
-    val iconScale by transition.animateFloat(
-        transitionSpec = {
-            spring(
-                dampingRatio = 0.62f,
-                stiffness = Spring.StiffnessMediumLow
-            )
-        },
-        label = "sortDirectionIconScale"
-    ) { descending ->
-        if (descending) 1f else 1.08f
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.72f)
-            .clip(AbsoluteSmoothCornerShape(18.dp, 60))
-            .background(containerColor)
-            .clickable(enabled = enabled, onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(iconContainerColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.ArrowDownward,
-                    contentDescription = null,
-                    tint = contentColor,
-                    modifier = Modifier
-                        .size(24.dp)
-                        .rotate(iconRotation)
-                        .scale(iconScale)
-                )
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.presentation_batch_g_sort_order),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = contentColor.copy(alpha = 0.82f)
-                )
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = contentColor
-                )
-            }
         }
     }
 }
 
+/** Kept for the existing custom view-toggle callers; its appearance belongs to the DS. */
 @Composable
-internal fun LibrarySheetToggleCard(
-    label: String,
-    checked: Boolean,
-    boxBackgroundColor: Color,
-    boxCornerRadius: Dp,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 0.dp)
-            .clip(
-                AbsoluteSmoothCornerShape(
-                    cornerRadiusBL = boxCornerRadius,
-                    smoothnessAsPercentBR = 60,
-                    cornerRadiusTR = boxCornerRadius,
-                    smoothnessAsPercentTL = 60,
-                    cornerRadiusTL = boxCornerRadius,
-                    smoothnessAsPercentBL = 60,
-                    cornerRadiusBR = boxCornerRadius,
-                    smoothnessAsPercentTR = 60
-                )
-            )
-            .background(color = boxBackgroundColor)
-            .clickable(onClick = { onCheckedChange(!checked) })
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp, horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 6.dp, end = 8.dp),
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (checked) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurface
-            )
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.onTertiary,
-                    checkedTrackColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    checkedIconColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                ),
-                thumbContent = if (checked) {
-                    {
-                        Icon(
-                            imageVector = Icons.Rounded.Check,
-                            contentDescription = stringResource(R.string.presentation_batch_g_cd_switch_on),
-                            modifier = Modifier.size(SwitchDefaults.IconSize),
-                        )
-                    }
-                } else {
-                    null
-                }
-            )
-        }
-    }
+internal fun LibrarySheetToggleCard(label: String, checked: Boolean, boxBackgroundColor: Color, boxCornerRadius: Dp, onCheckedChange: (Boolean) -> Unit) {
+    DapSwitchRow(label = label, checked = checked, onCheckedChange = onCheckedChange)
 }

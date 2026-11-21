@@ -58,7 +58,7 @@ class B52LyricsDialogTest {
             }
         }
         compose.onNodeWithText("Elegir carpeta").assertIsDisplayed()
-        val dir = File(System.getenv("B52_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B52-gates/png-after").apply { mkdirs() }
+        val dir = File(System.getenv("B52_RENDERS") ?: "build/test-artifacts/B52/png-after").apply { mkdirs() }
         File(dir, "lyrics-folder-dialog.png").outputStream().use { B42Renders.screen(compose).compress(Bitmap.CompressFormat.PNG, 100, it) }
         org.junit.Assert.assertTrue("The dialog must mount the volume authority bridge", bridgeComposed)
         compose.onNodeWithText("Guardar letras junto a tu música").assertIsDisplayed()

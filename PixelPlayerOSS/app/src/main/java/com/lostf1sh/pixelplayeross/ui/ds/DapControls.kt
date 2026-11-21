@@ -216,7 +216,10 @@ fun DapCollectionActions(
             modifier = Modifier
                 .size(DapHeights.Control)
                 .clip(CircleShape)
-                .background(Dap.panelRaised)
+                // B63: this disc sits on album art; the raised panel alone went see-through over a busy cover. A dark backing and a
+                // hairline keep it readable on any picture and on plain pages alike.
+                .background(Dap.background.copy(alpha = 0.72f))
+                .border(1.dp, Dap.border, CircleShape)
                 .semantics { contentDescription = shuffleLabel }
                 .clickable(role = Role.Button, onClickLabel = shuffleLabel, onClick = onShuffle),
             contentAlignment = Alignment.Center,

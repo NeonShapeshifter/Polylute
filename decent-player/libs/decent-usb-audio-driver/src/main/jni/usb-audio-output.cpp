@@ -15,6 +15,7 @@
 #include "urb-quarantine.h"
 #include "usb-glitch.h"
 #include "usb-second-ring.h"
+#include "usb-journal.h"
 #include "seek-barrier.h"
 #include "usb-cpu-watch.h"
 
@@ -25,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <new>
 #include <unistd.h>
 #include <fcntl.h>
@@ -548,6 +550,8 @@ static bool ringHoldsItsLead(const UsbAudioContext *ctx) {
  */
 static int64_t ringUnplayedWireUs(UsbAudioContext *ctx);   // defined after reapReadyUrbs, which it needs
 
+static void noteOutputGapEvent(UsbAudioContext *ctx, const UsbOutputGap &gap, int64_t nowUs);
+
 static void observeOutputGap(UsbAudioContext *ctx, int numPackets) {
     bool announcedIdle = ctx->lastSubmitMs <= 0;
     if (ctx->playOutBeforeDrain) {
@@ -567,6 +571,7 @@ static void observeOutputGap(UsbAudioContext *ctx, int numPackets) {
         UsbSchedSample sched = {false, 0, 0};
         const bool read = readWriterSchedstat(ctx, &sched);
         const UsbSchedDelta delta = read ? usbSchedDelta(&ctx->schedBaseline, &sched, nowUs) : UsbSchedDelta{false, 0, 0, 0};
+        noteOutputGapEvent(ctx, gap, nowUs);
         reportOutputGap(ctx, gap, delta);
         if (usbGapWantsCpuLine(&delta)) usbReportOutputGapCpu(ctx, delta.runqUs, delta.cpuUs);   // B47-A1
         if (read) usbSchedBaselineSet(&ctx->schedBaseline, &sched, nowUs);
@@ -582,6 +587,13 @@ static void observeOutputGap(UsbAudioContext *ctx, int numPackets) {
 // B27-A5: the stream's one-second summaries (usb-second-ring.h). One ring for the process, like the feedback stats: the stream
 // that is playing is the one that records, and a dump after it ended still has its last seconds.
 static UsbSecondRing g_secondRing;
+
+static void noteOutputGapEvent(UsbAudioContext *ctx, const UsbOutputGap &gap, int64_t nowUs) {
+    UsbPolicyEvent e = {};
+    e.atMs = nowUs / 1000; e.stream = ctx->streamSeq; e.rate = ctx->sampleRate;
+    e.kind = USB_POLICY_OUTPUT_GAP; e.what = "bus-model"; e.dryUs = gap.dryUs;
+    usbSecondRingPolicyEvent(&g_secondRing, &e);
+}
 
 /** A data URB that completed with an error or short is a microframe the DAC did not get whole. */
 static void checkIsoCompletion(UsbAudioContext *ctx, const struct usbdevfs_urb *c) {
@@ -819,13 +831,13 @@ static const char *feedbackPolicyName(int policy) {
 size_t usbSecondSummaries(int64_t windowMs, char *out, size_t capacity) {
     if (out == nullptr || capacity == 0) return 0;
     out[0] = '\0';
-    if (windowMs <= 0) windowMs = 30000;
-    if (windowMs > (int64_t)USB_SECOND_RING_CAPACITY * 1000) windowMs = (int64_t)USB_SECOND_RING_CAPACITY * 1000;
+    if (windowMs <= 0) windowMs = USB_SECOND_RING_WINDOW_MS;
+    if (windowMs > USB_SECOND_RING_WINDOW_MS) windowMs = USB_SECOND_RING_WINDOW_MS;
     const int64_t nowMs = monotonicMs();
-    UsbSecondSample samples[USB_SECOND_RING_CAPACITY];  // ~25 KB of stack, on demand
+    UsbSecondSample samples[USB_SECOND_RING_CAPACITY];  // ~43 KB of stack, on demand
     const int n = usbSecondRingLast(&g_secondRing, nowMs, windowMs, samples, USB_SECOND_RING_CAPACITY);
-    UsbPolicyEvent events[USB_POLICY_EVENT_CAPACITY];
-    const int eventCount = usbSecondRingEvents(&g_secondRing, nowMs, windowMs, events, USB_POLICY_EVENT_CAPACITY);
+    std::vector<UsbPolicyEvent> events(USB_POLICY_EVENT_CAPACITY);
+    const int eventCount = usbSecondRingEvents(&g_secondRing, nowMs, windowMs, events.data(), USB_POLICY_EVENT_CAPACITY);
     StreamFacts f;
     pthread_mutex_lock(&g_streamFactsLock);
     f = g_streamFacts;
@@ -848,10 +860,29 @@ size_t usbSecondSummaries(int64_t windowMs, char *out, size_t capacity) {
     int more = snprintf(out + used, capacity - (size_t)used, "%s", kLegend);
     if (more < 0 || (size_t)more >= capacity - (size_t)used) return capacity - 1;
     used += more;
-    size_t total = (size_t)used + usbSecondRingFormat(samples, n, nowMs, out + used, capacity - (size_t)used);
-    if (total + 1 >= capacity) return total;
+    size_t total = (size_t)used;
     if (eventCount > 0) {
-        total += usbSecondRingFormatEvents(events, eventCount, nowMs, feedbackPolicyName, out + total, capacity - total);
+        total += usbSecondRingFormatEvents(events.data(), eventCount, nowMs, feedbackPolicyName,
+            total < capacity ? out + total : nullptr, total < capacity ? capacity - total : 0);
+    }
+    total += usbSecondRingFormat(samples, n, nowMs,
+        total < capacity ? out + total : nullptr, total < capacity ? capacity - total : 0);
+    const int64_t overwritten = usbSecondRingOverwrittenAt(&g_secondRing);
+    if (overwritten > 0 && nowMs - overwritten <= windowMs) {
+        int wrote = snprintf(total < capacity ? out + total : nullptr, total < capacity ? capacity - total : 0,
+            "TRUNCATED event-ring overwrittenInWindow=1 capacity=%d\n", USB_POLICY_EVENT_CAPACITY);
+        if (wrote > 0) total += (size_t)wrote;
+    }
+    const int64_t sampleOverwritten = usbSecondRingSampleOverwrittenAt(&g_secondRing);
+    if (sampleOverwritten > 0 && sampleOverwritten / 1000 >= nowMs / 1000 - windowMs / 1000) {
+        int wrote = snprintf(total < capacity ? out + total : nullptr, total < capacity ? capacity - total : 0,
+            "TRUNCATED second-ring overwrittenInWindow=1 capacity=%d\n", USB_SECOND_RING_CAPACITY);
+        if (wrote > 0) total += (size_t)wrote;
+    }
+    if (total >= capacity) {
+        char marker[100];
+        const int n = snprintf(marker, sizeof(marker), "\nTRUNCATED required=%zu capacity=%zu\n", total + 1, capacity);
+        if (n > 0 && (size_t)n < capacity) memcpy(out + capacity - n - 1, marker, n + 1);
     }
     return total;
 }
@@ -871,6 +902,26 @@ static bool startGuardHolds(const UsbAudioContext *ctx, int policy) {
 }
 
 /** What the packetizer is given right now, without recording it: the policy's answer, or the nominal rate while the start guard holds. */
+
+static UsbDacBehavior *behaviorState(UsbAudioContext *ctx) {
+    return ctx->recoveryControl ? &ctx->recoveryControl->behavior : &ctx->behavior;
+}
+static void noteReference(UsbAudioContext *ctx, const char *what, int faultKind = 0) {
+    UsbPolicyEvent e = {};
+    e.atMs = monotonicMs(); e.stream = ctx->streamSeq; e.rate = ctx->sampleRate;
+    e.kind = faultKind ? USB_POLICY_BEHAVIOR : USB_POLICY_REFERENCE; e.what = what;
+    e.raw = ctx->journalRaw; e.length = ctx->journalLength;
+    e.urbStatus = ctx->journalUrbStatus; e.packetStatus = ctx->journalPacketStatus; e.policy = usbFeedbackPolicy();
+    e.total = ctx->plateau.reference.raw; e.delta = ctx->plateau.reference.sessions; e.burst = faultKind;
+    usbSecondRingPolicyEvent(&g_secondRing, &e);
+}
+void usbSetFeedbackIdentity(UsbAudioContext *ctx, const char *key) {
+    if (!ctx) return;
+    UsbFeedbackReference reference = {};
+    usbJournalReferenceGet(key, &reference);
+    usbFeedbackPlateauReset(&ctx->plateau, &reference, usbJournalReferenceSession(ctx->streamSeq));
+}
+
 static double policyFpmfNow(const UsbAudioContext *ctx) {
     const int policy = usbFeedbackPolicy();
     const double nominal = ctx->plan.nominalFramesPerInterval;
@@ -895,7 +946,7 @@ static double effectiveFpmf(UsbAudioContext *ctx) {
  * and what the packetizer was being given before it and is given after. Rare (a few a minute at the most): the ring takes its
  * lock for it, and nothing is logged here.
  */
-static void notePolicyEvent(const UsbAudioContext *ctx, enum UsbPolicyEventKind kind, const char *what, double fpmf, double ppm) {
+static void notePolicyEvent(const UsbAudioContext *ctx, enum UsbPolicyEventKind kind, const char *what, double fpmf, double ppm, int64_t elapsedMs = -1) {
     UsbPolicyEvent e;
     memset(&e, 0, sizeof(e));
     e.atMs = monotonicMs();
@@ -908,6 +959,12 @@ static void notePolicyEvent(const UsbAudioContext *ctx, enum UsbPolicyEventKind 
     e.sentBefore = g_fbSendingFpmf.load(std::memory_order_relaxed);
     e.sentAfter = policyFpmfNow(ctx);
     e.policy = usbFeedbackPolicy();
+    const bool initial = kind == USB_POLICY_STREAM_START || !ctx->journalFeedbackSeen;
+    e.raw = initial ? ctx->diagnosticRaw : ctx->journalRaw;
+    e.length = initial ? ctx->diagnosticLength : ctx->journalLength;
+    e.urbStatus = initial ? ctx->diagnosticUrbStatus : ctx->journalUrbStatus;
+    e.packetStatus = initial ? ctx->diagnosticPacketStatus : ctx->journalPacketStatus;
+    if (kind == USB_POLICY_DAC_RECOVERY) e.delta = elapsedMs;
     usbSecondRingPolicyEvent(&g_secondRing, &e);
 }
 
@@ -917,9 +974,12 @@ static void notePolicyEvent(const UsbAudioContext *ctx, enum UsbPolicyEventKind 
  */
 static void noteGesture(const UsbAudioContext *ctx, enum UsbPolicyEventKind kind, const char *what) {
     static int64_t lastMs[USB_POLICY_EVENT_KIND_COUNT];
+    static int64_t lastStream[USB_POLICY_EVENT_KIND_COUNT];
     const int64_t nowMs = monotonicMs();
-    if (lastMs[kind] != 0 && nowMs - lastMs[kind] < 100) return;
+    if (kind != USB_POLICY_STREAM_START && lastStream[kind] == ctx->streamSeq &&
+        lastMs[kind] != 0 && nowMs - lastMs[kind] < 100) return;
     lastMs[kind] = nowMs;
+    lastStream[kind] = ctx->streamSeq;
     notePolicyEvent(ctx, kind, what, 0.0, 0.0);
 }
 
@@ -929,7 +989,7 @@ static void noteGesture(const UsbAudioContext *ctx, enum UsbPolicyEventKind kind
  * looks at the epoch between two URBs.
  */
 static void updateRefusal(UsbAudioContext *ctx) {
-    const bool refusing = ctx->feedbackWatch.stuck || ctx->feedbackWatch.implausible;
+    const bool refusing = (ctx->feedbackWatch.stuck && !ctx->feedbackWatch.acceptedRun) || ctx->feedbackWatch.implausible;
     if (refusing && !ctx->refusing) ctx->refusalEpoch++;
     ctx->refusing = refusing;
 }
@@ -938,8 +998,21 @@ static void updateRefusal(UsbAudioContext *ctx) {
  * B41-fix1 (A1a): a feedback transfer that was not a reading. Counted in the one-second ring with the codes the kernel gave, and one
  * rate-limited USB_GLITCH line says it. It moves nothing: the rate stays what the last valid reading made it.
  */
-static void noteFeedbackDropped(const UsbAudioContext *ctx, enum UsbFeedbackPacket verdict, int urbStatus, int packetStatus,
+static void journalFeedbackState(UsbAudioContext *ctx, uint32_t raw, int length, int urbStatus, int packetStatus) {
+    const bool changed = !ctx->journalFeedbackSeen || ctx->journalLength != length ||
+        ctx->journalUrbStatus != urbStatus || ctx->journalPacketStatus != packetStatus;
+    ctx->journalFeedbackSeen = true; ctx->journalRaw = raw; ctx->journalLength = length;
+    ctx->journalUrbStatus = urbStatus; ctx->journalPacketStatus = packetStatus;
+    if (!changed) return; // raw jitter alone is not a state change and never logs each packet
+    UsbPolicyEvent e = {}; e.atMs = monotonicMs(); e.stream = ctx->streamSeq; e.rate = ctx->sampleRate;
+    e.kind = USB_POLICY_FEEDBACK_STATE; e.what = length == 4 && urbStatus == 0 && packetStatus == 0 ? "valid" : "invalid";
+    e.raw = raw; e.length = length; e.urbStatus = urbStatus; e.packetStatus = packetStatus; e.policy = usbFeedbackPolicy();
+    usbSecondRingPolicyEvent(&g_secondRing, &e);
+}
+
+static void noteFeedbackDropped(UsbAudioContext *ctx, enum UsbFeedbackPacket verdict, int urbStatus, int packetStatus,
                                 unsigned int length) {
+    journalFeedbackState(ctx, 0, (int)length, urbStatus, packetStatus);
     usbSecondRingFeedbackDropped(&g_secondRing, monotonicMs(), (int)verdict, urbStatus, packetStatus, length);
     reportUsbGlitch(USB_GLITCH_FEEDBACK_INVALID, "%s urb=%d packet=%d length=%u rate=%d", usbFeedbackPacketName(verdict), urbStatus,
                     packetStatus, length, ctx->sampleRate);
@@ -1007,11 +1080,29 @@ static std::atomic<int64_t> g_dacRecoveryCounts[USB_DAC_RECOVERY_STATS_COUNT] = 
 
 void usbSetDacRecoveryEnabled(bool enabled) { g_dacRecoveryEnabled.store(enabled, std::memory_order_relaxed); }
 bool usbDacRecoveryEnabled() { return g_dacRecoveryEnabled.load(std::memory_order_relaxed); }
-void usbRequestDacRecovery(int step) { g_manualRecoveryStep.store(step == 1 || step == 2 ? step : 0, std::memory_order_relaxed); }
+#ifdef POLYLUTE_DEBUG_FAULTS
+static std::atomic<int> g_debugFaultRequested{0};
+static std::atomic<int64_t> g_debugFaultStream{0};
+#endif
+void usbRequestDacRecovery(int step) {
+#ifdef POLYLUTE_DEBUG_FAULTS
+    if (step >= -104 && step <= -101) {
+        pthread_mutex_lock(&g_streamFactsLock);
+        g_debugFaultStream.store(g_streamFacts.seq, std::memory_order_relaxed);
+        pthread_mutex_unlock(&g_streamFactsLock);
+        g_debugFaultRequested.store(-step - 100, std::memory_order_release);
+        LOGI("B635_DEBUG_FAULT_INJECTION kind=%d", -step - 100);
+        return;
+    }
+#endif
+    g_manualRecoveryStep.store(step >= 1 && step <= 3 ? step : 0, std::memory_order_relaxed);
+}
 int usbTakeManualDacRecovery() { return g_manualRecoveryStep.exchange(0, std::memory_order_relaxed); }
 
 /** Either watch calls the DAC locked up: share the counters, log and Mark noise policy event. */
 static void announceDacLock(UsbAudioContext *ctx, const char *why, double fpmf, double ppm, int64_t heldMs, int64_t readings, int64_t lateReaps, bool rateChangeHold = false) {
+    ctx->feedbackHealthySinceMs = -1;
+    ctx->plateau.learningBanned = true;
     g_dacLocksSeen.fetch_add(1, std::memory_order_relaxed);
     reportUsbGlitch(USB_GLITCH_DAC_LOCKED,
                     "why=%s%s feedback=%.4f (%.1f Hz) %+.0f ppm heldMs=%lld railedMs=%lld readings=%lld reapSlow=%lld policy=%s rate=%d stream=%lld",
@@ -1035,18 +1126,46 @@ static void observeDacLock(UsbAudioContext *ctx, double fpmf, const UsbFeedbackE
     g_dacLockedNow.store(ctx->dacLock.locked || ctx->feedbackWatch.stuck ? 1 : 0, std::memory_order_relaxed);
 }
 
+static bool expectsFeedback(const UsbAudioContext *ctx) {
+    return ctx->endpointFeedback > 0 && ctx->plan.feedbackBytes == USB_FEEDBACK_BYTES;
+}
+
+static void tickFeedbackHealth(UsbAudioContext *ctx, int64_t nowMs) {
+    if (usbFeedbackHealthTick(&ctx->feedbackHealth, nowMs, expectsFeedback(ctx),
+            ctx->feedbackHealthSuspended || ctx->pauseRequested.load(std::memory_order_relaxed) || !ctx->running.load() ||
+            !ctx->outputGap.armed || ctx->outputGap.playoutEndUs <= nowMs * 1000)) {
+        ctx->feedbackHealthySinceMs = -1;
+        announceDacLock(ctx, "no-readings", ctx->liveFpmf, 0.0, USB_FEEDBACK_MISSING_MS,
+            ctx->feedbackHealth.validReadings, ctx->dacLock.lateReaps);
+    }
+}
+
+static UsbDacRecoveryPolicy *recoveryPolicy(UsbAudioContext *ctx) {
+    return ctx->recoveryControl ? &ctx->recoveryControl->policy : &ctx->dacPolicy;
+}
+
 static int64_t g_lastDacEpisodeMs = 0;   // the writer thread only (one stream writes at a time)
 
 void usbDacRecoveryForgetEpisodes() { g_lastDacEpisodeMs = 0; }
 
 /** The line and the counters for a verdict the policy reached on an earlier step. */
 static void announceRecoveryVerdict(UsbAudioContext *ctx, int step, bool ok, int64_t nowMs) {
-    if (step != 1 && step != 2) return;
-    if (ok) g_dacRecoveryCounts[step == 1 ? 3 : 5].fetch_add(1, std::memory_order_relaxed);
-    reportUsbGlitch(USB_GLITCH_DAC_RECOVERY, "step=%d result=%s verdictAt=%lldms rate=%d stream=%lld policy=%s", step, ok ? "ok" : (ctx->feedbackWatch.stuck ? "still-stuck" : "still-railed"),
+    if (step < 1 || step > 3) return;
+    if (ok) usbDacBehaviorVerified(behaviorState(ctx));
+    if (ok) g_dacRecoveryCounts[step == 1 ? 3 : step == 2 ? 5 : 9].fetch_add(1, std::memory_order_relaxed);
+    const bool operationFailed = recoveryPolicy(ctx)->operationFailed || (ctx->recoveryControl && ctx->recoveryControl->unavailable);
+    reportUsbGlitch(USB_GLITCH_DAC_RECOVERY, "step=%d result=%s verdictAt=%lldms rate=%d stream=%lld policy=%s", step, ok ? "ok" : operationFailed ? "operation-failed" : (ctx->feedbackHealth.fault ? "no-readings" : ctx->plateau.fault ? "plateau" : ctx->feedbackWatch.stuck ? "still-stuck" : "still-railed"),
                     (long long)nowMs, ctx->sampleRate, (long long)ctx->streamSeq, usbFeedbackPolicyName(usbFeedbackPolicy()));
-    static const char *const kWhat[2][3] = {{"step 1 ok", "step 1 still-railed", "step 1 still-stuck"}, {"step 2 ok", "step 2 still-railed", "step 2 still-stuck"}};
-    notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, kWhat[step - 1][ok ? 0 : (ctx->feedbackWatch.stuck ? 2 : 1)], 0.0, 0.0);
+    static const char *const kWhat[3][3] = {{"step 1 ok", "step 1 still-railed", "step 1 still-stuck"}, {"step 2 ok", "step 2 still-railed", "step 2 still-stuck"}, {"step 3 ok", "step 3 still-railed", "step 3 still-stuck"}};
+    if (!ok && ctx->plateau.fault && !operationFailed && !ctx->feedbackHealth.fault) {
+        notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, step == 1 ? "step 1 plateau" : step == 2 ? "step 2 plateau" : "step 3 plateau", 0, 0);
+        return;
+    }
+    if (!ok && operationFailed) {
+        notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, step == 1 ? "step 1 operation-failed" : step == 2 ? "step 2 operation-failed" : "step 3 operation-failed", 0, 0);
+        return;
+    }
+    notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, (!ok && ctx->feedbackHealth.fault) ? (step == 1 ? "step 1 no-readings" : step == 2 ? "step 2 no-readings" : "step 3 no-readings") : kWhat[step - 1][ok ? 0 : (ctx->feedbackWatch.stuck ? 2 : 1)], 0.0, 0.0);
 }
 
 void usbDacLockState(UsbAudioContext *ctx, int64_t out[USB_DAC_STATE_COUNT]) {
@@ -1062,23 +1181,73 @@ void usbDacLockState(UsbAudioContext *ctx, int64_t out[USB_DAC_STATE_COUNT]) {
     const int manual = usbTakeManualDacRecovery();
     int verdictStep = 0;
     bool verdictOk = false;
-    const bool locked = ctx->dacLock.locked || ctx->feedbackWatch.stuck;
+    tickFeedbackHealth(ctx, nowMs);
+#ifdef POLYLUTE_DEBUG_FAULTS
+    const int injected = g_debugFaultRequested.exchange(0, std::memory_order_acquire);
+    if (injected && g_debugFaultStream.load(std::memory_order_relaxed) == ctx->streamSeq) {
+        ctx->debugFaultKind = injected;
+        static const char *kinds[] = {"", "debug-rail", "debug-stuck", "debug-no-readings", "debug-plateau"};
+        announceDacLock(ctx, kinds[injected], ctx->liveFpmf, 0, 0, 0, 0);
+    }
+#endif
+    const bool realReadings = expectsFeedback(ctx) && ctx->feedbackHealth.armed &&
+        ctx->journalLength == USB_FEEDBACK_BYTES && !ctx->journalUrbStatus && !ctx->journalPacketStatus &&
+        ctx->feedbackHealth.lastValidMs >= ctx->feedbackHealth.armedMs &&
+        nowMs - ctx->feedbackHealth.lastValidMs < USB_FEEDBACK_MISSING_MS && ctx->feedbackHealth.validReadings >= 8;
+    const int faultKind = ctx->feedbackHealth.fault ? 3 : ctx->dacLock.locked ? 1 : ctx->feedbackWatch.stuck ? 2 : ctx->plateau.fault ? 4 : 0;
+    UsbDacBehavior *behavior = behaviorState(ctx);
+    const bool hadBudget = behavior->budgetExhausted;
+    if (usbDacBehaviorObserve(behavior, faultKind, ctx->journalRaw, realReadings)) {
+        // Persistence through a software re-open is evidence for this stream only.
+        ctx->plateau.learningBanned = true;
+        ctx->feedbackHealthySinceMs = -1;
+        noteReference(ctx, "behavior-accepted", faultKind);
+    }
+    if (!hadBudget && behavior->budgetExhausted) noteReference(ctx, "behavior-budget", faultKind);
+    const bool admitted = usbDacBehaviorAccepted(behavior, faultKind, ctx->journalRaw);
+    ctx->feedbackWatch.acceptedRun = usbDacBehaviorAccepted(behavior, 2, ctx->journalRaw) || usbDacBehaviorAccepted(behavior, 1, ctx->journalRaw);
+    updateRefusal(ctx);
+    bool locked = faultKind ||
+        (ctx->recoveryControl && ctx->recoveryControl->unavailable) || recoveryPolicy(ctx)->operationFailed;
+#ifdef POLYLUTE_DEBUG_FAULTS
+    locked = locked || ctx->debugFaultKind != 0;
+#endif
+    g_dacLockedNow.store(locked ? 1 : 0, std::memory_order_relaxed);
+    out[0] = locked ? 1 : 0;
     const double runPpm = usbFeedbackPpm(ctx->feedbackWatch.runRaw / 65536.0, ctx->plan.nominalFramesPerInterval);
     // A run can still become stuck after the four-second verdict. Defer success while it is
     // unresolved, without shortening the watch's hold or calling a healthy start ramp a fault.
-    const bool pending = ctx->dacLock.inRun || (ctx->feedbackWatch.haveRun &&
+    const bool detectorPending = usbFeedbackPlateauPending(&ctx->plateau, ctx->plan.nominalFramesPerInterval) ||
+        ctx->feedbackWatch.implausible || ctx->dacLock.inRun || (ctx->feedbackWatch.haveRun &&
         (runPpm > USB_FEEDBACK_STUCK_MIN_PPM || runPpm < -USB_FEEDBACK_STUCK_MIN_PPM));
-    int step = usbDacRecoveryDecide(&ctx->dacPolicy, locked, usbDacRecoveryEnabled(), nowMs, &g_lastDacEpisodeMs, &verdictStep, &verdictOk, pending);
+    // Success needs an uninterrupted healthy verify window, with fresh continuous readings.
+    // A missing endpoint is intentional for synchronous/adaptive output, so it has no reading requirement.
+    const bool readingsFresh = !expectsFeedback(ctx) || (ctx->feedbackHealth.armed &&
+        ctx->feedbackHealth.lastValidMs >= ctx->feedbackHealth.armedMs &&
+        nowMs - ctx->feedbackHealth.lastValidMs < USB_FEEDBACK_MISSING_MS &&
+        ctx->feedbackHealth.validReadings >= 8);
+    if (locked || !readingsFresh || ctx->feedbackHealthSuspended) ctx->feedbackHealthySinceMs = -1;
+    else if (ctx->feedbackHealthySinceMs < 0) ctx->feedbackHealthySinceMs = nowMs;
+    const bool pending = detectorPending || !readingsFresh || ctx->feedbackHealthySinceMs < 0 ||
+        nowMs - ctx->feedbackHealthySinceMs < USB_DAC_RECOVERY_VERIFY_MS;
+    // A stream-local exception bounds resets; it never manufactures a health verdict.
+    // Missing readings and failed device/volume operations continue to use the recovery ladder.
+    const bool operationFault = (ctx->recoveryControl && ctx->recoveryControl->unavailable) || recoveryPolicy(ctx)->operationFailed;
+    bool suppressSteps = admitted && !operationFault;
+#ifdef POLYLUTE_DEBUG_FAULTS
+    if (ctx->debugFaultKind) suppressSteps = false;
+#endif
+    int step = usbDacRecoveryDecide(recoveryPolicy(ctx), locked, usbDacRecoveryEnabled(), nowMs,
+        &g_lastDacEpisodeMs, &verdictStep, &verdictOk, pending, suppressSteps);
     if (verdictStep != 0) announceRecoveryVerdict(ctx, verdictStep, verdictOk, nowMs);
-    if (step == USB_DAC_STEP_GIVE_UP) {
-        g_dacRecoveryCounts[6].fetch_add(1, std::memory_order_relaxed);
-        reportUsbGlitch(USB_GLITCH_DAC_RECOVERY,
-                        "step=gave-up result=%s railedMs=%lld reapSlow=%lld: both steps were taken and the feedback is locked again; the stream plays on, the feedback stays refused "
-                        "(policy=%s rate=%d stream=%lld)",
-                        ctx->feedbackWatch.stuck ? "still-stuck" : "still-railed", (long long)out[2], (long long)out[4], usbFeedbackPolicyName(usbFeedbackPolicy()), ctx->sampleRate, (long long)ctx->streamSeq);
-        notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, "gave-up", 0.0, 0.0);
+
+    const int requested = manual != 0 ? manual : step;
+    if (requested >= 1 && requested <= 3) {
+        static const char *const begin[] = {"", "step 1 begin", "step 2 begin", "step 3 begin"};
+        notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, begin[requested], 0, 0);
+        if (requested == 3 && recoveryPolicy(ctx)->retryCount > 0) g_dacRecoveryCounts[10].fetch_add(1, std::memory_order_relaxed);
     }
-    out[5] = manual != 0 ? manual : step;   // 0, 1, 2, or 3 = the steps are used up (already logged; the writer has nothing to do)
+    out[5] = requested;   // 0 = no action; 1/2/3 = take the requested recovery step
 }
 
 void usbDacRecoveryStats(int64_t out[USB_DAC_RECOVERY_STATS_COUNT]) {
@@ -1088,14 +1257,68 @@ void usbDacRecoveryStats(int64_t out[USB_DAC_RECOVERY_STATS_COUNT]) {
 }
 
 void usbNoteDacRecovery(UsbAudioContext *ctx, int step, int result, int64_t elapsedMs) {
-    if (!ctx || (step != 1 && step != 2)) return;
-    g_dacRecoveryCounts[step == 1 ? 2 : 4].fetch_add(1, std::memory_order_relaxed);
+    if (!ctx || step < 1 || step > 3) return;
+    g_dacRecoveryCounts[step == 1 ? 2 : step == 2 ? 4 : 8].fetch_add(1, std::memory_order_relaxed);
     g_dacRecoveryCounts[7].store(elapsedMs, std::memory_order_relaxed);
     reportUsbGlitch(USB_GLITCH_DAC_RECOVERY, "step=%d result=%s elapsed=%lldms rate=%d stream=%lld policy=%s", step, result == 0 ? "ran" : "failed",
                     (long long)elapsedMs, ctx->sampleRate, (long long)ctx->streamSeq, usbFeedbackPolicyName(usbFeedbackPolicy()));
-    static const char *const kWhat[2][2] = {{"step 1 ran", "step 1 failed"}, {"step 2 ran", "step 2 failed"}};
-    notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, kWhat[step - 1][result == 0 ? 0 : 1], 0.0, 0.0);
-    usbDacRecoveryStepDone(&ctx->dacPolicy, step, monotonicMs());
+    static const char *const kWhat[3][2] = {{"step 1 ran", "step 1 failed"}, {"step 2 ran", "step 2 failed"}, {"step 3 ran", "step 3 failed"}};
+    notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, kWhat[step - 1][result == 0 ? 0 : 1], 0.0, 0.0, elapsedMs);
+    usbDacRecoveryStepDone(recoveryPolicy(ctx), step, monotonicMs(), result == 0);
+    usbDacBehaviorStep(behaviorState(ctx), step, result == 0);
+    if (step == 3) usbJournalBackoff(ctx->streamSeq, ctx->sampleRate, monotonicMs(), recoveryPolicy(ctx)->nextRetryMs, recoveryPolicy(ctx)->retryCount);
+}
+
+// Save only recovery policy, never PCM or a second notion of health. Owned by the logical Java stream.
+UsbRecoveryControl *usbSaveRecoveryControl(UsbAudioContext *ctx, UsbRecoveryControl *control) {
+    if (!ctx) return control;
+    if (!control) {
+        control = new(std::nothrow) UsbRecoveryControl();
+        if (!control) return nullptr;
+        control->policy = *recoveryPolicy(ctx);
+        control->behavior = ctx->behavior;
+    }
+    control->plateau = ctx->plateau;
+    control->stream = ctx->streamSeq;
+    control->frames = ctx->framesWritten;
+    control->gapStartedUs = ctx->recoveryGapStartedUs;
+    control->rate = ctx->sampleRate;
+    ctx->recoveryControl = control;
+    return control;
+}
+
+void usbBindRecoveryControl(UsbAudioContext *ctx, UsbRecoveryControl *control) {
+    if (!ctx || !control) return;
+    ctx->recoveryControl = control;
+    ctx->plateau = control->plateau;
+    usbFeedbackPlateauBreak(&ctx->plateau);
+    ctx->framesWritten = control->frames;
+    ctx->recoveryGapStartedUs = control->gapStartedUs;
+    control->stream = ctx->streamSeq;
+    control->rate = ctx->sampleRate;
+    ctx->primeOwed = false; // owner: refill a recovery with music, never a silence pre-roll
+}
+
+static void controlEvent(UsbRecoveryControl *c, const char *what, int64_t elapsedMs = -1) {
+    UsbPolicyEvent e = {};
+    e.atMs = monotonicMs(); e.stream = c->stream; e.rate = c->rate;
+    e.kind = USB_POLICY_DAC_RECOVERY; e.what = what; e.delta = elapsedMs;
+    e.policy = usbFeedbackPolicy(); e.length = -1;
+    usbSecondRingPolicyEvent(&g_secondRing, &e);
+}
+
+int usbOfflineRecoveryStep(UsbRecoveryControl *c) {
+    if (!c) return 0;
+    int verdict = 0; bool ok = false;
+    // No transport means no real readings. It can never satisfy item 2's verifier.
+    int step = usbDacRecoveryDecide(&c->policy, true, usbDacRecoveryEnabled(), monotonicMs(),
+        &g_lastDacEpisodeMs, &verdict, &ok, true);
+    if (verdict) controlEvent(c, verdict == 1 ? "step 1 transport-unavailable" : verdict == 2 ? "step 2 transport-unavailable" : "step 3 transport-unavailable");
+    if (step) {
+        controlEvent(c, step == 1 ? "step 1 begin" : step == 2 ? "step 2 begin" : "step 3 begin");
+        if (step == 3 && c->policy.retryCount > 0) g_dacRecoveryCounts[10].fetch_add(1, std::memory_order_relaxed);
+    }
+    return step;
 }
 
 /**
@@ -1109,12 +1332,34 @@ static void watchFeedbackReading(UsbAudioContext *ctx, uint32_t raw, double nomi
     const char *wasWhy = usbFeedbackImplausibleName(ctx->feedbackWatch.implausibleWhy);
     UsbFeedbackEvent ev;
     usbFeedbackWatchObservePolicy(&ctx->feedbackWatch, raw, nominal, monotonicMs(), usbFeedbackPolicy(), &ev);
+    ctx->feedbackWatch.acceptedRun = usbDacBehaviorAccepted(behaviorState(ctx), 2, raw) || usbDacBehaviorAccepted(behaviorState(ctx), 1, raw);
     updateRefusal(ctx);
     if (ev.kind != USB_FEEDBACK_EVENT_NONE) announceFeedbackEvent(ev, nominal, ctx->sampleRate, ctx->plan.intervalsPerSecond);
     if (ev.implausibleStarted) announceImplausible(ev, nominal, ctx->sampleRate, ctx->calibratedFpmf, policyFpmfNow(ctx), ctx->plan.intervalsPerSecond);
     // B41-fix1 (A1c): the start and the end of each change of what the policy obeys, with the stream's identity (the ring keeps them).
     if (ev.kind == USB_FEEDBACK_EVENT_STUCK) notePolicyEvent(ctx, USB_POLICY_STUCK_BEGIN, "identical", ev.fpmf, ev.ppm);
     observeDacLock(ctx, raw / 65536.0, ev);
+    const int64_t nowMs = monotonicMs();
+    const bool progressing = expectsFeedback(ctx) && ctx->feedbackHealth.armed && !ctx->feedbackHealthSuspended &&
+        nowMs - ctx->feedbackHealth.lastProgressMs <= USB_FEEDBACK_PROGRESS_MS;
+    if (progressing) {
+        const bool mayLearn = !ctx->dacLock.locked && !ctx->feedbackWatch.stuck && !ctx->feedbackWatch.implausible &&
+            !recoveryPolicy(ctx)->lastStep && !recoveryPolicy(ctx)->actionInFlight && !ctx->feedbackHealth.fault;
+        if (usbFeedbackPlateauObserve(&ctx->plateau, raw, nominal, nowMs, mayLearn)) {
+            announceDacLock(ctx, "plateau", raw / 65536.0, usbFeedbackPpm(raw / 65536.0, nominal),
+                nowMs - ctx->plateau.runSinceMs, ctx->feedbackWatch.runReadings, ctx->dacLock.lateReaps);
+        }
+        if (ctx->plateau.reference.sessions < 2 && !ctx->plateau.untrainedReported &&
+            nowMs - ctx->plateau.runSinceMs >= USB_FEEDBACK_PLATEAU_MS && fabs(usbFeedbackPpm(raw / 65536.0, nominal)) > USB_FEEDBACK_PLATEAU_MIN_PPM) {
+            ctx->plateau.untrainedReported = true; noteReference(ctx, "reference-untrained");
+        }
+        uint32_t candidate;
+        if (usbFeedbackReferenceCandidate(&ctx->plateau, nowMs, &candidate) &&
+            usbJournalReferenceLearn(ctx->plateau.reference.key, candidate, nominal, ctx->plateau.session, &ctx->plateau.reference)) {
+            ctx->plateau.learned = true;
+            noteReference(ctx, ctx->plateau.reference.sessions >= 2 ? "reference-trusted" : "reference-session");
+        }
+    } else usbFeedbackPlateauBreak(&ctx->plateau);
     if (ev.kind == USB_FEEDBACK_EVENT_UNSTUCK) {
         notePolicyEvent(ctx, USB_POLICY_STUCK_END, ev.reason == USB_FEEDBACK_END_CHANGED ? "changed" : "gap", ev.fpmf, ev.ppm);
     }
@@ -1138,6 +1383,7 @@ static void endFeedbackWatch(UsbAudioContext *ctx) {
     const char *wasWhy = usbFeedbackImplausibleName(ctx->feedbackWatch.implausibleWhy);
     UsbFeedbackEvent ev;
     usbFeedbackWatchEnd(&ctx->feedbackWatch, ctx->plan.nominalFramesPerInterval, &ev);
+    usbFeedbackPlateauBreak(&ctx->plateau);
     ctx->refusing = false;
     usbDacLockReset(&ctx->dacLock);   // B47-A5: a new stream (or a restarted one) has no rail yet
     g_dacLockedNow.store(0, std::memory_order_relaxed);
@@ -1177,10 +1423,12 @@ static void observeCleanFeedback(UsbAudioContext *ctx, const uint8_t *fb, bool c
         ctx->refusing = false;
     }
     const uint32_t raw = (uint32_t)fb[0] | ((uint32_t)fb[1] << 8) | ((uint32_t)fb[2] << 16) | ((uint32_t)fb[3] << 24);
+    journalFeedbackState(ctx, raw, 4, 0, 0);
     const double fpmf = raw / 65536.0;
     const double nominal = ctx->plan.nominalFramesPerInterval;
     const int64_t nowMs = monotonicMs();
     const bool outside = fpmf <= nominal * 0.95 || fpmf >= nominal * 1.05;
+    if (continuous) usbFeedbackHealthValid(&ctx->feedbackHealth, nowMs);
     ctx->liveFpmf = fpmf;
     noteFeedbackWindow(ctx, fb, fpmf, outside, nowMs);
     const double deviation = usbFeedbackDeviation(fpmf, nominal);
@@ -1224,9 +1472,16 @@ static void handleFeedbackCompletion(UsbAudioContext *ctx) {
     g_feedbackCount.fetch_add(1, std::memory_order_relaxed);
 
     const struct usbdevfs_urb *done = ctx->feedbackUrb;
+    ctx->diagnosticLength = (int)done->iso_frame_desc[0].actual_length;
+    ctx->diagnosticUrbStatus = done->status;
+    ctx->diagnosticPacketStatus = done->iso_frame_desc[0].status;
+    const uint8_t *bytes = feedbackData(ctx);
+    ctx->diagnosticRaw = ctx->diagnosticLength == 4 ?
+        (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24) : 0;
     const enum UsbFeedbackPacket verdict =
         usbFeedbackPacketVerdict(done->status, done->iso_frame_desc[0].status, done->iso_frame_desc[0].actual_length);
     if (verdict != USB_FEEDBACK_PACKET_OK) {
+        ctx->feedbackHealth.invalidReadings++;
         noteFeedbackDropped(ctx, verdict, done->status, done->iso_frame_desc[0].status, done->iso_frame_desc[0].actual_length);
     } else {
         observeCleanFeedback(ctx, feedbackData(ctx), true);
@@ -1328,6 +1583,11 @@ static double readFeedback(UsbAudioContext *ctx, int ep, enum UsbFeedbackPacket 
     // reading, even if it carries bytes: the start then keeps the nominal rate, as when no answer comes.
     double r = 0;
     if (!cancelled) {
+        ctx->diagnosticLength = (int)u->iso_frame_desc[0].actual_length;
+        ctx->diagnosticUrbStatus = u->status;
+        ctx->diagnosticPacketStatus = u->iso_frame_desc[0].status;
+        ctx->diagnosticRaw = ctx->diagnosticLength == 4 ?
+            (uint32_t)fb[0] | ((uint32_t)fb[1] << 8) | ((uint32_t)fb[2] << 16) | ((uint32_t)fb[3] << 24) : 0;
         const enum UsbFeedbackPacket verdict =
             usbFeedbackPacketVerdict(u->status, u->iso_frame_desc[0].status, u->iso_frame_desc[0].actual_length);
         if (verdictOut != nullptr) *verdictOut = verdict;
@@ -1397,12 +1657,30 @@ static int submitRingUrb(UsbAudioContext *ctx, const int *pktSizes, int numPacke
     ctx->submitIdx = (ctx->submitIdx + 1) % ctx->plan.ringUrbs;
     ctx->urbsInFlight++;
     ctx->urbSubmits.fetch_add(1, std::memory_order_relaxed);
+    if (!ctx->feedbackHealthSuspended && expectsFeedback(ctx)) {
+        const int64_t progressMs = monotonicMs();
+        if (!ctx->feedbackHealth.armed || progressMs - ctx->feedbackHealth.lastProgressMs > USB_FEEDBACK_PROGRESS_MS)
+            ctx->feedbackHealthySinceMs = -1;
+        usbFeedbackHealthProgress(&ctx->feedbackHealth, progressMs);
+    }
     if (ctx->startGuardPending) {
         // B48-fix1: the first URB after the interface (re)started is when the DAC's servo starts reacting to data: the guard's clock starts here.
         ctx->startGuardPending = false;
         ctx->startGuardUntilMs = monotonicMs() + ctx->plan.feedbackStartGuardMs;
     }
+    if (ctx->recoveryGapStartedUs > 0) {
+        const int64_t gapUs = monotonicUs() - ctx->recoveryGapStartedUs;
+        UsbPolicyEvent e = {};
+        e.atMs = monotonicMs(); e.stream = ctx->streamSeq; e.rate = ctx->sampleRate;
+        e.kind = USB_POLICY_DAC_RECOVERY; e.what = "music-resumed"; e.dryUs = gapUs;
+        e.policy = usbFeedbackPolicy(); e.length = -1;
+        usbSecondRingPolicyEvent(&g_secondRing, &e);
+        g_dacRecoveryCounts[11].store(gapUs / 1000, std::memory_order_relaxed);
+        ctx->recoveryGapStartedUs = 0;
+        if (ctx->recoveryControl) ctx->recoveryControl->gapStartedUs = 0;
+    }
     observeOutputGap(ctx, numPackets);
+    tickFeedbackHealth(ctx, monotonicMs());
     // B41-fix1 (A1c): the rate that went out, a second at a time: this URB's frames and packets, which is all the plan says.
     usbSecondRingWire(&g_secondRing, monotonicMs(), ctx->bytesPerFrame > 0 ? totalBytes / ctx->bytesPerFrame : 0, numPackets);
     return 0;
@@ -2162,12 +2440,33 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeGetTransportPlan(
  * The producer is about to idle on purpose (the ExoPlayer pipeline paused): the ring will run dry and
  * the first URB after the resume must not be counted as a starvation (AUD-140). Idle is announced by the pipeline writer.
  */
+JNIEXPORT jlong JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeGetStreamSequence(JNIEnv *, jobject, jlong h) {
+    auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
+    return ctx ? ctx->streamSeq : 0;
+}
+
+JNIEXPORT void JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeNoteQueueTimeout(JNIEnv *, jobject, jlong h, jlong total, jint depth, jlong burst) {
+    auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
+    if (!ctx) return;
+    UsbPolicyEvent e = {};
+    e.atMs = monotonicMs(); e.stream = ctx->streamSeq; e.rate = ctx->sampleRate;
+    e.kind = USB_POLICY_QUEUE_TIMEOUT; e.what = "poll-100ms";
+    e.burst = burst;
+    e.delta = 1; e.total = total; e.queueDepth = depth; e.dryUs = -1; // known only at a subsequent submit
+    usbSecondRingPolicyEvent(&g_secondRing, &e);
+}
+
 JNIEXPORT void JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeMarkIdle(
         JNIEnv *, jobject, jlong h) {
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
     if (!ctx) return;
     ctx->lastSubmitMs = 0;
+    ctx->feedbackHealthSuspended = true;
+    usbFeedbackHealthReset(&ctx->feedbackHealth);
+    ctx->feedbackHealthySinceMs = -1;
     noteGesture(ctx, USB_POLICY_IDLE, "announced");
 }
 
@@ -2178,6 +2477,8 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeMarkIdle(
 static const char *startFeedbackTracking(UsbAudioContext *ctx) {
     // Initial calibration from the DAC's async feedback endpoint.
     // Pipeline is empty here, so REAPURBNDELAY can only return the feedback URB.
+    usbFeedbackHealthReset(&ctx->feedbackHealth);
+    ctx->feedbackHealthySinceMs = -1;
     double nominalFpmf = ctx->plan.nominalFramesPerInterval;
     ctx->calibratedFpmf = nominalFpmf;
     ctx->readingFpmf = nominalFpmf;
@@ -2191,6 +2492,11 @@ static const char *startFeedbackTracking(UsbAudioContext *ctx) {
     ctx->windowLogMs[0] = -1;
     ctx->windowLogMs[1] = -1;
     ctx->refusing = false;
+    ctx->journalFeedbackSeen = false; // a restarted tracker has no packet from its new epoch yet
+    ctx->diagnosticRaw = 0;
+    ctx->diagnosticLength = -1;
+    ctx->diagnosticUrbStatus = ctx->diagnosticPacketStatus = 0;
+    usbSecondRingStream(&g_secondRing, monotonicMs(), ctx->streamSeq, ctx->sampleRate);
     const char *startWhat = "no-feedback-endpoint";   // B41-fix1: how the start's feedback read went, for the ring's gesture line
 
     if (ctx->endpointFeedback > 0) {
@@ -2246,6 +2552,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
     if (!ctx) return JNI_FALSE;
     ctx->running.store(true);
+    ctx->feedbackHealthSuspended = false;
     // A started stream has seen no feedback yet: an episode of the one before is over (B10).
     endFeedbackWatch(ctx);
     ctx->feedbackWatch.rateChangeStart = previousRate > 0 && previousRate != ctx->sampleRate;
@@ -2352,6 +2659,8 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStop(
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
     if (!ctx) return;
     ctx->running.store(false);
+    usbFeedbackHealthReset(&ctx->feedbackHealth);
+    ctx->feedbackHealthySinceMs = -1;
     LOGI("Stop: %lld frames, %d URBs in flight",
          (long long)ctx->framesWritten, ctx->urbsInFlight);
 }
@@ -2364,6 +2673,8 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeFlush(
     ctx->frameAccumulator = 0.0;
     ctx->residualBytes = 0;
     ctx->framesWritten = 0;
+    usbFeedbackHealthReset(&ctx->feedbackHealth);
+    ctx->feedbackHealthySinceMs = -1;
     LOGI("Flush: frameAccumulator, residual, and framesWritten reset");
 }
 
@@ -2563,9 +2874,13 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeSetPollWait(
 JNIEXPORT jstring JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeGetSecondSummaries(JNIEnv *env, jclass, jlong windowMs) {
     // On demand only: the one place the summaries allocate.
-    std::string text((size_t)USB_SECOND_RING_CAPACITY * 200 + 512, '\0');
-    const size_t used = usbSecondSummaries((int64_t)windowMs, &text[0], text.size());
-    text.resize(used);
+    std::string text(65536, '\0');
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        const size_t required = usbSecondSummaries((int64_t)windowMs, &text[0], text.size());
+        if (required < text.size()) { text.resize(required); break; }
+        if (attempt < 3) text.resize(required + 1);
+        // A constantly changing snapshot still carries the explicit TRUNCATED marker on the last attempt.
+    }
     return env->NewStringUTF(text.c_str());
 }
 
@@ -2674,11 +2989,15 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeKernelDriverName(
 // ── Recovery of a locked-up DAC: the two native halves around the interface restart (B47-A5) ──────
 
 bool usbDacRecoveryBegin(UsbAudioContext *ctx) {
-    if (!ctx || !ctx->running.load()) return false;
-    // The pause-style fade the writer queued is at the end of the ring: whatever partial URB the packetizer still holds is the end of that fade, so it goes out first,
-    // and the ring plays out (bounded) so the cut the listener hears is the fade itself. Only then is what is left discarded, with the seek barrier's own drain.
-    submitFinalPcmResidual(ctx);
-    if (ctx->playOutBeforeDrain) playOutFadedTail(ctx);
+    if (!ctx) return false;
+    // Play the queued, unmodified music before touching the interface. The existing bounded
+    // playout helper creates no fade. A stopped transport still drains safely, so step 3 can
+    // replace it; inability to retire its URBs refuses interface work rather than reusing them.
+    if (ctx->running.load()) {
+        submitFinalPcmResidual(ctx);
+        playOutFadedTail(ctx);
+    }
+    ctx->recoveryGapStartedUs = monotonicUs();
     const int queued = ctx->urbsInFlight;
     DiscardTally tally;
     const int drained = drainAllUrbs(ctx, true, &tally);
@@ -2701,7 +3020,13 @@ bool usbDacRecoveryEnd(UsbAudioContext *ctx) {
     ctx->schedBaseline = UsbSchedBaseline{};
     endFeedbackWatch(ctx);
     const char *startWhat = startFeedbackTracking(ctx);
-    armStartOfAudio(ctx, "recovery");   // B48-fix1: the restarted interface gets the same priming and the same fresh guard as a new stream
+    armStartOfAudio(ctx, "recovery");
+    ctx->primeOwed = false;
+    ctx->feedbackHealthSuspended = false;
+#ifdef POLYLUTE_DEBUG_FAULTS
+    ctx->debugFaultKind = 0;
+#endif
+    if (ctx->recoveryControl) ctx->recoveryControl->unavailable = false; // no recovery silence; keep the fresh start guard
     noteGesture(ctx, USB_POLICY_STREAM_START, startWhat);
     LOGI("DAC_RECOVERY|end feedback=%s framesWritten=%lld", ctx->feedbackInFlight ? "continuous" : "one-shot", (long long)ctx->framesWritten);
     return true;
@@ -3011,6 +3336,7 @@ static void stashPending(PipelineGesture &g, const uint8_t *data, int frames, in
 static void primeRingForResume(UsbAudioContext *ctx);   // defined with the pipeline's resume, which also uses it
 
 bool submitPipelinePcm(UsbAudioContext *ctx, uint8_t *data, int totalBytes, int totalFrames) {
+    if (!ctx->gesture.fadeOutArmed) ctx->feedbackHealthSuspended = false;
     PipelineGesture &g = ctx->gesture;
     const int frameBytes = ctx->bytesPerFrame;
     if (g.fadeOutArmed && frameBytes > 0) {
@@ -3089,6 +3415,9 @@ bool pipelineConsumePauseApplied(UsbAudioContext *ctx) {
 }
 
 bool pipelineBeginPause(UsbAudioContext *ctx) {
+    ctx->feedbackHealthSuspended = true;
+    usbFeedbackHealthReset(&ctx->feedbackHealth);
+    ctx->feedbackHealthySinceMs = -1;
     PipelineGesture &g = ctx->gesture;
     ctx->pauseRequested.store(false, std::memory_order_relaxed);   // handled, whichever way it goes from here
     if (g.fadeOutArmed) return true;  // a ramp is in progress: it carries on
@@ -3103,6 +3432,9 @@ bool pipelineBeginPause(UsbAudioContext *ctx) {
 }
 
 int pipelineBeginSeek(UsbAudioContext *ctx) {
+    ctx->feedbackHealthSuspended = true;
+    usbFeedbackHealthReset(&ctx->feedbackHealth);
+    ctx->feedbackHealthySinceMs = -1;
     PipelineGesture &g = ctx->gesture;
     ctx->pauseRequested.store(false, std::memory_order_relaxed);   // a seek takes over from a pause not yet acted on
     g.pauseAppliedInBlock = false;
@@ -3171,12 +3503,15 @@ bool feedRunning(void *self);
  */
 static void primeRingForResume(UsbAudioContext *ctx) {
     ctx->primeOwed = false;   // B48-fix1: whoever primes (a resume, the first write, a recovery's restart) pays what is owed
-    if (ctx->plan.resumeLeadFrames <= 0) return;
+    const bool firstStart = ctx->primeWhy && strcmp(ctx->primeWhy, "stream") == 0;
+    const int lead = firstStart ? ctx->plan.startLeadFrames - ctx->startupPrerollFrames : ctx->plan.resumeLeadFrames;
+    ctx->startupPrerollFrames = 0;
+    if (lead <= 0) return;
     SeekFeedOps ops = {ctx, feedQueued, feedSubmit, feedWait, feedFinished, feedRunning};
     // B48-fix1: the amount is decided once, from what the ring holds now (whatever it holds counts), in the whole silence chunks the feed uses, so it is exactly what the plan says
     // (usbSilenceFramesToReach) whatever the packetizer's residual does to the ring's own count; it is no longer chased through that count, which made it one chunk short or long.
     const int chunk = ctx->plan.silenceChunkFrames > 0 ? ctx->plan.silenceChunkFrames : 1;
-    const int64_t owed = usbSilenceFramesToReach(ctx->plan.resumeLeadFrames, chunk, usbQueuedFrames(ctx));
+    const int64_t owed = usbSilenceFramesToReach(lead, chunk, usbQueuedFrames(ctx));
     int64_t fed = 0;
     while (fed < owed && ctx->running.load()) {
         if (!ops.submitSilence(ctx, chunk)) break;
@@ -3184,11 +3519,14 @@ static void primeRingForResume(UsbAudioContext *ctx) {
     }
     if (fed > 0) {
         LOGI("Prime: %lld frames (%.1f ms) of silence before the audio (%s), the plan's %d-frame lead", (long long)fed,
-             ctx->sampleRate > 0 ? fed * 1000.0 / ctx->sampleRate : 0.0, ctx->primeWhy ? ctx->primeWhy : "?", ctx->plan.resumeLeadFrames);
+             ctx->sampleRate > 0 ? fed * 1000.0 / ctx->sampleRate : 0.0, ctx->primeWhy ? ctx->primeWhy : "?", lead);
     }
 }
 
 void pipelineResume(UsbAudioContext *ctx) {
+    ctx->feedbackHealthSuspended = false;
+    usbFeedbackHealthReset(&ctx->feedbackHealth);
+    ctx->feedbackHealthySinceMs = -1;
     PipelineGesture &g = ctx->gesture;
     ctx->pauseRequested.store(false, std::memory_order_relaxed);
     if (g.fadeOutArmed) finishFadeOut(ctx);
@@ -3375,6 +3713,64 @@ Java_com_decent_usbaudio_UsbAudioStream_nativePipelineStats(JNIEnv *env, jobject
 }
 
 // B47-A5: the lock-up detector's state and the two native halves of a recovery step (see usb-audio-output.h). The writer thread calls all three.
+JNIEXPORT jboolean JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeConfigureUsbJournal(JNIEnv *env, jclass, jstring location) {
+    if (!location) return JNI_FALSE;
+    const char *path = env->GetStringUTFChars(location, nullptr);
+    if (!path) return JNI_FALSE;
+    const bool ok = usbJournalConfigure(path); env->ReleaseStringUTFChars(location, path);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeExportUsbJournal(JNIEnv *env, jclass) {
+    char *text = usbJournalExport();
+    jstring out = env->NewStringUTF(text ? text : "journal-export-unavailable\n"); free(text); return out;
+}
+
+JNIEXPORT void JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeUsbJournalPlatform(JNIEnv *env, jclass, jlongArray values, jint reason) {
+    if (values && env->GetArrayLength(values) == 6 && reason >= 7) {
+        jlong v[6]; env->GetLongArrayRegion(values, 0, 6, v); if (env->ExceptionCheck()) return;
+        usbJournalControl(v[0], v[1], reason, (int)v[2], (int)v[3], (int)v[4], v[5]);
+        return;
+    }
+    if (!values || env->GetArrayLength(values) != 9) return;
+    jlong v[9]; env->GetLongArrayRegion(values, 0, 9, v); if (env->ExceptionCheck()) return;
+    UsbJournalFacts facts = {v[0], v[1], (int)v[2], (int)v[3], (int)v[4], (int)v[5], (int)v[6], (int)v[8]};
+    usbJournalPlatform(v[7], &facts, reason);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeRecoveryControl(JNIEnv *, jobject, jlong h, jlong saved, jint operation, jint step, jlong elapsedMs) {
+    auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
+    auto *c = reinterpret_cast<UsbRecoveryControl *>(saved);
+    switch (operation) {
+        case 0: return reinterpret_cast<jlong>(usbSaveRecoveryControl(ctx, c));
+        case 1: usbBindRecoveryControl(ctx, c); return saved;
+        case 2: delete c; return 0;
+        case 3: return usbOfflineRecoveryStep(c);
+        case 4: // a failed restart, including a volume guard failure
+            if (c) c->unavailable = true;
+            if (ctx) usbNoteDacRecovery(ctx, step, 1, elapsedMs);
+            else if (c && step >= 1 && step <= 3) {
+                g_dacRecoveryCounts[step == 1 ? 2 : step == 2 ? 4 : 8].fetch_add(1, std::memory_order_relaxed);
+                g_dacRecoveryCounts[7].store(elapsedMs, std::memory_order_relaxed);
+                usbDacRecoveryStepDone(&c->policy, step, monotonicMs(), false);
+                controlEvent(c, step == 1 ? "step 1 failed" : step == 2 ? "step 2 failed" : "step 3 failed", elapsedMs);
+                if (step == 3) usbJournalBackoff(c->stream, c->rate, monotonicMs(), c->policy.nextRetryMs, c->policy.retryCount);
+            }
+            return saved;
+        case 5: if (c) c->unavailable = true; return saved;
+        case 6: if (c) c->unavailable = false; return saved;
+        case 7:
+            if (c) controlEvent(c, step == 1 ? "step 1 superseded" : step == 2 ? "step 2 superseded" : "step 3 superseded");
+            else if (ctx) notePolicyEvent(ctx, USB_POLICY_DAC_RECOVERY, step == 1 ? "step 1 superseded" : step == 2 ? "step 2 superseded" : "step 3 superseded", 0, 0);
+            return saved;
+        default: return saved;
+    }
+}
+
 JNIEXPORT jlongArray JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeDacLockState(JNIEnv *env, jobject, jlong h) {
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
@@ -3420,7 +3816,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeFeedbackStartGuardEnabled(JNIEnv *
     return usbFeedbackStartGuardEnabled() ? JNI_TRUE : JNI_FALSE;
 }
 
-/** RECOVER_DAC_NOW in the debug bridge: step 1 or 2, taken by the writer thread at its next look. */
+/** RECOVER_DAC_NOW: step 1, 2 or 3, taken by the writer at its next look. */
 JNIEXPORT void JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeRequestDacRecovery(JNIEnv *, jclass, jint step) {
     usbRequestDacRecovery((int)step);
@@ -3466,3 +3862,17 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeGetPayloadValidationStatus(
 }
 
 } // extern "C"
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeConfigureStartup(JNIEnv *env, jobject, jlong handle, jstring identity, jint prerollFrames) {
+    auto *ctx = reinterpret_cast<UsbAudioContext *>(handle);
+    if (!ctx) return;
+    if (prerollFrames > 0) ctx->startupPrerollFrames = prerollFrames;
+    if (identity) {
+        const char *key = env->GetStringUTFChars(identity, nullptr);
+        if (key) {
+            usbSetFeedbackIdentity(ctx, key);
+            env->ReleaseStringUTFChars(identity, key);
+        }
+    }
+}

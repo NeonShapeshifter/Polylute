@@ -71,8 +71,9 @@ class PixelPlayerGlanceWidget : GlanceAppWidget() {
     override val stateDefinition = PlayerInfoStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val saved = loadWidgetSnapshot(context)
         provideContent {
-            val playerInfo = currentState<PlayerInfo>()
+            val playerInfo = widgetInfoForDisplay(currentState<PlayerInfo>(), saved)
             val currentSize = LocalSize.current
 
             Timber.tag("PolyluteGlanceWidget")

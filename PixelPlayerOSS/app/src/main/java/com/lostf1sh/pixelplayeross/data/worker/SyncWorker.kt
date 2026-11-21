@@ -382,6 +382,11 @@ constructor(
                         isFreshInstall = isFreshInstall
                     )
 
+                    // A past editor could make identity evidence current while leaving album grouping stale.
+                    // Revisit only edited rows in the cheap MediaStore cursor, regardless of its timestamps.
+                    if (!syncPlan.forceProcessAll) {
+                        pendingProjectionIds = pendingProjectionIds + musicDao.getEditedAlbumSongIds()
+                    }
                     val fetchTimestamp = if (!syncPlan.forceProcessAll) {
                         incrementalFetchTimestampSeconds(lastSyncTimestamp)
                     } else {
@@ -720,17 +725,9 @@ constructor(
         
         val allCrossRefs = mutableListOf<SongArtistCrossRef>()
         val artistTrackCounts = mutableMapOf<Long, Int>()
-        val albumMap = mutableMapOf<AlbumGroupingKey, Long>()
+        val albumIds = AlbumIdAllocator(existingAlbums)
         val artistSplitCache = mutableMapOf<String, List<String>>()
         val correctedSongs = ArrayList<SongEntity>(songs.size)
-
-        existingAlbums
-            .sortedBy { it.id }
-            .forEach { album ->
-                buildAlbumGroupingKeys(album).forEach { key ->
-                    albumMap.putIfAbsent(key, album.id)
-                }
-            }
 
         songs.forEach { song ->
             val rawArtistName = song.artistName
@@ -783,8 +780,7 @@ constructor(
             // `MetadataNormalizer` — the same function the diagnostic uses, so what the app groups
             // by and what it *says* it grouped by cannot diverge. It no longer consults the MediaStore
             // album id or the parent directory unless there is genuinely nothing else to go on.
-            val albumKey = buildAlbumGroupingKey(song)
-            val finalAlbumId = albumMap.getOrPut(albumKey) { song.albumId }
+            val finalAlbumId = albumIds.idFor(song)
 
             val artistRefsForJson = allArtistsForSong.mapIndexed { index, name ->
                 ArtistRef(id = artistNameToId.getValue(name), name = name, isPrimary = index == 0)
@@ -819,43 +815,9 @@ constructor(
              val recordedAlbumCover = AlbumArtUtils.recordedAlbumCover(applicationContext, catAlbumId)
                  ?.takeIf { songsInAlbum.any { AlbumArtUtils.hasDiscCover(applicationContext, it.id) } }
              val representativeAlbumArt = if (recordedAlbumCover != null) recordedAlbumCover.uri else songsInAlbum.firstNotNullOfOrNull { it.albumArtUriString }
-             val determinedAlbumArtist = chooseAlbumDisplayArtist(
-                 songs = songsInAlbum,
-                 preferAlbumArtist = groupByAlbumArtist
-             )
-             val determinedAlbumArtistId = resolveAlbumDisplayArtistId(
-                 displayArtist = determinedAlbumArtist,
-                 songs = songsInAlbum,
-                 artistNameToId = artistNameToId,
-                 artistDelimiters = artistDelimiters,
-                 wordDelimiters = wordDelimiters
-             )
-             val metadataAlbumArtist = songsInAlbum
-                 .mapNotNull { song ->
-                     song.albumArtist?.takeIf { it.isNotBlank() }
-                 }
-                 .groupingBy { it }
-                 .eachCount()
-                 .maxByOrNull { it.value }
-                 ?.key
-
-             AlbumEntity(
-                 id = catAlbumId,
-                 title = firstSong.albumName,
-                 artistName = determinedAlbumArtist,
-                 artistId = determinedAlbumArtistId,
-                 albumArtUriString = representativeAlbumArt,
-                 songCount = songsInAlbum.size,
-                 dateAdded = firstSong.dateAdded,
-                 // The album's most common track year, not the first track's: one untagged track
-                 // (year 0) used to zero the whole album's (B11-fix FIX-3).
+             albumProjection(songsInAlbum, groupByAlbumArtist, artistNameToId,
+                 artistDelimiters, wordDelimiters, representativeAlbumArt,
                  year = MetadataNormalizer.albumYear(songsInAlbum.map { it.year }),
-                 albumArtist = metadataAlbumArtist,
-                 // The key every track in this album was grouped under. Stored so grouping is
-                 // queryable, and so the diagnostic can show what it grouped by rather than
-                 // recomputing a possibly-different answer.
-                 groupingKey = firstSong.albumGroupingKey,
-                 isCompilation = songsInAlbum.any { it.isCompilation }
              )
         }
 
@@ -1188,6 +1150,7 @@ constructor(
         }
 
         val rawSongCount = rawDataList.size
+        val editedAlbumRepairIds = mutableSetOf<Long>()
         val songsToProcess = if (forceProcessAll) {
               rawDataList.toList()
         } else {
@@ -1199,7 +1162,9 @@ constructor(
                 
                 batch.forEach { raw ->
                     val existing = existingMap[raw.id]
-                    if (!isSongUnchanged(raw, existing)) {
+                    val repair = existing != null && needsEditedAlbumRepair(existing, raw.albumArtist)
+                    if (repair) editedAlbumRepairIds += raw.id
+                    if (repair || !isSongUnchanged(raw, existing)) {
                         results.add(raw)
                     }
                 }
@@ -1208,6 +1173,9 @@ constructor(
         }
 
         rawDataList.clear()
+        if (editedAlbumRepairIds.isNotEmpty()) Timber.tag(TAG).i(
+            "METADATA_EDIT_REPAIR: candidates=%d", editedAlbumRepairIds.size
+        )
 
         val totalCount = songsToProcess.size
         Timber.tag(TAG).i(
@@ -1235,7 +1203,7 @@ constructor(
                                 processSongData(
                                     raw = raw,
                                     genreMap = genreMap,
-                                    deepScan = deepScan,
+                                    deepScan = deepScan || raw.id in editedAlbumRepairIds,
                                     forceAlbumArtRefresh = deepScan || localSong != null
                                 )
 
@@ -1286,7 +1254,9 @@ constructor(
                             if (count % progressBatchSize == 0 || count == totalCount) {
                                 onProgress(count, totalCount, SyncProgress.SyncPhase.PROCESSING_FILES.ordinal)
                             }
-                            song
+                            // A protected album title may differ from MediaStore; derive its grouping
+                            // from the final projection, using the same rule as the editor.
+                            song.withAlbumGrouping()
                         }
                     }
                 }.awaitAll()

@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import androidx.paging.filter
 import androidx.compose.ui.graphics.toArgb
 import com.lostf1sh.pixelplayeross.data.model.Album
 import com.lostf1sh.pixelplayeross.data.model.Artist
@@ -51,6 +52,8 @@ class LibraryStateHolder @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository
 ) {
 
+    val tabSearch = LibraryTabSearch()
+
     private val _allSongs = MutableStateFlow<ImmutableList<Song>>(persistentListOf())
     val allSongs = _allSongs.asStateFlow()
 
@@ -91,6 +94,19 @@ class LibraryStateHolder @Inject constructor(
         }
     }
 
+    /** A new query re-subscribes to the cold Pager; its page events are never collected twice. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun <T : Any> kotlinx.coroutines.flow.Flow<androidx.paging.PagingData<T>>.searchIn(
+        tab: LibraryTabId,
+        matches: (String, T) -> Boolean,
+    ): kotlinx.coroutines.flow.Flow<androidx.paging.PagingData<T>> =
+        tabSearch.queries.map { it[tab].orEmpty() }.distinctUntilChanged().flatMapLatest { query ->
+            this@searchIn.map { pages ->
+                if (query.isBlank()) pages
+                else pages.filter { row -> withContext(Dispatchers.Default) { matches(query, row) } }
+            }
+        }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val songsPagingFlow: kotlinx.coroutines.flow.Flow<androidx.paging.PagingData<Song>> =
         kotlinx.coroutines.flow.combine(_currentSongSortOption, effectiveStorageFilter) { sort, filter ->
@@ -99,6 +115,7 @@ class LibraryStateHolder @Inject constructor(
             musicRepository.getPaginatedSongs(sortOption, filter)
         }
         .flowOn(Dispatchers.IO)
+        .searchIn(LibraryTabId.SONGS) { query, row -> LibraryTabSearch.songMatches(query, row) }
 
     private val _currentAlbumSortOption = MutableStateFlow<SortOption>(SortOption.AlbumTitleAZ)
     val currentAlbumSortOption = _currentAlbumSortOption.asStateFlow()
@@ -124,6 +141,7 @@ class LibraryStateHolder @Inject constructor(
             musicRepository.getPaginatedAlbums(sortOption, filter, minTracks)
         }
         .flowOn(Dispatchers.IO)
+        .searchIn(LibraryTabId.ALBUMS) { query, row -> LibraryTabSearch.matchesQuery(query, row.title, row.artist) }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val artistsPagingFlow: kotlinx.coroutines.flow.Flow<androidx.paging.PagingData<Artist>> =
@@ -133,6 +151,7 @@ class LibraryStateHolder @Inject constructor(
             musicRepository.getPaginatedArtists(sortOption, filter)
         }
         .flowOn(Dispatchers.IO)
+        .searchIn(LibraryTabId.ARTISTS) { query, row -> LibraryTabSearch.matchesQuery(query, row.name) }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val favoritesPagingFlow: kotlinx.coroutines.flow.Flow<androidx.paging.PagingData<Song>> =
@@ -142,6 +161,7 @@ class LibraryStateHolder @Inject constructor(
             musicRepository.getPaginatedFavoriteSongs(sortOption, storageFilter)
         }
         .flowOn(Dispatchers.IO)
+        .searchIn(LibraryTabId.LIKED) { query, row -> LibraryTabSearch.songMatches(query, row) }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val favoriteSongCountFlow: kotlinx.coroutines.flow.Flow<Int> = effectiveStorageFilter

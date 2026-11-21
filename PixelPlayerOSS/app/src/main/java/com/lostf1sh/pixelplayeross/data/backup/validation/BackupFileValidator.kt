@@ -25,7 +25,7 @@ class BackupFileValidator @Inject constructor(
     companion object {
         const val MAX_BACKUP_SIZE_BYTES = 50L * 1024 * 1024
         const val MAX_ZIP_RATIO = 100
-        private const val MAX_TOTAL_DECOMPRESSED_BYTES = 256L * 1024 * 1024
+        const val MAX_TOTAL_DECOMPRESSED_BYTES = 256L * 1024 * 1024
     }
 
     fun validate(uri: Uri): BackupValidationResult {
@@ -139,7 +139,7 @@ class BackupFileValidator @Inject constructor(
                         val perEntryLimit = if (name == BackupManifest.MANIFEST_FILENAME) {
                             BackupReader.MAX_MANIFEST_BYTES.toLong()
                         } else {
-                            BackupReader.MAX_MODULE_PAYLOAD_BYTES.toLong()
+                            BackupReader.maxModulePayloadBytes(name.removeSuffix(".json")).toLong()
                         }
 
                         var entryBytes = 0L

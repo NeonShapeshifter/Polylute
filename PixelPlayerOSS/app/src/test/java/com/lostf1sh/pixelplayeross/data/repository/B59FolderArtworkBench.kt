@@ -38,7 +38,7 @@ class B59FolderArtworkBench {
         val songs = System.getenv("B59_BENCH_SONGS")?.toInt() ?: 5000
         val pictureKb = System.getenv("B59_BENCH_PICTURE_KB")?.toInt() ?: 1024
         val label = System.getenv("B59_BENCH_LABEL") ?: "run"
-        val out = File(System.getenv("B59_BENCH_OUT") ?: "../../../analysis/audit-2026-09-27/batches/B59-gates/folder-artwork-$label.txt")
+        val out = File(System.getenv("B59_BENCH_OUT") ?: "build/test-artifacts/B59/folder-artwork-$label.txt")
         out.parentFile?.mkdirs()
         val context: Context = ApplicationProvider.getApplicationContext()
         val root = Files.createTempDirectory("b59-bench").toFile()

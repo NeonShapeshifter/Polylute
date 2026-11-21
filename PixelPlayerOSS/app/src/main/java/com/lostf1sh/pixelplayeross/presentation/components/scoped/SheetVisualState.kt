@@ -97,9 +97,9 @@ internal fun rememberSheetVisualState(
         currentSheetContentState
     ) {
         {
-            // The mini-player is flat and full width. It is part of the chrome, not a
-            // floating card, so it takes no radius in the collapsed state.
-            val collapsedCornerTarget = 0.dp
+            // Owner 11-21: the mini-player is a bubble, a small inset each side and round corners
+            // like the cover's; it opens out to the flat, full-bleed player.
+            val collapsedCornerTarget = MiniPlayerBubbleRadius
 
             val effectiveFraction = playerContentExpansionFraction.value * (1f - predictiveBackCollapseProgress)
             val expandedTarget = 0.dp
@@ -146,8 +146,8 @@ internal fun rememberSheetVisualState(
             val effectiveFraction = playerContentExpansionFraction.value * (1f - predictiveBackCollapseProgress)
             val calculatedNormally =
                 if (showPlayerContentArea) {
-                    // Flat in every state: collapsed and expanded are both full-bleed.
-                    0.dp
+                    // The bubble's lower corners match its upper ones and flatten as the player opens.
+                    lerp(MiniPlayerBubbleRadius, 0.dp, playerContentExpansionFraction.value * (1f - predictiveBackCollapseProgress))
                 } else {
                     if (!isPlayingState.value || !hasCurrentSongState.value) {
                         if (isNavBarHidden) {
@@ -166,11 +166,9 @@ internal fun rememberSheetVisualState(
         }
     }
 
-    // Full-bleed in every nav-bar style. The shelf is the top edge of the chrome and must line up
-    // with the bottom navigation underneath it; a horizontal inset — 14 dp here, the caller's
-    // 12 dp otherwise — left a strip of the screen visible down each side, which is what made it
-    // read as a card resting on top of the app rather than as part of it.
-    val actualCollapsedStateHorizontalPadding = 0.dp
+    // Owner 11-21: a small inset each side, so the collapsed shelf reads as a bubble resting over the app
+    // (it was full-bleed, part of the chrome). It opens out to the full width.
+    val actualCollapsedStateHorizontalPadding = MiniPlayerBubbleInset
     val collapsedStateHorizontalPaddingPx = remember(actualCollapsedStateHorizontalPadding, density) {
         with(density) { actualCollapsedStateHorizontalPadding.toPx() }
     }
@@ -218,3 +216,7 @@ internal fun rememberSheetVisualState(
         currentHorizontalPaddingEndPxProvider = currentHorizontalPaddingEndPxProvider
     )
 }
+
+/** Owner 11-21: the collapsed mini-player as a bubble. */
+private val MiniPlayerBubbleRadius = 20.dp
+private val MiniPlayerBubbleInset = 4.dp

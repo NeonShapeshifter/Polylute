@@ -67,8 +67,10 @@ class PlayerControlActionCallback : ActionCallback {
                 e.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
             ) {
                 Timber.tag(TAG).w(e, "Cannot start foreground service from background for action $action")
+                showPlaybackStartRefused(context)
             } else {
                 Timber.tag(TAG).e(e, "Error starting service for action $action: ${e.message}")
+                showPlaybackStartRefused(context)
             }
         }
     }

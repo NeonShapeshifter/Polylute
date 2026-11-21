@@ -47,7 +47,7 @@ class B55SettingsRootRenderTest {
         compose.waitForIdle()
         val bitmap=B42Renders.screen(compose)
         assertThat(bitmap.width).isEqualTo(720);assertThat(bitmap.height).isEqualTo(1610)
-        val out=File(System.getenv("B55_SETTINGS_RENDERS") ?: "/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B55-gates/png-after/settings").apply { mkdirs() }
+        val out=File(System.getenv("B55_SETTINGS_RENDERS") ?: "build/test-artifacts/B55/png-after/settings").apply { mkdirs() }
         File(out,if(dap) "dap.png" else "app.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) };bitmap.recycle()
     }
     @After fun cleanup() { unmockkAll() }

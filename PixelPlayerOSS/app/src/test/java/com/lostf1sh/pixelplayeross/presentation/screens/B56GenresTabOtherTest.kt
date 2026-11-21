@@ -38,7 +38,7 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class B56GenresTabOtherTest {
     @get:Rule val compose = createComposeRule()
-    private val out: File get() = File(System.getenv("B56_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B56-gates/renders").apply { mkdirs() }
+    private val out: File get() = File(System.getenv("B56_RENDERS") ?: "build/test-artifacts/B56/renders").apply { mkdirs() }
 
     private val genres = persistentListOf(
         Genre("jazz", "Jazz", songCount = 40), Genre("pop", "Pop", songCount = 120), Genre("rock", "Rock", songCount = 300),

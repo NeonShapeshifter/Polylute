@@ -424,7 +424,7 @@ double usbFeedbackPolicyFpmf(int policy, double followFpmf, double nominalFpmf, 
         case USB_FEEDBACK_AUTO_EARLY:
             // Stuck (frozen off nominal) or implausible (absurd, or wrong for seconds): not obeyed. Everything
             // else — a healthy DAC's blips, a crystal tens or hundreds of ppm off — is followed as before.
-            return (w != nullptr && (w->stuck || w->implausible)) ? healthyOrNominal(w, nominalFpmf) : followFpmf;
+            return (w != nullptr && ((w->stuck && !w->acceptedRun) || w->implausible)) ? healthyOrNominal(w, nominalFpmf) : followFpmf;
         default:
             return followFpmf;
     }
@@ -493,11 +493,13 @@ void usbDacRecoveryPolicyReset(UsbDacRecoveryPolicy *p) {
     memset(p, 0, sizeof(*p));
 }
 
-int usbDacRecoveryDecide(UsbDacRecoveryPolicy *p, bool locked, bool enabled, int64_t nowMs, int64_t *lastEpisodeStartMs, int *verdictStep, bool *verdictOk, bool pending) {
+int usbDacRecoveryDecide(UsbDacRecoveryPolicy *p, bool locked, bool enabled, int64_t nowMs, int64_t *lastEpisodeStartMs, int *verdictStep, bool *verdictOk, bool pending, bool suppressSteps) {
     *verdictStep = 0;
     *verdictOk = false;
-    if (!enabled) return USB_DAC_STEP_NONE;
+    if (!enabled || p->actionInFlight) return USB_DAC_STEP_NONE;
+    locked = locked || p->operationFailed;
     if (p->awaitingStep != 0) {
+        if (nowMs < p->awaitingSinceMs) return USB_DAC_STEP_NONE;
         if (locked) {
             *verdictStep = p->awaitingStep;   // the rail is back: that step did not hold
             *verdictOk = false;
@@ -505,7 +507,8 @@ int usbDacRecoveryDecide(UsbDacRecoveryPolicy *p, bool locked, bool enabled, int
         } else if (!pending && nowMs - p->awaitingSinceMs >= USB_DAC_RECOVERY_VERIFY_MS) {
             *verdictStep = p->awaitingStep;
             *verdictOk = true;
-            p->awaitingStep = 0;
+            // Verified health ends the episode. The process cooldown still applies to the next one.
+            usbDacRecoveryPolicyReset(p);
         }
     }
     if (!locked) {
@@ -514,25 +517,180 @@ int usbDacRecoveryDecide(UsbDacRecoveryPolicy *p, bool locked, bool enabled, int
         if (p->lastStep != 0 && p->awaitingStep == 0 && nowMs - p->quietSinceMs >= USB_DAC_RECOVERY_EPISODE_END_MS) {
             p->lastStep = 0;   // the recovery held for long enough: the next lock-up is a new episode
             p->gaveUp = false;
+            p->retryCount = 0;
+            p->nextRetryMs = 0;
         }
         return USB_DAC_STEP_NONE;
     }
     p->quietSinceMs = 0;
-    if (p->gaveUp || p->awaitingStep != 0) return USB_DAC_STEP_NONE;
-    const int next = p->lastStep + 1;
-    if (next > USB_DAC_STEP_BUS_RESET) {
-        p->gaveUp = true;
-        return USB_DAC_STEP_GIVE_UP;
+    if (suppressSteps || p->gaveUp || p->awaitingStep != 0) return USB_DAC_STEP_NONE;
+    int next = p->lastStep + 1;
+    if (p->lastStep >= USB_DAC_STEP_REOPEN) {
+        if (nowMs < p->nextRetryMs) return USB_DAC_STEP_NONE;
+        next = USB_DAC_STEP_REOPEN;
+        if (p->retryCount < 3) p->retryCount++;
     }
     if (next == USB_DAC_STEP_INTERFACE) {
         if (*lastEpisodeStartMs != 0 && nowMs - *lastEpisodeStartMs < USB_DAC_RECOVERY_COOLDOWN_MS) return USB_DAC_STEP_NONE;
         *lastEpisodeStartMs = nowMs;
     }
     p->lastStep = next;
+    p->actionInFlight = true;
     return next;
 }
 
-void usbDacRecoveryStepDone(UsbDacRecoveryPolicy *p, int step, int64_t nowMs) {
+void usbDacRecoveryStepDone(UsbDacRecoveryPolicy *p, int step, int64_t nowMs, bool ran) {
+    if (step < 1 || step > USB_DAC_STEP_REOPEN) return;
+    p->actionInFlight = false;
+    p->lastStep = step;
+    p->operationFailed = !ran;
+    if (step == USB_DAC_STEP_REOPEN) {
+        const int64_t delays[] = {30000, 90000, 300000, 300000};
+        p->nextRetryMs = nowMs + delays[p->retryCount];
+    }
     p->awaitingStep = step;
     p->awaitingSinceMs = nowMs;
+}
+
+// B63.5: no packet, or only rejected packet lengths, are equally missing readings.
+void usbFeedbackHealthReset(UsbFeedbackHealth *w) {
+    memset(w, 0, sizeof(*w));
+    w->lastValidMs = -1;
+    w->lastProgressMs = -1;
+}
+void usbFeedbackHealthProgress(UsbFeedbackHealth *w, int64_t nowMs) {
+    if (w->armed && nowMs - w->lastProgressMs > USB_FEEDBACK_PROGRESS_MS) usbFeedbackHealthReset(w);
+    if (!w->armed) {
+        w->armed = true;
+        w->armedMs = nowMs;
+        w->lastValidMs = -1; // a one-shot before audio is not evidence of continued health
+    }
+    w->lastProgressMs = nowMs;
+}
+void usbFeedbackHealthValid(UsbFeedbackHealth *w, int64_t nowMs) {
+    w->lastValidMs = nowMs;
+    w->validReadings++;
+    w->fault = false;
+}
+bool usbFeedbackHealthTick(UsbFeedbackHealth *w, int64_t nowMs, bool expected, bool suspended) {
+    if (!expected || suspended || !w->armed) {
+        if (!expected || suspended) usbFeedbackHealthReset(w);
+        return false;
+    }
+    if (nowMs - w->lastProgressMs > USB_FEEDBACK_PROGRESS_MS) {
+        // No real audio is progressing; a later write starts a fresh grace period.
+        usbFeedbackHealthReset(w);
+        return false;
+    }
+    const int64_t last = w->lastValidMs >= w->armedMs ? w->lastValidMs : w->armedMs;
+    const bool began = !w->fault && nowMs - last >= USB_FEEDBACK_MISSING_MS;
+    if (nowMs - last >= USB_FEEDBACK_MISSING_MS) w->fault = true;
+    return began;
+}
+
+
+void usbFeedbackPlateauReset(UsbFeedbackPlateau *p, const UsbFeedbackReference *r, uint64_t session) {
+    memset(p, 0, sizeof(*p));
+    if (r) p->reference = *r;
+    p->session = session;
+    p->learnSinceMs = p->learnLastMs = -1;
+}
+void usbFeedbackPlateauBreak(UsbFeedbackPlateau *p) {
+    p->haveRun = p->fault = p->untrainedReported = p->jumpArmed = false;
+    p->learnSinceMs = p->learnLastMs = -1;
+    p->inliers = p->outliers = 0; p->sum = 0;
+}
+bool usbFeedbackPlateauPending(const UsbFeedbackPlateau *p, double nominal) {
+    return p->reference.sessions >= 2 && p->haveRun && p->jumpArmed && nominal > 0 &&
+        fabs((p->runRaw - (double)p->reference.raw) / 65536.0 / nominal * 1e6) > USB_FEEDBACK_PLATEAU_MIN_PPM;
+}
+bool usbFeedbackPlateauObserve(UsbFeedbackPlateau *p, uint32_t raw, double nominal, int64_t nowMs, bool mayLearn) {
+    if (nominal <= 0) return false;
+    if (!p->haveRun || nowMs - p->lastMs > USB_FEEDBACK_GAP_MS) usbFeedbackPlateauBreak(p);
+    const bool far = p->reference.sessions >= 2 && fabs((raw - (double)p->reference.raw) / 65536.0 / nominal * 1e6) > USB_FEEDBACK_PLATEAU_MIN_PPM;
+    if (!p->haveRun) { p->trendRaw = raw; p->trendMs = nowMs; p->jumpArmed = far; }
+    else {
+        // A quantised slow drift can repeat a raw for >5s. Require an initial mismatch or
+        // an abrupt >100ppm change against the preceding one-second anchor, at any stream age.
+        if (!far) p->jumpArmed = false;
+        else if (fabs((raw - (double)p->trendRaw) / 65536.0 / nominal * 1e6) > USB_FEEDBACK_PLATEAU_MIN_PPM) p->jumpArmed = true;
+        if (nowMs - p->trendMs >= 1000) { p->trendRaw = raw; p->trendMs = nowMs; }
+    }
+    if (!p->haveRun || raw != p->runRaw) {
+        p->haveRun = true; p->runRaw = raw; p->runSinceMs = nowMs;
+        p->fault = false; p->untrainedReported = false;
+    }
+    p->lastMs = nowMs;
+    const bool began = !p->fault && usbFeedbackPlateauPending(p, nominal) && nowMs - p->runSinceMs >= USB_FEEDBACK_PLATEAU_MS;
+    if (began) { p->fault = true; p->learningBanned = true; }
+    if (!mayLearn || p->fault || usbFeedbackPlateauPending(p, nominal) || p->learningBanned) {
+        p->learnSinceMs = p->learnLastMs = -1; p->inliers = p->outliers = 0; p->sum = 0;
+        return began;
+    }
+    if (p->learnLastMs < 0 || nowMs - p->learnLastMs > USB_FEEDBACK_PROGRESS_MS) {
+        p->learnSinceMs = nowMs; p->inliers = p->outliers = 0; p->sum = 0;
+    }
+    p->learnLastMs = nowMs;
+    const double mean = p->inliers ? p->sum / p->inliers : raw;
+    if (fabs((raw - mean) / 65536.0 / nominal * 1e6) <= USB_FEEDBACK_REFERENCE_STABLE_PPM) {
+        p->sum += raw; ++p->inliers;
+    } else ++p->outliers;
+    // A moving centre or drift cannot be learned as a stable reference. Brief refill blips
+    // may occupy at most 5% of the observations; only the stable cluster contributes.
+    if (p->outliers > 32 && p->outliers * 20 > p->inliers + p->outliers) {
+        p->learnSinceMs = nowMs; p->inliers = 1; p->outliers = 0; p->sum = raw;
+    }
+    return began;
+}
+bool usbFeedbackReferenceCandidate(UsbFeedbackPlateau *p, int64_t nowMs, uint32_t *raw) {
+    if (p->learned || p->learningBanned || p->learnSinceMs < 0 || nowMs - p->learnSinceMs < USB_FEEDBACK_REFERENCE_LEARN_MS ||
+        p->inliers < 10000 || p->outliers * 20 > p->inliers + p->outliers) return false;
+    *raw = (uint32_t)llround(p->sum / p->inliers);
+    return true;
+}
+bool usbDacBehaviorAccepted(const UsbDacBehavior *b, int kind, uint32_t raw) {
+    if (kind == 3 || kind < 1 || kind > 4) return false;
+    for (int i = 0; i < b->count; ++i)
+        if (b->signature[i].kind == kind && b->signature[i].raw == raw) return b->signature[i].accepted;
+    return false;
+}
+bool usbDacBehaviorObserve(UsbDacBehavior *b, int kind, uint32_t raw, bool valid) {
+    if (!valid || kind == 3 || kind < 1 || kind > 4) { b->current = -1; return false; }
+    for (int i = 0; i < b->count; ++i) {
+        UsbDacBehaviorSignature &s = b->signature[i];
+        if (s.kind != kind || s.raw != raw) continue;
+        b->current = i;
+        if (s.accepted) return false;
+        if (s.reopened) { s.accepted = true; return true; }
+        return false;
+    }
+    // A full table does not evict accepted signatures and reopen their reset loop.
+    if (b->count == USB_DAC_BEHAVIOR_SIGNATURES) {
+        for (int i = 0; i < b->count; ++i) if (!b->signature[i].accepted) {
+            b->current = i; b->signature[i] = UsbDacBehaviorSignature{raw, kind, false, false}; return false;
+        }
+        b->current = -1; b->budgetExhausted = true; return false;
+    }
+    b->current = b->count++;
+    b->signature[b->current] = UsbDacBehaviorSignature{raw, kind, false, false};
+    return false;
+}
+void usbDacBehaviorStep(UsbDacBehavior *b, int step, bool ran) {
+    b->lastStepKind = 0;
+    if (!ran || b->current < 0 || b->current >= b->count) return;
+    UsbDacBehaviorSignature &signature = b->signature[b->current];
+    b->lastStepKind = signature.kind;
+    b->lastStepRaw = signature.raw;
+    if (step == USB_DAC_STEP_REOPEN) signature.reopened = true;
+}
+void usbDacBehaviorVerified(UsbDacBehavior *b) {
+    for (int i = 0; i < b->count; ++i) {
+        UsbDacBehaviorSignature &signature = b->signature[i];
+        signature.reopened = false;
+        // A manual recovery of a previously accepted reading can also prove it was a fault.
+        if (signature.kind == b->lastStepKind && signature.raw == b->lastStepRaw) signature.accepted = false;
+    }
+    b->lastStepKind = 0;
+    b->budgetExhausted = false;
+    b->current = -1;
 }

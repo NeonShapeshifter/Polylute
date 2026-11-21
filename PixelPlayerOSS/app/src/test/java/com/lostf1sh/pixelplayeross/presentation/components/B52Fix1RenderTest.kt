@@ -80,7 +80,7 @@ class B52Fix1RenderTest {
     private fun save(id: String) {
         val bitmap=com.lostf1sh.pixelplayeross.ui.glass.B42Renders.screen(compose)
         assertThat(bitmap.width).isEqualTo(720); assertThat(bitmap.height).isEqualTo(1610)
-        val dir=File(System.getenv("B52_FIX1_RENDERS") ?: "/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B52-fix1-gates/png-after")
+        val dir=File(System.getenv("B52_FIX1_RENDERS") ?: "build/test-artifacts/B52-fix1/png-after")
         dir.mkdirs(); File(dir,"$id.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }; bitmap.recycle()
     }
     @Test fun `owner saved choices are visible in the type and clear action`(){

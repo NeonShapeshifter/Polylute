@@ -80,14 +80,14 @@ class RestoreExecutor @Inject constructor(
                 currentSection = section
                 val moduleInfo = plan.manifest.modules[section.key]
                 if (moduleInfo != null &&
-                    moduleInfo.sizeBytes > BackupReader.MAX_MODULE_PAYLOAD_BYTES
+                    moduleInfo.sizeBytes > BackupReader.maxModulePayloadBytes(section.key)
                 ) {
                     throw BackupMessageException(
                         BackupMessage.of(
                             R.string.backup_error_payload_over_limit,
                             section,
                             moduleInfo.sizeBytes / (1024 * 1024),
-                            BackupReader.MAX_MODULE_PAYLOAD_BYTES / (1024 * 1024),
+                            BackupReader.maxModulePayloadBytes(section.key) / (1024 * 1024),
                         )
                     )
                 }

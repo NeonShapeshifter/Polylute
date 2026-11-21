@@ -217,7 +217,7 @@ class B42Fix3SurfacesTest {
             val glassOnly = capture(cover, mode, page, withContent = false)
             val screen = capture(cover, mode, page, withContent = true)
             if (page == Page.DEVICE && cover == covers[3]) {
-                val root = java.io.File(System.getenv("B43_EVIDENCE") ?: "/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B43-evidence", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
+                val root = java.io.File(System.getenv("B43_EVIDENCE") ?: "build/test-artifacts/B43", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
                 java.io.File(root, "device-${mode.label}.png").outputStream().use { screen.compress(Bitmap.CompressFormat.PNG, 100, it) }
             }
             // no slab: nowhere on the screen is the theme's flat grey (the glass behind it can be any colour, including a near-black one: the
@@ -260,7 +260,7 @@ class B42Fix3SurfacesTest {
         for (mode in listOf(Fix3Mode.COVER_GLASS, Fix3Mode.FROM_ALBUM_ART)) {
             val glass = capture(covers[3], mode, Page.DEVICE, false)
             val screen = capture(covers[3], mode, Page.DEVICE, true)
-            val root = java.io.File("/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B43-evidence", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
+            val root = java.io.File("build/test-artifacts/B43", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
             java.io.File(root, "device-${mode.label}.png").outputStream().use { screen.compress(Bitmap.CompressFormat.PNG, 100, it) }
             for (surface in surfacesOn(Page.DEVICE)) {
                 val field = median(glass, surface.strip)

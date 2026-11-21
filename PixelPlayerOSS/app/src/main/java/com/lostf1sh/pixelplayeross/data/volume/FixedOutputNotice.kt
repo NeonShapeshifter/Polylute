@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.volume
 
 import android.content.Context
+import android.hardware.usb.UsbDevice
 import android.os.Handler
 import android.os.Looper
 import com.decent.usbaudio.UsbAudioDevice
@@ -19,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -148,6 +150,7 @@ class FixedOutputNoticeCoordinator @Inject constructor(
 
     /** What each attachment answered, so the descriptors are read once and not on every play. Keyed by device path and USB id. */
     private val answers = ConcurrentHashMap<String, Boolean>()
+    private val volumeDispatcher = UsbAudioDevice.volumeExecutor.asCoroutineDispatcher()
 
     private val _pending = MutableStateFlow<FixedOutputNotice?>(null)
 
@@ -165,10 +168,12 @@ class FixedOutputNoticeCoordinator @Inject constructor(
     private val answerVersion = MutableStateFlow(0)
 
     // ── the held play: one owner, the main thread ────────────────────────────────────────────────
-    // (The only other shared state of this class is `answers`, the descriptor cache that `resolve()` fills from the flow's IO thread
-    // and from the gate's main thread, so it is a ConcurrentHashMap; and `_pending`/`answerVersion`, StateFlows the screens read.)
+    // The volume worker writes the descriptor cache and the gate reads it on main.
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private class DescriptorProbe(val key: String)
+    private var descriptorProbe: DescriptorProbe? = null
+    private var unconfirmedDescriptor: String? = null
 
     /** The attachment generation: bumped by every change of the attached DAC ([onDacChanged]). */
     private var epoch = 0L
@@ -185,7 +190,7 @@ class FixedOutputNoticeCoordinator @Inject constructor(
     private var settle: Settle? = null
 
     /** The play the listener wants, made in generation [epoch]: valid only while that generation is the current one and nothing paused or stopped. */
-    private class Wanted(val epoch: Long)
+    private class Wanted(val epoch: Long, val unconfirmedDescriptor: String? = null)
 
     private var wanted: Wanted? = null
 
@@ -196,7 +201,7 @@ class FixedOutputNoticeCoordinator @Inject constructor(
         engine.audioRouteState.map { it.permissionGranted }.distinctUntilChanged(),
     ) { _, _, _ -> resolve() }
         .distinctUntilChanged()
-        .flowOn(Dispatchers.IO)
+        .flowOn(volumeDispatcher)
         .stateIn(appScope, SharingStarted.Eagerly, null)
 
     /** What the listener answered for the DAC attached now, or null (none attached, or not asked yet). */
@@ -223,9 +228,16 @@ class FixedOutputNoticeCoordinator @Inject constructor(
 
     private fun resolve(): FixedOutputDac? {
         val device = usb.findUsbAudioDevice() ?: return null
-        val cacheKey = "${device.deviceName}|${device.vendorId}:${device.productId}"
-        val hasControl = answers[cacheKey] ?: usb.hasHardwareVolumeControl(device)?.also { answers[cacheKey] = it }
-        if (hasControl != false) return null
+        val cacheKey = descriptorKey(device)
+        return if (readVolumeDescriptor(device, cacheKey) == false) fixedOutput(device, cacheKey) else null
+    }
+
+    private fun descriptorKey(device: UsbDevice) = "${device.deviceName}|${device.vendorId}:${device.productId}"
+
+    private fun readVolumeDescriptor(device: UsbDevice, key: String): Boolean? =
+        answers[key] ?: usb.hasHardwareVolumeControl(device)?.also { answers[key] = it }
+
+    private fun fixedOutput(device: UsbDevice, cacheKey: String): FixedOutputDac {
         val descriptor = dacProfiles.connected.value.firstOrNull { it.connectionPath == device.deviceName }
         val profile = descriptor?.let { DacProfileCatalog.findForDescriptor(dacProfiles.profiles.value, it) }
         val key = profile?.profileId ?: descriptor?.identityKey ?: cacheKey
@@ -241,9 +253,33 @@ class FixedOutputNoticeCoordinator @Inject constructor(
         val route = engine.audioRouteState.value
         // Not on the Direct path the volume is Android's own and the app's digital level works: nothing to ask.
         if (route.desiredBackend != AudioBackend.USB_DIRECT || route.usbDacPresent != true || route.permissionGranted != true) return true
-        // Read now, not from the flow: a play that comes the moment the DAC is permitted must not beat the collector.
-        val dac = resolve() ?: return true
-        return allowPlayFor(dac)
+        val device = usb.findUsbAudioDevice() ?: return true
+        val key = descriptorKey(device)
+        return when (answers[key]) {
+            true -> true
+            false -> allowPlayFor(fixedOutput(device, key))
+            null -> {
+                if (unconfirmedDescriptor == key) return true
+                askForDescriptor(device, key)
+                false
+            }
+        }
+    }
+
+    private fun askForDescriptor(device: UsbDevice, key: String) {
+        if (descriptorProbe?.key == key) return
+        val probe = DescriptorProbe(key)
+        descriptorProbe = probe
+        appScope.launch(Dispatchers.Main.immediate) {
+            val answer = withContext(volumeDispatcher) { readVolumeDescriptor(device, key) }
+            if (descriptorProbe !== probe) return@launch
+            descriptorProbe = null
+            if (usb.findUsbAudioDevice()?.let(::descriptorKey) != key) return@launch
+            onDacChanged(if (answer == false) fixedOutput(device, key) else null)
+            val ticket = Wanted(epoch, key.takeIf { answer == null })
+            wanted = ticket
+            postResume(ticket)
+        }
     }
 
     internal fun allowPlayFor(dac: FixedOutputDac): Boolean {
@@ -292,6 +328,7 @@ class FixedOutputNoticeCoordinator @Inject constructor(
             mainHandler.post { cancelOwedPlay() }
             return
         }
+        descriptorProbe = null
         wanted = null
         _pending.value?.takeIf { it.holdsPlayback }?.let { _pending.value = it.copy(holdsPlayback = false) }
     }
@@ -312,7 +349,14 @@ class FixedOutputNoticeCoordinator @Inject constructor(
         mainHandler.post {
             if (wanted === ticket && ticket.epoch == epoch) {
                 wanted = null
-                resumePlayback?.invoke()
+                // An unreadable descriptor had always let the original Play through. Scope that
+                // answer to this replay so a later explicit Play can try the descriptor again.
+                unconfirmedDescriptor = ticket.unconfirmedDescriptor
+                try {
+                    resumePlayback?.invoke()
+                } finally {
+                    unconfirmedDescriptor = null
+                }
             }
         }
     }

@@ -175,9 +175,18 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
             ACTION_REPORT_AUDIO_ROUTE -> logAudioRoute(context)
             ACTION_DUMP_DAC_VOLUME_CONTROLS -> {
                 // AUD-119: run before and after pressing the DAC's own buttons, with Direct active.
-                val dump = com.decent.usbaudio.UsbAudioDevice.getInstance(context).dumpVolumeControls()
-                dump.lines().forEach { Log.i(TAG, it) }
-                appendDiagnostic(context, "dac-volume-controls.txt", dump)
+                val result = goAsync()
+                com.decent.usbaudio.UsbAudioDevice.volumeExecutor.execute {
+                    try {
+                        val device = com.decent.usbaudio.UsbAudioDevice.getInstance(context)
+                        val claim = device.owner.tryClaimAccessory("volume dump", device.owner.generation)
+                        val dump = claim?.use { device.dumpVolumeControls() } ?: "DAC_VOLUME|device busy or gone"
+                        dump.lines().forEach { Log.i(TAG, it) }
+                        appendDiagnostic(context, "dac-volume-controls.txt", dump)
+                    } finally {
+                        result.finish()
+                    }
+                }
             }
             // F-01 phase 1: read-only FiiO HID probe (GETs only) and a passive listen; own thread, since
             // the USB transfers and the listen window must not block the main thread.
@@ -198,7 +207,24 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
                         kotlinx.coroutines.runBlocking {
                             if (lock != null) lock.lock()
                             try {
-                                if (intent.action == ACTION_PROBE_DAC_HID) probe.probe() else probe.listen(seconds)
+                                val device = com.decent.usbaudio.UsbAudioDevice.getInstance(context)
+                                val claim = device.owner.tryClaimAccessory("HID probe", device.owner.generation, settled = true)
+                                if (claim == null) {
+                                    Log.i(DAC_HID_TAG, "USB device busy or settling")
+                                } else claim.use {
+                                    val connection = device.openGeneration
+                                    val started = System.nanoTime()
+                                    val journal = com.decent.usbaudio.UsbDiagnosticJournal
+                                    journal.control(connection, claim.generation, com.decent.usbaudio.UsbDiagnosticJournal.Control.HID_BEGIN, "debug-hid")
+                                    var completed = false
+                                    try {
+                                        if (intent.action == ACTION_PROBE_DAC_HID) probe.probe() else probe.listen(seconds)
+                                        completed = true
+                                    } finally {
+                                        journal.control(connection, claim.generation, com.decent.usbaudio.UsbDiagnosticJournal.Control.HID_END,
+                                            "debug-hid", result = if (completed) 1 else 0, elapsedMs = (System.nanoTime() - started) / 1_000_000)
+                                    }
+                                }
                             } finally {
                                 if (lock != null) lock.unlock()
                             }
@@ -314,12 +340,24 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
                 }
                 reportFeedbackStartGuard(context, intent.getStringExtra(EXTRA_TAG))
             }
+            ACTION_INJECT_DAC_FAULT -> {
+                val kind = when (intent.getStringExtra("kind")) {
+                    "rail" -> 1
+                    "stuck" -> 2
+                    "no-readings" -> 3
+                    "plateau" -> 4
+                    else -> 0
+                }
+                if (kind != 0) runCatching { UsbAudioStream.nativeRequestDacRecovery(-100 - kind) }
+                    .onFailure { timber.log.Timber.tag(TAG).w(it, "Fault injection unavailable") }
+                else timber.log.Timber.tag(TAG).w("INJECT_DAC_FAULT requires --es kind rail|stuck|no-readings|plateau")
+            }
             ACTION_RECOVER_DAC_NOW -> {
-                // B47-A5. Asks the writer for recovery step 1 (restart the streaming interface) or 2 (bus reset and claims again) at its next look, whatever the
+                // Asks the writer for step 1 (interface), 2 (bus reset) or 3 (full reopen) at its next look, whatever the
                 // detector says, so the reviewer can test each on the real Melody when it locks up. Not while paused or in a seek: the request waits for the writer to play.
                 val step = intent.getIntExtra(EXTRA_STEP, 0)
-                if (step != 1 && step != 2) {
-                    timber.log.Timber.tag(TAG).w("RECOVER_DAC_NOW needs --ei step 1|2; nothing asked")
+                if (step !in 1..3) {
+                    timber.log.Timber.tag(TAG).w("RECOVER_DAC_NOW needs --ei step 1|2|3; nothing asked")
                 } else {
                     runCatching { UsbAudioStream.nativeRequestDacRecovery(step) }
                         .onFailure { timber.log.Timber.tag(TAG).w(it, "RECOVER_DAC_NOW: native layer unavailable") }
@@ -419,7 +457,8 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
 
     /**
      * B47-A5. `enabled` is the process override (on by default, debug and release; a new process is on again); `locks` the lock-ups the detector found in this process;
-     * `step1`/`step2` as `ok/run` (a step is ok when the rail stayed away for 4 s after it); `gaveUp` how often both steps were used up; `lastMs` the writer's time in the last step.
+     * Steps as ok/run (the shared health verifier); gaveUp stays zero for legacy readers.
+     * lastMs is operation time; audioGapMs is measured through the first subsequent music URB.
      */
     private fun reportDacRecovery(context: Context, tag: String?) {
         val stats = runCatching { UsbAudioStream.nativeGetDacRecoveryStats() }.getOrNull()
@@ -427,6 +466,7 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
             "|locks=${stats?.getOrNull(1)}" +
             "|step1=${stats?.getOrNull(3)}/${stats?.getOrNull(2)}|step2=${stats?.getOrNull(5)}/${stats?.getOrNull(4)}" +
             "|gaveUp=${stats?.getOrNull(6)}|lastMs=${stats?.getOrNull(7)}" +
+            "|step3=${stats?.getOrNull(9)}/${stats?.getOrNull(8)}|retries=${stats?.getOrNull(10)}|audioGapMs=${stats?.getOrNull(11)}" +
             "|tag=${tag ?: "-"}"
         timber.log.Timber.tag(TAG).i(line)
         appendDiagnostic(context, "dac-recovery.txt", line)
@@ -758,7 +798,9 @@ class DapDebugPolicyReceiver : BroadcastReceiver() {
         /** B47-A5: `--ez enabled false|true` — automatic recovery of a locked-up DAC off or on. Process-only, like SET_FEEDBACK_POLICY. Debug builds only. */
         const val ACTION_SET_DAC_RECOVERY =
             "com.lostf1sh.pixelplayeross.debug.SET_DAC_RECOVERY"
-        /** B47-A5: `--ei step 1|2` — run recovery step 1 (restart the streaming interface) or 2 (bus reset and claims again) now. Debug builds only. */
+        /** Debug-only detector fault, without modifying feedback or PCM sent to the DAC. */
+        const val ACTION_INJECT_DAC_FAULT = "com.lostf1sh.pixelplayeross.debug.INJECT_DAC_FAULT"
+        /** `--ei step 1|2|3`: request a real recovery step. Debug builds only. */
         const val ACTION_RECOVER_DAC_NOW =
             "com.lostf1sh.pixelplayeross.debug.RECOVER_DAC_NOW"
         /** B48-fix1: `--ez enabled false|true` — the feedback start guard (nominal-rate packets for the first 500 ms after the interface starts) off or on. Process-only. Debug builds only. */

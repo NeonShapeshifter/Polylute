@@ -13,8 +13,8 @@ sealed class Screen(val route: String) {
      * The Library, on its Songs tab, scrolled to one song and marked (B32-Q2). It is a destination with nothing of its own to draw: the
      * shell shows the Library root for as long as it is the top of the back stack, and Back leaves it for the page that asked (Stats).
      */
-    object LibraryLocate : Screen("library_locate/{songId}") {
-        fun createRoute(songId: String) = "library_locate/${Uri.encode(songId)}"
+    object LibraryLocate : Screen("library_locate/{songId}?liked={liked}") {
+        fun createRoute(songId: String, liked: Boolean = false) = "library_locate/${Uri.encode(songId)}" + if (liked) "?liked=true" else ""
         const val PREFIX = "library_locate/"
     }
     object Settings : Screen("settings")

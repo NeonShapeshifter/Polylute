@@ -138,10 +138,12 @@ class UsbTransportPlanEquivalenceTest {
         // B46-B2: the queue limits are durations, 1440 ms and 11 900 ms of this stream's rate
         assertThat(plan.queueSoftFrames).isEqualTo(96_000L * 1440 / 1000)
         assertThat(plan.queueHardFrames).isEqualTo(96_000L * 11_900 / 1000)
-        // B46-B1 / B47-A2: the silence lead is 110 ms (60 before the ring was 128 URBs deep), and B47-A3 the resume lead is 50 ms
+        // B46-B1 / B47-A2: the silence lead is 110 ms (60 before the ring was 128 URBs deep), the resume lead stays 50 ms; B63.5 adds a distinct 128 ms stream-start lead
         assertThat(plan[UsbTransportPlan.Field.SILENCE_LEAD_FRAMES]).isEqualTo(10_560L)
         assertThat(plan[UsbTransportPlan.Field.RESUME_LEAD_FRAMES]).isEqualTo(4800L)
         assertThat(plan.resumeLeadFrames).isEqualTo(4800L)
+        assertThat(plan.startLeadFrames).isEqualTo(12_288L)
+        assertThat(plan[UsbTransportPlan.Field.START_LEAD_FRAMES]).isEqualTo(12_288L)
         assertThat(plan[UsbTransportPlan.Field.SILENCE_CHUNK_FRAMES]).isEqualTo(97L)
         assertThat(plan[UsbTransportPlan.Field.FADE_OUT_FRAMES]).isEqualTo(768L)
         assertThat(plan[UsbTransportPlan.Field.FADE_IN_FRAMES]).isEqualTo(1440L)
@@ -152,7 +154,7 @@ class UsbTransportPlanEquivalenceTest {
         // B48-fix1: the feedback start guard, appended: the first 500 ms after the interface starts are sent at nominal (0 for an endpoint with no feedback to hold back)
         assertThat(plan[UsbTransportPlan.Field.FEEDBACK_START_GUARD_MS]).isEqualTo(500L)
         assertThat(plan.feedbackStartGuardMs).isEqualTo(500)
-        assertThat(UsbTransportPlan.Field.COUNT).isEqualTo(32)
+        assertThat(UsbTransportPlan.Field.COUNT).isEqualTo(33)
         assertThat(plan.pauseKeepaliveMs).isEqualTo(2000L)
         assertThat(UsbTransportPlan.Field.PAUSE_KEEPALIVE_MS).isEqualTo(31)
         assertThat(UsbTransportPlanner.defaultQueueFrames(44_100)).isEqualTo(44_100L * 1440 / 1000 to 44_100L * 11_900 / 1000)

@@ -43,7 +43,7 @@ class B42Fix3RenderTest {
     private val variant = System.getenv("B42FIX3_VARIANT") ?: "after"
 
     private val root: File
-        get() = File(System.getenv("B42FIX3_RENDERS") ?: "../../../analysis/audit-2026-09-27/batches/B42-fix3-evidence").resolve(variant).apply { mkdirs() }
+        get() = File(System.getenv("B42FIX3_RENDERS") ?: "build/test-artifacts/B42-fix3").resolve(variant).apply { mkdirs() }
 
     private val shot = MutableStateFlow(Shot(covers[0], Fix3Mode.COVER_GLASS, Page.HOME))
 

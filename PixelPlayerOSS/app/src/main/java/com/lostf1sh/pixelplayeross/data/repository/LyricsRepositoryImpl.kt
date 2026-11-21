@@ -360,16 +360,16 @@ class LyricsRepositoryImpl @Inject constructor(
     private val remoteSearches = ConcurrentHashMap<String, Deferred<CompletedAnswers>>()
 
     /** The songs LRCLIB has nothing for at all (every search answered, all empty), this session: asked again only when the listener asks for a refresh. */
-    private val remoteNotFound: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val remoteNotFound = com.lostf1sh.pixelplayeross.utils.boundedMemorySet<String>(8192)
 
     /** The files LRCLIB answered for, with nothing that fits **them** (their duration, their version): per file, never shared with another version. */
-    private val remoteNoFit: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val remoteNoFit = com.lostf1sh.pixelplayeross.utils.boundedMemorySet<String>(8192)
 
     /**
      * When a search of a song ended in an error (offline, a server fault, one of its strategies failing), so it is not hammered while it keeps failing.
      * Keyed by the song ([remoteSearchKey]); B42-fix1 also keys it by a file ([remoteSongKey]) for a search that was incomplete and found nothing that fits it.
      */
-    private val remoteFailedAtMs = ConcurrentHashMap<String, Long>()
+    private val remoteFailedAtMs = com.lostf1sh.pixelplayeross.utils.boundedMemoryMap<String, Long>(8192)
 
     // B42-fix1: since B41-fix2 nothing is stored inside the shared job (the callers store what they take from the answer), so an answer that came
     // after its only caller was cancelled (a song change) was thrown away, and the listener coming back asked LRCLIB again. The job now leaves its

@@ -99,12 +99,17 @@ class ThemeStateHolder @Inject constructor(
     private var configEpoch = 0L
 
     /** How many forced regenerations each cover has had. */
-    private val regenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val regenerations = com.lostf1sh.pixelplayeross.utils.boundedMemoryMap<String, Long>(8192)
+    private val regenerationSequence = java.util.concurrent.atomic.AtomicLong()
+
+    private fun regenerationFor(uri: String): Long = synchronized(regenerations) {
+        regenerations.getOrPut(uri) { regenerationSequence.incrementAndGet() }
+    }
 
     private fun capture(uri: String, generation: Long) = PaletteRequest(
         uri = uri,
         generation = generation,
-        regeneration = regenerations[uri] ?: 0L,
+        regeneration = regenerationFor(uri),
         epoch = configEpoch,
         style = currentPaletteStyle,
         accuracy = currentPaletteAccuracy,
@@ -353,7 +358,7 @@ class ThemeStateHolder @Inject constructor(
 
          // B29-fix1 F4: the regeneration below is long; the listener may have moved on by the time it ends. B30-fix1 H4: and may have
          // changed the settings, or asked for another regeneration of this cover; this one begins a new regeneration of the cover.
-         regenerations.merge(uriString, 1L) { a, b -> a + b }
+         regenerations[uriString] = regenerationSequence.incrementAndGet()
          val request = capture(uriString, requestGeneration)
          Timber.tag("ThemeStateHolder").d("forceRegenerateColorScheme called for: $uriString")
          Timber.tag("ThemeStateHolder").d("Current tracked global URI: ${_currentAlbumArtUri.value}")

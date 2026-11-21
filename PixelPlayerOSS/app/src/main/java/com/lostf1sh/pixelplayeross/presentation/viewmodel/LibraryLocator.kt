@@ -33,8 +33,9 @@ class LibraryLocator(
     private val resolveIndex: suspend (songId: String) -> Int,
     /** The song is not in the list: the listener is told. */
     private val onNotFound: () -> Unit,
+    private val resolveLikedIndex: suspend (String) -> Int = resolveIndex,
 ) {
-    data class Request(val songId: String, val token: Long)
+    data class Request(val songId: String, val token: Long, val liked: Boolean = false)
 
     private val _request = MutableStateFlow<Request?>(null)
     val request: StateFlow<Request?> = _request.asStateFlow()
@@ -47,11 +48,11 @@ class LibraryLocator(
     private var token = 0L
     private var markJob: Job? = null
 
-    fun request(songId: String) {
+    fun request(songId: String, liked: Boolean = false) {
         // the song asked for before is no longer what this page is showing: its mark does not outlive the new request
         markJob?.cancel()
         _located.value = null
-        _request.value = Request(songId, ++token)
+        _request.value = Request(songId, ++token, liked)
     }
 
     /**
@@ -62,7 +63,7 @@ class LibraryLocator(
     suspend fun take(request: Request): Int {
         if (_request.value?.token != request.token) return -1
         val index = try {
-            resolveIndex(request.songId)
+            if (request.liked) resolveLikedIndex(request.songId) else resolveIndex(request.songId)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failed: Exception) {
@@ -88,6 +89,9 @@ class LibraryLocator(
     fun complete(request: Request) {
         if (_request.value?.token == request.token) _request.value = null
     }
+
+    /** An old destination leaving cannot clear a newer title tap's request or mark. */
+    fun clear(ownedToken: Long) { if (token == ownedToken) clear() }
 
     /** The page that asked is gone (Back, or a tab pressed): whatever was pending or marked for it goes too. */
     fun clear() {

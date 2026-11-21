@@ -37,7 +37,7 @@ import org.robolectric.shadows.ShadowToast
 import timber.log.Timber
 
 /**
- * B41-fix1 (A2), the open fault of the outside review of B40-fix3 (`B40-fix3-revision-codex.md`, R1): an asynchronous Purity result
+ * B41-fix1 (A2), the asynchronous activation regression: an asynchronous Purity result
  * must respect what happened while it was suspended. The activation (`PristineModeController.enable`) suspends on the lock's own
  * preferences; meanwhile a Pause or Stop clears the play the question holds, a DAC that leaves ends the attachment generation, and a
  * new Play starts another question. The coordinator kept the question as it was when the listener chose Purity and applied it when the

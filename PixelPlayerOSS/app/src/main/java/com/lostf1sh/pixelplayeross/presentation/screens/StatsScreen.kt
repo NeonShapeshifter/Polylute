@@ -94,8 +94,21 @@ fun StatsScreen(
 
     val locale = currentLocale()
     val topTitle = ui.topList?.let { stringResource(R.string.stats_top_title, it.size, StatsFormat.periodLabel(it.period, locale)) }.orEmpty()
-    val topSource = ListenSource(ListenSourceKind.TOP_LIST, ui.top.period.let { "${it.from}..${it.to}" })
-    val actions = remember(statsViewModel, playerViewModel, topTitle) {
+    val topSource = ListenSource(ListenSourceKind.TOP_LIST, ui.top.period.let { "${it.from}..${it.to}|${ui.top.size}|${ui.rankMode.name}" })
+    val sourceLocate by com.lostf1sh.pixelplayeross.presentation.viewmodel.SourceLocateRequests.request.collectAsStateWithLifecycle()
+    LaunchedEffect(sourceLocate?.token) {
+        val request = sourceLocate?.takeIf { it.route == com.lostf1sh.pixelplayeross.presentation.navigation.Screen.Stats.route } ?: return@LaunchedEffect
+        val parts = request.source?.ref.orEmpty().split('|')
+        val period = parts.first().split("..")
+        val from = period.getOrNull(0)?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
+        val to = period.getOrNull(1)?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
+        statsViewModel.onLayerSelected(StatsLayer.TOP)
+        if (from != null && to != null) statsViewModel.onTopMonthsSelected(from, to)
+        parts.getOrNull(1)?.toIntOrNull()?.let(statsViewModel::onTopSizeSelected)
+        parts.getOrNull(2)?.let { mode -> StatsRankMode.entries.firstOrNull { it.name == mode }?.let(statsViewModel::onRankModeSelected) }
+        seeAll = null
+    }
+    val actions = remember(statsViewModel, playerViewModel, topTitle, topSource) {
         TopActions(
             onSize = statsViewModel::onTopSizeSelected,
             onYear = statsViewModel::onTopYearSelected,
@@ -146,7 +159,18 @@ internal fun StatsContent(
     artistImages: Map<String, String> = emptyMap(),
 ) {
     val locale = currentLocale()
-    val look = StatsLook(ui.rankMode, zone, locale, StatsOpener(ui.links, onOpen), artistImages)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val pendingTopLocate by com.lostf1sh.pixelplayeross.presentation.viewmodel.SourceLocateRequests.request.collectAsStateWithLifecycle()
+    val targetParts = pendingTopLocate?.takeIf { it.route == com.lostf1sh.pixelplayeross.presentation.navigation.Screen.Stats.route }?.source?.ref?.split('|').orEmpty()
+    val targetPeriod = targetParts.firstOrNull()
+    val targetSizeReady = targetParts.getOrNull(1)?.toIntOrNull()?.let { it == ui.top.size } ?: true
+    val targetModeReady = targetParts.getOrNull(2)?.let { it == ui.rankMode.name } ?: true
+    val located = rememberSourceLocate(com.lostf1sh.pixelplayeross.presentation.navigation.Screen.Stats.route, listState,
+        ui.layer == StatsLayer.TOP && ui.topList != null && !ui.top.isLoading && targetSizeReady && targetModeReady && (targetPeriod == null || targetPeriod == "${ui.top.from}..${ui.top.to}")) { id ->
+        val top = ui.topList
+        top?.rows?.indexOfFirst { it.item.song.id == id }?.takeIf { it >= 0 }?.let { it + 8 + if (top.isShort) 1 else 0 } ?: -1
+    }
+    val look = StatsLook(ui.rankMode, zone, locale, StatsOpener(ui.links, onOpen), artistImages, located)
     val report = ui.current
     // The list stops where the navigation bar begins because the scaffold does that for every pushed screen (B29-L9; it was done here, per
     // list, in B28-fix2 E4): its rows never run through the strip between the shell's mini player and the gesture bar.
@@ -156,6 +180,7 @@ internal fun StatsContent(
             return@DapBackScaffold
         }
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = DapSpacing.Gutter,

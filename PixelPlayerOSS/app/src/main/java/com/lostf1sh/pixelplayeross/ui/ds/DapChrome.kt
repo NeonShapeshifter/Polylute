@@ -203,26 +203,21 @@ private fun androidx.compose.foundation.layout.ColumnScope.DapBottomNavContent(
         ) {
             items.forEachIndexed { index, item ->
                 val selected = index == selectedIndex
+                // Owner 11-21: icons only, the bar is shorter; the label stays as the tab's name for TalkBack.
+                val label = stringResource(item.labelRes)
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(DapRadius.Surface))
                         .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.Tab) { onSelect(index) }
-                        .padding(vertical = DapSpacing.Xs),
+                        .semantics { contentDescription = label }
+                        .padding(vertical = DapSpacing.Sm),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     DapIcon(
                         kind = item.icon,
                         tint = if (selected) Dap.primaryText else Dap.tertiaryText,
-                        size = 20.dp,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = stringResource(item.labelRes),
-                        style = DapType.NavLabel,
-                        color = if (selected) Dap.primaryText else Dap.tertiaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        size = 24.dp,
                     )
                 }
             }

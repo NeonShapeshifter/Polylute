@@ -30,7 +30,7 @@ class B43GlassRenderTest {
     private val palette = DapBaseTheme.Graphite.palette
     private val look = GlassBands.of(palette, Color.Cyan)
     private fun save(bitmap: Bitmap, name: String) {
-        val dir = File(System.getenv("B43_EVIDENCE") ?: "/home/ale/proyects/honor-dap-workspace/analysis/audit-2026-09-27/batches/B43-evidence", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
+        val dir = File(System.getenv("B43_EVIDENCE") ?: "build/test-artifacts/B43", System.getenv("B43_VARIANT") ?: "after").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
     @Test fun `the grey magenta transition stays smooth after tone mapping and stretching`() {

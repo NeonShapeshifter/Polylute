@@ -86,15 +86,24 @@ class PlaylistsModuleHandler @Inject constructor(
     }
 
     override suspend fun snapshot(): String = withContext(Dispatchers.IO) {
+        val playlists = playlistPreferencesRepository.getPlaylistsOnce()
+        val covers = playlists.mapNotNull { playlist ->
+            playlist.coverImageUri?.let(::File)?.takeIf { it.isFile }?.let { file ->
+                playlist.id to Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+            }
+        }.toMap()
         val payload = PlaylistsBackupPayload(
-            playlists = playlistPreferencesRepository.getPlaylistsOnce(),
+            playlists = playlists,
+            coverImages = covers.ifEmpty { null },
             playlistSongOrderModes = playlistPreferencesRepository.playlistSongOrderModesFlow.first(),
             playlistsSortOption = playlistPreferencesRepository.playlistsSortOptionFlow.first()
         )
         gson.toJson(payload)
     }
 
-    override suspend fun restore(payload: String) = withContext(Dispatchers.IO) {
+    override suspend fun restore(payload: String) = restoreData(payload, rollback = false)
+
+    private suspend fun restoreData(payload: String, rollback: Boolean) = withContext(Dispatchers.IO) {
         val element = JsonParser.parseString(payload)
         if (element.isJsonArray) {
             restoreLegacyPreferenceEntries(payload)
@@ -118,7 +127,7 @@ class PlaylistsModuleHandler @Inject constructor(
         }
 
         val finalPlaylists = if (coverImages != null && coverImages.isNotEmpty()) {
-            restoreCoverImages(resolvedPlaylists, coverImages)
+            restoreCoverImages(resolvedPlaylists, coverImages, rollback)
         } else {
             resolvedPlaylists
         }
@@ -131,7 +140,7 @@ class PlaylistsModuleHandler @Inject constructor(
         userPreferencesRepository.clearLegacyUserPlaylists()
     }
 
-    override suspend fun rollback(snapshot: String) = restore(snapshot)
+    override suspend fun rollback(snapshot: String) = restoreData(snapshot, rollback = true)
 
     private fun readFileAsBase64(path: String): String? {
         return try {
@@ -147,21 +156,28 @@ class PlaylistsModuleHandler @Inject constructor(
 
     private fun restoreCoverImages(
         playlists: List<Playlist>,
-        coverImages: Map<String, String>
+        coverImages: Map<String, String>,
+        rollback: Boolean,
     ): List<Playlist> {
-        return playlists.map { playlist ->
+        val failed = mutableListOf<String>()
+        val result = playlists.map { playlist ->
             val base64 = coverImages[playlist.id] ?: return@map playlist
             try {
                 val bytes = Base64.decode(base64, Base64.NO_WRAP)
                 val fileName = "playlist_cover_${playlist.id}.jpg"
-                val file = File(context.filesDir, fileName)
+                val file = if (rollback && playlist.coverImageUri != null) File(playlist.coverImageUri) else File(context.filesDir, fileName)
+                require(file.canonicalPath.startsWith(context.filesDir.canonicalPath + File.separator)) { "Image path outside app storage" }
                 file.writeBytes(bytes)
                 playlist.copy(coverImageUri = file.absolutePath)
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Timber.tag(TAG).w(e, "Failed to restore cover image for playlist ${playlist.id}")
-                playlist.copy(coverImageUri = null)
+                failed += playlist.id
+                playlist
             }
         }
+        if (failed.isNotEmpty()) throw imageItemsFailed(failed)
+        return result
     }
 
     /**

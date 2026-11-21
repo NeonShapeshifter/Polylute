@@ -51,13 +51,16 @@ fun ComposerDetailScreen(
     playerViewModel: PlayerViewModel,
     viewModel: ComposerDetailViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel(),
 ) {
-    val songs by viewModel.songs(composer).collectAsStateWithLifecycle(initialValue = emptyList())
+    val loadedSongs by viewModel.songs(composer).collectAsStateWithLifecycle(initialValue = null)
+    val songs = loadedSongs.orEmpty()
     val currentSongId by remember(playerViewModel) { playerViewModel.stablePlayerState.map { it.currentSong?.id } }.collectAsStateWithLifecycle(initialValue = null)
     val source = remember(composer) { ListenSource(ListenSourceKind.GENRE, "composer:$composer") }
     ComposerPage(
         name = composer,
         songs = songs,
         currentSongId = currentSongId,
+        playback = rememberLibraryPlaybackStates(playerViewModel),
+        ready = loadedSongs != null,
         onBack = { navController.popBackStack() },
         onPlay = { songs.firstOrNull()?.let { playerViewModel.playSongs(songs, it, composer, source = source) } },
         onShuffle = { if (songs.isNotEmpty()) playerViewModel.playSongsShuffled(songsToPlay = songs, queueName = composer, startAtZero = true, source = source) },
@@ -75,9 +78,13 @@ internal fun ComposerPage(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     onPlaySong: (Song) -> Unit,
+    playback: LibraryPlaybackStates? = null,
+    ready: Boolean = true,
 ) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val located = rememberSourceLocate(com.lostf1sh.pixelplayeross.presentation.navigation.Screen.ComposerDetail.createRoute(name), listState, ready) { id -> songs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.plus(2) ?: -1 }
     DapBackScaffold(Modifier.fillMaxSize(), onBack = onBack) {
-        LazyColumn(Modifier.fillMaxSize().testTag(ComposerPageTags.Songs), contentPadding = PaddingValues(bottom = LocalDapPlayerShelfHeight.current + 24.dp)) {
+        LazyColumn(Modifier.fillMaxSize().testTag(ComposerPageTags.Songs), state = listState, contentPadding = PaddingValues(bottom = LocalDapPlayerShelfHeight.current + 24.dp)) {
             item(key = "title") {
                 DapScreenTitle(text = name, modifier = Modifier.padding(horizontal = DapSpacing.Gutter, vertical = DapSpacing.Md))
             }
@@ -93,7 +100,10 @@ internal fun ComposerPage(
                     }
                 }
                 items(songs, key = { it.id }) { song ->
-                    DapMediaRow(
+                    if (playback != null) LibraryPlaybackAwareSongItem(song = song, playback = playback,
+                        isLocated = located == song.id, showMoreOptionsButton = false, onMoreOptionsClick = {},
+                        onClick = { onPlaySong(song) }, modifier = Modifier.padding(horizontal = DapSpacing.Gutter))
+                    else DapMediaRow(
                         title = songTitleLabel(song),
                         subtitle = songArtistLabel(song),
                         state = if (currentSongId == song.id) com.lostf1sh.pixelplayeross.ui.ds.DapRowState.Current else com.lostf1sh.pixelplayeross.ui.ds.DapRowState.Normal,

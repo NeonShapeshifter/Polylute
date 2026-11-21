@@ -104,7 +104,8 @@ fun LibraryAlbumsTab(
     onAlbumLongPress: (Album) -> Unit = {},
     onAlbumSelectionToggle: (Album) -> Unit = {},
     getSelectionIndex: (Long) -> Int? = { null },
-    storageFilter: StorageFilter = StorageFilter.ALL
+    storageFilter: StorageFilter = StorageFilter.ALL,
+    filtering: Boolean = false,
 ) {
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
@@ -231,6 +232,8 @@ fun LibraryAlbumsTab(
     )
 
     when {
+        com.lostf1sh.pixelplayeross.presentation.components.LocalLibraryTabQueries.current[LibraryTabId.ALBUMS].orEmpty().let { it.isNotBlank() && albums.itemCount == 0 && refreshState !is LoadState.Loading && refreshState !is LoadState.Error } ->
+            com.lostf1sh.pixelplayeross.presentation.components.LibrarySearchNoResults(com.lostf1sh.pixelplayeross.presentation.components.LocalLibraryTabQueries.current[LibraryTabId.ALBUMS].orEmpty())
         refreshState is LoadState.Error && albums.itemCount == 0 -> {
             Box(
                 modifier = Modifier
@@ -413,7 +416,7 @@ fun LibraryAlbumsTab(
                             else
                                 bottomBarHeight + 16.dp
 
-                            ExpressiveScrollBar(
+                            if (!filtering) ExpressiveScrollBar(
                                 contentEndMargin = 14.dp,
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
@@ -494,7 +497,7 @@ fun LibraryAlbumsTab(
                             else
                                 bottomBarHeight + 16.dp
 
-                            ExpressiveScrollBar(
+                            if (!filtering) ExpressiveScrollBar(
                                 contentEndMargin = 14.dp,
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
@@ -522,7 +525,8 @@ fun LibraryArtistsTab(
     onArtistClick: (Long) -> Unit,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
-    storageFilter: StorageFilter = StorageFilter.ALL
+    storageFilter: StorageFilter = StorageFilter.ALL,
+    filtering: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val flinging = rememberFlingState(listState, listState.interactionSource)
@@ -569,6 +573,8 @@ fun LibraryArtistsTab(
     )
 
     when {
+        com.lostf1sh.pixelplayeross.presentation.components.LocalLibraryTabQueries.current[LibraryTabId.ARTISTS].orEmpty().let { it.isNotBlank() && artists.itemCount == 0 && refreshState !is LoadState.Loading && refreshState !is LoadState.Error } ->
+            com.lostf1sh.pixelplayeross.presentation.components.LibrarySearchNoResults(com.lostf1sh.pixelplayeross.presentation.components.LocalLibraryTabQueries.current[LibraryTabId.ARTISTS].orEmpty())
         refreshState is LoadState.Error && artists.itemCount == 0 -> {
             Box(
                 modifier = Modifier
@@ -702,7 +708,7 @@ fun LibraryArtistsTab(
                         else
                             bottomBarHeight + 16.dp
 
-                        ExpressiveScrollBar(
+                        if (!filtering) ExpressiveScrollBar(
                             contentEndMargin = 12.dp,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
@@ -731,11 +737,13 @@ fun LibraryPlaylistsTab(
     selectedPlaylistIds: Set<String> = emptySet(),
     onPlaylistLongPress: (com.lostf1sh.pixelplayeross.data.model.Playlist) -> Unit = {},
     onPlaylistSelectionToggle: (com.lostf1sh.pixelplayeross.data.model.Playlist) -> Unit = {},
-    onPlaylistOptionsClick: () -> Unit = {}
+    onPlaylistOptionsClick: () -> Unit = {},
+    query: String = "",
 ) {
     PlaylistContainer(
         playlistUiState = playlistUiState,
         filteredPlaylists = filteredPlaylists,
+        query = query,
         currentSortOption = playlistUiState.currentPlaylistSortOption,
         isRefreshing = isRefreshing,
         onRefresh = onRefresh,

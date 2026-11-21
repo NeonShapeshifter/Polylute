@@ -96,9 +96,9 @@ class PristineModeTest {
         val events = mutableListOf<String>()
         override fun gainContributors() = gain
         override fun isDirectActive() = direct
-        override fun hardwareVolume() = step?.let { HardwareVolume(it, 0, 200, 0.5f, true) }
+        override suspend fun hardwareVolume() = step?.let { HardwareVolume(it, 0, 200, 0.5f, true) }
         override fun ceilingStep() = ceiling
-        override fun setHardwareStep(step: Int): Boolean { events += "dac=$step"; this.step = step; return true }
+        override suspend fun setHardwareStep(step: Int): Boolean { events += "dac=$step"; this.step = step; return true }
         override suspend fun awaitContributorsApplied(): Boolean { events += "await"; return applied }
         override suspend fun lockState() = locked to lowered
         override suspend fun persist(locked: Boolean, loweredSteps: Int) {

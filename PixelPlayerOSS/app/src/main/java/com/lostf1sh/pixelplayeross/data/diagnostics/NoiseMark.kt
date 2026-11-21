@@ -34,8 +34,8 @@ import timber.log.Timber
  * did in that window; in 1.0 he heard a ~3 s "shh" once and there was nothing to look at at all. The output keeps one-second summaries of both
  * (usb-second-ring.h, ~100 bytes a second, nothing logged, in every build), and this writes the last [DEFAULT_SECONDS] of them to a
  * file with the stream's state around them: how it was opened, which feedback policy ran, the DAC's level, the route and the song. One log
- * line points at the file, and the file can be shared. It is a button: nothing is written, and nothing leaves the phone, until somebody presses
- * it (and then sends the file somewhere on purpose). The row is in the player's More sheet and in Maintenance; a debug build can also run
+ * line points at the file, and the file can be shared. The automatic private USB journal is attached too; the mark freezes that export.
+ * Nothing leaves the phone until somebody explicitly shares the file. The row is in the player's More sheet and in Maintenance; a debug build can also run
  * it with `adb shell am broadcast -a ...debug.MARK_NOISE`, the only part of the debug bridge that has anything to do with it.
  *
  * Where the files are: `files/noise-marks/noise-<yyyyMMdd-HHmmss>.txt`, the newest [KEEP_FILES] of them.
@@ -43,7 +43,7 @@ import timber.log.Timber
 object NoiseMark {
     const val TAG = "NoiseMark"
     const val DIRECTORY = "noise-marks"
-    const val DEFAULT_SECONDS = 30
+    const val DEFAULT_SECONDS = 128
 
     /** The marks kept on the phone; the oldest go when a new one is written, so a release install does not collect them. */
     const val KEEP_FILES = 20
@@ -94,12 +94,15 @@ object NoiseMark {
      * Marks the noise now: gathers the state, takes the output's last [seconds] and writes the file. Main thread (the player is read
      * through its own accessors). Returns the file, or null when nothing could be written; never throws into the caller.
      */
-    fun mark(context: Context, seconds: Int = DEFAULT_SECONDS): File? = runCatching {
+    fun mark(context: Context, seconds: Int = DEFAULT_SECONDS): File? =
+        markWithJournal(context, seconds) { UsbIncidentJournal.read(context.filesDir) }
+
+    internal fun markWithJournal(context: Context, seconds: Int = DEFAULT_SECONDS, readJournal: () -> String): File? = runCatching {
         val wall = System.currentTimeMillis()
         val window = seconds.coerceIn(1, 128)
         val summaries = runCatching { UsbAudioStream.nativeGetSecondSummaries(window * 1000L) }
             .getOrElse { "(the output could not be asked: ${it.javaClass.simpleName})\n" }
-        val text = compose(Facts(wall, gather(context)), window, summaries)
+        val text = UsbIncidentJournal.attach(compose(Facts(wall, gather(context)), window, summaries), readJournal())
         val file = write(File(context.filesDir, DIRECTORY), wall, text)
         val lines = summaries.lineSequence().count { it.startsWith("t-") }
         Timber.tag(TAG).i("NOISE_MARK file=%s window=%ds seconds=%d", file.absolutePath, window, lines)
@@ -172,7 +175,7 @@ object NoiseMark {
         add("feedback.policy") { t.feedbackPolicy }
         add("feedback.stuck") { "${t.feedbackStuck} (episodes ${t.feedbackStuckEpisodes}, readings stuck ${t.feedbackStuckReadings}, ${t.feedbackStuckMs} ms in all)" }
         add("feedback.last") { "last ${t.feedbackLastFpmf} sending ${t.feedbackSendingFpmf} (frames per microframe), readings ${t.feedbackReadings}, refused ${t.feedbackRejectedReadings}" }
-        add("output") { "underruns ${t.underruns}, late ${t.lateBuffers}, dropped ${t.droppedBuffers}, usbFramesWritten ${t.usbFramesWritten}" }
+        add("output") { "underrunsProcess ${t.underruns}, underrunsStream ${DirectPathTelemetry.streamUnderrunSummary}, late ${t.lateBuffers}, dropped ${t.droppedBuffers}, usbFramesWritten ${t.usbFramesWritten}" }
         val safety = entry?.safetyVolumeController()?.state?.value
         add("volume.dac") {
             safety?.let {

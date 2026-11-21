@@ -93,14 +93,20 @@ if [[ "${1:-}" != "--pristine-only" ]]; then
     -o "$glitch_output" -lm
   "$glitch_output"
 
+  "$compiler" -std=c++11 -Wall -Wextra -Werror -I"$repo/libs/decent-usb-audio-driver/src/main/jni" \
+    "$repo/tools/usb-plateau-test.cpp" "$repo/libs/decent-usb-audio-driver/src/main/jni/usb-glitch.cpp" \
+    -o "$glitch_output" -lm
+  "$glitch_output"
+
   # B27-A5 (N-07): the one-second summaries of the stream: the last 30 s and nothing more, min / max / mean, the dump's fields.
   second_output="$(mktemp -t usb-second-ring.XXXXXX)"
   trap 'rm -f "$output" "$plan_output" "$convert_output" "$quarantine_output" "$seek_output" "$thread_output" "$glitch_output" "$second_output"' EXIT
-  "$compiler" -std=c++11 -Wall -Wextra -Werror \
+  "$compiler" -std=c++11 -fno-exceptions -Wall -Wextra -Werror \
     -I"$repo/libs/decent-usb-audio-driver/src/main/jni" \
     "$repo/tools/usb-second-ring-test.cpp" \
     "$repo/libs/decent-usb-audio-driver/src/main/jni/usb-second-ring.cpp" \
-    -o "$second_output" -lpthread
+    "$repo/libs/decent-usb-audio-driver/src/main/jni/usb-journal.cpp" \
+    -o "$second_output" -lpthread -lz
   "$second_output"
 
   # B47-A1: the parsers behind the extra line of an OUTPUT_GAP whose writer sat in the run queue (who had the CPU).
@@ -134,8 +140,18 @@ sed -e 's/__ndk1/__1/' -e 's/_LIBCPP_HAS_THREAD_API_PTHREAD 0/_LIBCPP_HAS_THREAD
   "$libcxx_include/__config_site" > "$sim_dir/cxx/__config_site"
 
 jni_dir="$repo/libs/decent-usb-audio-driver/src/main/jni"
+if [[ "${1:-}" != "--pristine-only" ]]; then
+  "$compiler" -std=c++11 -fno-exceptions -Wall -Wextra -Werror -DPOLYLUTE_JOURNAL_TEST -I"$jni_dir" \
+    "$repo/tools/usb-journal-test.cpp" "$jni_dir/usb-journal.cpp" "$jni_dir/usb-second-ring.cpp" \
+    -o "$sim_dir/usb-journal-test" -lpthread -lz -lm
+  "$sim_dir/usb-journal-test"
+  "$compiler" -std=c++11 -fno-exceptions -Wall -Wextra -Werror -I"$jni_dir" \
+    "$repo/tools/usb-reference-store-test.cpp" "$jni_dir/usb-journal.cpp" "$jni_dir/usb-second-ring.cpp" \
+    -o "$sim_dir/usb-reference-store-test" -lpthread -lz -lm
+  "$sim_dir/usb-reference-store-test"
+fi
 sim_includes=(-I"$sim_dir/stubs" -I"$jni_dir")
-sim_cxx=(-std=c++11 -nostdinc++ -isystem "$sim_dir/cxx" -isystem "$libcxx_include" -O1 -D_GNU_SOURCE)
+sim_cxx=(-std=c++11 -nostdinc++ -isystem "$sim_dir/cxx" -isystem "$libcxx_include" -O1 -D_GNU_SOURCE -DB635_FULL_RECOVERY -DPOLYLUTE_DEBUG_FAULTS)
 join_output="$sim_dir/natural-join-test"
 "$compiler" "${sim_cxx[@]}" -Wall -Wextra -Werror -Wno-unused-parameter "${sim_includes[@]}" \
   "$repo/tools/natural-join-test.cpp" \
@@ -143,14 +159,27 @@ join_output="$sim_dir/natural-join-test"
 "$compiler" "${sim_cxx[@]}" -w "${sim_includes[@]}" \
   "$sim_dir/natural-join-test.o" \
   "$jni_dir/usb-audio-output.cpp" "$jni_dir/usb-pcm-packetizer.cpp" "$jni_dir/usb-pcm-convert.cpp" \
-  "$jni_dir/urb-quarantine.cpp" "$jni_dir/seek-barrier.cpp" "$jni_dir/usb-glitch.cpp" "$jni_dir/usb-second-ring.cpp" "$jni_dir/usb-cpu-watch.cpp" \
+  "$jni_dir/urb-quarantine.cpp" "$jni_dir/seek-barrier.cpp" "$jni_dir/usb-glitch.cpp" "$jni_dir/usb-second-ring.cpp" "$jni_dir/usb-journal.cpp" "$jni_dir/usb-cpu-watch.cpp" \
   "$jni_dir/usb-payload-validation.cpp" \
-  -o "$join_output" -nostdlib++ "$libcxx_lib" "$libcxxabi_lib" -lpthread -lm
+  -o "$join_output" -nostdlib++ "$libcxx_lib" "$libcxxabi_lib" -lpthread -lm -lz
 if [[ "${1:-}" == "--pristine-only" ]]; then
   "$join_output" pristine
   exit
 fi
 "$join_output"
+
+# B63.5: the actual JNI diagnostic dump and missing-feedback watchdog, using the same fake usbfs.
+for fixture in diagnostics health escalation journal plateau start-lead; do
+  "$compiler" "${sim_cxx[@]}" -Wall -Wextra -Werror -Wno-unused-parameter "${sim_includes[@]}" \
+    "$repo/tools/b635-$fixture-test.cpp" -c -o "$sim_dir/b635-$fixture.o"
+  "$compiler" "${sim_cxx[@]}" -w "${sim_includes[@]}" \
+    "$sim_dir/b635-$fixture.o" \
+    "$jni_dir/usb-audio-output.cpp" "$jni_dir/usb-pcm-packetizer.cpp" "$jni_dir/usb-pcm-convert.cpp" \
+    "$jni_dir/urb-quarantine.cpp" "$jni_dir/seek-barrier.cpp" "$jni_dir/usb-glitch.cpp" "$jni_dir/usb-second-ring.cpp" "$jni_dir/usb-journal.cpp" "$jni_dir/usb-cpu-watch.cpp" \
+    "$jni_dir/usb-payload-validation.cpp" \
+    -o "$sim_dir/b635-$fixture" -nostdlib++ "$libcxx_lib" "$libcxxabi_lib" -lpthread -lm -lz
+  "$sim_dir/b635-$fixture"
+done
 
 # B14-1 / audit A-03 (T-11): the one-shot feedback read at stream start against a strict fake usbfs with fault
 # injection (late completion after a cancel, foreign completions, device gone, full quarantine). `free` is wrapped
@@ -163,7 +192,7 @@ feedback_output="$sim_dir/feedback-lifetime-test"
 "$compiler" "${sim_cxx[@]}" -w "${sim_includes[@]}" \
   "$sim_dir/feedback-lifetime-test.o" \
   "$jni_dir/usb-audio-output.cpp" "$jni_dir/usb-pcm-packetizer.cpp" "$jni_dir/usb-pcm-convert.cpp" \
-  "$jni_dir/urb-quarantine.cpp" "$jni_dir/seek-barrier.cpp" "$jni_dir/usb-glitch.cpp" "$jni_dir/usb-second-ring.cpp" "$jni_dir/usb-cpu-watch.cpp" \
+  "$jni_dir/urb-quarantine.cpp" "$jni_dir/seek-barrier.cpp" "$jni_dir/usb-glitch.cpp" "$jni_dir/usb-second-ring.cpp" "$jni_dir/usb-journal.cpp" "$jni_dir/usb-cpu-watch.cpp" \
   "$jni_dir/usb-payload-validation.cpp" \
-  -o "$feedback_output" -Wl,--wrap=free -Wl,--wrap=calloc -nostdlib++ "$libcxx_lib" "$libcxxabi_lib" -lpthread -lm
+  -o "$feedback_output" -Wl,--wrap=free -Wl,--wrap=calloc -nostdlib++ "$libcxx_lib" "$libcxxabi_lib" -lpthread -lm -lz
 "$feedback_output"
