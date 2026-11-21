@@ -31,7 +31,7 @@ object LiveBlobs {
     /** The most blobs the shader draws: the palette has three to five colours. */
     const val MAX_BLOBS = 5
 
-    /** How many frames a second the live background is stepped at: its periods are tens of seconds, so 30 looks the same as 60 and halves the work (pick: see B56-resultado). */
+    /** The live background moves slowly, so it updates at 30 fps. See PixelPlayerOSS/docs/engineering-notes.md#live-background. */
     const val FPS = 30
     const val FRAME_NANOS = 1_000_000_000L / FPS
 

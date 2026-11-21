@@ -192,10 +192,8 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
             it.useJUnitPlatform()
-            // B35: the whole suite runs in one worker JVM, and its live heap climbs to ~470 MB of the default 512 MB (GC log of the B34 tree: 89 full
-            // collections, 0 headroom); 43 more tests tipped `QueueUtilsTest`'s 10k-song fixtures into OutOfMemoryError. A worker that has room.
-            // B58: 1 GB tipped `QueueUtilsTest` again (the live heap at the OOM is ~1 GB, mostly Robolectric resource tables for the four SDK sandboxes the suite uses, 255k MediaItems
-            // and 1.9M byte arrays kept by earlier classes; the histograms are in analysis/.../B58-gates/heap-diagnosis). Same answer as B35: a worker that has room.
+            // Full runs exhausted a 1 GiB worker heap during the large queue tests.
+            // See PixelPlayerOSS/docs/engineering-notes.md#unit-test-heap.
             it.maxHeapSize = "1536m"
         }
     }
@@ -396,7 +394,7 @@ dependencies {
     // release nor benchmark carries a tracer, and the compiler's trace markers are removed from minified builds. The version comes
     // from the Compose BOM (it resolves to the same 1.12 as the rest of Compose); the native library is the Perfetto SDK's, at the
     // version tracing-perfetto's Java side insists on. Idle cost: one interface call and a static boolean read per composable,
-    // until a trace is armed (analysis/audit-2026-09-27/batches/B24-resultado.md, Q2).
+    // until a trace is armed. See PixelPlayerOSS/docs/engineering-notes.md#compose-tracing.
     debugImplementation(libs.androidx.compose.runtime.tracing)
     debugImplementation(libs.androidx.tracing.perfetto.binary)
 }

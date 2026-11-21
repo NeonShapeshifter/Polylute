@@ -98,6 +98,8 @@ Run Gradle with JDK 21. The APKs are in `app/build/outputs/apk/debug/`, one per 
 
 For a release build, see [PixelPlayerOSS/docs/release-signing.md](PixelPlayerOSS/docs/release-signing.md).
 
+For the reasoning behind selected build and implementation choices, see the [engineering notes](PixelPlayerOSS/docs/engineering-notes.md).
+
 The repository has two parts: `PixelPlayerOSS/` is the app, and `decent-player/` holds the USB audio driver, the Media3 wrapper and the FLAC decoder.
 
 ## Privacy and notices

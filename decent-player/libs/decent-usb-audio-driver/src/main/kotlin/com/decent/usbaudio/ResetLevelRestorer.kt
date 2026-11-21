@@ -8,7 +8,7 @@ package com.decent.usbaudio
  * CONNECT. The reset restarts the DAC's firmware, and a DAC can boot back at its default level (often 100 %). And the reset does not leave
  * the interfaces where they were: the kernel unbinds a driver that has no `pre_reset`/`post_reset` from its interface, usbfs is such a
  * driver, and the same ioctl then rebinds every interface to `snd-usb-audio` before it returns, so the card, streaming included, exists
- * again with the DAC at its power-up level. (Kernel sources and what window is left: B40-fix1-resultado.)
+ * again with the DAC at its power-up level. See PixelPlayerOSS/docs/engineering-notes.md#usb-reset-and-volume.
  *
  * The order here:
  *  1. the reset;

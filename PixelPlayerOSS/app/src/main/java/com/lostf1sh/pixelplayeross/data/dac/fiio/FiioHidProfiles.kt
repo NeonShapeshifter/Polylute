@@ -13,9 +13,8 @@ data class FiioSlot(val id: Int, val name: String, val writable: Boolean)
  *
  * Two flags, kept apart on purpose (B30):
  * - [upstreamVerified] mirrors WolfEQ's own `IsVerified`: only the K13 R2R is verified *there*. It is provenance.
- * - [verified] means verified **by this app on real hardware**, and it is what the write gate asks. It is false for every row:
- *   until a reviewer's device run passes (B30-resultado, runbook), a flag copied from another project must not let this app
- *   write a DAC's persistent configuration.
+ * - [verified] records verification **by this app on real hardware**. The write gate checks this separately from the upstream
+ *   flag and handles consent for supported unverified profiles. See PixelPlayerOSS/docs/engineering-notes.md#dac-eq-profiles.
  *
  * [slots] and [appSlotId] exist only where this app is prepared to write (the Melody); a row without them is read-only whatever
  * else is switched on.

@@ -16,7 +16,7 @@ import org.jaudiotagger.tag.id3.ID3v24Tag
  * B57-fix1 5.1. Writes a WAV file's tags **without touching the audio**.
  *
  * Why not JAudioTagger: its WAV writer moves the `data` chunk when it re-lays the file out, and on a file with a `LIST` chunk before `data` and an `id3 ` chunk
- * after it (a common layout) it **changed the audio bytes** (B57-fix1 probe, `analysis/audit-2026-09-27/batches/B57-fix1-gates/`). Its generic WAV tag also cannot
+ * after it (a common layout) it **changed the audio bytes** (see PixelPlayerOSS/docs/engineering-notes.md#wav-metadata-editing). Its generic WAV tag also cannot
  * delete the lyrics or the disc number, so every WAV edit was refused. TagLib handles WAV on a phone, but it cannot run in a JVM test.
  *
  * This writer is safe by construction: the output is the input chunk by chunk, byte for byte (every chunk but the tags), the tags are the only thing that is
