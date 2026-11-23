@@ -12,35 +12,55 @@ import com.lostf1sh.pixelplayeross.data.model.SearchResultItem
  * left in whatever order the queries happened to return, so an exact title match could sit below
  * five rows that merely mentioned the word.
  *
- * The ranks answer one question each: is this *the* thing, does it start with it, does a word in it
- * start with it, or does it merely contain it. A match on the thing's own name outranks a match on
- * whoever made it, because you search for a record before you search for its artist. Equal ranks
- * fall back to the alphabetical order the list already had.
+ * The ranks answer one question each: is this *the* thing, does it start with it as a whole word, is it a whole word somewhere in
+ * it, does it start with it, does a word in it start with it, or does it merely contain it. A whole word beats part of a word (owner
+ * 11-23: "danz" is Danz CM before Danza Kuduro). A match on the thing's own name outranks a match on whoever made it, because you
+ * search for a record before you search for its artist. Equal ranks fall back to the alphabetical order the list already had.
  */
 object SearchRelevance {
 
     /** The text is the query. */
     const val EXACT = 0
 
-    /** The text starts with the query. */
-    const val PREFIX = 1
+    /** The text starts with the query as a whole word ("Danz CM" for "danz", "21 Guns" for "21"). */
+    const val LEADING_WORD = 1
 
-    /** A word inside the text starts with the query ("Bank Account" for "account"). */
-    const val WORD_PREFIX = 2
+    /** The query is a whole word later in the text ("Crazy in Love" for "love", "Besame 21 Mucho" for "21"). */
+    const val WHOLE_WORD = 2
+
+    /** The text starts with the query, inside its first word ("Danza Kuduro" for "danz"). */
+    const val PREFIX = 3
+
+    /** A later word starts with the query ("Bank Account" for "acc"). */
+    const val WORD_PREFIX = 4
 
     /** The query appears somewhere inside the text. */
-    const val CONTAINS = 3
+    const val CONTAINS = 5
 
     /** No match at all — a row kept only because another field matched. */
-    const val NO_MATCH = 4
+    const val NO_MATCH = 6
 
     /**
      * Ranks a match on the result's *secondary* text (who made it) below every match on the primary
      * text, so that the two scales cannot interleave.
      */
-    const val SECONDARY_OFFSET = 5
+    const val SECONDARY_OFFSET = 7
 
-    private val WORD_SEPARATOR = Regex("[^\\p{L}\\p{N}]+")
+    private fun Char.isWordChar() = isLetterOrDigit()
+
+    /** Whether [needle] occurs in [haystack] at an index > 0 that starts a word, and (when [wholeWord]) also ends one. */
+    private fun occursAtWordStart(haystack: String, needle: String, wholeWord: Boolean): Boolean {
+        var from = 1
+        while (true) {
+            val at = haystack.indexOf(needle, from)
+            if (at < 0) return false
+            val startsWord = !haystack[at - 1].isWordChar()
+            val end = at + needle.length
+            val endsWord = end == haystack.length || !haystack[end].isWordChar()
+            if (startsWord && (!wholeWord || endsWord)) return true
+            from = at + 1
+        }
+    }
 
     /** How well [text] answers [query]. See the rank constants. */
     fun rank(text: String?, query: String): Int {
@@ -49,15 +69,17 @@ object SearchRelevance {
         if (haystack.isEmpty() || needle.isEmpty()) return NO_MATCH
         return when {
             haystack == needle -> EXACT
+            haystack.startsWith(needle) && !haystack[needle.length].isWordChar() -> LEADING_WORD
+            occursAtWordStart(haystack, needle, wholeWord = true) -> WHOLE_WORD
             haystack.startsWith(needle) -> PREFIX
-            haystack.split(WORD_SEPARATOR).any { it.startsWith(needle) } -> WORD_PREFIX
+            occursAtWordStart(haystack, needle, wholeWord = false) -> WORD_PREFIX
             haystack.contains(needle) -> CONTAINS
             else -> NO_MATCH
         }
     }
 }
 
-/** The order the sections read in when nothing distinguishes them: songs, albums, artists, lists. */
+/** The order of the related results and the tie-break order for best matches. */
 val DEFAULT_SECTION_ORDER = listOf(
     SearchFilterType.SONGS,
     SearchFilterType.ALBUMS,
@@ -66,31 +88,67 @@ val DEFAULT_SECTION_ORDER = listOf(
     SearchFilterType.PLAYLISTS
 )
 
-/**
- * The sections of a search answer, best first.
- *
- * The section holding the strongest match leads, so a query that names an album exactly reads
- * before a pile of songs that merely credit one of its artists — which no fixed order can do, since
- * the same query can be an album for one person and an artist for the next. Sections that tie keep
- * [DEFAULT_SECTION_ORDER]; a section with nothing in it is not listed at all.
- */
-fun searchSectionOrder(
-    grouped: Map<SearchFilterType, List<SearchResultItem>>,
-    query: String
-): List<SearchFilterType> = DEFAULT_SECTION_ORDER
-    .mapNotNull { filterType ->
-        val items = grouped[filterType]
-        if (items.isNullOrEmpty()) null
-        else filterType to items.minOf { item -> item.relevanceRank(query) }
-    }
-    .sortedBy { (_, bestRank) -> bestRank }
-    .map { (filterType, _) -> filterType }
+internal const val BEST_MATCHES_LIMIT = 5
 
-/**
- * Which block of the list a row belongs to. Rows are grouped by this so that each type is
- * contiguous; the sections themselves are then ordered by [searchSectionOrder], and this same order
- * decides between two sections whose best match is equally good.
- */
+internal data class SearchResultsLayout(
+    val best: List<SearchResultItem>,
+    val sections: List<Pair<SearchFilterType, List<SearchResultItem>>>
+)
+
+internal fun searchResultsLayout(
+    results: List<SearchResultItem>,
+    query: String,
+    selectedFilter: SearchFilterType
+): SearchResultsLayout {
+    val uniqueResults = results.distinctBy(SearchResultItem::searchRowKey)
+    val grouped = uniqueResults.groupBy(SearchResultItem::filterType)
+    val best = if (selectedFilter == SearchFilterType.ALL) {
+        uniqueResults
+            .mapNotNull { item ->
+                val rank = SearchRelevance.rank(item.primaryText, query)
+                if (rank < SearchRelevance.NO_MATCH) item to rank else null
+            }
+            .sortedWith(
+                compareBy<Pair<SearchResultItem, Int>> { (_, rank) -> rank }
+                    .thenBy { (item, _) -> DEFAULT_SECTION_ORDER.indexOf(item.filterType) }
+                    .thenBy { (item, _) -> item.primaryText.lowercase() }
+            )
+            .take(BEST_MATCHES_LIMIT)
+            .map { (item, _) -> item }
+    } else {
+        emptyList()
+    }
+
+    val sectionOrder = if (selectedFilter == SearchFilterType.ALL) DEFAULT_SECTION_ORDER else listOf(selectedFilter)
+    val featured = best.toSet()
+    val sections = sectionOrder.mapNotNull { type ->
+        val rows = grouped[type].orEmpty().filterNot { it in featured }
+            .sortedWith(compareBy<SearchResultItem> { it.relevanceRank(query) }.thenBy { it.primaryText.lowercase() })
+        if (rows.isEmpty()) null else type to rows
+    }
+    return SearchResultsLayout(best, sections)
+}
+
+internal val SearchResultItem.filterType: SearchFilterType
+    get() = when (this) {
+        is SearchResultItem.SongItem -> SearchFilterType.SONGS
+        is SearchResultItem.AlbumItem -> SearchFilterType.ALBUMS
+        is SearchResultItem.ArtistItem -> SearchFilterType.ARTISTS
+        is SearchResultItem.ComposerItem -> SearchFilterType.COMPOSERS
+        is SearchResultItem.PlaylistItem -> SearchFilterType.PLAYLISTS
+    }
+
+/** A row keeps its key when it moves between the best matches and its section. */
+internal val SearchResultItem.searchRowKey: String
+    get() = when (this) {
+        is SearchResultItem.SongItem -> "song_${song.id}"
+        is SearchResultItem.AlbumItem -> "album_${album.id}"
+        is SearchResultItem.ArtistItem -> "artist_${artist.id}"
+        is SearchResultItem.ComposerItem -> "composer_$name"
+        is SearchResultItem.PlaylistItem -> "playlist_${playlist.id}"
+    }
+
+/** Contiguous groups in the search state published by SearchStateHolder. */
 fun SearchResultItem.typeOrder(): Int = when (this) {
     is SearchResultItem.SongItem -> 0
     is SearchResultItem.AlbumItem -> 1

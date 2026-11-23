@@ -43,17 +43,23 @@ sealed interface FiioSetAck {
 /** B59 (#53): the band SET's data, `[i, gain hi, gain lo, freq hi, freq lo, q hi, q lo, type]`, compared field by field. */
 internal object FiioBandAck {
     private const val BAND_LENGTH = 8
-    private val EXACT_FIELDS = intArrayOf(0, 1, 2, 3, 4, 7)
+    // band data: [index, gain hi, gain lo, freq hi, freq lo, Q hi, Q lo, type]; gain (1, 2) and Q (5, 6) are compared on their own
+    private val EXACT_FIELDS = intArrayOf(0, 3, 4, 7)
+
+    /** The gain of a band's data in tenths of a dB (signed). */
+    fun gain(data: ByteArray): Int = (((data[1].toInt() and 0xFF) shl 8) or (data[2].toInt() and 0xFF)).toShort().toInt()
 
     /** The Q of a band's data in hundredths. */
     fun q(data: ByteArray): Int = ((data[5].toInt() and 0xFF) shl 8) or (data[6].toInt() and 0xFF)
 
-    /** [reported] is [sent] but for a Q that differs by one hundredth either way: index, gain, frequency and type are the same bytes. */
+    /** [reported] is [sent] but for a Q within the DAC's rounding ([DacEqBand.qRoundingHundredths]) either way: index, gain, frequency and type are the same bytes. */
     fun differsOnlyByQRounding(sent: ByteArray, reported: ByteArray): Boolean {
         if (sent.size != BAND_LENGTH || reported.size != BAND_LENGTH) return false
         if (EXACT_FIELDS.any { sent[it] != reported[it] }) return false
         val off = kotlin.math.abs(q(sent) - q(reported))
-        return off in 1..DacEqBand.Q_ROUNDING_HUNDREDTHS
+        val gainOk = DacEqBand.gainRoundedSafely(stored = gain(reported), sent = gain(sent))
+        if (!gainOk || off > DacEqBand.qRoundingHundredths(q(sent))) return false
+        return off != 0 || gain(reported) != gain(sent)
     }
 }
 

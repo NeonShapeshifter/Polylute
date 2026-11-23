@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
  * for, and nothing else. Every other condition still holds, the reviewer's steps stay the reviewer's, and nothing automatic is let in.
  */
 class DacEqConsentGateTest {
-    private val melody = FiioHidProfiles.all.single { it.id == "snowsky-melody" }
+    private val melody = unverifiedMelody // B67: the pre-11-22 row (unverified, sense unconfirmed): these tests pin those paths
     private val slot = 0xA2
     private val dirs = mutableListOf<File>()
 
@@ -109,7 +109,7 @@ class DacEqConsentGateTest {
         check(runBlocking { writer(dac, store, override = true, consent = false).discoverSlot(att) } is DacEqWriteResult.Done)
         dac.written.clear()
         val listener = writer(dac, store, override = false, consent = true)
-        // a cut: the sense of the global gain is unconfirmed on every row, so a curve that rises above 0 dB is refused (and the next test says so)
+        // a cut: the sense of the global gain is unconfirmed on this row, so a curve that rises above 0 dB is refused (and the next test says so)
         val result = runBlocking { listener.applyCurve(att, curve(3 to -2.0), WriteInitiator.USER_ACTION) }
         assertThat(result).isInstanceOf(DacEqWriteResult.Done::class.java)
         val read = FiioEqReader.read(FiioHidSession(dac, melody))

@@ -2717,12 +2717,14 @@ interface MusicDao {
     suspend fun getArtistsForSongList(songId: Long): List<ArtistEntity>
 
     /**
-     * Get all songs for a specific artist using the junction table.
+     * Get all songs for a specific artist: the songs credited to them (the junction table) **and** every song of an album they are the
+     * album artist of. Owner 11-23: Danz CM's retrospective is 24 songs with album artist "Danz CM", 16 of them credited to "Computer
+     * Magic" (her old name); the artist page showed the album with 8. A song is listed once, whichever way it matches.
      */
     @Query("""
         SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
-        INNER JOIN song_artist_cross_ref ON songs.id = song_artist_cross_ref.song_id
-        WHERE song_artist_cross_ref.artist_id = :artistId
+        WHERE songs.id IN (SELECT song_id FROM song_artist_cross_ref WHERE artist_id = :artistId)
+           OR songs.album_artist_id = :artistId
         ORDER BY songs.title ASC
     """)
     fun getSongsForArtist(artistId: Long): Flow<List<SongEntity>>
@@ -2741,12 +2743,12 @@ interface MusicDao {
     fun getSongsForArtistByAlbumArtist(artistId: Long): Flow<List<SongEntity>>
 
     /**
-     * Get all songs for a specific artist (one-shot).
+     * Get all songs for a specific artist (one-shot): the same songs as [getSongsForArtist].
      */
     @Query("""
         SELECT """ + SONG_LIST_PROJECTION + """ FROM songs
-        INNER JOIN song_artist_cross_ref ON songs.id = song_artist_cross_ref.song_id
-        WHERE song_artist_cross_ref.artist_id = :artistId
+        WHERE songs.id IN (SELECT song_id FROM song_artist_cross_ref WHERE artist_id = :artistId)
+           OR songs.album_artist_id = :artistId
         ORDER BY songs.title ASC
     """)
     suspend fun getSongsForArtistList(artistId: Long): List<SongEntity>

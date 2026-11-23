@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.musicinfo
 
+import com.lostf1sh.pixelplayeross.data.model.GenreNames
 import com.lostf1sh.pixelplayeross.data.network.PriorityRequestGate
 import com.lostf1sh.pixelplayeross.data.network.RequestPriority
 import com.lostf1sh.pixelplayeross.data.network.SourceWait
@@ -22,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -249,8 +251,9 @@ class MusicBrainzClient(
             if (currentCoroutineContext()[MusicInfoRefresh] == null) synchronized(details) {
                 details[key]?.let { return@request it }
             }
+            val includes = if (kind == "genre") "url-rels" else "annotation+url-rels"
             val url = root.newBuilder().addPathSegment(kind).addPathSegment(mbid)
-                .addQueryParameter("inc", "annotation+url-rels").addQueryParameter("fmt", "json").build()
+                .addQueryParameter("inc", includes).addQueryParameter("fmt", "json").build()
             http.json(url)?.also { synchronized(details) { details[key] = it } }
         }
     }
@@ -375,6 +378,8 @@ data class CommonsImage(
     val sizeBytes: Long? = null,
 )
 
+internal data class WikidataGenre(val id: String, val musicBrainzId: String?)
+
 class WikidataClient(private val http: MusicInfoHttp, root: String = "https://www.wikidata.org/w/api.php") {
     private val root = root.toHttpUrl()
 
@@ -385,6 +390,50 @@ class WikidataClient(private val http: MusicInfoHttp, root: String = "https://ww
             .addQueryParameter("limit", "5").addQueryParameter("format", "json").build()
         return parseMusicSearch(http.json(url), name, albumArtist)
     }
+
+    /**
+     * Search labels and aliases in the app's language and in English. A namesake with no
+     * music-genre classification is ignored. Multiple exact music genres are ambiguous.
+     */
+    internal suspend fun findGenre(name: String, languages: List<String>): WikidataGenre? {
+        val ids = languages.flatMap { language ->
+            val url = root.newBuilder().addQueryParameter("action", "wbsearchentities").addQueryParameter("search", name)
+                .addQueryParameter("language", language).addQueryParameter("type", "item")
+                .addQueryParameter("limit", "15").addQueryParameter("format", "json").build()
+            val results = http.json(url)?.optJSONArray("search")
+                ?: throw IOException("Wikidata genre search returned no result list")
+            results.objects().map { it.optString("id") }.filter { qidPattern.matches(it) }.toList()
+        }.distinct()
+        if (ids.isEmpty()) return null
+        val url = root.newBuilder().addQueryParameter("action", "wbgetentities")
+            .addQueryParameter("ids", ids.joinToString("|")).addQueryParameter("props", "labels|aliases|claims")
+            .addQueryParameter("languages", languages.joinToString("|")).addQueryParameter("format", "json").build()
+        val entities = http.json(url)?.optJSONObject("entities")
+            ?: throw IOException("Wikidata genre search returned no entities")
+        val key = GenreNames.key(name)
+        return ids.mapNotNull { id ->
+            val entity = entities.optJSONObject(id) ?: return@mapNotNull null
+            val matches = languages.any { language ->
+                entity.optJSONObject("labels")?.optJSONObject(language)?.optString("value")?.let(GenreNames::key) == key ||
+                    entity.optJSONObject("aliases")?.optJSONArray(language).objects().any { GenreNames.key(it.optString("value")) == key }
+            }
+            val claims = entity.optJSONObject("claims")
+            val typed = listOf("P31", "P279").any { property ->
+                claims.values(property).any { it.optJSONObject("value")?.optString("id") == "Q188451" }
+            }
+            if (!matches || !typed) return@mapNotNull null
+            val mbid = claims.values("P8052").map { it.optString("value") }.filter { mbidPattern.matches(it) }.distinct().singleOrNull()
+            WikidataGenre(id, mbid)
+        }.singleOrNull()
+    }
+
+    private fun JSONObject?.values(property: String): Sequence<JSONObject> =
+        this?.optJSONArray(property).objects()
+            .filter { it.optString("rank") != "deprecated" }
+            .mapNotNull { it.optJSONObject("mainsnak")?.optJSONObject("datavalue") }
+
+    private fun JSONArray?.objects(): Sequence<JSONObject> =
+        if (this == null) emptySequence() else (0 until length()).asSequence().mapNotNull(::optJSONObject)
 
     /** The Commons file name of the item's image (property P18), or null. */
     suspend fun imageFile(qid: String): String? {
@@ -402,6 +451,9 @@ class WikidataClient(private val http: MusicInfoHttp, root: String = "https://ww
     }
 
     companion object {
+        private val qidPattern = Regex("Q[0-9]+")
+        private val mbidPattern = Regex("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
+
         internal fun parseMusicSearch(json: JSONObject?, name: String, albumArtist: String?): String? {
             val results = json?.optJSONArray("search") ?: return null
             val wanted = MusicInfoMatching.normalize(name)
@@ -495,9 +547,16 @@ class CommonsClient(private val http: MusicInfoHttp, root: String = "https://com
 data class WikiSummary(val language: String, val title: String, val extract: String, val pageUrl: String)
 
 class WikipediaClient(private val http: MusicInfoHttp, private val rootFor: (String) -> String = { lang -> "https://$lang.wikipedia.org/api/rest_v1/page/summary/" }) {
-    suspend fun summary(language: String, title: String): WikiSummary? {
+    suspend fun summary(language: String, title: String, expectedItem: String? = null): WikiSummary? {
         val url = rootFor(language).toHttpUrl().newBuilder().addPathSegment(title.replace(' ', '_')).build()
-        return parseSummary(http.json(url), language)
+        val response = http.json(url)
+        if (expectedItem != null) {
+            if (response?.optString("wikibase_item") != expectedItem) return null
+            val page = response.optJSONObject("content_urls")?.optJSONObject("desktop")
+                ?.optString("page")?.toHttpUrlOrNull()
+            if (page?.host != "$language.wikipedia.org") return null
+        }
+        return parseSummary(response, language)
     }
 
     companion object {

@@ -24,6 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -31,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -39,7 +43,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavHostController
 import com.lostf1sh.pixelplayeross.R
+import com.lostf1sh.pixelplayeross.data.model.Genre
 import com.lostf1sh.pixelplayeross.data.model.Song
+import com.lostf1sh.pixelplayeross.data.musicinfo.Description
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreArtist
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.weeklyFeaturedArtist
+import com.lostf1sh.pixelplayeross.ui.ds.DapIconKind
+import com.lostf1sh.pixelplayeross.utils.formatListeningDurationCompact
+import java.time.LocalDate
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.lostf1sh.pixelplayeross.data.stats.ListenSource
 import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
 import com.lostf1sh.pixelplayeross.presentation.components.BackRowHeight
@@ -51,6 +64,7 @@ import com.lostf1sh.pixelplayeross.presentation.components.songTitleLabel
 import com.lostf1sh.pixelplayeross.presentation.navigation.navigateSafelyReplacing
 import com.lostf1sh.pixelplayeross.presentation.navigation.Screen
 import com.lostf1sh.pixelplayeross.presentation.stats.RowCover
+import com.lostf1sh.pixelplayeross.presentation.screens.search.components.chosenIcon
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailUiState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
@@ -70,15 +84,7 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-/**
- * A genre (B33-U4): a playlist-like page of its **songs only**. A header (the cover of the genre's biggest album behind its name, the counts line),
- * Play and Shuffle as the album and the playlist draw them, and then the songs, once each, ordered by title (then artist, then album:
- * [SourceOrder.genrePage]). There are no tabs and no sort: the albums and the artists of a genre are reached from a song's options ("Go to
- * album", "Go to artist") and from the Search screen's genre section.
- *
- * What is listed is what plays (B24): Play queues that list from its first song, a row starts from its own place in it, and Shuffle puts
- * random on top of the same list. The unknown genre also offers "Fill genres" (the quick fill) under the header, on that page only.
- */
+/** The genre's song list is also the exact queue used by Play, Shuffle and row taps. */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun GenreDetailScreen(
@@ -120,6 +126,29 @@ fun GenreDetailScreen(
             .replace("_", " ")
             .split(" ")
             .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } }
+    }
+    val today by produceState(LocalDate.now()) {
+        while (true) {
+            value = LocalDate.now()
+            delay(60_000)
+        }
+    }
+    val featured = remember(uiState.featuredCandidates, today) { weeklyFeaturedArtist(uiState.featuredCandidates, today) }
+    val featuredPhoto = featured?.let { artist ->
+        val storedArtist = allArtists.firstOrNull { it.id == artist.artistId }
+        val custom = storedArtist?.customImageUri?.takeIf(String::isNotBlank)
+        custom ?: key(artist.artistId, storedArtist?.imageUrl) {
+            val photo by remember(artist.artistId, storedArtist?.imageUrl) { viewModel.onlineInfo.featuredPhoto(artist) }
+                .collectAsStateWithLifecycle(initialValue = null)
+            photo
+        }
+    }
+    val descriptionName = uiState.genre?.name?.takeIf { uiState.songs.isNotEmpty() && !isUnknownGenreId(it) }
+    val description = descriptionName?.let { name ->
+        key(name) {
+            val about by remember(name) { viewModel.onlineInfo.description(name) }.collectAsStateWithLifecycle(initialValue = null)
+            about
+        }
     }
     val genreShuffleLabel = stringResource(R.string.presentation_batch_b_genre_shuffle_label, genreDisplayName)
     val source = remember(genreId) { ListenSource(ListenSourceKind.GENRE, genreId) }
@@ -171,6 +200,10 @@ fun GenreDetailScreen(
             navController.navigateSafelyReplacing(route = Screen.ArtistDetail.createRoute(artistId), patternToPop = Screen.ArtistDetail.route)
         },
         artistImages = artistImages,
+        chosenIcon = uiState.genre?.chosenIcon(customGenreIcons) ?: customGenreIcons[decodedGenreId],
+        featuredArtist = featured,
+        featuredPhoto = featuredPhoto,
+        description = description,
     )
 
     QuickFillDialog(
@@ -292,19 +325,23 @@ internal fun GenrePage(
     onOpenArtist: (Long) -> Unit = {},
     /** The top artists' pictures, by artist id. */
     artistImages: Map<Long, String?> = emptyMap(),
-    /** True opens on the full song list ("All songs") instead of the overview. */
-    startOnAllSongs: Boolean = false,
+    /** Default landing view. The alternate Artists and albums view is reachable from the menu. */
+    startOnAllSongs: Boolean = true,
     playback: LibraryPlaybackStates? = null,
     sourceRoute: String = Screen.GenreDetail.createRoute(state.genre?.id.orEmpty()),
+    chosenIcon: Int? = null,
+    featuredArtist: GenreArtist? = null,
+    featuredPhoto: String? = null,
+    description: Description? = null,
 ) {
-    // B56-5.1: the page is an overview (top artists, albums) and one row, "All songs (N)", opens the song list; Back from the list returns to the overview
     var showAllSongs by androidx.compose.runtime.saveable.rememberSaveable(state.genre?.id) { mutableStateOf(startOnAllSongs) }
     val playLabel = stringResource(R.string.presentation_batch_b_play_it)
     val shuffleLabel = stringResource(R.string.shortcut_shuffle_short)
     val showing = state.songs.isNotEmpty()
-    val coverUri = state.genre?.imagePath ?: remember(state.albums) {
-        state.albums.filter { !it.artUri.isNullOrBlank() }.maxByOrNull { it.songCount }?.artUri
-    }
+    val genre = (state.genre ?: Genre(Genre.idFor(title), title)).copy(
+        name = title,
+        albumCoverUris = state.artwork,
+    )
     val listState = rememberLazyListState()
     val pendingLocate by com.lostf1sh.pixelplayeross.presentation.viewmodel.SourceLocateRequests.request.collectAsStateWithLifecycle()
     LaunchedEffect(pendingLocate?.token) { if (pendingLocate?.route == sourceRoute) showAllSongs = true }
@@ -314,7 +351,17 @@ internal fun GenrePage(
     val density = LocalDensity.current
     val barHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + BackRowHeight
     val barPx = with(density) { barHeight.toPx() }
-    DapBackScaffold(Modifier.fillMaxSize(), onBack = { if (showAllSongs && !startOnAllSongs) showAllSongs = false else onBack() }, overHeaderArt = true) {
+    val scope = rememberCoroutineScope()
+    val showSongs: (Boolean) -> Unit = {
+        showAllSongs = it
+        scope.launch { listState.scrollToItem(0) }
+    }
+    DapBackScaffold(
+        Modifier.fillMaxSize(),
+        onBack = { if (showAllSongs != startOnAllSongs) showSongs(startOnAllSongs) else onBack() },
+        overHeaderArt = true,
+        headerBackAction = { label, back -> GenreDisc(DapIconKind.Chevron, label, back) },
+    ) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -322,13 +369,17 @@ internal fun GenrePage(
         ) {
             item(key = "header") {
                 GenreHeader(
-                    title = title,
+                    genre = genre,
                     counts = if (showing) genreCountsLine(state) else null,
-                    coverUri = coverUri,
+                    chosenIcon = chosenIcon,
+                    featuredArtist = featuredArtist,
+                    photo = featuredPhoto,
+                    description = description,
                     playLabel = playLabel,
                     shuffleLabel = shuffleLabel,
                     onPlay = onPlay,
                     onShuffle = onShuffle,
+                    onArtist = onOpenArtist,
                 )
             }
             when {
@@ -370,7 +421,7 @@ internal fun GenrePage(
                             artistImages = artistImages,
                             onOpenArtist = onOpenArtist,
                             onOpenAlbum = onOpenAlbum,
-                            onAllSongs = { showAllSongs = true },
+                            onAllSongs = { showSongs(true) },
                         )
                     } else {
                         items(state.songs, key = { it.id }, contentType = { "song" }) { song ->
@@ -402,9 +453,18 @@ internal fun GenrePage(
                 .background(Dap.bar)
         )
         var imageMenu by remember { mutableStateOf(false) }
-        Box(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(horizontal = DapSpacing.Md, vertical = DapSpacing.Xs)) {
-            DapOverflowButton(onClick = { imageMenu = true })
+        Box(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)) {
+            GenreDisc(DapIconKind.More, stringResource(R.string.presentation_batch_b_more_options), { imageMenu = true })
             com.lostf1sh.pixelplayeross.ui.ds.DapMenu(expanded = imageMenu, onDismissRequest = { imageMenu = false }) {
+                if (showAllSongs && (state.albums.isNotEmpty() || state.artists.isNotEmpty())) {
+                    com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem(
+                        text = stringResource(R.string.genre_artists_and_albums),
+                        onClick = {
+                            imageMenu = false
+                            showSongs(false)
+                        },
+                    )
+                }
                 com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem(
                     text = stringResource(R.string.genre_change_image),
                     onClick = {
@@ -437,10 +497,10 @@ internal fun heroBarAlpha(firstVisibleIndex: Int, firstVisibleOffsetPx: Int, fir
     return ((firstVisibleOffsetPx - fadeStart) / barPx).coerceIn(0f, 1f)
 }
 
-/** "1,365 songs · 526 albums · 319 artists", the three counts of what the genre holds. */
+/** Library totals in the same localized duration format as Home. */
 @Composable
 private fun genreCountsLine(state: GenreDetailUiState): String = listOf(
     pluralStringResource(R.plurals.genre_count_songs, state.songs.size, state.songs.size),
     pluralStringResource(R.plurals.genre_count_albums, state.albums.size, state.albums.size),
-    pluralStringResource(R.plurals.genre_count_artists, state.artists.size, state.artists.size),
+    formatListeningDurationCompact(remember(state.songs) { state.songs.sumOf(Song::duration) }, LocalResources.current),
 ).joinToString(" · ")

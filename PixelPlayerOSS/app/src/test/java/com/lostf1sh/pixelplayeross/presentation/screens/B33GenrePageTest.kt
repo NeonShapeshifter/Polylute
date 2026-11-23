@@ -1,5 +1,8 @@
 package com.lostf1sh.pixelplayeross.presentation.screens
 
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.emptyGenreImagery
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.offlineGenreInfo
+
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AColor
@@ -127,7 +130,6 @@ open class B33GenrePageTest {
                             title = title, state = state, currentSongId = currentSongId, isUnknownGenre = isUnknown,
                             onBack = { calls += "back" }, onRetry = { calls += "retry" }, onPlay = { calls += "play" }, onShuffle = { calls += "shuffle" },
                             onQuickFill = { calls += "quickFill" }, onPlaySong = { played += it.id }, onMoreSong = { calls += "more:${it.id}" },
-                            // B56-5.1: the song list is behind the page's "All songs (N)" row now; these tests are about that list
                             startOnAllSongs = true,
                         )
                     }
@@ -145,14 +147,24 @@ open class B33GenrePageTest {
         .mapNotNull { node -> node.config.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text }
         .filter { it in all.map(Song::title) }
 
+    private fun assertSongOrder(all: List<Song>) {
+        val visible = titlesInOrder(all)
+        assertThat(visible).isNotEmpty()
+        assertThat(visible).isEqualTo(all.take(visible.size).map { it.title })
+        val list = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.IndexForKey)).fetchSemanticsNode()
+        val index = list.config[SemanticsProperties.IndexForKey]
+        assertThat(all.map { index(it.id) }).containsExactlyElementsIn((1..all.size).toList()).inOrder()
+    }
+
     // ── the page ─────────────────────────────────────────────────────────────────────────────────────
 
     @Test
     fun `the page shows songs only, once each, in title order`() {
         val all = songs()
         show("Hip Hop", stateFor(all))
-        assertThat(titlesInOrder(all)).isEqualTo(SourceOrder.genrePage(all).map { it.title })
-        assertThat(titlesInOrder(all)).containsExactly("(Irreversible)", "1-800-273-8255", "Alpha", "Beta", "Delta", "Gamma", "Zeta").inOrder()
+        val expected = SourceOrder.genrePage(all)
+        assertThat(expected.map { it.title }).containsExactly("(Irreversible)", "1-800-273-8255", "Alpha", "Beta", "Delta", "Gamma", "Zeta").inOrder()
+        assertSongOrder(expected)
         // a song's artist and album are not groups of the page: no album or artist headings, no list of either
         assertThat(compose.onAllNodesWithText("A Album").fetchSemanticsNodes()).isEmpty()
         assertThat(compose.onAllNodesWithText("Post Mortem").fetchSemanticsNodes()).isEmpty()
@@ -161,12 +173,14 @@ open class B33GenrePageTest {
     }
 
     @Test
-    fun `the header names the genre and says how many songs, albums and artists it holds`() {
+    fun `the header names the genre and shows song count, album count and total duration`() {
         val all = songs()
         show("Hip Hop", stateFor(all))
         compose.onNodeWithText("Hip Hop").assertIsDisplayed()
         compose.onNodeWithText(context.resources.getQuantityString(R.plurals.genre_count_songs, 7, 7), substring = true).assertIsDisplayed()
         compose.onNodeWithText(context.resources.getQuantityString(R.plurals.genre_count_albums, 6, 6), substring = true).assertIsDisplayed()
+        val duration = com.lostf1sh.pixelplayeross.utils.formatListeningDurationCompact(all.sumOf(Song::duration), context.resources)
+        compose.onNodeWithText(duration, substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription(s(R.string.presentation_batch_b_play_it)).assertIsDisplayed()
         compose.onNodeWithContentDescription(s(R.string.shortcut_shuffle_short)).assertIsDisplayed()
     }
@@ -188,6 +202,8 @@ open class B33GenrePageTest {
         show("Hip Hop", stateFor(songs()))
         compose.onNodeWithContentDescription(s(R.string.presentation_batch_b_play_it)).performClick()
         compose.onNodeWithContentDescription(s(R.string.shortcut_shuffle_short)).performClick()
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            .performScrollToNode(androidx.compose.ui.test.hasText("Gamma"))
         compose.onNodeWithText("Gamma").performClick()
         assertThat(calls).containsExactly("play", "shuffle").inOrder()
         assertThat(played).containsExactly("5")
@@ -200,7 +216,6 @@ open class B33GenrePageTest {
         compose.onNodeWithText(s(R.string.genre_quick_fill)).performClick()
         assertThat(calls).containsExactly("quickFill")
         // under the header, above the first song
-        // with no cover the header is the title alone, below the Back chevron's row, never behind it
         val back = compose.onNodeWithContentDescription(s(R.string.auth_cd_back)).fetchSemanticsNode().boundsInRoot
         assertThat(compose.onNodeWithText("Unknown").fetchSemanticsNode().boundsInRoot.top).isAtLeast(back.bottom - 1f)
         val quick = compose.onNodeWithText(s(R.string.genre_quick_fill)).fetchSemanticsNode().boundsInRoot
@@ -241,7 +256,7 @@ open class B33GenrePageTest {
         every { repository.getGenres() } returns flowOf(listOf(hipHop))
         every { repository.getMusicByGenre("Hip Hop") } returns flowOf(all.shuffled(java.util.Random(5)))
         val viewModel = GenreDetailViewModel(
-            repository, androidx.lifecycle.SavedStateHandle(mapOf("genreId" to "hip_hop")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true),
+            repository, androidx.lifecycle.SavedStateHandle(mapOf("genreId" to "hip_hop")), TestDispatcherProvider(Dispatchers.Unconfined), io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true), emptyGenreImagery(), offlineGenreInfo(),
         )
         val queued = mutableListOf<List<Song>>()
         val firstSongs = mutableListOf<Song>()
@@ -275,12 +290,8 @@ open class B33GenrePageTest {
             }
         }
         compose.waitForIdle()
-        // B56-5.1: the page is an overview now; the list this test is about opens from its "All songs (N)" row
-        compose.onNode(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).performScrollToNode(androidx.compose.ui.test.hasTestTag(GenreOverviewTags.AllSongs))
-        compose.onNodeWithTag(GenreOverviewTags.AllSongs).performClick()
-        compose.waitForIdle()
         val expected = SourceOrder.genrePage(all)
-        assertThat(titlesInOrder(all)).isEqualTo(expected.map { it.title })
+        assertSongOrder(expected)
         compose.onNodeWithContentDescription(s(R.string.presentation_batch_b_play_it)).performClick()
         compose.onNodeWithContentDescription(s(R.string.shortcut_shuffle_short)).performClick()
         assertThat(queued.single()).isEqualTo(expected)

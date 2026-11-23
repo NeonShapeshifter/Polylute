@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0-rc.3
+
+- **DAC EQ.** The Snowsky Melody's pre-gain direction is now verified on hardware. The app accounts for the DAC's rounding when it checks the saved filters.
+- **USB audio sharing.** Choose when other apps can use the DAC. In App mode, sharing can also work during Purity. Polylute returns the DAC to Android when playback service stops.
+- **Safety Max.** If a volume increase is blocked while another app is in front, Polylute can show a notice and offer to confirm a higher limit.
+- **Media controllers.** Library browsing is limited to Polylute and authorized clients, including verified Android Auto and Google Assistant. Other media controllers retain playback controls.
+- **Search and genres.** Updated search results, genre collages and genre pages. When online descriptions are enabled, Polylute looks for an exact genre match and shows its Wikipedia credit.
+- **Installation.** Added download instructions, a checksum file for this release and updated privacy information.
+
 ## 1.4.0-rc.2
 
 - **Android Auto.** Browse the local library by playlists, albums, artists and songs, and start playback from the car.

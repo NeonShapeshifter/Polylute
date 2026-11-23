@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.presentation.navigation.LocalBackNavigationMode
 import com.lostf1sh.pixelplayeross.presentation.navigation.LocalDapBackNavigation
@@ -22,7 +23,7 @@ import com.lostf1sh.pixelplayeross.ui.theme.PixelPlayerStatusBarStyle
  * A screen must therefore **not** add the navigation bar's height to its own end padding: the last row rests at the viewport's end
  * plus the mini player's height ([com.lostf1sh.pixelplayeross.ui.ds.LocalDapPlayerShelfHeight]) and what air the screen wants.
  *
- * **Back is a plain chevron** (B33-U3): no box, no container, a 48 dp target at the same place on every screen.
+ * Back normally uses a plain chevron with a 48 dp target. The genre hero supplies its own disc via [headerBackAction].
  *
  * **[overHeaderArt]** is for a page whose header is a picture (Album, Artist, Genre): the picture runs to the top edge, under the status
  * bar, and the chevron floats over it where the row used to be, so there is no band across the top. The page then owns the status-bar
@@ -34,6 +35,7 @@ fun DapBackScaffold(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     overHeaderArt: Boolean = false,
+    headerBackAction: (@Composable (String, () -> Unit) -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     PixelPlayerStatusBarStyle(color = Dap.background)
@@ -49,7 +51,11 @@ fun DapBackScaffold(
                     .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
                 content = content,
             )
-            if (showsBack) {
+            if (showsBack && headerBackAction != null) {
+                Box(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp)) {
+                    headerBackAction(backLabel, goBack)
+                }
+            } else if (showsBack) {
                 DapOverlayAction(
                     kind = DapIconKind.Chevron,
                     contentDescription = backLabel,

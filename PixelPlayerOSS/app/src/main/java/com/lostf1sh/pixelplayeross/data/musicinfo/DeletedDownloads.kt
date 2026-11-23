@@ -212,7 +212,11 @@ class DeletedDownloads(private val file: File) {
                 "photo" -> listOf(MusicInfoCache.savedEntryId(MusicInfoCache.Kind.ARTIST_PHOTO, parts.drop(1).joinToString("|")))
                 "cover" -> listOf(MusicInfoCache.savedEntryId(MusicInfoCache.Kind.COVER, parts.drop(1).joinToString("|")))
                 "about" -> if (parts.size >= 4) {
-                    val kind = if (parts[1] == "true") AboutKind.ALBUM else AboutKind.ARTIST
+                    val kind = when (parts[1]) {
+                        "true" -> AboutKind.ALBUM
+                        "genre" -> AboutKind.GENRE
+                        else -> AboutKind.ARTIST
+                    }
                     (listOf<String?>(null, "und", "en", "es", "sv")).map {
                         MusicInfoCache.savedEntryId(MusicInfoCache.Kind.ABOUT, MusicInfoService.aboutKey(kind, parts[2], parts[3], it))
                     }

@@ -264,4 +264,33 @@ class B52BackendContractTest {
             assertThat(requests).isEqualTo(0)
         } finally { scopeJob.cancel() }
     }
+    @Test fun genreDescriptionsAreIncludedInDeleteDownloadedDataAndUndo() = runBlocking<Unit> {
+        val preferences = mockk<com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository>(relaxed = true)
+        every { preferences.musicInfoDescriptionsEnabledFlow } returns kotlinx.coroutines.flow.flowOf(true)
+        var requests = 0
+        val http = okhttp3.OkHttpClient.Builder().addInterceptor { requests++; throw java.io.IOException("Unexpected HTTP") }.build()
+        val scopeJob = SupervisorJob()
+        val info = MusicInfoRepository(context, preferences, http, db.musicDao(), CoroutineScope(scopeJob + Dispatchers.Default))
+        val kind = com.lostf1sh.pixelplayeross.data.musicinfo.AboutKind.GENRE
+        val key = com.lostf1sh.pixelplayeross.data.musicinfo.MusicInfoService.aboutKey(kind, "Rock", null, "en")
+        try {
+            info.cache.putText(MusicInfoCache.Kind.ABOUT, key,
+                """{"title":"Rock music","text":"Synthetic description","pageUrl":"https://en.wikipedia.org/wiki/Rock_music","language":"en"}""")
+            downloads = MusicInfoDownloads(context, db, music, lyrics, info)
+
+            assertThat(info.service.cachedAbout(kind, "Rock", null)?.text).isEqualTo("Synthetic description")
+            val pending = downloads.deleteAllDownloaded()
+            assertThat(pending.count).isEqualTo(1)
+            assertThat(info.service.cachedAbout(kind, "Rock", null)).isNull()
+            assertThat(downloads.undo(pending.token)).isTrue()
+            assertThat(info.service.cachedAbout(kind, "Rock", null)).isNotNull()
+
+            downloads.deleteAllDownloaded()
+            downloads.finishExpiredUndo(Long.MAX_VALUE)
+            assertThat(info.cache.get(MusicInfoCache.Kind.ABOUT, key)).isNull()
+            assertThat(info.service.fetchAbout(kind, "Rock")).isNull()
+            assertThat(requests).isEqualTo(0)
+        } finally { scopeJob.cancel() }
+    }
+
 }

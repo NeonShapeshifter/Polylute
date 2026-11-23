@@ -63,7 +63,7 @@ class B60DacEqPresetMarkerTest {
         }
 
         fun flat() = DacEqDefaults.flatBands(10)
-        /** A cut: the real row's pre-gain sense is unconfirmed, so a curve that rises above 0 dB is refused (PRE_GAIN_SENSE_UNCONFIRMED) whatever the DAC does. */
+        /** A cut: written when the real row's pre-gain sense was unconfirmed and a boost was refused (B67: the row is BOOST now; a cut still needs no pre-gain). */
         fun curve() = flat().mapIndexed { i, b -> if (i == 3) b.copy(gainTenthsDb = -30) else b }
         fun takeOver() = runBlocking { writer.takeOver(att, WriteInitiator.USER_ACTION) }
         fun apply(bands: List<DacEqBand> = flat()) = runBlocking { writer.applyCurve(att, bands, WriteInitiator.USER_ACTION) }

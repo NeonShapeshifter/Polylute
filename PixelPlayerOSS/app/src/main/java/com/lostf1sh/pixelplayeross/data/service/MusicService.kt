@@ -185,6 +185,28 @@ class MusicService : MediaLibraryService() {
     lateinit var engine: DualPlayerEngine
     @Inject
     lateinit var autoCatalog: AutoMediaCatalog
+
+    /**
+     * B69: the signing-certificate check behind [MediaBrowseCallerPolicy] (Android Auto is Android Auto only when Google signed it).
+     * Built from the package manager on first use; a test supplies its own.
+     */
+    internal var browseSignatureCheck: MediaBrowseCallerPolicy.SignatureCheck? = null
+
+    /** B69: who [controller] is for the library (see [MediaBrowseCallerPolicy]): browse or not, car or not. */
+    internal fun browseCaller(controller: MediaSession.ControllerInfo): MediaBrowseCallerPolicy.Caller {
+        val signatures = browseSignatureCheck
+            ?: MediaBrowseCallerPolicy.packageManagerCheck(packageManager).also { browseSignatureCheck = it }
+        return MediaBrowseCallerPolicy.classify(
+            packageName = controller.packageName,
+            uid = controller.uid,
+            trusted = controller.isTrusted,
+            appPackage = packageName,
+            appUid = android.os.Process.myUid(),
+            signatures = signatures,
+        )
+    }
+
+    private fun isAutoHost(controller: MediaSession.ControllerInfo): Boolean = AutoHostPolicy.isAuto(browseCaller(controller))
     @Inject
     lateinit var controller: TransitionController
     @Inject
@@ -709,15 +731,20 @@ class MusicService : MediaLibraryService() {
 
         // F-07: with the phone locked or the screen off, a volume raise the Safety Max ceiling
         // refuses reaches no readout, so it is said as a quiet notification instead.
+        // B69: with another app in front, also a short visible notice once per episode, and "Raise the limit" once it asks.
         val safetyRefusalNotifier = com.lostf1sh.pixelplayeross.data.volume.SafetyMaxRefusalNotifier(this)
         serviceScope.launch {
-            safetyVolumeController.get().refusals.collect { safetyRefusalNotifier.post() }
+            safetyVolumeController.get().refusals.collect { safetyRefusalNotifier.onRefusal(it) }
         }
 
-        // B39-A7: "Share the DAC with other apps" (Resonance only): the engine does not read preferences itself.
+        // B39-A7: "Share the DAC with other apps": the engine does not read preferences itself.
         serviceScope.launch {
-            userPreferencesRepository.dacShareEnabledFlow.collect { enabled -> engine.setDacShareEnabled(enabled) }
+            userPreferencesRepository.dacShareChoiceFlow.collect { choice -> engine.setDacShareChoice(choice) }
         }
+        // B68: who may share it also depends on Polylute's role (a normal app, or a DAP level), which Android confirms. Asked of the device
+        // when the share policy needs it (the switch on and Purity in force), never per song.
+        val productModeForDacShare = com.lostf1sh.pixelplayeross.dap.mode.ProductModeController(applicationContext)
+        engine.effectiveProductModeProvider = { productModeForDacShare.currentState().effectiveMode }
 
         // B40-F8: Resonance's peak limiter (Android route): the engine does not read preferences itself.
         serviceScope.launch {
@@ -1150,6 +1177,8 @@ class MusicService : MediaLibraryService() {
         }
         equalizerManager.release()
         externalAudioEffectSession.close()
+        // B68 (audit H5): this also gives the DAC back to Android (streaming, then control; in every mode), right after the players' USB
+        // stream is stopped: a stopped service holds nothing.
         engine.release()
         controller.release()
         serviceScope.cancel()
@@ -2403,7 +2432,7 @@ class MusicService : MediaLibraryService() {
 
             val buttons = buildMediaButtonPreferences(session)
             session.setMediaButtonPreferences(buttons)
-            session.connectedControllers.filter { AutoHostPolicy.isAuto(it.packageName, it.isTrusted) }.forEach { controller ->
+            session.connectedControllers.filter { isAutoHost(it) }.forEach { controller ->
                 session.setCustomLayout(controller, buttons.filter { it.sessionCommand?.customAction in AutoHostPolicy.commands })
             }
             lastAppliedMediaButtonSignature = latestSignature
@@ -2564,6 +2593,13 @@ class MusicService : MediaLibraryService() {
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
     }
 
+    /**
+     * B69: what a caller that may not browse gets for a request to resolve library ids: a failed future, which Media3 answers as an error
+     * (a Media3 controller) or ignores (a legacy controller's playFromMediaId / playFromSearch). The queue is left as it was.
+     */
+    private fun libraryRefused(controller: MediaSession.ControllerInfo): UnsupportedOperationException =
+        UnsupportedOperationException("Library ids are not resolved for ${controller.packageName}")
+
     private fun isAutoPlaybackRequest(items: List<MediaItem>): Boolean = items.singleOrNull()?.let {
         it.requestMetadata.searchQuery != null || AutoMediaId.parse(it.mediaId) != null
     } == true
@@ -2588,6 +2624,22 @@ class MusicService : MediaLibraryService() {
                 browser: MediaSession.ControllerInfo,
                 params: LibraryParams?,
             ): ListenableFuture<LibraryResult<MediaItem>> {
+                // B69: the library is for Android Auto, the car, the system and Polylute. A legacy MediaBrowserCompat that may not browse
+                // gets a root with nothing under it, so that it can still connect and control playback (see MediaBrowseCallerPolicy).
+                if (!browseCaller(browser).mayBrowse) {
+                    return Futures.immediateFuture(
+                        if (browser.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION) {
+                            LibraryResult.ofItem(
+                                MediaItem.Builder().setMediaId(MediaBrowseCallerPolicy.EMPTY_ROOT_ID).setMediaMetadata(
+                                    MediaMetadata.Builder().setIsBrowsable(false).setIsPlayable(false).build()
+                                ).build(),
+                                null,
+                            )
+                        } else {
+                            LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED)
+                        }
+                    )
+                }
                 if (params?.isRecent != true) {
                     val extras = Bundle().apply {
                         putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
@@ -2612,6 +2664,7 @@ class MusicService : MediaLibraryService() {
                 pageSize: Int,
                 params: LibraryParams?,
             ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = serviceScope.future {
+                if (!browseCaller(browser).mayBrowse) return@future LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED)
                 if (parentId != "polylute_recent") {
                     val items = autoCatalog.children(parentId, page, pageSize)
                         ?: return@future LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
@@ -2631,6 +2684,7 @@ class MusicService : MediaLibraryService() {
 
             override fun onGetItem(session: MediaLibrarySession, browser: MediaSession.ControllerInfo,
                 mediaId: String): ListenableFuture<LibraryResult<MediaItem>> = serviceScope.future {
+                if (!browseCaller(browser).mayBrowse) return@future LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED)
                 val item = autoCatalog.item(mediaId) ?: return@future LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
                 grantArtworkUriPermissions(browser.packageName, listOf(item))
                 LibraryResult.ofItem(item, null)
@@ -2638,6 +2692,7 @@ class MusicService : MediaLibraryService() {
 
             override fun onSearch(session: MediaLibrarySession, browser: MediaSession.ControllerInfo,
                 query: String, params: LibraryParams?): ListenableFuture<LibraryResult<Void>> = serviceScope.future {
+                if (!browseCaller(browser).mayBrowse) return@future LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED)
                 val items = autoCatalog.search(query, 0, AutoPage.MAX_SIZE)
                     ?: return@future LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
                 session.notifySearchResultChanged(browser, query, items.size, params)
@@ -2646,6 +2701,7 @@ class MusicService : MediaLibraryService() {
 
             override fun onGetSearchResult(session: MediaLibrarySession, browser: MediaSession.ControllerInfo,
                 query: String, page: Int, pageSize: Int, params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = serviceScope.future {
+                if (!browseCaller(browser).mayBrowse) return@future LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED)
                 val items = autoCatalog.search(query, page, pageSize)
                     ?: return@future LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
                 grantArtworkUriPermissions(browser.packageName, items)
@@ -2653,7 +2709,7 @@ class MusicService : MediaLibraryService() {
             }
 
             override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
-                if (AutoHostPolicy.isAuto(controller.packageName, controller.isTrusted)) {
+                if (isAutoHost(controller)) {
                     session.setCustomLayout(controller, buildMediaButtonPreferences(session).filter { it.sessionCommand?.customAction in AutoHostPolicy.commands })
                 }
             }
@@ -2673,8 +2729,23 @@ class MusicService : MediaLibraryService() {
                     hintKeys
                 )
                 val defaultResult = super.onConnect(session, controller)
+                // B69: a caller that may not browse connects for playback control only; the library commands are not handed to it.
+                val caller = browseCaller(controller)
+                val autoHost = AutoHostPolicy.isAuto(caller)
+                if (!caller.mayBrowse) {
+                    Timber.tag(TAG).w(
+                        "Library not offered to package=%s: browsing is for Android Auto, the car, the system and Polylute; playback control only",
+                        controllerPackage,
+                    )
+                }
                 val sessionCommandsBuilder = SessionCommands.Builder()
-                    .addSessionCommands(defaultResult.availableSessionCommands.commands)
+                    .addSessionCommands(
+                        MediaBrowseCallerPolicy.sessionCommands(
+                            base = defaultResult.availableSessionCommands,
+                            caller = caller,
+                            legacyBrowser = controller.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION,
+                        ).commands
+                    )
                 if (isPrivilegedController(controller)) {
                     val customCommands = listOf(
                         MusicNotificationProvider.CUSTOM_COMMAND_CLOSE_PLAYER,
@@ -2691,9 +2762,9 @@ class MusicService : MediaLibraryService() {
                         MusicNotificationProvider.CUSTOM_COMMAND_SET_SLEEP_TIMER_END_OF_TRACK,
                         MusicNotificationProvider.CUSTOM_COMMAND_CANCEL_SLEEP_TIMER,
                     ).map { SessionCommand(it, Bundle.EMPTY) }
-                    customCommands.filter { !AutoHostPolicy.isAuto(controller.packageName, controller.isTrusted) || it.customAction in AutoHostPolicy.commands }
+                    customCommands.filter { !autoHost || it.customAction in AutoHostPolicy.commands }
                         .forEach { sessionCommandsBuilder.add(it) }
-                } else if (AutoHostPolicy.isAuto(controller.packageName, controller.isTrusted)) {
+                } else if (autoHost) {
                     AutoHostPolicy.commands.forEach { sessionCommandsBuilder.add(SessionCommand(it, Bundle.EMPTY)) }
                 }
                 grantArtworkUriPermissions(
@@ -2752,7 +2823,7 @@ class MusicService : MediaLibraryService() {
             ): ListenableFuture<SessionResult> {
                 Timber.tag("MusicService")
                     .d("onCustomCommand received: ${customCommand.customAction}")
-                val autoHost = AutoHostPolicy.isAuto(controller.packageName, controller.isTrusted)
+                val autoHost = isAutoHost(controller)
                 if ((!isPrivilegedController(controller) && !autoHost) || (autoHost && customCommand.customAction !in AutoHostPolicy.commands)) {
                     Timber.tag(TAG).w(
                         "Rejected custom command %s from untrusted package=%s",
@@ -2855,6 +2926,8 @@ class MusicService : MediaLibraryService() {
                 mediaItems: MutableList<MediaItem>
             ): ListenableFuture<MutableList<MediaItem>> {
                 return serviceScope.future {
+                    // B69: library ids (a song's id, a source's id, a search) are resolved only for the callers that may browse.
+                    if (!browseCaller(controller).mayBrowse) throw libraryRefused(controller)
                     if (isAutoPlaybackRequest(mediaItems)) {
                         if (!playbackRestore.await()) throw java.util.concurrent.TimeoutException("Playback restore is still running")
                         resolveAutoPlaybackRequest(mediaItems, autoCatalog) {
@@ -2884,6 +2957,7 @@ class MusicService : MediaLibraryService() {
                 startPositionMs: Long
             ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
                 return serviceScope.future {
+                    if (!browseCaller(controller).mayBrowse) throw libraryRefused(controller)
                     if (isAutoPlaybackRequest(mediaItems)) {
                         if (!playbackRestore.await()) throw java.util.concurrent.TimeoutException("Playback restore is still running")
                         resolveAutoPlaybackRequest(mediaItems, autoCatalog) {

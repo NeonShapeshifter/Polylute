@@ -63,15 +63,16 @@ class DacEqSupportTest {
     }
 
     @Test
-    fun `no profile in the table is verified, so a release build writes nothing until a later batch decides`() {
-        // The gate refuses an unverified profile unless the override allows it; the override is inert in release (above).
-        assertThat(FiioHidProfiles.all.none { it.verified }).isTrue()
+    fun `only the Melody is verified, and a release build's stored override opens nothing for an unverified row`() {
+        // B67: was "no profile in the table is verified"; the Melody was proven on 2026-11-22. The gate still refuses an unverified profile
+        // unless the override allows it, and the override is inert in release (above): shown on the pre-11-22 Melody row.
+        assertThat(FiioHidProfiles.all.filter { it.verified }.map { it.id }).containsExactly("snowsky-melody")
         val switch = DacEqWriteSwitch(MemoryStore(value = true), debugBuild = false)
         val gate = DacEqWriteGate()
-        val state = FiioEqReader.read(FiioHidSession(FakeFiioDac(melody), melody))
+        val state = FiioEqReader.read(FiioHidSession(FakeFiioDac(unverifiedMelody), unverifiedMelody))
         val decision = gate.authorise(
             WriteRequest(WriteKind.CLOSE_EQ, WriteInitiator.USER_ACTION),
-            WriteContext(melody, "k", state, 10, null, overrideAllowsWrites = switch.isAllowed()),
+            WriteContext(unverifiedMelody, "k", state, 10, null, overrideAllowsWrites = switch.isAllowed()),
         )
         assertThat((decision as GateDecision.Refused).refusal).isEqualTo(GateRefusal.PROFILE_NOT_VERIFIED)
     }
@@ -249,8 +250,9 @@ class DacEqSupportTest {
         val debug = File("src/debug/java").walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
         val writers = (mainKotlin() + debug).filter { Regex("""DacEqPreGainSenseSwitch\.shared\([^)]*\)\s*\n?\s*\.set\(|switch\.set\(|senseSwitch\??\.set\(""").containsMatchIn(it.readText()) }
         assertThat(writers.map { it.name }).containsExactly("DacEqDebugCommands.kt")
-        // A release build ignores a stored answer (the unit test above); the profile rows all say "unconfirmed".
-        assertThat(FiioHidProfiles.all.map { it.preGainSense }.toSet()).containsExactly(PreGainSense.UNCONFIRMED)
+        // A release build ignores a stored answer (the unit test above); the profile rows say "unconfirmed", except the Melody's (B67: BOOST).
+        assertThat(FiioHidProfiles.all.associate { it.id to it.preGainSense }.filterValues { it != PreGainSense.UNCONFIRMED })
+            .containsExactly("snowsky-melody", PreGainSense.BOOST)
     }
 
     @Test

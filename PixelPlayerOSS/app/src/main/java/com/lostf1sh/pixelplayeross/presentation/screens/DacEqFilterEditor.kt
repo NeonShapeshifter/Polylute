@@ -42,7 +42,9 @@ import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.R
@@ -186,7 +188,8 @@ private fun DacEqNumberRow(
     signToggle: Boolean = false,
 ) {
     var editing by remember { mutableStateOf(false) }
-    var text by remember { mutableStateOf(startText) }
+    // Owner 11-22: a tap on a number selects all of it, so what is typed replaces it; leaving it untouched keeps the value
+    var text by remember { mutableStateOf(TextFieldValue(startText, TextRange(0, startText.length))) }
     var invalid by remember { mutableStateOf(false) }
     var gotFocus by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
@@ -208,7 +211,7 @@ private fun DacEqNumberRow(
                             .defaultMinSize(minWidth = 96.dp, minHeight = 48.dp)
                             .clip(RoundedCornerShape(DapRadius.Surface))
                             .clickable {
-                                text = startText
+                                text = TextFieldValue(startText, TextRange(0, startText.length))
                                 invalid = false
                                 gotFocus = false
                                 editing = true
@@ -224,7 +227,7 @@ private fun DacEqNumberRow(
                         value = text,
                         onValueChange = { typed ->
                             text = typed
-                            when (val parsed = parse(typed)) {
+                            when (val parsed = parse(typed.text)) {
                                 is DacEqTyped.Value -> { invalid = false; onValue(parsed.number) }
                                 DacEqTyped.Empty -> invalid = false
                                 else -> invalid = true
@@ -271,8 +274,9 @@ private fun DacEqNumberRow(
             DapTextAction(
                 label = stringResource(R.string.dac_eq_sign_toggle),
                 onClick = {
-                    text = if (text.startsWith("-")) text.removePrefix("-") else "-$text"
-                    when (val parsed = parse(text)) {
+                    val flipped = text.text.let { if (it.startsWith("-")) it.removePrefix("-") else "-$it" }
+                    text = TextFieldValue(flipped, TextRange(flipped.length))
+                    when (val parsed = parse(flipped)) {
                         is DacEqTyped.Value -> { invalid = false; onValue(parsed.number) }
                         DacEqTyped.Empty -> invalid = false
                         else -> invalid = true

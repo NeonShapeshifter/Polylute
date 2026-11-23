@@ -181,6 +181,18 @@ for fixture in diagnostics health escalation journal plateau start-lead; do
   "$sim_dir/b635-$fixture"
 done
 
+# B68 (audit H5): the service's stop gives the DAC back: after it, GETDRIVER reads snd-usb-audio on both interfaces (the real JNI
+# reattach/driver-name calls against a fake usbfs modelled on the kernel sources in B68-audit/sources), and what a killed process leaves.
+"$compiler" "${sim_cxx[@]}" -Wall -Wextra -Werror -Wno-unused-parameter "${sim_includes[@]}" \
+  "$repo/tools/b68-service-stop-test.cpp" -c -o "$sim_dir/b68-service-stop.o"
+"$compiler" "${sim_cxx[@]}" -w "${sim_includes[@]}" \
+  "$sim_dir/b68-service-stop.o" \
+  "$jni_dir/usb-audio-output.cpp" "$jni_dir/usb-pcm-packetizer.cpp" "$jni_dir/usb-pcm-convert.cpp" \
+  "$jni_dir/urb-quarantine.cpp" "$jni_dir/seek-barrier.cpp" "$jni_dir/usb-glitch.cpp" "$jni_dir/usb-second-ring.cpp" "$jni_dir/usb-journal.cpp" "$jni_dir/usb-cpu-watch.cpp" \
+  "$jni_dir/usb-payload-validation.cpp" \
+  -o "$sim_dir/b68-service-stop" -nostdlib++ "$libcxx_lib" "$libcxxabi_lib" -lpthread -lm -lz
+"$sim_dir/b68-service-stop"
+
 # B14-1 / audit A-03 (T-11): the one-shot feedback read at stream start against a strict fake usbfs with fault
 # injection (late completion after a cancel, foreign completions, device gone, full quarantine). `free` is wrapped
 # so freeing a URB the kernel still holds is a failure. B27-A2 (R-02) runs the same faults against the CONTINUOUS

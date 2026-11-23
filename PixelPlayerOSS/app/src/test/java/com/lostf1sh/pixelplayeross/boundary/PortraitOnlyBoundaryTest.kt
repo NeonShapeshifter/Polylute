@@ -27,13 +27,25 @@ class PortraitOnlyBoundaryTest {
     private fun activityDeclarations(): List<String> =
         manifest.split("<activity").drop(1).map { "<activity" + it.substringBefore(">") }
 
+    /**
+     * The one exception (owner 11-23): B69's Safety Max confirmation is a small translucent window opened over **another** app from a
+     * notification. It follows that app's orientation (`behind`), so a landscape video does not turn while it is open. It is not a face
+     * of the product, and it shows nothing that needs a layout of its own.
+     */
+    private val followsTheAppBehind = setOf(".presentation.safety.SafetyOverrideConfirmActivity")
+
     @Test
     fun `every activity the app declares is portrait`() {
         val declarations = activityDeclarations()
 
         assertThat(declarations).isNotEmpty()
         declarations.forEach { declaration ->
-            assertThat(declaration).contains("android:screenOrientation=\"portrait\"")
+            val name = declaration.substringAfter("android:name=\"").substringBefore("\"")
+            if (name in followsTheAppBehind) {
+                assertThat(declaration).contains("android:screenOrientation=\"behind\"")
+            } else {
+                assertThat(declaration).contains("android:screenOrientation=\"portrait\"")
+            }
         }
     }
 

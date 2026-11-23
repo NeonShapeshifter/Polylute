@@ -354,7 +354,7 @@ class DacEqScreenControllerTest {
     // ── Presets: a recognised pair, silently ─────────────────────────────────────────────────────────────
 
     private fun withPreset(): HeadphoneProfileState = DacEqPresetCatalog.save(
-        profiles(), "hp-tygr", DacEqPairDac("dac-melody", "snowsky-melody", "SNOWSKY Melody"), "Warm", -31,
+        profiles(), "hp-tygr", DacEqPairDac("dac-melody", "snowsky-melody", "SNOWSKY Melody"), "Warm", -40,  // whole dB (11-22: the Melody keeps the pre-gain in whole dB)
         bands(2 to 3.0).map { DacEqFilterDef.of(it) }, null, null, 5L,
     ) { "preset-1" }
 

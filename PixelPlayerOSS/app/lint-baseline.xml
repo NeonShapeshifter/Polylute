@@ -667,7 +667,7 @@
         errorLine1="distributionUrl=https\://services.gradle.org/distributions/gradle-9.6.1-bin.zip"
         errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/wrapper/gradle-wrapper.properties"
+            file="../gradle/wrapper/gradle-wrapper.properties"
             line="4"
             column="17"/>
     </issue>
@@ -678,7 +678,7 @@
         errorLine1="agp = &quot;9.3.1&quot;"
         errorLine2="      ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="3"
             column="7"/>
     </issue>
@@ -689,7 +689,7 @@
         errorLine1="agp = &quot;9.3.1&quot;"
         errorLine2="      ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="3"
             column="7"/>
     </issue>
@@ -700,7 +700,7 @@
         errorLine1="agp = &quot;9.3.1&quot;"
         errorLine2="      ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="3"
             column="7"/>
     </issue>
@@ -711,7 +711,7 @@
         errorLine1="animation = &quot;1.11.4&quot;"
         errorLine2="            ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="4"
             column="13"/>
     </issue>
@@ -722,7 +722,7 @@
         errorLine1="appcompat = &quot;1.7.1&quot;"
         errorLine2="            ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="5"
             column="13"/>
     </issue>
@@ -733,7 +733,7 @@
         errorLine1="composeUi = &quot;1.11.4&quot;"
         errorLine2="            ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="9"
             column="13"/>
     </issue>
@@ -744,7 +744,7 @@
         errorLine1="composeUi = &quot;1.11.4&quot;"
         errorLine2="            ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="9"
             column="13"/>
     </issue>
@@ -755,7 +755,7 @@
         errorLine1="composeUi = &quot;1.11.4&quot;"
         errorLine2="            ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="9"
             column="13"/>
     </issue>
@@ -766,7 +766,7 @@
         errorLine1="composeUi = &quot;1.11.4&quot;"
         errorLine2="            ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="9"
             column="13"/>
     </issue>
@@ -777,7 +777,7 @@
         errorLine1="composeUi = &quot;1.11.4&quot;"
         errorLine2="            ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="9"
             column="13"/>
     </issue>
@@ -788,7 +788,7 @@
         errorLine1="composeUi = &quot;1.11.4&quot;"
         errorLine2="            ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="9"
             column="13"/>
     </issue>
@@ -799,7 +799,7 @@
         errorLine1="foundation = &quot;1.11.4&quot;"
         errorLine2="             ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="13"
             column="14"/>
     </issue>
@@ -810,7 +810,7 @@
         errorLine1="coreKtx = &quot;1.19.0&quot;"
         errorLine2="          ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="20"
             column="11"/>
     </issue>
@@ -821,7 +821,7 @@
         errorLine1="composeBom = &quot;2026.06.01&quot;"
         errorLine2="             ~~~~~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="30"
             column="14"/>
     </issue>
@@ -832,7 +832,7 @@
         errorLine1="material3 = &quot;1.5.0-alpha25&quot;"
         errorLine2="            ~~~~~~~~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="32"
             column="13"/>
     </issue>
@@ -843,7 +843,7 @@
         errorLine1="media3Session = &quot;1.10.1&quot;"
         errorLine2="                ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="34"
             column="17"/>
     </issue>
@@ -854,7 +854,7 @@
         errorLine1="media3Session = &quot;1.10.1&quot;"
         errorLine2="                ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="34"
             column="17"/>
     </issue>
@@ -865,7 +865,7 @@
         errorLine1="media3Session = &quot;1.10.1&quot;"
         errorLine2="                ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="34"
             column="17"/>
     </issue>
@@ -876,7 +876,7 @@
         errorLine1="media3Session = &quot;1.10.1&quot;"
         errorLine2="                ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="34"
             column="17"/>
     </issue>
@@ -887,7 +887,7 @@
         errorLine1="media3Transformer = &quot;1.10.1&quot;"
         errorLine2="                    ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="35"
             column="21"/>
     </issue>
@@ -898,7 +898,7 @@
         errorLine1="navigationCompose = &quot;2.9.8&quot;"
         errorLine2="                    ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="36"
             column="21"/>
     </issue>
@@ -909,7 +909,7 @@
         errorLine1="paging = &quot;3.5.0&quot;"
         errorLine2="         ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="39"
             column="10"/>
     </issue>
@@ -920,7 +920,7 @@
         errorLine1="paging = &quot;3.5.0&quot;"
         errorLine2="         ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="39"
             column="10"/>
     </issue>
@@ -931,7 +931,7 @@
         errorLine1="paging = &quot;3.5.0&quot;"
         errorLine2="         ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="39"
             column="10"/>
     </issue>
@@ -942,7 +942,7 @@
         errorLine1="roomCompiler = &quot;2.8.4&quot;"
         errorLine2="               ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="40"
             column="16"/>
     </issue>
@@ -953,7 +953,7 @@
         errorLine1="roomKtx = &quot;2.8.4&quot;"
         errorLine2="          ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="41"
             column="11"/>
     </issue>
@@ -964,7 +964,7 @@
         errorLine1="roomRuntime = &quot;2.8.4&quot;"
         errorLine2="              ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="42"
             column="15"/>
     </issue>
@@ -975,7 +975,7 @@
         errorLine1="roomRuntime = &quot;2.8.4&quot;"
         errorLine2="              ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="42"
             column="15"/>
     </issue>
@@ -986,7 +986,7 @@
         errorLine1="roomRuntime = &quot;2.8.4&quot;"
         errorLine2="              ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="42"
             column="15"/>
     </issue>
@@ -997,7 +997,7 @@
         errorLine1="workRuntimeKtx = &quot;2.11.2&quot;"
         errorLine2="                 ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="62"
             column="18"/>
     </issue>
@@ -1008,7 +1008,7 @@
         errorLine1="workRuntimeKtx = &quot;2.11.2&quot;"
         errorLine2="                 ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="62"
             column="18"/>
     </issue>
@@ -1019,7 +1019,7 @@
         errorLine1="navigationRuntimeKtx = &quot;2.9.8&quot;"
         errorLine2="                       ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="71"
             column="24"/>
     </issue>
@@ -1030,7 +1030,7 @@
         errorLine1="benchmarkMacroJunit4 = &quot;1.4.1&quot;"
         errorLine2="                       ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="73"
             column="24"/>
     </issue>
@@ -1041,7 +1041,7 @@
         errorLine1="baselineprofile = &quot;1.5.0-beta01&quot;"
         errorLine2="                  ~~~~~~~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="74"
             column="19"/>
     </issue>
@@ -1074,7 +1074,7 @@
         errorLine1="kotlin = &quot;2.4.10&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="19"
             column="10"/>
     </issue>
@@ -1085,7 +1085,7 @@
         errorLine1="kotlin = &quot;2.4.10&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="19"
             column="10"/>
     </issue>
@@ -1096,7 +1096,7 @@
         errorLine1="kotlin = &quot;2.4.10&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="19"
             column="10"/>
     </issue>
@@ -1107,7 +1107,7 @@
         errorLine1="junitJupiter = &quot;6.1.2&quot;"
         errorLine2="               ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="23"
             column="16"/>
     </issue>
@@ -1118,7 +1118,7 @@
         errorLine1="junitJupiter = &quot;6.1.2&quot;"
         errorLine2="               ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="23"
             column="16"/>
     </issue>
@@ -1129,7 +1129,7 @@
         errorLine1="junitJupiter = &quot;6.1.2&quot;"
         errorLine2="               ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="23"
             column="16"/>
     </issue>
@@ -1140,7 +1140,7 @@
         errorLine1="junitJupiter = &quot;6.1.2&quot;"
         errorLine2="               ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="23"
             column="16"/>
     </issue>
@@ -1151,7 +1151,7 @@
         errorLine1="kotlinxCollectionsImmutable = &quot;0.5.1&quot;"
         errorLine2="                              ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="26"
             column="31"/>
     </issue>
@@ -1162,7 +1162,7 @@
         errorLine1="junit5 = &quot;6.1.2&quot;"
         errorLine2="         ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="49"
             column="10"/>
     </issue>
@@ -1173,7 +1173,7 @@
         errorLine1="orgJson = &quot;20260522&quot;"
         errorLine2="          ~~~~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="52"
             column="11"/>
     </issue>
@@ -1184,7 +1184,7 @@
         errorLine1="okhttp = &quot;5.4.0&quot;"
         errorLine2="         ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="70"
             column="10"/>
     </issue>
@@ -1195,7 +1195,7 @@
         errorLine1="okhttp = &quot;5.4.0&quot;"
         errorLine2="         ~~~~~~~">
         <location
-            file="$HOME/proyects/honor-dap-workspace/Polylute/PixelPlayerOSS/gradle/libs.versions.toml"
+            file="../gradle/libs.versions.toml"
             line="70"
             column="10"/>
     </issue>

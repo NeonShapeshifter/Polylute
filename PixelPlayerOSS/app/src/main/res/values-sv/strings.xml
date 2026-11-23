@@ -375,6 +375,7 @@
         <item quantity="one">%1$d regel</item>
         <item quantity="other">%1$d regler</item>
     </plurals>
+    <string name="search_best_matches">Bästa träffar</string>
     <string name="search_results_songs">Låtar</string>
     <string name="search_results_albums">Album</string>
     <string name="search_results_artists">Artister</string>

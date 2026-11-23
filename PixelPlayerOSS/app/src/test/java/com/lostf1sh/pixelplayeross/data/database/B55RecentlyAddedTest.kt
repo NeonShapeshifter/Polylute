@@ -14,6 +14,7 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryStateHolder
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.emptyGenreImagery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.collections.immutable.ImmutableList
@@ -55,7 +56,7 @@ class B55RecentlyAddedTest {
             every { repo.getGenres() } returns flowOf(emptyList())
             val preferences=mockk<UserPreferencesRepository>()
             every { preferences.minTracksPerAlbumFlow } returns flowOf(1)
-            val holder=LibraryStateHolder(repo,preferences)
+            val holder=LibraryStateHolder(repo,preferences, emptyGenreImagery())
             @Suppress("UNCHECKED_CAST")
             val cache=holder.javaClass.getDeclaredField("_allSongs").apply { isAccessible=true }.get(holder) as MutableStateFlow<ImmutableList<Song>>
             cache.value=(1L..5L).map { n -> Kit.song(n).copy(artistId=if(n==4L) 1L else artist[n.toInt()-1],dateAdded=dates[n.toInt()-1],

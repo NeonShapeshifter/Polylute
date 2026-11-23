@@ -121,7 +121,9 @@ import com.lostf1sh.pixelplayeross.presentation.screens.search.components.GenreC
 import com.lostf1sh.pixelplayeross.presentation.screens.search.components.GenreSearchSections
 import com.lostf1sh.pixelplayeross.presentation.screens.search.components.rememberSettledQuery
 import com.lostf1sh.pixelplayeross.presentation.utils.SearchGenreMatcher
-import com.lostf1sh.pixelplayeross.presentation.utils.searchSectionOrder
+import com.lostf1sh.pixelplayeross.presentation.utils.filterType
+import com.lostf1sh.pixelplayeross.presentation.utils.searchResultsLayout
+import com.lostf1sh.pixelplayeross.presentation.utils.searchRowKey
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistViewModel
 import com.lostf1sh.pixelplayeross.utils.formatSongCountLabel
 import kotlinx.collections.immutable.ImmutableList
@@ -437,6 +439,7 @@ fun SearchScreen(
                                 SearchResultsList(
                                     results = searchResults,
                                     searchQuery = searchQuery,
+                                    selectedFilter = currentFilter,
                                     playerViewModel = playerViewModel,
                                     onItemSelected = onResultSelected,
                                     currentPlayingSongId = stablePlayerState.currentSong?.id,
@@ -619,6 +622,7 @@ fun EmptySearchResults(searchQuery: String, colorScheme: ColorScheme) {
 fun SearchResultsList(
     results: ImmutableList<SearchResultItem>,
     searchQuery: String,
+    selectedFilter: SearchFilterType,
     playerViewModel: PlayerViewModel,
     onItemSelected: () -> Unit,
     currentPlayingSongId: String?,
@@ -628,8 +632,6 @@ fun SearchResultsList(
     /** B33-U5: what follows the last result, inside the same list (Search's folded genre sections). Adds one item and changes none. */
     trailingContent: (@Composable () -> Unit)? = null
 ) {
-    val playerStableState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
-
     if (results.isEmpty()) {
         DapEmptyState(
             title = stringResource(R.string.search_no_results_found),
@@ -641,29 +643,15 @@ fun SearchResultsList(
         return
     }
 
-    val groupedResults = remember(results) {
-        results.groupBy { item ->
-            when (item) {
-                is SearchResultItem.SongItem -> SearchFilterType.SONGS
-                is SearchResultItem.AlbumItem -> SearchFilterType.ALBUMS
-                is SearchResultItem.ArtistItem -> SearchFilterType.ARTISTS
-                is SearchResultItem.PlaylistItem -> SearchFilterType.PLAYLISTS
-                is SearchResultItem.ComposerItem -> SearchFilterType.COMPOSERS
-            }
-        }
-    }
-    val songResultsQueue = remember(groupedResults) {
-        buildList {
-            groupedResults[SearchFilterType.SONGS]
-                ?.forEach { item ->
-                    val song = (item as? SearchResultItem.SongItem)?.song ?: return@forEach
-                    add(song)
-                }
-        }
-    }
-    // The queue name is drawn in the queue, so it is a UI string. "None" is a different thing: it is
-    // the player's sentinel for "leave the last-playlist shortcut alone", and it is never built here.
     val trimmedSearchQuery = searchQuery.trim()
+    val layout = remember(results, trimmedSearchQuery, selectedFilter) {
+        searchResultsLayout(results, trimmedSearchQuery, selectedFilter)
+    }
+    val songResultsQueue = remember(layout) {
+        val songSection = layout.sections.firstOrNull { (type, _) -> type == SearchFilterType.SONGS }
+        (layout.best + songSection?.second.orEmpty()).filterIsInstance<SearchResultItem.SongItem>().map { it.song }
+    }
+    // The queue name is shown in the UI. "None" is reserved for the last-playlist shortcut.
     val searchQueueName = if (trimmedSearchQuery.isEmpty()) {
         stringResource(R.string.search_queue_name)
     } else {
@@ -681,10 +669,17 @@ fun SearchResultsList(
         }
     }
 
-    // Best match first: typing an album's name exactly should not mean scrolling past every song
-    // that credits one of its artists. See searchSectionOrder.
-    val sectionOrder = remember(groupedResults, trimmedSearchQuery) {
-        searchSectionOrder(groupedResults, trimmedSearchQuery)
+    val renderRow: @Composable (SearchResultItem) -> Unit = { item ->
+        SearchResultRow(
+            item = item,
+            playerViewModel = playerViewModel,
+            onItemSelected = onItemSelected,
+            currentPlayingSongId = currentPlayingSongId,
+            isPlaying = isPlaying,
+            onSongMoreOptionsClick = onSongMoreOptionsClick,
+            onSongResultClick = onSongResultClick,
+            navController = navController
+        )
     }
 
     LazyColumn(
@@ -694,178 +689,176 @@ fun SearchResultsList(
             bottom = searchListBottomPadding()
         )
     ) {
-        sectionOrder.forEach { filterType ->
-            val itemsForSection = groupedResults[filterType] ?: emptyList()
-
-            if (itemsForSection.isNotEmpty()) {
-                item(key = "header_${filterType.name}") {
-                    SearchResultSectionHeader(
-                        title = when (filterType) {
-                            SearchFilterType.SONGS -> stringResource(R.string.search_results_songs)
-                            SearchFilterType.ALBUMS -> stringResource(R.string.search_results_albums)
-                            SearchFilterType.ARTISTS -> stringResource(R.string.search_results_artists)
-                            SearchFilterType.PLAYLISTS -> stringResource(R.string.search_results_playlists)
-                            SearchFilterType.COMPOSERS -> stringResource(R.string.search_results_composers)
-                            else -> stringResource(R.string.search_results_other)
-                        },
-                        count = itemsForSection.size
-                    )
-                }
-
-                items(
-                    count = itemsForSection.size,
-                    key = { index ->
-                        val item = itemsForSection[index]
-                        when (item) {
-                            is SearchResultItem.SongItem -> "song_${item.song.id}"
-                            is SearchResultItem.AlbumItem -> "album_${item.album.id}"
-                            is SearchResultItem.ArtistItem -> "artist_${item.artist.id}"
-                            is SearchResultItem.PlaylistItem -> "playlist_${item.playlist.id}_${index}"
-                            is SearchResultItem.ComposerItem -> "composer_${item.name}"
-                        }
-                    },
-                    contentType = { index ->
-                        when (itemsForSection[index]) {
-                            is SearchResultItem.SongItem -> "search_song"
-                            is SearchResultItem.AlbumItem -> "search_album"
-                            is SearchResultItem.ArtistItem -> "search_artist"
-                            is SearchResultItem.PlaylistItem -> "search_playlist"
-                            is SearchResultItem.ComposerItem -> "search_composer"
-                        }
-                    }
-                ) { index ->
-                    val item = itemsForSection[index]
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        when (item) {
-                            is SearchResultItem.SongItem -> {
-                                EnhancedSongListItem(
-                                    song = item.song,
-                                    isPlaying = isPlaying,
-                                    isCurrentSong = currentPlayingSongId == item.song.id,
-                                    onMoreOptionsClick = onSongMoreOptionsClick,
-                                    onClick = { onSongResultClick(item.song) }
-                                )
-                            }
-
-                            is SearchResultItem.AlbumItem -> {
-                                val onPlayClick = remember(item.album, playerViewModel, onItemSelected) {
-                                    {
-                                        Timber.tag("SearchScreen")
-                                            .d("Album clicked: ${item.album.title}")
-                                        playerViewModel.playAlbum(item.album)
-                                        onItemSelected()
-                                    }
-                                }
-                                val onOpenClick = remember(
-                                    item.album,
-                                    playerViewModel, onItemSelected
-                                ) {
-                                    {
-                                        navController.navigateSafelyReplacing(
-                                            route = Screen.AlbumDetail.createRoute(item.album.id),
-                                            patternToPop = Screen.AlbumDetail.route
-                                        )
-                                        onItemSelected()
-                                    }
-                                }
-                                SearchResultAlbumItem(
-                                    album = item.album,
-                                    onPlayClick = onPlayClick,
-                                    onOpenClick = onOpenClick
-                                )
-                            }
-
-                            is SearchResultItem.ArtistItem -> {
-                                val onPlayClick = remember(item.artist, playerViewModel, onItemSelected) {
-                                    {
-                                        Timber.tag("SearchScreen")
-                                            .d("Artist clicked: ${item.artist.name}")
-                                        playerViewModel.playArtist(item.artist)
-                                        onItemSelected()
-                                    }
-                                }
-                                val onOpenClick = remember(
-                                    item.artist,
-                                    playerViewModel, onItemSelected
-                                ) {
-                                    {
-                                        navController.navigateSafelyReplacing(
-                                            route = Screen.ArtistDetail.createRoute(item.artist.id),
-                                            patternToPop = Screen.ArtistDetail.route
-                                        )
-                                        onItemSelected()
-                                    }
-                                }
-                                SearchResultArtistItem(
-                                    artist = item.artist,
-                                    onPlayClick = onPlayClick,
-                                    onOpenClick = onOpenClick
-                                )
-                            }
-
-                            is SearchResultItem.ComposerItem -> {
-                                // B56-6: a composer opens a page with their songs; the queue follows that list. Not an artist: no Artists page, no Artists tab change.
-                                DapMediaRow(
-                                    title = item.name,
-                                    subtitle = formatSongCountLabel(item.songCount),
-                                    onClick = {
-                                        navController.navigateSafelyReplacing(
-                                            route = Screen.ComposerDetail.createRoute(item.name),
-                                            patternToPop = Screen.ComposerDetail.route
-                                        )
-                                        onItemSelected()
-                                    },
-                                )
-                            }
-
-                            is SearchResultItem.PlaylistItem -> {
-                                val playlistSongs by remember(item.playlist.songIds, playerViewModel) {
-                                    playerViewModel.observeSongs(item.playlist.songIds)
-                                        .map { it.toImmutableList() }
-                                }.collectAsStateWithLifecycle(initialValue = persistentListOf())
-                                val coroutineScope = rememberCoroutineScope()
-                                val emptyPlaylistMessage = stringResource(R.string.search_toast_empty_playlist)
-                                val onPlayClick: () -> Unit = {
-                                    coroutineScope.launch {
-                                        val songs = playerViewModel.getSongs(item.playlist.songIds)
-                                        if (songs.isNotEmpty()) {
-                                            playerViewModel.playSongs(
-                                                songs,
-                                                songs.first(),
-                                                item.playlist.name,
-                                                source = ListenSource(ListenSourceKind.PLAYLIST, item.playlist.id)
-                                            )
-                                            if (playerStableState.isShuffleEnabled) playerViewModel.turnShuffleOff()
-                                        } else {
-                                            playerViewModel.sendToast(emptyPlaylistMessage)
-                                        }
-                                        onItemSelected()
-                                    }
-                                }
-                                val onOpenClick = remember(
-                                    item.playlist,
-                                    playerViewModel, onItemSelected
-                                ) {
-                                    {
-                                        navController.navigateSafely(Screen.PlaylistDetail.createRoute(item.playlist.id))
-                                        onItemSelected()
-                                    }
-                                }
-                                SearchResultPlaylistItem(
-                                    playlist = item.playlist,
-                                    playlistSongs = playlistSongs,
-                                    onPlayClick = onPlayClick,
-                                    onOpenClick = onOpenClick
-                                )
-                            }
-                        }
-                    }
-                }
+        if (layout.best.isNotEmpty()) {
+            item(key = "header_best_matches") {
+                SearchResultSectionHeader(title = stringResource(R.string.search_best_matches))
+            }
+            items(layout.best, key = SearchResultItem::searchRowKey, contentType = SearchResultItem::filterType) {
+                renderRow(it)
             }
         }
+
+        layout.sections.forEach { (filterType, rows) ->
+            item(key = "header_${filterType.name}") {
+                SearchResultSectionHeader(
+                    title = when (filterType) {
+                        SearchFilterType.SONGS -> stringResource(R.string.search_results_songs)
+                        SearchFilterType.ALBUMS -> stringResource(R.string.search_results_albums)
+                        SearchFilterType.ARTISTS -> stringResource(R.string.search_results_artists)
+                        SearchFilterType.COMPOSERS -> stringResource(R.string.search_results_composers)
+                        SearchFilterType.PLAYLISTS -> stringResource(R.string.search_results_playlists)
+                        SearchFilterType.ALL -> stringResource(R.string.search_results_other)
+                    },
+                    count = rows.size
+                )
+            }
+            items(rows, key = SearchResultItem::searchRowKey, contentType = SearchResultItem::filterType) {
+                renderRow(it)
+            }
+        }
+
         if (trailingContent != null) {
             item(key = "genre_sections", contentType = "search_genre_sections") {
                 Box(modifier = Modifier.fillMaxWidth()) { trailingContent() }
+            }
+        }
+    }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun SearchResultRow(
+    item: SearchResultItem,
+    playerViewModel: PlayerViewModel,
+    onItemSelected: () -> Unit,
+    currentPlayingSongId: String?,
+    isPlaying: Boolean,
+    onSongMoreOptionsClick: (Song) -> Unit,
+    onSongResultClick: (Song) -> Unit,
+    navController: NavHostController
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        when (item) {
+            is SearchResultItem.SongItem -> {
+                EnhancedSongListItem(
+                    song = item.song,
+                    isPlaying = isPlaying,
+                    isCurrentSong = currentPlayingSongId == item.song.id,
+                    onMoreOptionsClick = onSongMoreOptionsClick,
+                    onClick = { onSongResultClick(item.song) }
+                )
+            }
+
+            is SearchResultItem.AlbumItem -> {
+                val onPlayClick = remember(item.album, playerViewModel, onItemSelected) {
+                    {
+                        Timber.tag("SearchScreen")
+                            .d("Album clicked: ${item.album.title}")
+                        playerViewModel.playAlbum(item.album)
+                        onItemSelected()
+                    }
+                }
+                val onOpenClick = remember(
+                    item.album,
+                    playerViewModel, onItemSelected
+                ) {
+                    {
+                        navController.navigateSafelyReplacing(
+                            route = Screen.AlbumDetail.createRoute(item.album.id),
+                            patternToPop = Screen.AlbumDetail.route
+                        )
+                        onItemSelected()
+                    }
+                }
+                SearchResultAlbumItem(
+                    album = item.album,
+                    onPlayClick = onPlayClick,
+                    onOpenClick = onOpenClick
+                )
+            }
+
+            is SearchResultItem.ArtistItem -> {
+                val onPlayClick = remember(item.artist, playerViewModel, onItemSelected) {
+                    {
+                        Timber.tag("SearchScreen")
+                            .d("Artist clicked: ${item.artist.name}")
+                        playerViewModel.playArtist(item.artist)
+                        onItemSelected()
+                    }
+                }
+                val onOpenClick = remember(
+                    item.artist,
+                    playerViewModel, onItemSelected
+                ) {
+                    {
+                        navController.navigateSafelyReplacing(
+                            route = Screen.ArtistDetail.createRoute(item.artist.id),
+                            patternToPop = Screen.ArtistDetail.route
+                        )
+                        onItemSelected()
+                    }
+                }
+                SearchResultArtistItem(
+                    artist = item.artist,
+                    onPlayClick = onPlayClick,
+                    onOpenClick = onOpenClick
+                )
+            }
+
+            is SearchResultItem.ComposerItem -> {
+                // B56-6: a composer opens a page with their songs; the queue follows that list. Not an artist: no Artists page, no Artists tab change.
+                DapMediaRow(
+                    title = item.name,
+                    subtitle = formatSongCountLabel(item.songCount),
+                    onClick = {
+                        navController.navigateSafelyReplacing(
+                            route = Screen.ComposerDetail.createRoute(item.name),
+                            patternToPop = Screen.ComposerDetail.route
+                        )
+                        onItemSelected()
+                    },
+                )
+            }
+
+            is SearchResultItem.PlaylistItem -> {
+                val playlistSongs by remember(item.playlist.songIds, playerViewModel) {
+                    playerViewModel.observeSongs(item.playlist.songIds)
+                        .map { it.toImmutableList() }
+                }.collectAsStateWithLifecycle(initialValue = persistentListOf())
+                val coroutineScope = rememberCoroutineScope()
+                val emptyPlaylistMessage = stringResource(R.string.search_toast_empty_playlist)
+                val onPlayClick: () -> Unit = {
+                    coroutineScope.launch {
+                        val songs = playerViewModel.getSongs(item.playlist.songIds)
+                        if (songs.isNotEmpty()) {
+                            playerViewModel.playSongs(
+                                songs,
+                                songs.first(),
+                                item.playlist.name,
+                                source = ListenSource(ListenSourceKind.PLAYLIST, item.playlist.id)
+                            )
+                            if (playerViewModel.stablePlayerState.value.isShuffleEnabled) playerViewModel.turnShuffleOff()
+                        } else {
+                            playerViewModel.sendToast(emptyPlaylistMessage)
+                        }
+                        onItemSelected()
+                    }
+                }
+                val onOpenClick = remember(
+                    item.playlist,
+                    playerViewModel, onItemSelected
+                ) {
+                    {
+                        navController.navigateSafely(Screen.PlaylistDetail.createRoute(item.playlist.id))
+                        onItemSelected()
+                    }
+                }
+                SearchResultPlaylistItem(
+                    playlist = item.playlist,
+                    playlistSongs = playlistSongs,
+                    onPlayClick = onPlayClick,
+                    onOpenClick = onOpenClick
+                )
             }
         }
     }

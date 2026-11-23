@@ -493,13 +493,15 @@ class DacEqWriter(
          * remembered: **from here on this is the app's record of that band**. A band that holds exactly what was sent says nothing.
          */
         private fun noteQRounding(sent: DacEqBand, stored: DacEqBand) {
-            if (stored.qHundredths == sent.qHundredths) return
+            if (stored.qHundredths == sent.qHundredths && stored.gainTenthsDb == sent.gainTenthsDb) return
             // only a band that is the one sent but for its Q (an unset band read as zeros is not a Q rounding)
             if (!stored.sameAsAllowingQRounding(sent)) return
-            if (qStored[sent.index]?.qHundredths == stored.qHundredths) return
+            if (qStored[sent.index]?.let { it.qHundredths == stored.qHundredths && it.gainTenthsDb == stored.gainTenthsDb } == true) return
             qStored[sent.index] = stored
             session.logLine(
-                "DAC_HID|CONFIRM band ${sent.index + 1}: the DAC stored Q ${"%.2f".format(java.util.Locale.ROOT, stored.q)} for ${"%.2f".format(java.util.Locale.ROOT, sent.q)} (its rounding)"
+                "DAC_HID|CONFIRM band ${sent.index + 1}: the DAC stored Q ${"%.2f".format(java.util.Locale.ROOT, stored.q)} for ${"%.2f".format(java.util.Locale.ROOT, sent.q)}" +
+                    (if (stored.gainTenthsDb != sent.gainTenthsDb) ", gain ${DacEqStateFormat.tenths(stored.gainTenthsDb)} for ${DacEqStateFormat.tenths(sent.gainTenthsDb)} dB" else "") +
+                    " (its rounding)"
             )
         }
 
@@ -527,7 +529,7 @@ class DacEqWriter(
             return when (ack) {
                 is FiioSetAck.Confirmed -> null
                 is FiioSetAck.QRounded -> {
-                    // B59 (#53): the DAC took the band and stored the Q it can hold. Only the Q differs, by one hundredth; the gain is exact.
+                    // B59 (#53) + 11-22: the DAC took the band and stored the Q (and, one tenth lower at most, the gain) it can hold.
                     val sent = (FiioEqReader.decodeBand(ack.sent[0].toInt() and 0xFF, ack.sent) as EqRead.Read).value
                     val stored = (FiioEqReader.decodeBand(ack.reported[0].toInt() and 0xFF, ack.reported) as EqRead.Read).value
                     noteQRounding(sent, stored)

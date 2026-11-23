@@ -13,11 +13,6 @@
         <item quantity="many">%1$d álbumes</item>
         <item quantity="other">%1$d álbumes</item>
     </plurals>
-    <plurals name="genre_count_artists">
-        <item quantity="one">%1$d artista</item>
-        <item quantity="many">%1$d artistas</item>
-        <item quantity="other">%1$d artistas</item>
-    </plurals>
     <!-- B33-U5: Buscar muestra una sección plegada «Género · X» al final de Todo cuando la consulta coincide con un género. -->
     <string name="search_genre_section_title">Género · %1$s</string>
     <string name="search_genre_section_folded">Plegado</string>
@@ -27,4 +22,8 @@
     <string name="search_genre_see_all">Ver todo</string>
     <string name="search_genre_see_all_cd">Ver todas las canciones de %1$s</string>
     <string name="search_genre_load_failed">No se pudo cargar este género</string>
+    <string name="genre_eyebrow">GÉNERO</string>
+    <string name="genre_featured_artist">ARTISTA DE PORTADA</string>
+    <string name="genre_wikipedia_credit">Wikipedia · CC BY-SA 4.0</string>
+    <string name="genre_artists_and_albums">Artistas y álbumes</string>
 </resources>

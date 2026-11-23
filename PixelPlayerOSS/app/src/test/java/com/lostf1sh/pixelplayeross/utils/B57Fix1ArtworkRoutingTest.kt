@@ -32,8 +32,9 @@ class B57Fix1ArtworkRoutingTest {
         assertThat(text("presentation/collections/AutoCollectionRow.kt")).contains("ArtworkRequestSize.forCell(size)")
         assertThat(text("presentation/collections/AutoCollectionRow.kt")).contains("ArtworkRequestSize.forCell(size / 2)")
         assertThat(text("presentation/stats/StatsComponents.kt")).contains("ArtworkRequestSize.forCell(DapSizes.ThumbRow)")
-        assertThat(text("presentation/screens/search/components/GenreCategoriesGrid.kt")).contains("ArtworkRequestSize.forCell(DapSizes.ThumbRow)")
-        assertThat(text("presentation/screens/search/components/GenreCategoriesGrid.kt")).contains("ArtworkRequestSize.forColumns(2, DapSpacing.Gutter * 2 + 32.dp, 12.dp)")
+        assertThat(text("presentation/screens/search/components/GenreCategoriesGrid.kt")).contains("ArtworkRequestSize.forCell(GenreListCoverSize)")
+        assertThat(text("presentation/screens/search/components/GenreCategoriesGrid.kt")).contains("ArtworkRequestSize.forColumns(2, DapSpacing.Gutter * 2, 12.dp)")
+        assertThat(text("presentation/screens/search/components/GenreArt.kt")).contains("ArtworkRequestSize.sidePx(width, density)")
         // B64: Daily Mix uses the album's shared song row; that row sizes its image from the measured cell.
         assertThat(text("presentation/components/DailyMixSection.kt")).contains("LibraryPlaybackAwareSongItem(")
         assertThat(text("presentation/screens/LibraryPlaybackAwareSongItem.kt")).contains("EnhancedSongListItem(")
@@ -41,10 +42,11 @@ class B57Fix1ArtworkRoutingTest {
     }
 
     @Test fun the_genre_tile_cover_is_what_the_tile_measures() {
-        // 360 dp wide window, 20 dp gutters, 12 dp between the two tiles, 8 dp of padding around each cover: (360 - 40 - 12 - 32) / 2 = 138 dp; at 3x that is 414 px, under the cap
-        val cell = ArtworkRequestSize.columnCellDp(360f, 2, 20f * 2 + 32f, 12f)
-        assertThat(cell).isEqualTo(138f)
-        assertThat(ArtworkRequestSize.sidePx(cell, 3f)).isEqualTo(414)
+        // The selected image uses the full tile. Each cell of the automatic 2×2 collage uses half its width minus half the gap.
+        val tile = ArtworkRequestSize.columnCellDp(360f, 2, 20f * 2, 12f)
+        assertThat(tile).isEqualTo(154f)
+        assertThat(ArtworkRequestSize.sidePx(tile, 3f)).isEqualTo(462)
+        assertThat(ArtworkRequestSize.sidePx((tile - 2f) / 2f, 3f)).isEqualTo(228)
         // the 3-cover collage: each cover takes 2 / (2 + sqrt 3) of the collage's width
         val third = 2f / (2f + kotlin.math.sqrt(3f))
         assertThat(ArtworkRequestSize.sidePx(100f * third, 3f)).isEqualTo((100f * third * 3f).toInt())

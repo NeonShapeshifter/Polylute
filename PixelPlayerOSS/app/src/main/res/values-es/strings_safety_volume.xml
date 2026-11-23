@@ -33,6 +33,10 @@
     <string name="safety_max_refused_notice">Safety Max · desbloquea para subir más</string>
     <string name="safety_max_volume_write_failed">El DAC no confirmó el volumen más bajo. Su nivel puede ser mayor del que se muestra.</string>
     <string name="safety_max_notice_channel">Límite de volumen</string>
+    <!-- B69 -->
+    <string name="safety_max_limit_reached">Safety Max: límite de volumen alcanzado</string>
+    <string name="safety_max_raise_limit">Subir el límite</string>
+    <string name="safety_max_offer_channel">Límite de volumen: subirlo</string>
     <!-- B39-S1 -->
     <string name="safety_first_use_level">Este DAC es nuevo para Polylute: se baja su volumen a %1$d dB antes de reproducir. Súbelo con las teclas de volumen.</string>
     <!-- B39-S1 -->

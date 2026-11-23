@@ -23,6 +23,8 @@ import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqMode
 import com.lostf1sh.pixelplayeross.data.model.TransitionMode
 import com.lostf1sh.pixelplayeross.data.model.TransitionSettings
 import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
+import com.lostf1sh.pixelplayeross.data.service.player.DacSharePolicy
+import com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode
 import com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer
 import com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeMode
 import com.lostf1sh.pixelplayeross.data.volume.FixedOutputDac
@@ -162,8 +164,10 @@ data class AudioSettingsState(
     val fixedOutputDac: FixedOutputDac? = null,
     /** B40-P3: what the listener answered for that DAC (null: not asked yet). */
     val fixedOutputAnswer: DeviceVolumeAnswer? = null,
-    /** B39-A7: "Share the DAC with other apps", Resonance only (Purity keeps the DAC whatever this is). */
+    /** B39-A7: "Share the DAC with other apps" (B68: who may share is [DacSharePolicy]). */
     val dacShareEnabled: Boolean = false,
+    /** B68: what the share switch's subtitle says, for the product mode and Purity choice: what the engine will actually do. */
+    val dacShareSubtitle: DacSharePolicy.Subtitle = DacSharePolicy.Subtitle.DAP_RESONANCE,
     /** B40-F8: the listener's switch for Resonance's peak limiter. */
     val resonanceLimiterEnabled: Boolean = false,
 ) {
@@ -179,6 +183,8 @@ data class AudioSettingsState(
             transition: TransitionSettings? = null,
             fixedOutputDac: FixedOutputDac? = null,
             fixedOutputAnswer: DeviceVolumeAnswer? = null,
+            /** B68: Polylute's role as Android confirms it (the Settings page's `ProductModeState.effectiveMode`); null reads as a DAP level. */
+            productMode: EffectiveProductMode? = null,
         ): AudioSettingsState {
             val selected = headphones.selected
             return AudioSettingsState(
@@ -217,7 +223,8 @@ data class AudioSettingsState(
                 audio = audio,
                 fixedOutputDac = fixedOutputDac,
                 fixedOutputAnswer = fixedOutputAnswer,
-                dacShareEnabled = ui.dacShareEnabled,
+                dacShareEnabled = DacSharePolicy.switchOn(ui.dacShareChoice, productMode),
+                dacShareSubtitle = DacSharePolicy.subtitle(audio.purityPreference, productMode),
                 resonanceLimiterEnabled = ui.resonanceLimiterEnabled,
             )
         }
@@ -417,15 +424,23 @@ private fun PureDirectSection(state: AudioSettingsState, actions: AudioSettingsA
             )
         }
         // B61: the share row sits under the Purity switch it refers to (it read "This applies in Resonance" at the top of the page, before Purity and Resonance were said)
-        // B39-A7: Resonance can let other apps use the DAC; Purity never does. The switch is the listener's and is off by default.
-        DapSwitchRow(
-            label = stringResource(R.string.audio_dac_share_title),
-            description = stringResource(
-                if (state.audio.purityPreference) R.string.audio_dac_share_sub_purity else R.string.audio_dac_share_sub,
-            ),
-            checked = state.dacShareEnabled,
-            onCheckedChange = actions::onDacShareChange,
-        )
+        // B39-A7: the switch is the listener's and is off by default. B68: the subtitle says what the engine will do (DacSharePolicy):
+        // in app mode Purity and Resonance both share; at a DAP level Purity keeps the DAC.
+        // owner 11-23: Pinned and Dedicated open no other app, so there is nobody to share the DAC with: no switch.
+        if (state.dacShareSubtitle != DacSharePolicy.Subtitle.HIDDEN) {
+            DapSwitchRow(
+                label = stringResource(R.string.audio_dac_share_title),
+                description = stringResource(
+                    when (state.dacShareSubtitle) {
+                        DacSharePolicy.Subtitle.APP_MODE -> R.string.audio_dac_share_sub_app
+                        DacSharePolicy.Subtitle.DAP_PURITY_KEEPS -> R.string.audio_dac_share_sub_purity
+                        DacSharePolicy.Subtitle.DAP_RESONANCE, DacSharePolicy.Subtitle.HIDDEN -> R.string.audio_dac_share_sub
+                    },
+                ),
+                checked = state.dacShareEnabled,
+                onCheckedChange = actions::onDacShareChange,
+            )
+        }
         if (state.pureDirect.digitalBlocksPristine) {
             Column(Modifier.fillMaxWidth().padding(vertical = DapSpacing.Sm)) {
                 Text(

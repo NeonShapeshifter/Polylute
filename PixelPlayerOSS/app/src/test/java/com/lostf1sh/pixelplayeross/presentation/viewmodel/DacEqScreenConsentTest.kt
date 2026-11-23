@@ -17,6 +17,7 @@ import com.lostf1sh.pixelplayeross.data.dac.fiio.FakeFiioDac
 import com.lostf1sh.pixelplayeross.data.dac.fiio.FiioFilterType
 import com.lostf1sh.pixelplayeross.data.dac.fiio.FiioHidOpener
 import com.lostf1sh.pixelplayeross.data.dac.fiio.FiioHidProfiles
+import com.lostf1sh.pixelplayeross.data.dac.fiio.unverifiedMelody
 import com.lostf1sh.pixelplayeross.data.dac.fiio.FiioHidSession
 import com.lostf1sh.pixelplayeross.data.dac.fiio.HidUse
 import com.lostf1sh.pixelplayeross.data.headphones.DacEqFilterDef
@@ -55,7 +56,7 @@ import org.junit.jupiter.api.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DacEqScreenConsentTest {
-    private val melody = FiioHidProfiles.all.single { it.id == "snowsky-melody" }
+    private val melody = unverifiedMelody // B67: the pre-11-22 row (unverified, sense unconfirmed): these tests pin those paths
     private val dirs = mutableListOf<File>()
     private val scopes = mutableListOf<CoroutineScope>()
 

@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test
  * read-back, no band). A slot the app does not write is never selected; a DAC that is not there keeps the memory for its next attach.
  */
 class B61PurityDacEqTest {
-    private val melody = FiioHidProfiles.all.single { it.id == "snowsky-melody" }
+    private val melody = unverifiedMelody // B67: the pre-11-22 row (unverified, sense unconfirmed): these tests pin those paths
     private val dirs = mutableListOf<File>()
     private val scopes = mutableListOf<CoroutineScope>()
 

@@ -153,7 +153,7 @@ fun SettingsCategoryScreen(
                         SettingsCategory.LIBRARY -> LibrarySettingsHost(settingsViewModel, navigate) { showExplorerSheet = true }
                         SettingsCategory.LYRICS -> LyricsSettingsHost(settingsViewModel)
                         SettingsCategory.APPEARANCE -> AppearanceSettingsHost(settingsViewModel, navigate, mode.product)
-                        SettingsCategory.AUDIO -> AudioSettingsHost(settingsViewModel, navigate, deviceControlViewModel)
+                        SettingsCategory.AUDIO -> AudioSettingsHost(settingsViewModel, navigate, deviceControlViewModel, mode.product.effectiveMode)
                         SettingsCategory.BEHAVIOR -> BehaviorSettingsHost(settingsViewModel)
                         SettingsCategory.BACKUP_RESTORE -> BackupSettingsHost()
                         SettingsCategory.HOME_MODE -> HomeModeHost()
@@ -279,6 +279,7 @@ private fun AudioSettingsHost(
     settingsViewModel: SettingsViewModel,
     navigate: (String) -> Unit,
     deviceControlViewModel: DeviceControlViewModel,
+    productMode: com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode,
     dacProfilesViewModel: DacProfilesViewModel = hiltViewModel(),
     headphoneProfilesViewModel: HeadphoneProfilesViewModel = hiltViewModel(),
     safetyVolumeViewModel: SafetyVolumeViewModel = hiltViewModel(),
@@ -295,8 +296,8 @@ private fun AudioSettingsHost(
     val transition by transitionSummaryViewModel.globalSettings.collectAsStateWithLifecycle()
     val fixedOutputDac by outputNoticesViewModel.fixedOutputDac.collectAsStateWithLifecycle()
     val fixedOutputAnswer by outputNoticesViewModel.answer.collectAsStateWithLifecycle()
-    val state = remember(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer) {
-        AudioSettingsState.from(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer)
+    val state = remember(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer, productMode) {
+        AudioSettingsState.from(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer, productMode)
     }
     val actions = remember(settingsViewModel, deviceControlViewModel, outputNoticesViewModel, navigate) {
         AudioSettingsActionsImpl(settingsViewModel, deviceControlViewModel, navigate, outputNoticesViewModel::showFixedOutputNotice)

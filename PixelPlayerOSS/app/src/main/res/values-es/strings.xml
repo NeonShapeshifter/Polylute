@@ -400,6 +400,7 @@
     <!-- Nombres e intenciones de los seis mixes -->
 
     <!-- Búsqueda -->
+    <string name="search_best_matches">Mejores resultados</string>
     <string name="search_results_songs">Canciones</string>
     <string name="search_results_albums">Álbumes</string>
     <string name="search_results_artists">Artistas</string>

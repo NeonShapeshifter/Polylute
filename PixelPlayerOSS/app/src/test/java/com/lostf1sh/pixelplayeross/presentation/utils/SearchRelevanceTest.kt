@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 class SearchRelevanceTest {
 
     private fun song(title: String, artist: String = "Someone") =
-        SearchResultItem.SongItem(Song.emptySong().copy(title = title, artist = artist))
+        SearchResultItem.SongItem(Song.emptySong().copy(id = title, title = title, artist = artist))
 
     private fun album(title: String, artist: String = "Someone") =
         SearchResultItem.AlbumItem(Album.empty().copy(title = title, artist = artist))
@@ -38,22 +38,36 @@ class SearchRelevanceTest {
 
     @Test
     fun `a name that starts with the query beats one that merely contains it`() {
-        val prefix = SearchRelevance.rank("21 Guns", "21")
-        // "21" as a whole word is a word match, not a mere substring: it is where a word begins.
+        val leading = SearchRelevance.rank("21 Guns", "21")
+        // "21" as a whole word later in the name: where a word begins and ends.
         val word = SearchRelevance.rank("Besame 21 Mucho", "21")
         // And inside a word is the weakest match of the three.
         val contains = SearchRelevance.rank("Twenty2021", "21")
-        assertThat(prefix).isEqualTo(SearchRelevance.PREFIX)
-        assertThat(word).isEqualTo(SearchRelevance.WORD_PREFIX)
+        assertThat(leading).isEqualTo(SearchRelevance.LEADING_WORD)
+        assertThat(word).isEqualTo(SearchRelevance.WHOLE_WORD)
         assertThat(contains).isEqualTo(SearchRelevance.CONTAINS)
-        assertThat(prefix).isLessThan(word)
+        assertThat(leading).isLessThan(word)
         assertThat(word).isLessThan(contains)
     }
 
     @Test
     fun `a word inside the name counts as its own match`() {
-        assertThat(SearchRelevance.rank("Bank Account", "account"))
-            .isEqualTo(SearchRelevance.WORD_PREFIX)
+        assertThat(SearchRelevance.rank("Bank Account", "account")).isEqualTo(SearchRelevance.WHOLE_WORD)
+        assertThat(SearchRelevance.rank("Bank Account", "acc")).isEqualTo(SearchRelevance.WORD_PREFIX)
+    }
+
+    @Test
+    fun `a whole word beats part of a word - danz is Danz CM before Danza Kuduro (owner 11-23)`() {
+        val danzCm = SearchRelevance.rank("Danz CM", "danz")
+        val danzaKuduro = SearchRelevance.rank("Danza Kuduro", "danz")
+        assertThat(danzCm).isEqualTo(SearchRelevance.LEADING_WORD)
+        assertThat(danzaKuduro).isEqualTo(SearchRelevance.PREFIX)
+        assertThat(danzCm).isLessThan(danzaKuduro)
+        // a whole word later in a name also beats a first word that only starts with the query
+        assertThat(SearchRelevance.rank("Crazy in Love", "love")).isLessThan(SearchRelevance.rank("Lovely", "love"))
+        // several words typed: the same rule on the whole query
+        assertThat(SearchRelevance.rank("Danz CM Live", "danz cm")).isEqualTo(SearchRelevance.LEADING_WORD)
+        assertThat(SearchRelevance.rank("The Danz CM Hour", "danz cm")).isEqualTo(SearchRelevance.WHOLE_WORD)
     }
 
     @Test
@@ -66,7 +80,7 @@ class SearchRelevanceTest {
     @Test
     fun `a row that matches nothing in its own name still ranks last, not out`() {
         val rank = song("Creepin'", "21 Savage").relevanceRank("21")
-        assertThat(rank).isEqualTo(SearchRelevance.SECONDARY_OFFSET + SearchRelevance.PREFIX)
+        assertThat(rank).isEqualTo(SearchRelevance.SECONDARY_OFFSET + SearchRelevance.LEADING_WORD)
         assertThat(rank).isGreaterThan(SearchRelevance.CONTAINS)
     }
 
@@ -79,7 +93,7 @@ class SearchRelevanceTest {
     @Test
     fun `albums, artists and playlists rank by their own name`() {
         assertThat(album("21", "Adele").relevanceRank("21")).isEqualTo(SearchRelevance.EXACT)
-        assertThat(artist("21 Savage").relevanceRank("21")).isEqualTo(SearchRelevance.PREFIX)
+        assertThat(artist("21 Savage").relevanceRank("21")).isEqualTo(SearchRelevance.LEADING_WORD)
         assertThat(playlist("21").relevanceRank("21")).isEqualTo(SearchRelevance.EXACT)
     }
 
@@ -103,52 +117,86 @@ class SearchRelevanceTest {
     }
 
     @Test
-    fun `the section holding the best match reads first`() {
-        // Searching "21": the album is named exactly that, the artist starts with it, and the songs
-        // only credit him. The album should not be below twenty-three songs.
-        val grouped = mapOf(
-            SearchFilterType.SONGS to listOf(
-                song("Creepin'", "21 Savage"),
-                song("Bank Account", "21 Savage"),
-            ),
-            SearchFilterType.ARTISTS to listOf(artist("21 Savage")),
-            SearchFilterType.ALBUMS to listOf(album("21", "Adele")),
+    fun `All puts own names before the songs and album that merely credit the artist`() {
+        val namedArtist = artist("Danz Artist")
+        val namedSong = song("Danza Song")
+        val relatedSongs = listOf("Amber", "Birch", "Cedar", "Dune", "Elm", "Fern").map {
+            song(it, "Danz Artist")
+        }
+        val relatedAlbum = album("Northern Lights", "Danz Artist")
+        val layout = searchResultsLayout(
+            relatedSongs.reversed() + listOf(namedSong, relatedAlbum, namedArtist, namedSong, namedArtist),
+            "danz",
+            SearchFilterType.ALL
         )
-        assertThat(searchSectionOrder(grouped, "21"))
-            .containsExactly(
-                SearchFilterType.ALBUMS,
-                SearchFilterType.ARTISTS,
-                SearchFilterType.SONGS,
-            )
-            .inOrder()
+
+        assertThat(layout.best).containsExactly(namedArtist, namedSong).inOrder()
+        assertThat(layout.sections).containsExactly(
+            SearchFilterType.SONGS to relatedSongs,
+            SearchFilterType.ALBUMS to listOf(relatedAlbum)
+        ).inOrder()
+        val rows = layout.best + layout.sections.flatMap { it.second }
+        assertThat(rows.map { it.searchRowKey }).containsNoDuplicates()
     }
 
     @Test
-    fun `sections whose best match is equally good keep their usual order`() {
-        val grouped = mapOf(
-            SearchFilterType.ARTISTS to listOf(artist("21 Savage")),
-            SearchFilterType.SONGS to listOf(song("21 Guns", "Green Day")),
+    fun `the five best use rank then type then title and the overflow leads its sections`() {
+        val exactPlaylist = playlist("Wave")
+        val firstSong = song("Wave Alpha")
+        val secondSong = song("Wave Beta")
+        val titleAlbum = album("Wave Album")
+        val titleArtist = artist("Wave Artist")
+        val titleComposer = SearchResultItem.ComposerItem("Wave Composer", 2)
+        val overflowSong = song("A Wave Ago")
+        val relatedSong = song("Harbor", "Wave Artist")
+        val layout = searchResultsLayout(
+            listOf(relatedSong, titleArtist, secondSong, exactPlaylist, titleComposer, titleAlbum, overflowSong, firstSong),
+            "wave",
+            SearchFilterType.ALL
         )
-        assertThat(searchSectionOrder(grouped, "21"))
-            .containsExactly(SearchFilterType.SONGS, SearchFilterType.ARTISTS)
-            .inOrder()
+
+        assertThat(layout.best).containsExactly(exactPlaylist, firstSong, secondSong, titleAlbum, titleArtist).inOrder()
+        assertThat(layout.sections).containsExactly(
+            SearchFilterType.SONGS to listOf(overflowSong, relatedSong),
+            SearchFilterType.COMPOSERS to listOf(titleComposer)
+        ).inOrder()
     }
 
     @Test
-    fun `an exact song is not buried under an album that merely mentions it`() {
-        val grouped = mapOf(
-            SearchFilterType.ALBUMS to listOf(album("Live at 21", "Someone")),
-            SearchFilterType.SONGS to listOf(song("21", "Someone")),
+    fun `without an own name match the nonempty sections keep their fixed order`() {
+        val relatedSong = song("Harbor", "Wave Artist")
+        val relatedAlbum = album("Seascapes", "Wave Artist")
+        val relatedArtist = artist("Someone")
+        val relatedComposer = SearchResultItem.ComposerItem("Composer", 2)
+        val relatedPlaylist = playlist("Mix")
+        val layout = searchResultsLayout(
+            listOf(relatedPlaylist, relatedComposer, relatedArtist, relatedAlbum, relatedSong),
+            "wave",
+            SearchFilterType.ALL
         )
-        assertThat(searchSectionOrder(grouped, "21"))
-            .containsExactly(SearchFilterType.SONGS, SearchFilterType.ALBUMS)
-            .inOrder()
+
+        assertThat(layout.best).isEmpty()
+        assertThat(layout.sections).containsExactly(
+            SearchFilterType.SONGS to listOf(relatedSong),
+            SearchFilterType.ALBUMS to listOf(relatedAlbum),
+            SearchFilterType.ARTISTS to listOf(relatedArtist),
+            SearchFilterType.COMPOSERS to listOf(relatedComposer),
+            SearchFilterType.PLAYLISTS to listOf(relatedPlaylist)
+        ).inOrder()
     }
 
     @Test
-    fun `a section with nothing in it is not listed at all`() {
-        val grouped = mapOf(SearchFilterType.PLAYLISTS to listOf(playlist("21")))
-        assertThat(searchSectionOrder(grouped, "21"))
-            .containsExactly(SearchFilterType.PLAYLISTS)
+    fun `a single filter keeps that type sorted by relevance and title without a best block`() {
+        val exact = song("Wave")
+        val first = song("Wave Alpha")
+        val second = song("Wave Beta")
+        val layout = searchResultsLayout(
+            listOf(second, artist("Wave Artist"), first, exact),
+            "wave",
+            SearchFilterType.SONGS
+        )
+
+        assertThat(layout.best).isEmpty()
+        assertThat(layout.sections).containsExactly(SearchFilterType.SONGS to listOf(exact, first, second))
     }
 }

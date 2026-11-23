@@ -66,3 +66,10 @@ private fun stardustScatterConfigs(min: Dp, boxMaxHeight: Dp): List<Config> = li
     Config(size = min * 0.5f, width = min * 0.5f, height = min * 0.5f, align = Alignment.CenterEnd, rot = -15f, shape = RoundedStarShape(sides = 8, curve = 0.04, rotation = 0f), offsetX = -(300.dp * 0.04f), offsetY = 0.dp),
     Config(size = min * 0.5f, width = min * 0.5f, height = min * 0.42f, align = Alignment.BottomStart, rot = 25f, shape = RoundedCornerShape(percent = 50), offsetX = (300.dp * 0.06f), offsetY = -(boxMaxHeight * 0.03f))
 )
+
+/** Number of covers across each row. Three covers in a square use a tall left cell. */
+internal fun coverMosaicRows(count: Int, columns: Int): List<Int> = when {
+    count <= 1 -> listOf(count)
+    columns == 2 && count <= 3 -> listOf(count)
+    else -> (0 until count step columns).map { minOf(columns, count - it) }
+}

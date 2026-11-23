@@ -145,6 +145,18 @@
             </intent-filter>
         </activity>
 
+        <!-- B69: the Safety Max confirmation opened from the notification's "Raise the limit", over the app in front.
+             Its own task, out of the recents, not kept in history; not exported, not shown over the lock screen. -->
+        <activity
+            android:name=".presentation.safety.SafetyOverrideConfirmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleTask"
+            android:screenOrientation="behind"
+            android:theme="@style/Theme.PixelPlayer.ExternalPlayer" />
+
         <service
             android:name=".data.service.MusicService"
             android:exported="true"

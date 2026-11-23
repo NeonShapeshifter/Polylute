@@ -424,6 +424,7 @@
     <!-- Nombres e intenciones de los seis mixes (la capa de datos no los localiza) -->
 
     <!-- Búsqueda: cabeceras de resultados -->
+    <string name="search_best_matches">Best matches</string>
     <string name="search_results_songs">Songs</string>
     <string name="search_results_albums">Albums</string>
     <string name="search_results_artists">Artists</string>

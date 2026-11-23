@@ -292,7 +292,7 @@ open class AudioPageRenderTest {
 
     @Test
     fun `B39-A7 - a stored on state is drawn on`() {
-        setPage(state(dacResonance, ui = SettingsUiState(replayGainEnabled = true, dacShareEnabled = true)))
+        setPage(state(dacResonance, ui = SettingsUiState(replayGainEnabled = true, dacShareChoice = true)))
         compose.onAllNodes(isToggleable())[1].assertIsOn()
     }
 

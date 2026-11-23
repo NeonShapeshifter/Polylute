@@ -4,6 +4,12 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lostf1sh.pixelplayeross.data.model.Genre
+import com.lostf1sh.pixelplayeross.data.model.GenreNames
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,6 +39,8 @@ data class GenreDetailUiState(
     val isLoadingSongs: Boolean = false,
     val error: String? = null,
     val imageError: Boolean = false,
+    val artwork: ImmutableList<String> = persistentListOf(),
+    val featuredCandidates: List<GenreArtist> = emptyList(),
 )
 
 @HiltViewModel
@@ -43,17 +51,28 @@ class GenreDetailViewModel @Inject constructor(
     private val genreImages: com.lostf1sh.pixelplayeross.data.repository.GenreImageRepository,
     /** B56-5: plays, for the tie-break of the top artists. */
     private val ledgers: com.lostf1sh.pixelplayeross.data.stats.LedgerProvider,
+    private val genreImagery: GenreImagery,
+    internal val onlineInfo: GenrePageInformation,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GenreDetailUiState())
     val uiState: StateFlow<GenreDetailUiState> = _uiState.asStateFlow()
 
     private var customImagePath: String? = null
-
     init {
         savedStateHandle.get<String>("genreId")?.let { genreId ->
             val decodedGenreId = java.net.URLDecoder.decode(genreId, "UTF-8")
             observeImage(decodedGenreId)
+            viewModelScope.launch {
+                val genreName = _uiState.map { it.genre?.name }.distinctUntilChanged()
+                combine(genreName, genreImagery.pictures) { name, pictures ->
+                    name?.let { pictures[GenreNames.key(it)] }
+                }.collect { pictures ->
+                    _uiState.update {
+                        it.copy(artwork = pictures?.covers ?: persistentListOf(), featuredCandidates = pictures?.featuredCandidates.orEmpty())
+                    }
+                }
+            }
             loadGenreDetails(decodedGenreId)
         } ?: run {
             _uiState.update { it.copy(error = "Genre ID not found", isLoadingGenreName = false, isLoadingSongs = false) }

@@ -36,7 +36,7 @@ class B56GenreRouteByOldSpellingTest {
         val repository = mockk<MusicRepository>()
         every { repository.getGenres() } returns flowOf(listOf(hipHop))
         every { repository.getMusicByGenre("Hip Hop") } returns flowOf(listOf(song(1, 1, 10), song(2, 1, 10), song(3, 2, 11)))
-        val viewModel = GenreDetailViewModel(repository, SavedStateHandle(mapOf("genreId" to "hip-hop")), TestDispatcherProvider(Dispatchers.Unconfined), mockk(relaxed = true), mockk(relaxed = true))
+        val viewModel = GenreDetailViewModel(repository, SavedStateHandle(mapOf("genreId" to "hip-hop")), TestDispatcherProvider(Dispatchers.Unconfined), mockk(relaxed = true), mockk(relaxed = true), emptyGenreImagery(), offlineGenreInfo())
 
         val state = viewModel.uiState.value
 

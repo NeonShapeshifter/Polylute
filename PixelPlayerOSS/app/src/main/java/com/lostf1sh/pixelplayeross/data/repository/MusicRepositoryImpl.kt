@@ -740,7 +740,7 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun invalidateCachesDependentOnAllowedDirectories() {
-        Timber.tag("MusicRepo").i("invalidateCachesDependentOnAllowedDirectories called. Reactive flows will update automatically.")
+        libraryChangeSignal.changed("library directory filter changed")
     }
 
     override suspend fun catalogFilterKey(): String = listOf(

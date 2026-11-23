@@ -184,12 +184,12 @@ class B48GenreArtTest {
         assertThat(pink(bitmap)).isGreaterThan(1_000)
     }
 
-    @Test fun `the header without an image is the title alone, as it was before the custom images`() {
+    @Test fun `the header without an image or cover shows the initial`() {
         showHeader(Genre("rock", "Rock", songCount = 15))
         val bitmap = save("genre-header-no-image")
         assertThat(pink(bitmap)).isEqualTo(0)
         compose.onNodeWithText("Rock").assertIsDisplayed()
-        compose.onAllNodesWithTag("genre-art-letter", useUnmergedTree = true).assertCountEquals(0)      // no cover slot: nothing to put a letter in
+        compose.onNodeWithTag("genre-art-letter", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test fun `a header whose image file is gone shows the letter, never the music note`() {

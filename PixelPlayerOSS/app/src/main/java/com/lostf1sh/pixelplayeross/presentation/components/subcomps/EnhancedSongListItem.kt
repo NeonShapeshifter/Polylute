@@ -33,7 +33,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -227,6 +229,8 @@ fun EnhancedSongListItem(
         )
     }
 
+    val latestOnClick by rememberUpdatedState(onClick)
+    val latestOnLongPress by rememberUpdatedState(onLongPress)
     Box(
         modifier = rowModifier
             .background(containerColor, surfaceShape)
@@ -243,16 +247,18 @@ fun EnhancedSongListItem(
                 onLongClick { onLongPress(); true }
             }
             .pointerInput(isSelectionMode) {
+                // 11-22: the gesture coroutine outlives recompositions, so it calls the latest handlers. It used to keep the first
+                // ones: a row reused for another song (Home's Daily Mix after its midnight refresh) played the song that row had shown before.
                 detectTapGestures(
                     onTap = {
                         if (isSelectionMode) {
-                            onLongPress()
+                            latestOnLongPress()
                         } else {
-                            onClick()
+                            latestOnClick()
                         }
                     },
                     onLongPress = {
-                        onLongPress()
+                        latestOnLongPress()
                     }
                 )
             },

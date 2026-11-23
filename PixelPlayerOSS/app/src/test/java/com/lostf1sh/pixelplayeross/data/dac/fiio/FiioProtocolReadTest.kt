@@ -321,7 +321,7 @@ class FiioProtocolReadTest {
     fun `capabilities come from the table and are kept apart from what was read`() {
         val capability = DacEqCapability.of(melody)
         assertThat(capability.bandCount).isEqualTo(10)
-        assertThat(capability.verified).isFalse()
+        assertThat(capability.verified).isTrue() // B67: the Melody is verified (the reviewer's run of 2026-11-22)
         assertThat(capability.disabledPresetId).isEqualTo(0xF0)
         val state = FiioEqReader.read(FiioHidSession(FakeFiioDac(melody), melody))
         // The state carries the claim and the reading as two things: the read count is a value of its own.
@@ -330,8 +330,9 @@ class FiioProtocolReadTest {
     }
 
     @Test
-    fun `no row of the table is verified on this app's hardware`() {
-        assertThat(FiioHidProfiles.all.filter { it.verified }).isEmpty()
+    fun `only the Melody is verified on this app's hardware`() {
+        // B67: was "no row"; the Melody was proven on 2026-11-22 (take-over, apply and read-back of all ten bands on 0xA2).
+        assertThat(FiioHidProfiles.all.filter { it.verified }.map { it.id }).containsExactly("snowsky-melody")
         assertThat(FiioHidProfiles.all.single { it.id == "fiio-k13-r2r" }.upstreamVerified).isTrue()
         // Only the Melody carries a slot table and a slot of ours, so only it could ever be written.
         assertThat(FiioHidProfiles.all.filter { it.canBeWritten }.map { it.id }).containsExactly("snowsky-melody")

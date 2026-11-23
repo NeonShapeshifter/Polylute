@@ -74,7 +74,7 @@ data class DacEqBand(
      */
     fun sameAsAllowingQRounding(other: DacEqBand): Boolean =
         index == other.index && typeCode == other.typeCode && frequencyHz == other.frequencyHz &&
-            gainTenthsDb == other.gainTenthsDb && kotlin.math.abs(qHundredths - other.qHundredths) <= Q_ROUNDING_HUNDREDTHS
+            gainRoundedSafely(stored = gainTenthsDb, sent = other.gainTenthsDb) && kotlin.math.abs(qHundredths - other.qHundredths) <= qRoundingHundredths(qHundredths)
 
     /** B59: [sameEffectAs] with the Q rounding of [sameAsAllowingQRounding]: what a read-back is compared with a band that was written. */
     fun sameEffectAsAllowingQRounding(other: DacEqBand): Boolean =
@@ -83,6 +83,23 @@ data class DacEqBand(
     companion object {
         /** B59: how far the DAC's own Q may be from the one it was sent (hundredths) and still be the same band. One, and no more. */
         const val Q_ROUNDING_HUNDREDTHS = 1
+
+        /**
+         * 11-22: the Melody's Q rounding grows with the Q (sent 6.00, stored 6.02; 4.16 → 4.17; 0.71 → 0.70), so the allowance is one hundredth
+         * or half a percent of the Q, whichever is larger. A Q never changes a peak filter's level, so the safety gate is unaffected.
+         */
+        fun qRoundingHundredths(qHundredths: Int): Int = maxOf(Q_ROUNDING_HUNDREDTHS, qHundredths / 200)
+
+        /** 11-22: how far a band's stored gain may be from the one it was sent, in tenths of a dB. */
+        const val GAIN_ROUNDING_TENTHS = 1
+
+        /**
+         * 11-22: the Melody also rounds a band's gain (sent +0.3 dB at 30 Hz, stored +0.2). One tenth either way is the same band: the pre-gain
+         * keeps one tenth of headroom for it ([DacEqCurve.attenuationTenthsFor]) whenever the curve boosts, so a boosting band stored one tenth
+         * higher stays at or below 0 dB. A band sent at or below 0 dB that comes back above it is not rounding: a cut-only curve has no headroom.
+         */
+        fun gainRoundedSafely(stored: Int, sent: Int): Boolean =
+            kotlin.math.abs(stored - sent) <= GAIN_ROUNDING_TENTHS && (stored <= 0 || sent > 0)
 
         fun of(index: Int, type: FiioFilterType, frequencyHz: Int, gainDb: Double, q: Double) = DacEqBand(
             index = index,
@@ -139,7 +156,7 @@ data class DacEqCapability(
     val filterTypes: Set<FiioFilterType>,
     /** The preset id that is "Close EQ" / "BYPASS" on this model (WolfEQ `DisabledPresetId`). */
     val disabledPresetId: Int?,
-    /** Verified by this app on real hardware. False for every row until a reviewer's device run passes. */
+    /** Verified by this app on real hardware ([FiioHidProfile.verified]): since B67 the Snowsky Melody only. */
     val verified: Boolean,
 ) {
     companion object {

@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.musicinfo
 
+import com.lostf1sh.pixelplayeross.data.model.GenreNames
 import com.lostf1sh.pixelplayeross.data.offline.InfoKind
 
 import java.io.File
@@ -25,7 +26,7 @@ data class ArtistPhoto(
 /** A description, with where it is from: shown as "From Wikipedia" and a link, as CC BY-SA asks. */
 data class Description(val text: String, val title: String, val pageUrl: String, val language: String)
 
-enum class AboutKind(val musicBrainz: String) { ARTIST("artist"), ALBUM("release-group") }
+enum class AboutKind(val musicBrainz: String) { ARTIST("artist"), ALBUM("release-group"), GENRE("genre") }
 
 /**
  * B40-F4: the three questions the app asks of the internet about music, each behind its own switch, each answered from the cache first.
@@ -264,6 +265,7 @@ class MusicInfoService(
 
     /** The description in the first of the app's languages that has one on the phone, or null. Never asks the network. */
     suspend fun cachedAbout(kind: AboutKind, name: String, artist: String?): Description? = withContext(io) {
+        if (kind == AboutKind.GENRE && !descriptionsEnabled()) return@withContext null
         if (deletedDownloads.contains(DownloadKeys.about(kind, name, artist))) return@withContext null
         val wanted = languages().distinct()
         readAbout(kind, name, artist, "und") ?: wanted.firstNotNullOfOrNull { readAbout(kind, name, artist, it) }
@@ -289,6 +291,7 @@ class MusicInfoService(
     }
 
     private suspend fun fetchAboutOnIo(kind: AboutKind, name: String, artist: String?, userRequested: Boolean): Description? {
+        if (kind == AboutKind.GENRE && !descriptionsEnabled()) return null
         if (deletedDownloads.contains(DownloadKeys.about(kind, name, artist))) return null
         val wanted = languages().distinct()
         // what is on the phone, by the app's preference; and the languages preferred over it that nobody has said are missing
@@ -309,21 +312,26 @@ class MusicInfoService(
             val match = when (kind) {
                 AboutKind.ARTIST -> brainz.findArtist(name)
                 AboutKind.ALBUM -> brainz.findReleaseGroup(name, artist.orEmpty())
+                AboutKind.GENRE -> null
             }
             val details = match?.let { brainz.entityDetails(kind.musicBrainz, it.id) }
             MusicBrainzClient.annotation(details)?.takeIf { match != null }?.let { text ->
                 val description = Description(text, requireNotNull(match).name, "https://musicbrainz.org/${kind.musicBrainz}/${match.id}", "und")
                 return@attempt saveDescription(kind, name, artist, description)
             }
-            val qid = MusicBrainzClient.parseWikidataRelation(details)
-                ?: wikidata.findMusicItem(name, if (kind == AboutKind.ALBUM) artist.orEmpty() else null)
+            val qid = if (kind == AboutKind.GENRE) {
+                verifiedGenreItem(name, wanted)
+            } else {
+                MusicBrainzClient.parseWikidataRelation(details)
+                    ?: wikidata.findMusicItem(name, if (kind == AboutKind.ALBUM) artist.orEmpty() else null)
+            }
             if (qid == null) { missingFor(worthAsking); return@attempt null }
             val titles = wikidata.wikipediaTitles(qid, worthAsking)
             var description: Description? = null
             val absent = mutableListOf<String>()
             for (language in worthAsking) {
                 val title = titles[language]
-                val summary = title?.let { wikipedia.summary(language, it) }
+                val summary = title?.let { wikipedia.summary(language, it, qid.takeIf { kind == AboutKind.GENRE }) }
                 if (summary == null) { absent += language; continue }
                 description = Description(summary.extract, summary.title.ifBlank { title.orEmpty() }, summary.pageUrl, language)
                 description = saveDescription(kind, name, artist, description)
@@ -334,6 +342,15 @@ class MusicInfoService(
             description
         }
         return if (deletedDownloads.contains(DownloadKeys.about(kind, name, artist))) null else found ?: best
+    }
+
+    private suspend fun verifiedGenreItem(name: String, languages: List<String>): String? {
+        val item = wikidata.findGenre(name, languages) ?: return null
+        val mbid = item.musicBrainzId ?: return null
+        val genre = brainz.entityDetails("genre", mbid) ?: return null
+        if (genre.optString("id") != mbid || genre.optString("name").isBlank()) return null
+        val linked = MusicBrainzClient.parseWikidataRelation(genre)
+        return item.id.takeIf { linked == null || linked == item.id }
     }
 
     private suspend fun saveDescription(
@@ -383,8 +400,9 @@ class MusicInfoService(
         fun photoKey(name: String) = MusicInfoMatching.normalize(name)
         fun coverKey(album: String, artist: String) = MusicInfoMatching.normalize(album) + "|" + MusicInfoMatching.normalize(artist)
         /** The key of a description. Without a [language] it is the key entries had before they carried one (still read, by their stored language). */
-        fun aboutKey(kind: AboutKind, name: String, artist: String?, language: String? = null) =
-            "${kind.name}|${MusicInfoMatching.normalize(name)}|${MusicInfoMatching.normalize(artist.orEmpty())}" +
-                (language?.let { "|$it" } ?: "")
+        fun aboutKey(kind: AboutKind, name: String, artist: String?, language: String? = null): String {
+            val key = if (kind == AboutKind.GENRE) GenreNames.key(name) else MusicInfoMatching.normalize(name)
+            return "${kind.name}|$key|${MusicInfoMatching.normalize(artist.orEmpty())}" + (language?.let { "|$it" } ?: "")
+        }
     }
 }

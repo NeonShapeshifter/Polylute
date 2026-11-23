@@ -15,6 +15,8 @@ data class FiioSlot(val id: Int, val name: String, val writable: Boolean)
  * - [upstreamVerified] mirrors WolfEQ's own `IsVerified`: only the K13 R2R is verified *there*. It is provenance.
  * - [verified] records verification **by this app on real hardware**. The write gate checks this separately from the upstream
  *   flag and handles consent for supported unverified profiles. See PixelPlayerOSS/docs/engineering-notes.md#dac-eq-profiles.
+ *   **Only the Snowsky Melody is verified** (B67, from the reviewer's run of 2026-11-22 on the owner's HONOR: the app's take-over of
+ *   USER 3 (0xA2), an apply of all ten bands and the read-back of each one matched). Every other row is unverified.
  *
  * [slots] and [appSlotId] exist only where this app is prepared to write (the Melody); a row without them is read-only whatever
  * else is switched on.
@@ -46,9 +48,10 @@ data class FiioHidProfile(
     /** The user slot this app writes its EQ into, never one the user may be using by hand. */
     val appSlotId: Int? = null,
     /**
-     * B31 P1.2: what a positive global gain does to the level on this model. **[PreGainSense.UNCONFIRMED] for every row** until the
-     * reviewer's listening check says which it is and a later step writes it here; the debug override [DacEqPreGainSenseSwitch]
-     * stands in for that step on one phone.
+     * B31 P1.2: what a positive global gain does to the level on this model. [PreGainSense.UNCONFIRMED] until the reviewer's
+     * listening check says which it is. **Only the Snowsky Melody is confirmed: [PreGainSense.BOOST]** (B67, the listening check of
+     * 2026-11-22 on the owner's HONOR: music playing, a flat curve on 0xA2, a positive pre-gain made it louder). Every other row stays
+     * UNCONFIRMED. In a debug build the override [DacEqPreGainSenseSwitch] still wins over the row on one phone.
      */
     val preGainSense: PreGainSense = PreGainSense.UNCONFIRMED,
     /**
@@ -105,8 +108,11 @@ object FiioHidProfiles {
         FiioHidProfile("fiio-ka17", "FiiO KA17", 0x0093, 0x01, null, 10, -12.0, 12.0, 0.1, 10.0, disabledPresetId = 0x0A),
         FiioHidProfile("fiio-ja11", "FiiO JA11", 0x0102, 0x02, null, 5, -12.0, 12.0, 0.1, 10.0,
             supportedFilters = coreFilters, disabledPresetId = 0x04),
+        // B67: verified and BOOST from the reviewer's device run of 2026-11-22 (HONOR + Melody: listening check, take-over, apply and
+        // read-back of all ten bands on 0xA2). The only row that is either.
         FiioHidProfile("snowsky-melody", "Snowsky Melody", 0x0126, 0x07, null, 10, -12.0, 12.0, 0.1, 10.0,
-            disabledPresetId = 0xF0, slots = melodySlots, appSlotId = 0xA2, answersEqSwitch = false, editingPresetId = 0x0A),
+            verified = true, disabledPresetId = 0xF0, slots = melodySlots, appSlotId = 0xA2, answersEqSwitch = false,
+            preGainSense = PreGainSense.BOOST, editingPresetId = 0x0A),
         FiioHidProfile("snowsky-retro-nano", "Snowsky Retro Nano", null, 0x07, 3, 10, -12.0, 12.0, 0.1, 10.0,
             listOf("RETRO NANO", "SNOWSKY RETRO NANO", "FiiO SNOWSKY RETRO NANO"), disabledPresetId = 0x0B),
     )

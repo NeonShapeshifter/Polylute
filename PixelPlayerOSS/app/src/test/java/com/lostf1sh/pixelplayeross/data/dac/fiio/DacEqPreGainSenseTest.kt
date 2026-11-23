@@ -23,9 +23,10 @@ class DacEqPreGainSenseTest {
     // ── the model ────────────────────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `the real Melody row does not know the sense, and nothing else does either`() {
-        assertThat(real.preGainSense).isEqualTo(PreGainSense.UNCONFIRMED)
-        assertThat(FiioHidProfiles.all.map { it.preGainSense }.toSet()).containsExactly(PreGainSense.UNCONFIRMED)
+    fun `the real Melody row is BOOST since the reviewer's listening check, and no other row knows the sense`() {
+        // B67: was "UNCONFIRMED for every row"; the check of 2026-11-22 on the owner's HONOR (a positive pre-gain was louder) settled the Melody.
+        assertThat(real.preGainSense).isEqualTo(PreGainSense.BOOST)
+        assertThat(FiioHidProfiles.all.filter { it.id != "snowsky-melody" }.map { it.preGainSense }.toSet()).containsExactly(PreGainSense.UNCONFIRMED)
     }
 
     @Test
@@ -210,10 +211,16 @@ class DacEqPreGainSenseTest {
         val store = MemoryText()
         val switch = DacEqPreGainSenseSwitch(store, debugBuild = true)
         assertThat(switch.override()).isNull()
-        assertThat(switch.effective(real)).isEqualTo(PreGainSense.UNCONFIRMED)
+        // B67: an unproven row (the Melody as it was before 11-22) says UNCONFIRMED; the real Melody row now says BOOST by itself.
+        assertThat(switch.effective(unverifiedMelody)).isEqualTo(PreGainSense.UNCONFIRMED)
+        assertThat(switch.effective(real)).isEqualTo(PreGainSense.BOOST)
         assertThat(store.writes).isEqualTo(0)
         switch.set(PreGainSense.BOOST)
-        assertThat(switch.effective(real)).isEqualTo(PreGainSense.BOOST)
+        assertThat(switch.effective(unverifiedMelody)).isEqualTo(PreGainSense.BOOST)
+        // In a debug build the reviewer's answer still wins over the row, even over a proven one.
+        switch.set(PreGainSense.ATTENUATION)
+        assertThat(switch.effective(real)).isEqualTo(PreGainSense.ATTENUATION)
+        switch.set(PreGainSense.BOOST)
         assertThat(DacEqPreGainSenseSwitch(store, debugBuild = true).override()).isEqualTo(PreGainSense.BOOST)
         switch.set(PreGainSense.UNCONFIRMED)
         assertThat(DacEqPreGainSenseSwitch(store, debugBuild = true).override()).isNull()
@@ -225,7 +232,9 @@ class DacEqPreGainSenseTest {
         val store = MemoryText("attenuation")
         val release = DacEqPreGainSenseSwitch(store, debugBuild = false)
         assertThat(release.override()).isNull()
-        assertThat(release.effective(real)).isEqualTo(PreGainSense.UNCONFIRMED)
+        assertThat(release.effective(unverifiedMelody)).isEqualTo(PreGainSense.UNCONFIRMED)
+        // B67: the stored "attenuation" does not reach the real Melody either: a release build reads the row, BOOST.
+        assertThat(release.effective(real)).isEqualTo(PreGainSense.BOOST)
         release.set(PreGainSense.BOOST)
         assertThat(release.override()).isNull()
         assertThat(store.writes).isEqualTo(0)

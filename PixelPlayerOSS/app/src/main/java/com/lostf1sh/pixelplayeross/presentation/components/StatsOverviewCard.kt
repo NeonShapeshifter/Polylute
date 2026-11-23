@@ -59,7 +59,7 @@ fun StatsOverviewCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = DapSpacing.Gutter),
-        shape = RoundedCornerShape(DapRadius.Surface),
+        shape = RoundedCornerShape(20.dp),  // owner 11-22: a bubble, like the mini-player and the Daily Mix card
         // over the cover glass a frosted surface (B42-fix3, item 8); the theme's own surface otherwise
         colors = CardDefaults.cardColors(containerColor = Dap.panel),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),

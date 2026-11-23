@@ -110,6 +110,11 @@ class FakeFiioDac(
     var storeBand: ((DacEqBand) -> DacEqBand)? = null
     private var lastStoredBand: DacEqBand? = null
     /**
+     * B67: what the DAC actually **stores** for a global gain it was sent (null: exactly what was sent). The real Melody keeps it in whole dB (11-22: −2.4 sent,
+     * −2.0 acknowledged; −0.1 → 0); its acknowledgement and every later read say what it stored.
+     */
+    var storePreGain: ((Int) -> Int)? = null
+    /**
      * B60 (#53): **the Melody as the frames of 11-06 show it.** When set (0x0A), `GET 16` answers this id instead of the selected preset's once a band of a **user slot** has been
      * read or written (`GET 15` / `SET 15`) since the last select (`SET 16`) or save (`SET 19`); the selection itself does not move, and "Close EQ" and the factory presets
      * never do it. A button on the DAC ([selectOnDevice]) and a replug end it as a select does. Null: the DAC always names its preset (every test before B60).
@@ -189,7 +194,9 @@ class FakeFiioDac(
                 val applied = !ignored && set(report, command, data, length)
                 afterSet?.invoke(this, report)
                 // A report whose check byte the DAC rejects is not acknowledged either.
-                val acknowledged = if (command == 0x15 && applied && storeBand != null) lastStoredBand?.let(FiioHidWrites::encodeBand) ?: data else data
+                val acknowledged = if (command == 0x15 && applied && storeBand != null) lastStoredBand?.let(FiioHidWrites::encodeBand) ?: data
+                    else if (command == 0x17 && applied && storePreGain != null) s16(live.getValue(activePreset).preGainTenths)
+                    else data
                 if (applied || (ignored && ackIgnored)) ack(command, acknowledged)
             }
         }
@@ -241,7 +248,10 @@ class FakeFiioDac(
                     touched = false
                 }
             }
-            0x17 -> active.preGainTenths = ((data[0].toInt() shl 8) or (data[1].toInt() and 0xFF)).toShort().toInt()
+            0x17 -> {
+                val sent = ((data[0].toInt() shl 8) or (data[1].toInt() and 0xFF)).toShort().toInt()
+                active.preGainTenths = storePreGain?.invoke(sent) ?: sent
+            }
             0x15 -> {
                 val index = data[0].toInt() and 0xFF
                 if (index == corruptBandOnWrite) return true // applied wrongly: the DAC still answers
@@ -327,10 +337,20 @@ class FakeFiioDac(
 }
 
 /**
- * The Melody's row with the pre-gain read as a signed gain (positive = louder). B30's tests were written under that reading, and so use
- * this row: the real row's sense is [PreGainSense.UNCONFIRMED] until the reviewer's listening check (B31 P1.2).
+ * The Melody's row with the pre-gain read as a signed gain (positive = louder), and **unverified**. B30's tests were written under that
+ * reading, with the real row unverified, and so use this row. B67 made the real row verified and BOOST (the reviewer's run of 2026-11-22);
+ * this one keeps `verified = false`, so the tests that rely on the gate asking for the override or the listener's consent still ask.
  */
-internal val signedMelody: FiioHidProfile = FiioHidProfiles.all.single { it.id == "snowsky-melody" }.copy(preGainSense = PreGainSense.BOOST)
+internal val signedMelody: FiioHidProfile =
+    FiioHidProfiles.all.single { it.id == "snowsky-melody" }.copy(verified = false, preGainSense = PreGainSense.BOOST)
+
+/**
+ * B67: the Melody's row as it was before the 2026-11-22 device run: unverified, the sense of its pre-gain unconfirmed. The gate's paths
+ * for an unverified profile (override, consent, refusal) and for an unknown sense (both readings) still exist for any model that becomes
+ * writable before it is proven; the tests that pin those paths use this row instead of the real one.
+ */
+internal val unverifiedMelody: FiioHidProfile =
+    FiioHidProfiles.all.single { it.id == "snowsky-melody" }.copy(verified = false, preGainSense = PreGainSense.UNCONFIRMED)
 
 /**
  * A wire that replays recorded reports: [perWrite] has one group of reports for each report written, in order, delivered after

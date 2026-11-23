@@ -13,6 +13,7 @@ import com.lostf1sh.pixelplayeross.data.model.*
 import com.lostf1sh.pixelplayeross.data.observer.MediaStoreObserver
 import com.lostf1sh.pixelplayeross.data.preferences.*
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryStateHolder
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.emptyGenreImagery
 import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -55,7 +56,7 @@ class B44Fix2FirstLibraryTest {
         val music = MusicRepositoryImpl(app, prefs, mockk(relaxed = true), db.searchHistoryDao(), dao,
             mockk(relaxed = true), songRepo, db.favoritesDao(), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true))
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-        val holder = LibraryStateHolder(music, prefs)
+        val holder = LibraryStateHolder(music, prefs, emptyGenreImagery())
         holder.initialize(scope)
         holder.startObservingLibraryData()
         val songs = Presented<Song>()

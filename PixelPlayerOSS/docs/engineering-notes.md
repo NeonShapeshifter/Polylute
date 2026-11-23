@@ -26,7 +26,13 @@ from. Write eligibility goes through the app's write gate, which checks the
 profile and any required user consent. Curve writes target only the user slot
 owned by the app. When adding a device, keep it read-only until there is a
 supported write path for that model and a hardware check of write, readback and
-restore. See [FiioHidProfiles](../app/src/main/java/com/lostf1sh/pixelplayeross/data/dac/fiio/FiioHidProfiles.kt)
+restore.
+
+Today only the Snowsky Melody is marked verified, with its pre-gain sense set to
+boost (a positive global gain is louder). Both come from a hardware check on
+2026-11-22: a listening check of the pre-gain, then the app's take-over, apply
+and read-back of all ten bands on its slot (USER 3, 0xA2). Every other row is
+unverified, with its sense unconfirmed. See [FiioHidProfiles](../app/src/main/java/com/lostf1sh/pixelplayeross/data/dac/fiio/FiioHidProfiles.kt)
 and [DacEqWriteGate](../app/src/main/java/com/lostf1sh/pixelplayeross/data/dac/fiio/DacEqWriteGate.kt).
 
 ## USB reset and volume

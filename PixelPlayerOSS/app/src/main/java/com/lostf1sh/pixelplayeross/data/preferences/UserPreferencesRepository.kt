@@ -115,9 +115,6 @@ const val DEFAULT_DAP_LOCK_SCREEN_ENABLED = false
 /** B56-3.4: how the lyrics show in the full player (replaces B41's on/off "under the cover"). */
 val DEFAULT_LYRICS_MODE = LyricsMode.DEFAULT
 
-/** B39-A7: "Share the DAC with other apps" (Resonance only). Off: Polylute keeps the DAC, as it always did. */
-const val DEFAULT_DAC_SHARE_ENABLED = false
-
 /**
  * Animated-lyrics blur strength: the shipped default and the legal range, in one place so the
  * stored value, the slider and the renderer cannot disagree about what is representable.
@@ -1166,10 +1163,13 @@ constructor(
         }
 
 
-    val dacShareEnabledFlow: Flow<Boolean> =
-        dataStore.data.map { preferences ->
-            preferences[PreferencesKeys.DAC_SHARE_ENABLED] ?: DEFAULT_DAC_SHARE_ENABLED
-        }
+    /**
+     * B39-A7 "Share the DAC with other apps", **as stored**: the listener's own choice, or null while they never touched the switch. A null
+     * follows Polylute's role ([com.lostf1sh.pixelplayeross.data.service.player.DacSharePolicy.switchOn]: on in app mode, off at a DAP
+     * level; owner 11-22), so the default is decided where the role is known, not here.
+     */
+    val dacShareChoiceFlow: Flow<Boolean?> =
+        dataStore.data.map { preferences -> preferences[PreferencesKeys.DAC_SHARE_ENABLED] }
 
     suspend fun setDacShareEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->

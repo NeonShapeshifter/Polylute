@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.musicinfo
 
+import com.lostf1sh.pixelplayeross.data.model.GenreNames
 import com.lostf1sh.pixelplayeross.data.model.Song
 
 /** The remote asset's identity, shared by automatic lookups, deletion and offline targets. */
@@ -13,6 +14,7 @@ internal object DownloadKeys {
 
     /** One decision covers every language, including descriptions saved under the legacy key. */
     fun about(kind: AboutKind, name: String, artist: String? = null): String {
+        if (kind == AboutKind.GENRE) return "about|genre|${GenreNames.key(name)}|"
         val creditedArtist = if (kind == AboutKind.ALBUM) {
             MusicBrainzClient.firstCreditedArtist(artist.orEmpty())
         } else {

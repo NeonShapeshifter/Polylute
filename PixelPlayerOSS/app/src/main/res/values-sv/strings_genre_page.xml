@@ -11,10 +11,6 @@
         <item quantity="one">%1$d album</item>
         <item quantity="other">%1$d album</item>
     </plurals>
-    <plurals name="genre_count_artists">
-        <item quantity="one">%1$d artist</item>
-        <item quantity="other">%1$d artister</item>
-    </plurals>
     <!-- B33-U5: Sök visar en hopfälld sektion «Genre · X» längst ned i Alla när sökningen matchar en genre. -->
     <string name="search_genre_section_title">Genre · %1$s</string>
     <string name="search_genre_section_folded">Hopfälld</string>
@@ -24,4 +20,8 @@
     <string name="search_genre_see_all">Visa alla</string>
     <string name="search_genre_see_all_cd">Visa alla låtar i %1$s</string>
     <string name="search_genre_load_failed">Genren kunde inte läsas in</string>
+    <string name="genre_eyebrow">GENRE</string>
+    <string name="genre_featured_artist">OMSLAGSARTIST</string>
+    <string name="genre_wikipedia_credit">Wikipedia · CC BY-SA 4.0</string>
+    <string name="genre_artists_and_albums">Artister och album</string>
 </resources>

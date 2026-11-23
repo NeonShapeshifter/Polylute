@@ -53,12 +53,16 @@ object PristineLockCopy {
      * B16-G5: the reason, in plain words, when a **listening choice** (crossfade, speed, an Android session effect) is what
      * keeps the stream off USB Direct with a DAC connected; null for every other reason. The device status says it
      * even with the lock off, where the lock's own status line has nothing to explain.
+     *
+     * B68: and when the DAC is shared with other apps (the listener's share switch): with Purity off the page said only "Off" while
+     * the DAC was with Android, so "the DAC is shared…" showed nowhere outside Maintenance.
      */
     @StringRes
     fun signalBlockerReason(reason: AudioRouteReason): Int? = when (reason) {
         AudioRouteReason.CROSSFADE_REQUIRES_ANDROID,
         AudioRouteReason.ANDROID_EFFECT_REQUIRES_ANDROID,
-        AudioRouteReason.SPEED_REQUIRES_ANDROID -> routeReason(reason)
+        AudioRouteReason.SPEED_REQUIRES_ANDROID,
+        AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS -> routeReason(reason)
         else -> null
     }
 

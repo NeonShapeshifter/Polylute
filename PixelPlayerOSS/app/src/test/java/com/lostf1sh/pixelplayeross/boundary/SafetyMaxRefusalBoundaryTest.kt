@@ -56,7 +56,8 @@ class SafetyMaxRefusalBoundaryTest {
     @Test
     fun `the service turns a refusal into the lock-screen notice`() {
         val service = source("data/service/MusicService.kt")
-        assertThat(service).contains("safetyVolumeController.get().refusals.collect { safetyRefusalNotifier.post() }")
+        // B69: every refusal still posts the F-07 notice; onRefusal adds the visible notice and the action when the refusal asks for them.
+        assertThat(service).contains("safetyVolumeController.get().refusals.collect { safetyRefusalNotifier.onRefusal(it) }")
         val notifier = source("data/volume/SafetyMaxRefusalNotifier.kt")
         assertThat(notifier).contains("R.string.safety_max_refused_notice")
         assertThat(notifier).contains("NotificationCompat.VISIBILITY_PUBLIC")

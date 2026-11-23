@@ -4,6 +4,7 @@ import android.content.ComponentCallbacks2
 import android.os.Trace
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import androidx.paging.filter
@@ -49,7 +50,8 @@ private data class GenreSeed(
 @Singleton
 class LibraryStateHolder @Inject constructor(
     private val musicRepository: MusicRepository,
-    private val userPreferencesRepository: UserPreferencesRepository
+    private val userPreferencesRepository: UserPreferencesRepository,
+    genreImagery: GenreImagery,
 ) {
 
     val tabSearch = LibraryTabSearch()
@@ -198,6 +200,12 @@ class LibraryStateHolder @Inject constructor(
                 )
             }
                 .toImmutableList()
+        }
+        .combine(genreImagery.pictures) { genres, pictures ->
+            genres.map { genre ->
+                val covers = pictures[com.lostf1sh.pixelplayeross.data.model.GenreNames.key(genre.name)]?.covers
+                if (covers == null) genre else genre.copy(albumCoverUris = covers)
+            }.toImmutableList()
         }
         .flowOn(Dispatchers.Default)
 

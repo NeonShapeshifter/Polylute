@@ -14,10 +14,11 @@ interface DacEqConsentStore {
 /**
  * B40-F2: the listener's explicit yes to "Polylute may change this DAC's USER 3 slot".
  *
- * The write path was built in B30-B31 behind two keys: the profile marked *verified on this app's hardware* (false for every row until a
- * reviewer's run passes) and a debug-only override. A listener with a Melody had neither, so the screen could read the DAC and never write
- * it. This is the third key, and it is **the listener's**: given on the DAC's screen after it says what will happen, kept per model, and
- * withdrawn from the same screen.
+ * The write path was built in B30-B31 behind two keys: the profile marked *verified on this app's hardware* (false until a reviewer's run
+ * passes) and a debug-only override. A listener with a Melody had neither, so the screen could read the DAC and never write it. This is the
+ * third key, and it is **the listener's**: given on the DAC's screen after it says what will happen, kept per model, and withdrawn from the
+ * same screen. Since B67 the Melody is verified (the reviewer's run of 2026-11-22), so the gate no longer asks it for this key; it stays
+ * for any model that becomes writable before it is verified.
  *
  * It lifts one requirement of the gate, "the profile is verified", for a write the **listener asks for** ([WriteInitiator.USER_ACTION]).
  * Everything else the gate asks stays: a complete and fresh read, a backup of the DAC first, only the app's own slot, the limits, no state

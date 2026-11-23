@@ -31,6 +31,10 @@
     <string name="safety_max_refused_notice">Safety Max · lås upp för att gå högre</string>
     <string name="safety_max_volume_write_failed">DAC:en bekräftade inte den lägre volymen. Dess nivå kan vara högre än den som visas.</string>
     <string name="safety_max_notice_channel">Volymgräns</string>
+    <!-- B69 -->
+    <string name="safety_max_limit_reached">Safety Max: volymgränsen är nådd</string>
+    <string name="safety_max_raise_limit">Höj gränsen</string>
+    <string name="safety_max_offer_channel">Volymgräns: höj den</string>
     <!-- B39-S1 -->
     <string name="safety_first_use_level">Den här DAC:en är ny för Polylute: volymen sänks till %1$d dB innan uppspelning. Höj den med volymknapparna.</string>
     <!-- B39-S1 -->

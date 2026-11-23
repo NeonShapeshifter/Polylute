@@ -26,8 +26,9 @@ enum class AudioRouteReason {
     SAFETY_TRANSITION_DEFERRED,
 
     /**
-     * B39-A7: Resonance with "Share the DAC with other apps" on, and Polylute has let go of the DAC (another app has the floor, or
-     * Polylute is paused or idle), so Android can play to it. Never decided for Purity, which keeps the DAC whether it plays or not.
+     * B39-A7: "Share the DAC with other apps" is on and Polylute has let go of the DAC (another app has the floor, or Polylute is paused or
+     * idle), so Android can play to it. B68: decided wherever [DacSharePolicy] allows it, in app mode for Purity too; never for Purity at a
+     * DAP level, which keeps the DAC whether it plays or not.
      */
     DAC_SHARED_WITH_OTHER_APPS,
 
@@ -127,10 +128,15 @@ data class AudioRouteFacts(
      */
     val androidUsbRouteAvailable: Boolean = true,
     /**
-     * B39-A7: the DAC has been handed back for other apps to use ([DacShareController]). Only honoured when the signal wants the app's
-     * DSP (Resonance): with nothing to process this is Purity, which never lets go of the DAC, whatever this says.
+     * B39-A7: the DAC has been handed back for other apps to use ([DacShareController]). Only honoured together with [dacShareAllowed].
      */
     val dacReleasedForSharing: Boolean = false,
+    /**
+     * B68: [DacSharePolicy.shareAllowed] for the switch, the Purity choice in force and the product mode the DAC was released under. The
+     * route's half of "Purity never releases at a DAP level": a released fact without it is ignored, and the route stays Direct. It no
+     * longer asks whether the app's DSP is in the signal (B68-audit H1: Purity off with nothing to process is Resonance too).
+     */
+    val dacShareAllowed: Boolean = false,
 )
 
 /**
@@ -201,8 +207,8 @@ object AudioRoutePolicy {
         !facts.sourceDirectCompatible -> android(AudioRouteReason.SOURCE_NOT_DIRECT_COMPATIBLE)
         facts.directFailedForSource -> android(AudioRouteReason.DIRECT_FAILED_FALLBACK)
         !facts.directTransitionAllowed -> android(AudioRouteReason.SAFETY_TRANSITION_DEFERRED)
-        // Purity never releases: this needs the app's DSP in the signal, and without it the DAC stays with Polylute.
-        facts.dacReleasedForSharing && facts.processing.requiresPcmProcessing -> android(AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS)
+        // B68: a released DAC is the Android route only where the share policy allows it; Purity at a DAP level never releases.
+        facts.dacReleasedForSharing && facts.dacShareAllowed -> android(AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS)
         facts.processing.requiresPcmProcessing -> AudioRouteDecision(
             backend = AudioBackend.USB_DIRECT,
             reason = AudioRouteReason.DIRECT_PROCESSED,

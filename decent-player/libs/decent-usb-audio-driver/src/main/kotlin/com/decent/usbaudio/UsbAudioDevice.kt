@@ -1214,6 +1214,20 @@ class UsbAudioDevice private constructor(private val context: Context) : Streami
         return result.ok
     }
 
+    /**
+     * B68 (audit H5): the same hand-back as [releaseToAndroid], **on the calling thread**, for the service's stop. From the main thread
+     * [releaseToAndroid] only posts it to the volume executor, and a process that dies right after the service stops may never run it: the
+     * kernel's close then releases the interfaces without a CONNECT and `snd-usb-audio` does not come back until a replug. The caller must
+     * have stopped the stream first (the players are released), or usbfs claims the streaming interface again on the next URB. Nothing open:
+     * nothing happens.
+     */
+    fun releaseToAndroidNow() {
+        owner.exclusive("service-stop") {
+            owner.clearStream()
+            handBackToAndroid()
+        }
+    }
+
     fun closeDevice() {
         if (connection != null) UsbDiagnosticJournal.platform(openGeneration, owner.generation, 0, 0, 0,
             diagnosticLevelUnits, 0, reason = 2)

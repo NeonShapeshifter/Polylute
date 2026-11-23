@@ -103,6 +103,8 @@ class B64AndroidAutoTest {
             musicRepository = music
             userPreferencesRepository = preferences
             engine = mockk(relaxed = true) { every { masterPlayer } returns player }
+            // B69: Android Auto is recognised by its signing certificate; the harness's gearhead stands for a genuine one.
+            browseSignatureCheck = MediaBrowseCallerPolicy.SignatureCheck { _, _ -> true }
         }
         service = spyk(original)
         every { service.packageName } returns context.packageName
@@ -191,6 +193,7 @@ class B64AndroidAutoTest {
         val artist = PlaybackOrigin("ARTIST", "11", "Synthetic artist")
         val requests = mutableListOf(PlaybackOrigin.attach(saved[0], album), PlaybackOrigin.attach(saved[0], artist))
         every { browser.packageName } returns context.packageName
+        every { browser.uid } returns android.os.Process.myUid() // B69: Polylute is its package and its uid
         val own = callback.onSetMediaItems(session, browser, requests, 1, 0).await()
         assertThat(own.startIndex).isEqualTo(1)
         assertThat(own.mediaItems.map(PlaybackOrigin::from)).containsExactly(album, artist).inOrder()
@@ -225,9 +228,14 @@ class B64AndroidAutoTest {
         assertThat(commands).containsAtLeastElementsIn(AutoHostPolicy.commands)
         assertThat(commands).doesNotContain(MusicNotificationProvider.CUSTOM_COMMAND_CLOSE_PLAYER)
         assertThat(connection.availablePlayerCommands!!.contains(Player.COMMAND_GET_TIMELINE)).isFalse()
-        assertThat(AutoHostPolicy.isAuto("com.android.car.media",false)).isFalse()
-        assertThat(AutoHostPolicy.isAuto("com.android.car.media",true)).isTrue()
-        assertThat(AutoHostPolicy.isAuto("invented.test.host",false)).isFalse()
+        // B69: the car is MediaBrowseCallerPolicy's answer (B69MediaBrowseCallerTest has the whole table).
+        assertThat(AutoHostPolicy.isAuto(service.browseCaller(controllerInfo("com.android.car.media", trusted = false)))).isFalse()
+        assertThat(AutoHostPolicy.isAuto(service.browseCaller(controllerInfo("com.android.car.media", trusted = true)))).isTrue()
+        assertThat(AutoHostPolicy.isAuto(service.browseCaller(controllerInfo("invented.test.host", trusted = false)))).isFalse()
+    }
+    private fun controllerInfo(packageName: String, trusted: Boolean): MediaSession.ControllerInfo = mockk(relaxed = true) {
+        every { this@mockk.packageName } returns packageName
+        every { isTrusted } returns trusted
     }
     @Test fun theRecentRootAndItsSingleItemRemainAvailable() = runTest(dispatcher) {
         val params=MediaLibraryService.LibraryParams.Builder().setRecent(true).build()

@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
  * against the ceiling the level rule gives it.
  */
 class DacEqTakeOverTest {
-    private val real = FiioHidProfiles.all.single { it.id == "snowsky-melody" }
+    private val real = unverifiedMelody // B67: the pre-11-22 row (unverified, sense unconfirmed): these tests pin those paths
     private val slot = 0xA2
     private val dirs = mutableListOf<File>()
 

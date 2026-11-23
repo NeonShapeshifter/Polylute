@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test
  * the chosen slot).
  */
 class B59DacEqTurnOnTest {
-    /** The real row: its pre-gain sense is unconfirmed, as on the owner's phone. */
+    /** The real row (B67: verified and BOOST since the reviewer's run of 2026-11-22; before that its sense was unconfirmed). */
     private val melody = FiioHidProfiles.all.single { it.id == "snowsky-melody" }
     private val dirs = mutableListOf<File>()
 
@@ -146,7 +146,12 @@ class B59DacEqTurnOnTest {
         assertThat(a.sameAsAllowingQRounding(a.copy(qHundredths = 72))).isTrue()
         assertThat(a.sameAsAllowingQRounding(a.copy(qHundredths = 69))).isFalse()
         assertThat(a.sameAsAllowingQRounding(a.copy(qHundredths = 73))).isFalse()
-        assertThat(a.sameAsAllowingQRounding(a.copy(gainTenthsDb = 1))).isFalse()
+        // 11-22: a gain stored one tenth off either way is the DAC's rounding (the pre-gain keeps a tenth of headroom when the curve boosts);
+        // two tenths is not, nor a band sent at 0 dB that comes back above it (a cut-only curve has no headroom)
+        assertThat(a.sameAsAllowingQRounding(a.copy(gainTenthsDb = 1))).isTrue()
+        assertThat(a.copy(gainTenthsDb = 1).sameAsAllowingQRounding(a)).isFalse()
+        assertThat(a.copy(gainTenthsDb = 11).sameAsAllowingQRounding(a.copy(gainTenthsDb = 10))).isTrue()
+        assertThat(a.sameAsAllowingQRounding(a.copy(gainTenthsDb = 2))).isFalse()
         assertThat(a.sameAsAllowingQRounding(a.copy(frequencyHz = 65))).isFalse()
         assertThat(a.sameAsAllowingQRounding(a.copy(typeCode = 1))).isFalse()
         assertThat(a.sameAsAllowingQRounding(a.copy(index = 2))).isFalse()
@@ -157,6 +162,12 @@ class B59DacEqTurnOnTest {
         assertThat(FiioBandAck.differsOnlyByQRounding(sent, byteArrayOf(1, 0, 0, 0, 0x40, 0, 0x46, 0))).isTrue()
         assertThat(FiioBandAck.differsOnlyByQRounding(sent, byteArrayOf(1, 0, 0, 0, 0x40, 0, 0x45, 0))).isFalse()
         assertThat(FiioBandAck.differsOnlyByQRounding(sent, byteArrayOf(1, 0, 0, 1, 0x40, 0, 0x46, 0))).isFalse()
+        // 11-22, the Melody's own bytes: band 9, +0.3 dB at 30 Hz, Q 2.29 sent; +0.2 dB stored (its rounding). One tenth either way is; two is not.
+        val band9 = byteArrayOf(8, 0, 3, 0, 0x1E, 0, 0xE5.toByte(), 0)
+        assertThat(FiioBandAck.differsOnlyByQRounding(band9, byteArrayOf(8, 0, 2, 0, 0x1E, 0, 0xE5.toByte(), 0))).isTrue()
+        assertThat(FiioBandAck.differsOnlyByQRounding(band9, byteArrayOf(8, 0, 4, 0, 0x1E, 0, 0xE5.toByte(), 0))).isTrue()
+        assertThat(FiioBandAck.differsOnlyByQRounding(band9, byteArrayOf(8, 0, 1, 0, 0x1E, 0, 0xE5.toByte(), 0))).isFalse()
+        assertThat(FiioBandAck.differsOnlyByQRounding(band9, byteArrayOf(8, 0, 2, 0, 0x1F, 0, 0xE5.toByte(), 0))).isFalse()
         assertThat(FiioBandAck.differsOnlyByQRounding(sent, sent)).isFalse()
     }
 

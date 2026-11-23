@@ -95,8 +95,15 @@ object DacEqCurve {
         val peak = peakBoostDb(bands)
         // A curve that never rises above 0 dB (cuts only) needs nothing; the guard is for a peak that is there but sampled low.
         if (peak <= 0.0) return 0
-        return ceil((peak + GUARD_DB) * 10.0 - 1e-9).toInt()
+        // + one tenth: the DAC may store a band one tenth off what it was sent ([DacEqBand.gainRoundedSafely]); the pre-gain covers it
+        val tenths = ceil((peak + GUARD_DB) * 10.0 - 1e-9).toInt() + DacEqBand.GAIN_ROUNDING_TENTHS
+        // 11-22, on the Melody: the DAC keeps the global gain in whole dB (−2.4 sent, −2.0 acknowledged; −0.1 → 0), so a finer value
+        // never reads back equal and the write is rolled back. Whole dB, rounded towards MORE attenuation: never louder than asked.
+        return (tenths + PRE_GAIN_STEP_TENTHS - 1) / PRE_GAIN_STEP_TENTHS * PRE_GAIN_STEP_TENTHS
     }
+
+    /** The global gain's step, in tenths of a dB: whole dB (the Melody truncates finer values; see [attenuationTenthsFor]). */
+    const val PRE_GAIN_STEP_TENTHS = 10
 
     /**
      * The register (`SET 17`), in tenths of a dB, that holds [bands] at or below 0 dB under [sense]; **null when [sense] cannot say**:

@@ -22,7 +22,9 @@ import kotlin.math.abs
  * So the app does not guess. While the sense is **[UNCONFIRMED]** every level is judged under *both* readings and the worse one
  * counts: a register value of `r` tenths is `|r|` louder than neutral (the worse of `+r` and `−r`). Only a register of 0 is neutral
  * under both, so only a curve that never rises above 0 dB can be written until the reviewer's listening check (a flat curve with
- * the pre-gain at −6 and +6 dB) says which reading is true and the debug override [DacEqPreGainSenseSwitch] records it.
+ * the pre-gain at −6 and +6 dB) says which reading is true; the debug override [DacEqPreGainSenseSwitch] records it on one phone, and
+ * the answer then goes into the model's profile row ([FiioHidProfile.preGainSense]). B67: the Snowsky Melody is **[BOOST]**, from the
+ * check of 2026-11-22 on the owner's HONOR (a positive pre-gain made it louder); every other row is still [UNCONFIRMED].
  */
 enum class PreGainSense {
     /** Positive register = louder, negative = quieter (WolfEQ, DevicePEQ). */

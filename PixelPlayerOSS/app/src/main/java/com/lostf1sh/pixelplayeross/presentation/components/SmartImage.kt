@@ -58,6 +58,16 @@ private class LoadLatch {
     var released = false
 }
 
+@Composable
+internal fun rememberArtworkLoadAllowed(): Boolean {
+    val deferred = LocalArtworkLoadDeferred.current
+    val latch = remember { LoadLatch() }
+    if (!latch.released && deferred?.value != true) {
+        latch.released = true
+    }
+    return latch.released
+}
+
 val SmartImageCompactListTargetSize = Size(96, 96)
 val SmartImageListTargetSize = Size(128, 128)
 private val DefaultSmartImageSize = Size(300, 300)
@@ -136,12 +146,7 @@ fun SmartImage(
         }
     }
 
-    val deferred = LocalArtworkLoadDeferred.current
-    val latch = remember { LoadLatch() }
-    if (deferred == null || !deferred.value) {
-        latch.released = true
-    }
-    if (!latch.released && onState == null && placeholderModel == null) {
+    if (!rememberArtworkLoadAllowed() && onState == null && placeholderModel == null) {
         // Same picture AsyncImage draws while it loads, so the cover simply appears later.
         Image(
             painter = sharedOrOwnPainter(placeholderResId),

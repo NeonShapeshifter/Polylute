@@ -23,9 +23,11 @@ class DacShareWiringBoundaryTest {
         assertThat(listener.substringAfter("AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ->").substringBefore("AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK ->"))
             .contains("dacShare.onFocusLost(permanent = false)")
         val canDuck = listener.substringAfter("AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK ->").substringBefore("AudioManager.AUDIOFOCUS_GAIN ->")
-        // a ducking request is "transient or not" too, with sharing on; with it off the Direct duck is as it was
-        assertThat(canDuck).contains("if (dacShare.active)")
+        // B68: a ducking request (a notification sound) never pauses and never releases, in any mode: it is ducked on the DAC, as with sharing off
         assertThat(canDuck).contains("directDuckListener?.onFocusEvent(DuckFocusEvent.CAN_DUCK, focusEvent)")
+        assertThat(canDuck).doesNotContain("dacShare.")
+        assertThat(canDuck).doesNotContain("pauseForTransientFocusLoss()")
+        assertThat(canDuck).doesNotContain("playWhenReady = false")
         val gain = listener.substringAfter("AudioManager.AUDIOFOCUS_GAIN ->")
         assertThat(gain).contains("val resumeOwed = isFocusLossPause")
         assertThat(gain).contains("if (!dacShare.onFocusGained(resumeOwed) && resumeOwed) {")
@@ -51,7 +53,7 @@ class DacShareWiringBoundaryTest {
         assertThat(service).contains("playGate = { fixedOutputNotice.get().allowPlay() && engine.allowPlayForDacShare() },")
         assertThat(engine).contains("fun allowPlayForDacShare(): Boolean = dacShare.onPlayRequested()")
         // the preference reaches the engine, which does not read preferences itself
-        assertThat(service).contains("userPreferencesRepository.dacShareEnabledFlow.collect { enabled -> engine.setDacShareEnabled(enabled) }")
+        assertThat(service).contains("userPreferencesRepository.dacShareChoiceFlow.collect { choice -> engine.setDacShareChoice(choice) }")
     }
 
     @Test
@@ -79,9 +81,9 @@ class DacShareWiringBoundaryTest {
                 assertThat(text).doesNotContain(forbidden)
             }
         }
-        // what it hands over is the route fact; Purity is left out of the route decision as well
+        // what it hands over is the route fact; B68: the route reads the same share policy, so Purity at a DAP level is left out there as well
         assertThat(source("data/service/player/AudioRouteModel.kt"))
-            .contains("facts.dacReleasedForSharing && facts.processing.requiresPcmProcessing -> android(AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS)")
+            .contains("facts.dacReleasedForSharing && facts.dacShareAllowed -> android(AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS)")
     }
 
     @Test
@@ -104,8 +106,14 @@ class DacShareWiringBoundaryTest {
     }
 
     @Test
-    fun `the switch is off by default, lives in the Audio page, and is a preference the engine is told about`() {
-        assertThat(source("data/preferences/UserPreferencesRepository.kt")).contains("const val DEFAULT_DAC_SHARE_ENABLED = false")
+    fun `the switch's default follows the role, lives in the Audio page, and is a preference the engine is told about`() {
+        // owner 11-22: nothing stored = on in app mode, off at a DAP level; the one rule is DacSharePolicy.switchOn, read by the engine and the page
+        assertThat(source("data/preferences/UserPreferencesRepository.kt")).doesNotContain("DEFAULT_DAC_SHARE_ENABLED")
+        assertThat(source("data/preferences/UserPreferencesRepository.kt"))
+            .contains("dataStore.data.map { preferences -> preferences[PreferencesKeys.DAC_SHARE_ENABLED] }")
+        assertThat(source("presentation/viewmodel/SettingsViewModel.kt")).contains("val dacShareChoice: Boolean? = null,")
+        assertThat(source("presentation/settings/AudioSettings.kt")).contains("dacShareEnabled = DacSharePolicy.switchOn(ui.dacShareChoice, productMode),")
+        assertThat(engine).contains("get() = DacSharePolicy.switchOn(dacShareChoice) { runCatching { effectiveProductModeProvider() }.getOrNull() }")
         assertThat(source("presentation/settings/AudioSettings.kt")).contains("onCheckedChange = actions::onDacShareChange")
         assertThat(source("presentation/settings/SettingsActionsWiring.kt")).contains("override fun onDacShareChange(value: Boolean) = vm.setDacShareEnabled(value)")
     }
@@ -123,5 +131,68 @@ class DacShareWiringBoundaryTest {
         val safety = source("data/volume/SafetyVolumeController.kt")
         assertThat(safety).contains("state.map(HandoffResumeSafety::userPlayLevel)")
         assertThat(safety).contains(".collect(dualPlayerEngine::onUserPlayLevel)")
+    }
+
+    // ── B68 (option D) ───────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `B68 - both layers read the one share policy - the controller's active and the route fact the engine builds`() {
+        val controller = source("data/service/player/DacShareController.kt")
+        assertThat(controller).contains("val active: Boolean get() = DacSharePolicy.shareAllowed(host.enabled, host.purityInForce) { host.effectiveProductMode() }")
+        assertThat(controller).doesNotContain("host.resonance")
+        // the route fact: read only while released, with the mode latched at the release
+        assertThat(engine).contains(
+            "dacShareAllowed = dacReleasedForSharing && DacSharePolicy.shareAllowed(\n" +
+                "                    DacSharePolicy.switchOn(dacShareChoice, dacShareReleaseMode),\n" +
+                "                    PristineModePolicy.lockInForce(pristineLockPreference, usbDacPresentFact),\n" +
+                "                    dacShareReleaseMode,\n" +
+                "                ),",
+        )
+        val host = engine.substringAfter("private val dacShare: DacShareController = DacShareController(object : DacShareController.Host {").substringBefore("private val dacSharePauseRelease")
+        // "Resonance" is the Purity choice, not "the DSP has work" (B68-audit H1)
+        assertThat(host).contains("override val purityInForce: Boolean get() = PristineModePolicy.lockInForce(pristineLockPreference, usbDacPresentFact)")
+        assertThat(host).doesNotContain("requiresPcmProcessing")
+        assertThat(host).contains("dacShareReleaseMode = if (released) effectiveProductMode() else null")
+        assertThat(host.indexOf("dacShareReleaseMode = if (released)")).isLessThan(host.indexOf("dacReleasedForSharing = released"))
+    }
+
+    @Test
+    fun `B68 - the service tells the engine Polylute's role from ProductModeController`() {
+        val service = source("data/service/MusicService.kt")
+        assertThat(service).contains("engine.effectiveProductModeProvider = { productModeForDacShare.currentState().effectiveMode }")
+        assertThat(engine).contains("var effectiveProductModeProvider: () -> com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode? = { null }")
+    }
+
+    @Test
+    fun `B68 - a settings change (switch, Purity, listening state) asks the controller with the pause state and schedules the grace`() {
+        val changed = engine.substringAfter("private fun onDacShareSettingsChanged() {").substringBefore("\n    }\n")
+        assertThat(changed).contains("val paused = ::playerA.isInitialized && !(playerA.isPlaying || playerA.playWhenReady)")
+        assertThat(changed).contains("if (dacShare.onSettingsChanged(paused) == DacShareController.PauseOutcome.RELEASE_AFTER_GRACE) scheduleDacShareReleaseIfPaused()")
+        assertThat(engine.substringAfter("fun setDacShareChoice(choice: Boolean?) {").substringBefore("\n    }\n")).contains("onDacShareSettingsChanged()")
+        assertThat(engine.substringAfter("fun updateProcessingRequirements(").substringBefore("\n    }\n")).contains("mainHandler.post { onDacShareSettingsChanged() }")
+    }
+
+    @Test
+    fun `B68 - the service stop gives the DAC back, after the players' USB stream and before the engine is done, in every mode`() {
+        val release = engine.substringAfter("\n    fun release() {").substringBefore("\n    }\n")
+        assertThat(release).contains("releaseDacOnStop()")
+        // after the master player (whose release stops the writer and drains the URBs): usbfs would claim the interface again on a URB
+        assertThat(release.indexOf("releasePlayer(playerA)")).isLessThan(release.indexOf("releaseDacOnStop()"))
+        assertThat(release.indexOf("releaseDacOnStop()")).isLessThan(release.indexOf("isReleased = true"))
+        val stop = engine.substringAfter("private fun releaseDacOnStop() {").substringBefore("\n    }\n")
+        // no mode check: Dedicated included
+        assertThat(stop).doesNotContain("ProductMode")
+        assertThat(stop).contains("device.releaseToAndroidNow()")
+        assertThat(stop.indexOf("device.releasedDriversListener = null")).isLessThan(stop.indexOf("device.releaseToAndroidNow()"))
+        // the service's stop path reaches it
+        val onDestroy = source("data/service/MusicService.kt").substringAfter("override fun onDestroy() {").substringBefore("\n    }\n")
+        assertThat(onDestroy).contains("engine.release()")
+        // the driver: the ordinary hand-back (streaming, then control; the reattach; the B40 reset rule; close), on the calling thread
+        val driver = File("../../decent-player/libs/decent-usb-audio-driver/src/main/kotlin/com/decent/usbaudio/UsbAudioDevice.kt").readText().replace("\r\n", "\n")
+        val now = driver.substringAfter("fun releaseToAndroidNow() {").substringBefore("\n    }\n")
+        assertThat(now).contains("owner.exclusive(\"service-stop\") {")
+        assertThat(now).contains("owner.clearStream()")
+        assertThat(now).contains("handBackToAndroid()")
+        assertThat(now).doesNotContain("volumeExecutor")
     }
 }

@@ -58,7 +58,7 @@ class HomeSectionTypographyTest {
         assertThat(underTheTitle).contains("thumbnails.forEach")
         assertThat(underTheTitle).contains(".size(DapSpacing.GroupGap)")
         assertThat(underTheTitle).contains("SmartImage(")
-        assertThat(underTheTitle).contains("RoundedCornerShape(DapRadius.Surface)")
+        assertThat(underTheTitle).contains("RoundedCornerShape(8.dp)")  // owner 11-22: rounder covers with the bubble card
         val card = File("$base/components/DailyMixSection.kt").readText()
         assertThat(card).contains("DailyMixHeader(thumbnails = headerSongs, onShuffle = shuffle)")
         assertThat(card).contains("val headerSongs = remember(songs) { songs.take(3).toImmutableList() }")

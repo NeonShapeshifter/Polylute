@@ -9,15 +9,17 @@ import com.lostf1sh.pixelplayeross.data.service.player.DebugFlagStore
 /**
  * DEBUG ONLY — `SET_DAC_EQ_WRITES_ALLOWED --ez allowed true|false` (debug bridge), B30-P2.
  *
- * The Melody's profile stays **unverified** (`FiioHidProfile.verified` is false for every row) until a reviewer's device run passes,
- * so the write gate refuses it. This switch is how the reviewer lets the gate through *on this phone*, to run that verification:
+ * A profile is **unverified** (`FiioHidProfile.verified` false) until a reviewer's device run passes, and the write gate refuses it
+ * (unless the listener consents, B40-F2). This switch is how the reviewer lets the gate through *on this phone*, to run that verification.
+ * Since B67 the Snowsky Melody is verified (the run of 2026-11-22 on the owner's HONOR: take-over, apply and read-back of all ten bands
+ * on 0xA2), so the switch changes nothing for it; every other row is unverified and read-only (no slot of ours).
  *
  * - **Off by default**, and off unless explicitly turned on; nothing is written when it is only read.
  * - **Persisted**, so it survives a process restart between the runbook's steps (and across the unplug step, which may restart the
  *   process). That is also its risk, so every debug command reports it and the Resonance screen's DAC-EQ editing says "debug
  *   override" while it is the only reason a write is allowed.
  * - **Inert outside a debug build**: [debugBuild] false ignores a stored value and refuses to write, so no release path can open the
- *   gate. A release build's only way to write is a profile marked verified, which a later batch decides.
+ *   gate. A release build writes only to a profile marked verified (today the Melody) or one the listener has consented to.
  * - It only lifts the **"verified" requirement**. Every other condition of the gate (read, backup, user slot, limits, net boost) stays.
  *
  * Only the debug receiver writes it (`DacEqWriteSwitchBoundaryTest` pins that).

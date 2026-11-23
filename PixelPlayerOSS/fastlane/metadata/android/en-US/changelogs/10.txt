@@ -1,0 +1,1 @@
+Verified Melody DAC EQ pre-gain, improved USB DAC sharing, and Safety Max notices outside the app. Restricted media library browsing to authorized clients. Updated search and genres with cover collages and optional credited descriptions.

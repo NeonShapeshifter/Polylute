@@ -38,7 +38,6 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapIconKind
 import com.lostf1sh.pixelplayeross.ui.ds.DapOverflowButton
 import com.lostf1sh.pixelplayeross.ui.ds.DapRowState
 import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
-import com.lostf1sh.pixelplayeross.ui.ds.DapRadius
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Song
@@ -205,7 +204,8 @@ private fun DailyMixCard(
         )
     }
     Card(
-        shape = RoundedCornerShape(DapRadius.Surface),
+        // Owner 11-22: the card is a bubble like the mini-player (20 dp corners)
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Dap.panel),
         elevation = CardDefaults.elevatedCardElevation(0.dp),
         modifier = Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Gutter)
@@ -259,7 +259,7 @@ fun DailyMixHeader(thumbnails: ImmutableList<Song>, onShuffle: (() -> Unit)? = n
                     Box(
                         modifier = Modifier
                             .size(DapSpacing.GroupGap)
-                            .clip(RoundedCornerShape(DapRadius.Surface))
+                            .clip(RoundedCornerShape(8.dp))  // owner 11-22: rounder, with the bubble card
                     ) {
                         SmartImage(
                             model = song.albumArtUriString,

@@ -393,4 +393,83 @@ class MusicInfoServiceTest {
         assertThat(hits).isEmpty()
         assertThat(File("src/main/java/com/lostf1sh/pixelplayeross/data/network/deezer").exists()).isFalse()
     }
+    private fun genreReplies(ambiguous: Boolean = false, wrongArticle: Boolean = false, spanish: Boolean = false) {
+        val mbid = "0e3fc579-2d24-4f20-9dae-736e1ec78798"
+        fun item(label: String, type: String, mbid: String = "") = """
+            {"labels":{"en":{"value":"$label"}},"aliases":{"en":[{"value":"rock"}]},"claims":{
+              "P31":[{"mainsnak":{"datavalue":{"value":{"id":"$type"}}}}],
+              "P8052":[{"mainsnak":{"datavalue":{"value":"$mbid"}}}]
+            }}
+        """.trimIndent()
+        answer({ "action=wbsearchentities" in it }) {
+            json("""{"search":[{"id":"Q100"},{"id":"Q200"},{"id":"Q300"}]}""")
+        }
+        answer({ "action=wbgetentities" in it && "claims" in it }) {
+            val climbing = item("rock climbing", "Q1000")
+            val rock = item("rock music", "Q188451", mbid)
+            val other = item("another rock genre", if (ambiguous) "Q188451" else "Q1000", mbid)
+            json("""{"entities":{"Q100":$climbing,"Q200":$rock,"Q300":$other}}""")
+        }
+        answer({ "/ws/2/genre/$mbid" in it }) {
+            json("""{"id":"$mbid","name":"rock"}""")
+        }
+        answer({ "action=wbgetentities" in it && "sitelinks" in it }) {
+            val localized = if (spanish) ""","eswiki":{"title":"Rock en español"}""" else ""
+            json("""{"entities":{"Q200":{"sitelinks":{"enwiki":{"title":"Rock music"}$localized}}}}""")
+        }
+        answer({ "en.wikipedia.org/api" in it }) {
+            val qid = if (wrongArticle) "Q100" else "Q200"
+            json("""{"title":"Rock music","wikibase_item":"$qid","extract":"Synthetic genre description.",
+                "content_urls":{"desktop":{"page":"https://en.wikipedia.org/wiki/Rock_music"}}}""")
+        }
+        answer({ "es.wikipedia.org/api" in it }) {
+            json("""{"title":"Rock en español","wikibase_item":"Q200","extract":"Descripción sintética.",
+                "content_urls":{"desktop":{"page":"https://es.wikipedia.org/wiki/Rock_en_español"}}}""")
+        }
+    }
+
+    @Test fun genreDescriptionRequiresOptInEvenAfterItWasCached() = runBlocking<Unit> {
+        descriptions = false
+        genreReplies()
+        val service = service()
+        assertThat(service.fetchAbout(AboutKind.GENRE, "Rock")).isNull()
+        assertThat(requests).isEmpty()
+        descriptions = true
+        val result = service.fetchAbout(AboutKind.GENRE, "Rock")
+        assertThat(result?.language).isEqualTo("en")
+        assertThat(result?.text).isEqualTo("Synthetic genre description.")
+        assertThat(result?.pageUrl).isEqualTo("https://en.wikipedia.org/wiki/Rock_music")
+        assertThat(requests.map { it.url.host }.toSet()).containsExactly("musicbrainz.org", "www.wikidata.org", "en.wikipedia.org")
+        val requestCount = requests.size
+        assertThat(service.fetchAbout(AboutKind.GENRE, "rock")).isEqualTo(result)
+        descriptions = false
+        assertThat(service.cachedAbout(AboutKind.GENRE, "ROCK", null)).isNull()
+        assertThat(service.fetchAbout(AboutKind.GENRE, "Rock")).isNull()
+        assertThat(requests).hasSize(requestCount)
+    }
+
+    @Test fun ambiguousMusicalNamesFailBeforeFetchingWikipedia() = runBlocking<Unit> {
+        genreReplies(ambiguous = true)
+        val service = service()
+        assertThat(service.fetchAbout(AboutKind.GENRE, "Rock")).isNull()
+        assertThat(requests.map { it.url.host }.toSet()).containsExactly("www.wikidata.org")
+        val requestCount = requests.size
+        assertThat(service.fetchAbout(AboutKind.GENRE, "Rock")).isNull()
+        assertThat(requests).hasSize(requestCount)
+    }
+
+    @Test fun aSitelinkReturningAnUnrelatedArticleCannotBeDisplayed() = runBlocking<Unit> {
+        genreReplies(wrongArticle = true)
+        val service = service()
+        assertThat(service.fetchAbout(AboutKind.GENRE, "Rock")).isNull()
+        assertThat(requests.any { it.url.host == "en.wikipedia.org" }).isTrue()
+        assertThat(cache.savedEntries()).isEmpty()
+    }
+
+    @Test fun verifiedGenreUsesTheAppLanguageBeforeEnglish() = runBlocking<Unit> {
+        genreReplies(spanish = true)
+        assertThat(service().fetchAbout(AboutKind.GENRE, "Rock")?.language).isEqualTo("es")
+        assertThat(requests.any { it.url.host == "en.wikipedia.org" }).isFalse()
+    }
+
 }

@@ -43,6 +43,10 @@
     <!-- B27-A3: the DAC did not take a volume reduction (or would not say what level it holds). -->
     <string name="safety_max_volume_write_failed">The DAC did not confirm the lower volume. Its level may be higher than shown.</string>
     <string name="safety_max_notice_channel">Volume limit</string>
+    <!-- B69: Volume Up past Safety Max with another app in front (a short notice), and the notification's action that opens the override confirmation. -->
+    <string name="safety_max_limit_reached">Safety Max: volume limit reached</string>
+    <string name="safety_max_raise_limit">Raise the limit</string>
+    <string name="safety_max_offer_channel">Volume limit: raise it</string>
     <!-- B39-S1: a DAC Polylute has no record of is lowered before any audio reaches it. %1$d is the level in dB (negative). -->
     <string name="safety_first_use_level">This DAC is new to Polylute: lowering its volume to %1$d dB before playing. Raise it with the volume keys.</string>
     <!-- B39-S1: a DAC with no volume control the app can set. %1$s is the DAC's name. -->

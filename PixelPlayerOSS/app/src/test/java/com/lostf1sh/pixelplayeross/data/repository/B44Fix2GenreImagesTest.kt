@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.repository
 
 import android.app.Application
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.setMain
@@ -17,6 +18,11 @@ import com.google.gson.Gson
 import com.lostf1sh.pixelplayeross.data.backup.module.ArtistImagesModuleHandler
 import com.lostf1sh.pixelplayeross.data.database.*
 import com.lostf1sh.pixelplayeross.data.model.Genre
+import com.lostf1sh.pixelplayeross.data.stats.LedgerProvider
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailViewModel
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.TestDispatcherProvider
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.emptyGenreImagery
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.offlineGenreInfo
 import java.io.File
 import java.nio.file.Files
 import kotlin.coroutines.Continuation
@@ -120,17 +126,22 @@ class B44Fix2GenreImagesTest {
             io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true), db.favoritesDao(), io.mockk.mockk(relaxed = true),
             io.mockk.mockk(relaxed = true), io.mockk.mockk(relaxed = true))
         val images = repository()
-        var viewModel: com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailViewModel? = null
+        var viewModel: GenreDetailViewModel? = null
         fun image(genre: Genre?): String? = genre?.javaClass?.getDeclaredField("imagePath")?.apply { isAccessible = true }?.get(genre) as? String
         try {
             val chosen = call(images, "setImage", "rock_pop", Uri.fromFile(source("propagate.png", Color.RED))) as String
             val genres = kotlinx.coroutines.withTimeout(5000) { music.getGenres().first { rows -> rows.any { image(it) == chosen } } }
             assertThat(genres).hasSize(1)
             assertThat(genres.single().id).isEqualTo("rock_pop")
-            val type = com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailViewModel::class.java
-            viewModel = type.constructors.single { it.parameterCount == 5 }.newInstance(music,
-                androidx.lifecycle.SavedStateHandle(mapOf("genreId" to "rock_pop")),
-                com.lostf1sh.pixelplayeross.presentation.viewmodel.TestDispatcherProvider(kotlinx.coroutines.Dispatchers.Unconfined), images, io.mockk.mockk<com.lostf1sh.pixelplayeross.data.stats.LedgerProvider>(relaxed = true)) as com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreDetailViewModel
+            viewModel = GenreDetailViewModel(
+                musicRepository = music,
+                savedStateHandle = SavedStateHandle(mapOf("genreId" to "rock_pop")),
+                dispatchers = TestDispatcherProvider(kotlinx.coroutines.Dispatchers.Unconfined),
+                genreImages = images as GenreImageRepository,
+                ledgers = io.mockk.mockk<LedgerProvider>(relaxed = true),
+                genreImagery = emptyGenreImagery(),
+                onlineInfo = offlineGenreInfo(),
+            )
             kotlinx.coroutines.withTimeout(5000) { viewModel.uiState.first { image(it.genre) == chosen } }
             call(images, "removeImage", "rock_pop")
             kotlinx.coroutines.withTimeout(5000) { viewModel.uiState.first { it.genre != null && image(it.genre) == null } }

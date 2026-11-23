@@ -22,7 +22,7 @@ class B55HomeVisualContractTest {
         val daily=source("presentation/components/DailyMixSection.kt")
         assertThat(daily).doesNotContain("AbsoluteSmoothCornerShape")
         assertThat(daily).doesNotContain("FilledTonalButton")
-        assertThat(daily).contains("shape = RoundedCornerShape(DapRadius.Surface)")
+        assertThat(daily).contains("shape = RoundedCornerShape(20.dp)")  // owner 11-22: the card is a bubble like the mini-player
         assertThat(daily).contains("DapNavRow(")
     }
     @Test fun `L06 L07 every Home section delegates its heading to the same clickable design system row`():Unit {

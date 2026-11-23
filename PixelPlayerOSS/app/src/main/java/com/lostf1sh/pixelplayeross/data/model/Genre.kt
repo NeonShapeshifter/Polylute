@@ -1,6 +1,8 @@
 package com.lostf1sh.pixelplayeross.data.model
 
 import androidx.compose.runtime.Immutable
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 
 @Immutable
 data class Genre(
@@ -13,6 +15,7 @@ data class Genre(
     val onDarkColorHex: String? = null,
     val songCount: Int = 0,
     val imagePath: String? = null,
+    val albumCoverUris: ImmutableList<String> = persistentListOf(),
 ) {
     companion object {
         const val UNKNOWN_ID = "unknown"

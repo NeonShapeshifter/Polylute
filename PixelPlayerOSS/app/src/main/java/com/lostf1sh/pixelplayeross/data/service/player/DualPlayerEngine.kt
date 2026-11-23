@@ -1092,8 +1092,9 @@ class DualPlayerEngine @Inject constructor(
             playerUsbSinks[playerA]?.requestSignalMode()
         }
         reevaluateAutomaticRoute("Listening requirements changed")
-        // B39-A7: Purity (no DSP) never lets go of the DAC: if the signal stopped needing the DSP while it was handed back, it is taken again.
-        mainHandler.post { dacShare.onSettingsChanged() }
+        // B39-A7 / B68: where sharing stops being allowed (Purity at a DAP level) a released DAC is taken again; where it becomes allowed while
+        // paused, the pause's wait starts.
+        mainHandler.post { onDacShareSettingsChanged() }
     }
 
     /**
@@ -1279,6 +1280,12 @@ class DualPlayerEngine @Inject constructor(
                 maintenanceForceAndroid = maintenanceOverrides.current().forcedAndroidAudio(),
                 maintenanceDirectDisabled = maintenanceOverrides.current().directTransitionDisabled(),
                 dacReleasedForSharing = dacReleasedForSharing,
+                // B68: read only while released (the policy asks nothing else then), with the mode the DAC was released under.
+                dacShareAllowed = dacReleasedForSharing && DacSharePolicy.shareAllowed(
+                    DacSharePolicy.switchOn(dacShareChoice, dacShareReleaseMode),
+                    PristineModePolicy.lockInForce(pristineLockPreference, usbDacPresentFact),
+                    dacShareReleaseMode,
+                ),
                 directFailedForSource = sourceFormatForRoute().let { source ->
                     directFailureLatch.blocks(
                         device?.deviceName,
@@ -1608,14 +1615,33 @@ class DualPlayerEngine @Inject constructor(
     private var audioFocusRequest: AudioFocusRequest? = null
     private var isFocusLossPause = false
 
-    // ── B39-A7: "Share the DAC with other apps" (Resonance only, off by default) ────────────────────
-    /** The listener's switch, told by the service (a preference the engine does not read itself). */
+    // ── B39-A7: "Share the DAC with other apps" (B68: who may share is DacSharePolicy; unset = on in app mode only) ──────────
+    /** The listener's stored choice, told by the service (a preference the engine does not read itself); null = never touched. Null until told. */
     @Volatile
-    private var dacShareEnabled = false
+    private var dacShareChoice: Boolean? = null
+
+    /** The switch as it stands ([DacSharePolicy.switchOn]): the stored choice, or Polylute's role when there is none. */
+    private val dacShareEnabled: Boolean
+        get() = DacSharePolicy.switchOn(dacShareChoice) { runCatching { effectiveProductModeProvider() }.getOrNull() }
 
     /** [DacShareController] has handed the DAC back: the route fact that turns the decision into the Android route. */
     @Volatile
     private var dacReleasedForSharing = false
+
+    /**
+     * B68: Polylute's role as Android confirms it (app, or a DAP level), set by the service (`ProductModeController`). Asked only when the
+     * share policy needs it: the switch on and Purity in force. Null until it is set (tests): read as a DAP level, so Purity keeps the DAC.
+     */
+    @Volatile
+    var effectiveProductModeProvider: () -> com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode? = { null }
+
+    /**
+     * B68: the product mode the DAC was released under, which the route's half of the policy reads for as long as it stays released. A mode
+     * that changes meanwhile (the listener makes Polylute the home app) is not acted on behind their back: the next play takes the DAC back
+     * as usual, and the next settings change or pause asks the policy again ([onDacShareSettingsChanged]).
+     */
+    @Volatile
+    private var dacShareReleaseMode: com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode? = null
 
     /** How the last hand-back that needed a bus reset ended (B40-fix2): the host says what is true of it ([DacShareController.Host.releaseNotConfirmed]). Main thread. */
     private var lastResetOutcome: com.decent.usbaudio.ResetLevelRestorer.Outcome? = null
@@ -1623,10 +1649,15 @@ class DualPlayerEngine @Inject constructor(
     private val dacShare: DacShareController = DacShareController(object : DacShareController.Host {
         override val enabled: Boolean get() = dacShareEnabled
 
-        // The effective requirements: with the Purity lock in force and a DAC attached the DSP is held off, so this is false for Purity.
-        override val resonance: Boolean get() = processingRequirements.requiresPcmProcessing
+        // B68: the listener's Purity choice in force (the same lock the signal path applies), not whether the DSP has anything to do.
+        override val purityInForce: Boolean get() = PristineModePolicy.lockInForce(pristineLockPreference, usbDacPresentFact)
+
+        override fun effectiveProductMode(): com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode? =
+            runCatching { effectiveProductModeProvider() }.getOrNull()
 
         override fun setReleased(released: Boolean) {
+            // B68: the route reads the mode of this release until the DAC is taken back (set before the fact, so no decision sees one without the other).
+            dacShareReleaseMode = if (released) effectiveProductMode() else null
             dacReleasedForSharing = released
             traceRoute("DAC_SHARE", if (released) "releasing the DAC to other apps" else "taking the DAC back")
             mainHandler.removeCallbacks(dacShareClaimTimeout)
@@ -1708,12 +1739,22 @@ class DualPlayerEngine @Inject constructor(
         resonanceLimiterEnabled = enabled
     }
 
-    /** The share switch changed (told by the service on the main thread's behalf). */
-    fun setDacShareEnabled(enabled: Boolean) {
+    /** The share switch's stored choice changed, null = never touched (told by the service on the main thread's behalf). */
+    fun setDacShareChoice(choice: Boolean?) {
         mainHandler.post {
-            dacShareEnabled = enabled
-            dacShare.onSettingsChanged()
+            dacShareChoice = choice
+            onDacShareSettingsChanged()
         }
+    }
+
+    /**
+     * B68: the switch, the Purity choice or the listening state changed (main thread). A released DAC that may no longer be shared is taken
+     * back without playing; one that may be shared now while Polylute is paused gets the pause's wait, so turning the switch on while paused
+     * shares it 3 s later (before, only the next pause or focus loss did).
+     */
+    private fun onDacShareSettingsChanged() {
+        val paused = ::playerA.isInitialized && !(playerA.isPlaying || playerA.playWhenReady)
+        if (dacShare.onSettingsChanged(paused) == DacShareController.PauseOutcome.RELEASE_AFTER_GRACE) scheduleDacShareReleaseIfPaused()
     }
 
     /**
@@ -1847,7 +1888,7 @@ class DualPlayerEngine @Inject constructor(
                 playerB?.playWhenReady = false
                 abandonAudioFocus()
                 directDuckListener?.onFocusEvent(DuckFocusEvent.LOSS, focusEvent)
-                // B39-A7: another app has the floor for good: with sharing on (Resonance) the DAC goes to it too. No resume is owed.
+                // B39-A7: another app has the floor for good: where sharing is allowed the DAC goes to it too. No resume is owed.
                 dacShare.onFocusLost(permanent = true)
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
@@ -1863,13 +1904,9 @@ class DualPlayerEngine @Inject constructor(
                 // route nothing arrives here, and if something does the current behaviour stands.
                 Timber.tag("TransitionDebug").d("AudioFocus LOSS_TRANSIENT_CAN_DUCK. Ducking Direct.")
                 focusHeldOutright = false
-                if (dacShare.active) {
-                    // B39-A7: "transient or not": with sharing on another app's request pauses Polylute and gives it the DAC, ducked or not.
-                    pauseForTransientFocusLoss()
-                    dacShare.onFocusLost(permanent = false)
-                } else {
-                    directDuckListener?.onFocusEvent(DuckFocusEvent.CAN_DUCK, focusEvent)
-                }
+                // B68: a duck (a notification sound) never pauses the music nor lets go of the DAC, in any mode and whatever the share
+                // switch says: it is ducked on the DAC exactly as with sharing off. B39-A7 paused and released here with sharing on.
+                directDuckListener?.onFocusEvent(DuckFocusEvent.CAN_DUCK, focusEvent)
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 Timber.tag("TransitionDebug").d("AudioFocus GAIN. Resuming if paused by loss.")
@@ -3629,12 +3666,35 @@ class DualPlayerEngine @Inject constructor(
             releasePlayer(playerA)
         }
         playerUsbSinks.clear()
+        releaseDacOnStop()
         if (audioOutputsCallbackRegistered) {
             context.getSystemService(AudioManager::class.java)?.unregisterAudioDeviceCallback(audioOutputsCallback)
             audioOutputsCallbackRegistered = false
         }
         mainHandler.removeCallbacks(androidUsbRouteTimeout)
         mainHandler.removeCallbacks(usbRouteProbe)
+        mainHandler.removeCallbacks(dacSharePauseRelease)
+        mainHandler.removeCallbacks(dacShareClaimTimeout)
         isReleased = true
+    }
+
+    /**
+     * B68 (audit H5): a stopped engine holds nothing. Until B68 the service's stop released the players (the USB stream: writer stopped, URBs
+     * drained, "device kept open") and nothing gave the interfaces back, so the DAC stayed bound to usbfs for as long as the process lived,
+     * and a process that died afterwards left it with no driver at all until a replug (the kernel's close does not CONNECT).
+     *
+     * Here, in every mode (Dedicated included), right after the players: the ordinary hand-back on this thread
+     * ([UsbAudioDevice.releaseToAndroidNow]): `releaseInterface` streaming, then control (Android's `releaseInterface` sends the CONNECT), the
+     * reattach if a driver is still missing, the B40 reset rule (an unconfirmed level keeps the DAC), then close. Not before the players:
+     * usbfs claims an interface again by itself when a URB is submitted on it (`checkintf`), so a writer still running would undo it.
+     * The engine's listeners are detached first: nothing they would post has an engine to run on any more.
+     */
+    private fun releaseDacOnStop() {
+        val device = UsbAudioDevice.getInstance(context)
+        device.releaseListener = null
+        device.resetLevelListener = null
+        device.releasedDriversListener = null
+        runCatching { device.releaseToAndroidNow() }
+            .onFailure { Timber.tag("DualPlayerEngine").w(it, "DAC hand-back on service stop failed") }
     }
 }

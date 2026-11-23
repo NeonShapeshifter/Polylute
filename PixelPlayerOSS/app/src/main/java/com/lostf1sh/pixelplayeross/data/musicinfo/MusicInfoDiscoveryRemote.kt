@@ -59,6 +59,7 @@ internal class MusicInfoDiscoveryRemote(
         val match = when (kind) {
             AboutKind.ARTIST -> brainz.findArtist(name)
             AboutKind.ALBUM -> brainz.findReleaseGroup(name, artist.orEmpty())
+            AboutKind.GENRE -> return null
         }
         val details = match?.let { brainz.entityDetails(kind.musicBrainz, it.id) }
         val annotation = MusicBrainzClient.annotation(details)

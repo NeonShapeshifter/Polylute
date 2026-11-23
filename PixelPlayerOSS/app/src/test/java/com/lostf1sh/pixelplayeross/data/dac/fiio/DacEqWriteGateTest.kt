@@ -19,7 +19,7 @@ import org.junit.jupiter.api.assertThrows
  * source scan keeps SET frames in one file and permits in one class.
  */
 class DacEqWriteGateTest {
-    private val melody = FiioHidProfiles.all.single { it.id == "snowsky-melody" }
+    private val melody = unverifiedMelody // B67: the pre-11-22 row (unverified, sense unconfirmed): these tests pin those paths
     private val verified = melody.copy(verified = true)
     private val slot = 0xA2
 
@@ -190,11 +190,12 @@ class DacEqWriteGateTest {
             assertThat(pre).isAtMost(0)
             assertThat(DacEqCurve.netPeakDb(bands, pre)).isAtMost(0.0)
         }
-        // A cut-only curve needs none; a lone boost needs its own height, rounded down to the tenth.
+        // A cut-only curve needs none; a lone boost needs its own height, rounded to the whole dB below it (11-22: the Melody keeps whole dB).
         assertThat((apply(bands = curve(5 to -4.0)) as GateDecision.Authorised).preGainTenthsDb).isEqualTo(0)
         val lone = (apply(bands = curve(5 to 3.0)) as GateDecision.Authorised).preGainTenthsDb!!
         assertThat(lone).isAtMost(-30)
-        assertThat(lone).isAtLeast(-33)
+        assertThat(lone).isAtLeast(-40)
+        assertThat(lone % 10).isEqualTo(0)
     }
 
     @Test

@@ -123,10 +123,10 @@ android {
         applicationId = "app.polylute"
         minSdk = 29
         targetSdk = 37
-        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.4.0-rc.2, code 9) and
+        // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.4.0-rc.3, code 10) and
         // these are what is used when it holds none.
-        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 9
-        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.4.0-rc.2"
+        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 10
+        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.4.0-rc.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -228,6 +228,14 @@ android {
         // both ship in every install: with language splits Play delivers only the device language, and a picked
         // language that was not delivered shows nothing (lint AppBundleLocaleChanges).
         language.enableSplit = false
+    }
+
+    // B67: AGP writes a DEPENDENCY_INFO block (id 0x504b4453) into the APK Signing Block, encrypted with a Google key that only
+    // Play can read. IzzyOnDroid flags it, and F-Droid's reproducible checks cannot verify it. The APKs (GitHub Releases,
+    // IzzyOnDroid, F-Droid) go out without it; the bundle keeps it, because Play Console uses it for its SDK checks.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = true
     }
 }
 

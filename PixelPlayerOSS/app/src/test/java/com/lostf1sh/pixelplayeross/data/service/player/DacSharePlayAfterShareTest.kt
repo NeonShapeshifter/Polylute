@@ -36,7 +36,8 @@ class DacSharePlayAfterShareTest {
         val resumes = mutableListOf<String>()
         val refusals = mutableListOf<DacShareController.ClaimRefusal>()
         override val enabled = true
-        override val resonance = true
+        override val purityInForce = false
+        override fun effectiveProductMode() = com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode.APP
         override fun setReleased(released: Boolean) = Unit
         override fun requestFocus() = true
         override fun resume() { resumes += "resume" }

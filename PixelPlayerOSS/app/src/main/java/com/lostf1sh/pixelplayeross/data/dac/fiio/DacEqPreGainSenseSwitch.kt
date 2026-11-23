@@ -14,11 +14,12 @@ interface DebugTextStore {
 /**
  * DEBUG ONLY — `SET_DAC_EQ_PRE_GAIN_SENSE --es sense boost|attenuation|unconfirmed` (debug bridge), B31 P1.2.
  *
- * Every profile's [FiioHidProfile.preGainSense] is [PreGainSense.UNCONFIRMED]: the app does not know whether a positive global gain
- * amplifies or attenuates, and judges every level under both readings until it is told. **The reviewer's listening check** (a flat curve
- * on the app's slot with the pre-gain at −6 and at +6 dB, music playing, the DAC at a low level) says which, and this switch records the
- * answer **on this phone** so the rest of the runbook (a +1 dB band, the roundtrip of a curve) can run. A later step writes the answer
- * into the profile row; this is not that step.
+ * A profile whose [FiioHidProfile.preGainSense] is [PreGainSense.UNCONFIRMED] does not say whether a positive global gain amplifies or
+ * attenuates, and the app judges every level under both readings until it is told. **The reviewer's listening check** (a flat curve on
+ * the app's slot with the pre-gain at −6 and at +6 dB, music playing, the DAC at a low level) says which, and this switch records the
+ * answer **on this phone** so the rest of the runbook (a +1 dB band, the roundtrip of a curve) can run. The answer for a model goes into
+ * its profile row: B67 wrote [PreGainSense.BOOST] into the Snowsky Melody's, from the check of 2026-11-22 on the owner's HONOR (a positive
+ * pre-gain made it louder). Every other row is still UNCONFIRMED. In a debug build a value set here still wins over the row ([effective]).
  *
  * - **Unset by default**; [PreGainSense.UNCONFIRMED] clears it.
  * - **Persisted** like the writes override, so it survives the process restart of the unplug step.

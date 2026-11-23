@@ -1,5 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.service.player
 
+import com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode
+
 /**
  * B39-A7: "Share the DAC with other apps", the decisions, apart from the engine that carries them out.
  *
@@ -9,17 +11,21 @@ package com.lostf1sh.pixelplayeross.data.service.player
  * -21 dB with no ceiling refused six taps in a row until the 10 s claim timeout.
  *
  * Both Polylute modes drive the DAC through the exclusive USB path, and while it holds the DAC every other app's audio (a voice note,
- * a video) goes to the phone's speaker. This gives the DAC back, in **Resonance only** and only with the listener's switch on:
+ * a video) goes to the phone's speaker. This gives the DAC back, only with the listener's switch on, where [DacSharePolicy] allows it
+ * (B68: in app mode for Purity and Resonance; at a DAP level for Resonance only):
  *
- *  - another app asking for audio focus, transient or not, pauses Polylute and releases the DAC ([onFocusLost]);
+ *  - another app taking audio focus (`LOSS`, `LOSS_TRANSIENT`) pauses Polylute, as Android always does, and releases the DAC ([onFocusLost]);
+ *    a request that only asks Polylute to duck (`LOSS_TRANSIENT_CAN_DUCK`, a notification sound) never comes here: the engine ducks on the
+ *    DAC and the music goes on (B68);
  *  - a paused or idle Polylute releases it too, after a short wait so a quick pause and play does not hand it back and take it again
- *    ([onPaused], [onPauseGraceElapsed]);
- *  - **play** takes full audio focus first, so the other app pauses (never both at once), then takes the DAC back and resumes in
- *    Resonance, with the same DSP, DAC volume and Safety Max as before: the claim is the ordinary Direct claim, whose open guard restores
- *    them ([onPlayRequested], [onDirectReady]).
+ *    ([onPaused], [onPauseGraceElapsed]); the switch turning on, or sharing becoming allowed, while paused starts the same wait
+ *    ([onSettingsChanged]);
+ *  - **play** takes full audio focus first, so the other app pauses (never both at once), then takes the DAC back and resumes with the
+ *    same signal mode, DSP, DAC volume and Safety Max as before: the claim is the ordinary Direct claim, whose open guard restores
+ *    them ([onPlayRequested], [onRouteState]). In Purity that is `DIRECT_PRISTINE`, as if it had never let go.
  *
- * **Purity never releases.** [active] is false whenever the signal does not need the app's DSP (Purity), whatever the switch says, and the
- * route policy ignores the released fact without it as well: two layers, either one is enough.
+ * **Purity never releases at a DAP level.** [active] reads [DacSharePolicy], and so does the route policy, which ignores the released fact
+ * where the policy does not allow it: two layers, either one is enough.
  *
  * It owns no clock, no thread and no platform object: the engine tells it what happened and carries out what it asks ([Host]).
  */
@@ -28,8 +34,14 @@ class DacShareController(private val host: Host) {
         /** The listener's switch (off by default). */
         val enabled: Boolean
 
-        /** The signal wants the app's DSP: Resonance. False for Purity. */
-        val resonance: Boolean
+        /**
+         * B68: the listener's Purity choice is in force (the lock preference with a DAC attached: `PristineModePolicy.lockInForce`). False is
+         * Resonance, **whether or not the app's DSP has anything to do**.
+         */
+        val purityInForce: Boolean
+
+        /** B68: what Android confirms about Polylute's role right now (null: not known, which [DacSharePolicy] reads as a DAP level). Asked only when it decides. */
+        fun effectiveProductMode(): EffectiveProductMode?
 
         /** Hands the DAC back to Android (true) or takes it again (false): the route fact, then a new decision. */
         fun setReleased(released: Boolean)
@@ -90,10 +102,13 @@ class DacShareController(private val host: Host) {
 
     private var owed = Owed.NONE
 
-    /** Whether sharing is in force now: the switch is on and the signal is Resonance. */
-    val active: Boolean get() = host.enabled && host.resonance
+    /** Whether sharing is in force now: the switch is on and [DacSharePolicy] allows it for this Purity choice and product mode. */
+    val active: Boolean get() = DacSharePolicy.shareAllowed(host.enabled, host.purityInForce) { host.effectiveProductMode() }
 
-    /** Another app took audio focus; [permanent] is `AUDIOFOCUS_LOSS`. The engine has already paused the player. */
+    /**
+     * Another app took audio focus; [permanent] is `AUDIOFOCUS_LOSS`, otherwise `AUDIOFOCUS_LOSS_TRANSIENT`. The engine has already paused
+     * the player. Never called for `LOSS_TRANSIENT_CAN_DUCK` (B68): a duck is not a reason to stop the music or let go of the DAC.
+     */
     fun onFocusLost(permanent: Boolean) {
         if (!active) return
         if (permanent) owed = Owed.NONE
@@ -185,13 +200,22 @@ class DacShareController(private val host: Host) {
         host.releaseNotConfirmed()
     }
 
-    /** The switch or the signal changed: with sharing off, or Purity, a released DAC is taken again (no resume: nothing was asked). */
-    fun onSettingsChanged() {
-        if (active || !released) return
-        released = false
-        claiming = false
-        owed = Owed.NONE
-        host.setReleased(false)
+    /**
+     * The switch, the Purity choice or the listening state changed. Where sharing is no longer allowed, a released DAC is taken again (no
+     * resume: nothing was asked). B68: where it is allowed now and Polylute is [paused] with the DAC still held, the same wait as a pause
+     * starts ([PauseOutcome.RELEASE_AFTER_GRACE]): turning the switch on while paused shares the DAC 3 s later, not only after the next pause.
+     */
+    fun onSettingsChanged(paused: Boolean): PauseOutcome {
+        if (!active) {
+            if (released) {
+                released = false
+                claiming = false
+                owed = Owed.NONE
+                host.setReleased(false)
+            }
+            return PauseOutcome.NONE
+        }
+        return if (paused) onPaused() else PauseOutcome.NONE
     }
 
     private fun release() {

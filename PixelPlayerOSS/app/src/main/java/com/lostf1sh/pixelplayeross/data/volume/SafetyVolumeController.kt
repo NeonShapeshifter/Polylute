@@ -120,10 +120,18 @@ data class VolumeHudEvent(
  * slider) or a change made through the platform's own volume. The in-app key path has its own
  * readout and override gesture and does not produce this.
  *
- * Carries nothing but the moment, for the same reason [VolumeHudEvent] carries no level: whoever
- * renders it reads the volume from [SafetyVolumeState].
+ * Carries no level, for the same reason [VolumeHudEvent] carries none: whoever renders it reads the
+ * volume from [SafetyVolumeState]. B69 adds what is to be said beyond the F-07 notification
+ * ([SafetyMaxOutsideNotice] decides it):
+ * @param visibleNotice also show the short visible notice ("Safety Max: volume limit reached"): the first refused raise of the episode,
+ *        made with the screen on and another app in front.
+ * @param offer the notification carries "Raise the limit", in this style; null: the F-07 notice as it was.
  */
-data class SafetyMaxRefusal(val atElapsedMs: Long)
+data class SafetyMaxRefusal(
+    val atElapsedMs: Long,
+    val visibleNotice: Boolean = false,
+    val offer: SafetyMaxOutsideNotice.OfferStyle? = null,
+)
 
 /**
  * How long the readout stays up, and what "a repeated press extends it" means as arithmetic.
@@ -216,13 +224,16 @@ class SafetyVolumeController @Inject constructor(
     private val dacProfiles: DacProfileRepository,
     private val dualPlayerEngine: DualPlayerEngine,
     @AppScope private val appScope: CoroutineScope,
-) {
+) : com.lostf1sh.pixelplayeross.presentation.safety.SafetyOverrideAuthority {
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val gesture = SafetyOverrideGesture()
 
     /** FIX-5: the same ask with the screen off, five presses (see [ScreenOffOverridePolicy]). */
     private val screenOffGesture = ScreenOffOverridePolicy.newGesture()
+
+    /** B69: the screen-on ask on the remote path (another app in front): three presses, held-key repeats count once. */
+    private val outsideGesture = SafetyOverrideGesture(minGapMs = ScreenOffOverridePolicy.MIN_PRESS_GAP_MS)
     private val overrideScreenWaker = OverrideScreenWaker(context)
 
     @Volatile
@@ -272,7 +283,8 @@ class SafetyVolumeController @Inject constructor(
     val hudEvent: StateFlow<VolumeHudEvent> = _hudEvent.asStateFlow()
 
     private val _refusals = MutableSharedFlow<SafetyMaxRefusal>(
-        extraBufferCapacity = 1,
+        // B69: a refusal and the ask can be two events of one press.
+        extraBufferCapacity = 4,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
@@ -285,13 +297,64 @@ class SafetyVolumeController @Inject constructor(
 
     private var lastRefusalAtMs = 0L
 
+    /** B69: what is said outside the app, per ceiling episode. */
+    private val outsideNotice = SafetyMaxOutsideNotice()
+
+    /** B69: a ceiling episode ends (see [SafetyMaxOutsideNotice.endEpisode]); the screen-on remote count starts again too. */
+    private fun endOutsideEpisode() {
+        outsideNotice.endEpisode()
+        outsideGesture.reset()
+    }
+
+    private fun isDedicated(): Boolean = runCatching { productMode.isDedicatedActive() }.getOrDefault(false)
+
+    /** B69: where a refused raise was made: Polylute in front (its activity resumed), another app on an unlocked screen, or locked. */
+    private fun refusalWhere(): SafetyMaxOutsideNotice.Where = when {
+        confirmationHost != null -> SafetyMaxOutsideNotice.Where.APP_IN_FRONT
+        screenIsOffOrLocked() -> SafetyMaxOutsideNotice.Where.LOCKED
+        else -> SafetyMaxOutsideNotice.Where.OTHER_APP
+    }
+
     private fun announceRefusal() {
         val now = SystemClock.elapsedRealtime()
-        if (lastRefusalAtMs != 0L && now - lastRefusalAtMs < REFUSAL_MIN_INTERVAL_MS) return
+        // B69: the visible notice is once per episode, so it is never held back by the rate limit below.
+        val where = refusalWhere()
+        val visible = outsideNotice.onRefusedRaise(now, where, dedicated = where == SafetyMaxOutsideNotice.Where.OTHER_APP && isDedicated())
+        if (!visible && lastRefusalAtMs != 0L && now - lastRefusalAtMs < REFUSAL_MIN_INTERVAL_MS) return
         lastRefusalAtMs = now
-        _refusals.tryEmit(SafetyMaxRefusal(now))
+        _refusals.tryEmit(SafetyMaxRefusal(now, visibleNotice = visible, offer = outsideNotice.activeOffer(now)))
         // The app's own readout too, when the activity is up to show it.
         announceHud(refusedBySafetyMax = true)
+    }
+
+    /**
+     * B69: the episode reached the ask (three refused presses with the screen on, five with it off or locked). Outside the app the
+     * notification now carries "Raise the limit"; the action opens the confirmation (`SafetyOverrideConfirmation`) and never raises
+     * anything itself. Nothing on the Dedicated appliance or with Polylute in front ([SafetyMaxOutsideNotice.onOverrideAsked]).
+     */
+    private fun offerOverrideOutside(nowMs: Long, dedicated: Boolean) {
+        val style = outsideNotice.onOverrideAsked(nowMs, refusalWhere(), dedicated) ?: return
+        Timber.tag(TAG).i("Safety Max ask outside the app: offering the confirmation from the notification (%s)", style)
+        lastRefusalAtMs = nowMs
+        _refusals.tryEmit(SafetyMaxRefusal(nowMs, offer = style))
+    }
+
+    /**
+     * B69: whether a confirmation opened from the notification still has something to confirm: Safety Max protects this output, no
+     * override is on, and the level is at (or above) the ceiling. A stale action (the volume was lowered since) opens nothing.
+     */
+    override fun outsideOfferStillValid(): Boolean {
+        refreshOverride()
+        val current = _state.value
+        val ceiling = current.calibration?.ceilingRaw?.takeIf { current.safetyEnabled } ?: return false
+        return current.protectionActive && !current.temporaryOverride && current.backend.rawLevel >= ceiling
+    }
+
+    /** B69: the confirmation opened from the notification was cancelled. The ceiling stays; nothing is asked again from this episode. */
+    override fun declineOutsideOffer() {
+        pendingRequest = null
+        pendingDropJob?.cancel()
+        cancelOverrideDialog()
     }
 
     /**
@@ -663,6 +726,7 @@ class SafetyVolumeController @Inject constructor(
             // here any more: it has its own session (FIX-4), which a rebuild's flicker cannot end.
             gesture.reset()
             screenOffGesture.reset()
+            endOutsideEpisode()
             _state.update { it.copy(showOverrideConfirmation = false) }
         }
         // B15-F1: another DAC under the same state. A flicker through "no DAC" (a reopen) is not a swap and does not
@@ -696,6 +760,7 @@ class SafetyVolumeController @Inject constructor(
         if (leftCeiling || volumeLowered) {
             gesture.reset()
             screenOffGesture.reset()
+            endOutsideEpisode()
             if (previous.showOverrideConfirmation) {
                 _state.update { it.copy(showOverrideConfirmation = false) }
             }
@@ -742,6 +807,8 @@ class SafetyVolumeController @Inject constructor(
             if (shouldConfirm) {
                 Timber.tag(TAG).i("Third blocked Volume Up; requesting explicit override confirmation")
                 _state.update { it.copy(showOverrideConfirmation = true) }
+                // B69: with the app not in front that flag waits for it; the notification offers the confirmation now.
+                offerOverrideOutside(SystemClock.elapsedRealtime(), dedicated = isDedicated())
             }
             // B27-A3 (R-03): the level that is published is the one the DAC reported after the write. A write it refused leaves the level
             // above the ceiling and unverified, which the resume verdict reads as "wait". Not retried from here: the next event re-reads it.
@@ -1125,6 +1192,7 @@ class SafetyVolumeController @Inject constructor(
         val published = write.publishedStep(current.backend.rawLevel)
         // FIX-5: any lowering breaks a sequence of presses at the ceiling.
         if (published < current.backend.rawLevel) screenOffGesture.reset()
+        if (published < current.backend.rawLevel) endOutsideEpisode()
         // Lowering to the ceiling ends the override; the verdict is taken on the level the DAC reports after the write.
         val lowered = current.backend.copy(rawLevel = published)
         val override = evaluateOverride(SystemClock.elapsedRealtime(), lowered, ceiling).active
@@ -1343,6 +1411,7 @@ class SafetyVolumeController @Inject constructor(
         if (!enabled) {
             gesture.reset()
             screenOffGesture.reset()
+            endOutsideEpisode()
             closeOverLock()
             endOverride(SafetyOverrideEnd.SAFETY_OFF)
             _state.update { it.copy(temporaryOverride = false, showOverrideConfirmation = false, overrideConfirmationOverLock = false) }
@@ -1358,11 +1427,12 @@ class SafetyVolumeController @Inject constructor(
      * session bound to the output it was confirmed on ([SafetyOverridePolicy]); the ceiling and the
      * gesture are as they always were, only how long it lasts changed.
      */
-    fun allowTemporaryOverride() {
+    override fun allowTemporaryOverride() {
         val current = _state.value
         if (!current.protectionActive) return
         gesture.reset()
         screenOffGesture.reset()
+        endOutsideEpisode()
         val profile = profiles.state.value.selectedProfile
         val contextId = current.backend.outputContextId
         val stored = contextId?.let { profile?.safetyMax?.calibrationFor(it, current.backend.kind) }
@@ -1405,6 +1475,7 @@ class SafetyVolumeController @Inject constructor(
     fun cancelOverrideDialog() {
         gesture.reset()
         screenOffGesture.reset()
+        endOutsideEpisode()
         closeOverLock()
         _state.update { it.copy(showOverrideConfirmation = false, overrideConfirmationOverLock = false) }
     }
@@ -1416,12 +1487,23 @@ class SafetyVolumeController @Inject constructor(
      * branch returned before any write, and nothing here writes either.
      */
     private fun noteRefusedRemotePress(singleStep: Boolean) {
+        // B69: with the screen on and another app in front, the keys reach this path too (the DAC's hardware volume). The ask is the
+        // screen-on one, three presses; held-key repeats are one press, as with the screen off. Only the notification asks.
+        if (singleStep && refusalWhere() == SafetyMaxOutsideNotice.Where.OTHER_APP) {
+            val now = SystemClock.elapsedRealtime()
+            if (outsideGesture.blockedVolumeUp(now)) {
+                Timber.tag(TAG).i("Three refused Volume Up presses at the ceiling with another app in front")
+                offerOverrideOutside(now, dedicated = isDedicated())
+            }
+            return
+        }
         val counts = ScreenOffOverridePolicy.countsAsPress(singleStep, screenIsOffOrLocked())
         if (!counts) return
         val now = SystemClock.elapsedRealtime()
         if (!screenOffGesture.blockedVolumeUp(now)) return
         requestOverrideConfirmation(now)
     }
+
 
     private fun screenIsOffOrLocked(): Boolean {
         val power = context.getSystemService(PowerManager::class.java)
@@ -1450,8 +1532,11 @@ class SafetyVolumeController @Inject constructor(
         )
         when (delivery) {
             ScreenOffOverridePolicy.Delivery.NONE -> Unit
-            ScreenOffOverridePolicy.Delivery.ON_UNLOCK ->
+            ScreenOffOverridePolicy.Delivery.ON_UNLOCK -> {
                 pendingRequest = PendingOverrideRequest(delivery, nowMs)
+                // B69: the lock-screen notification also carries "Raise the limit", behind an unlock.
+                offerOverrideOutside(nowMs, dedicated = false)
+            }
             ScreenOffOverridePolicy.Delivery.OVER_LOCK_SCREEN -> openOverLockConfirmation()
             ScreenOffOverridePolicy.Delivery.WAKE_THEN_SHOW -> wakeAndWaitForActivity(nowMs)
         }

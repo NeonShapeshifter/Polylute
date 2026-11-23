@@ -22,7 +22,6 @@ import com.lostf1sh.pixelplayeross.presentation.settings.LyricsSettingsState
 import com.lostf1sh.pixelplayeross.data.preferences.AppThemeMode
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_COVER_GLASS_MOVING
-import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_DAC_SHARE_ENABLED
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_LYRICS_MODE
 import com.lostf1sh.pixelplayeross.data.preferences.LyricsMode
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_DAP_LOCK_SCREEN_ENABLED
@@ -132,8 +131,8 @@ data class SettingsUiState(
     val animatedCoversFolder: String? = null,
     /** Whether waking the dedicated player raises the DAP lock surface. Off unless asked for. */
     val dapLockScreenEnabled: Boolean = DEFAULT_DAP_LOCK_SCREEN_ENABLED,
-    /** B39-A7: Resonance shares the DAC with other apps (the Audio page's switch). */
-    val dacShareEnabled: Boolean = DEFAULT_DAC_SHARE_ENABLED,
+    /** B39-A7: the share switch's stored choice; null = never touched (the Audio page shows `DacSharePolicy.switchOn` of it and the role). */
+    val dacShareChoice: Boolean? = null,
     /** B40-F8: Resonance's peak limiter on the Android route. */
     val resonanceLimiterEnabled: Boolean = false,
     val albumArtQuality: AlbumArtQuality = AlbumArtQuality.MEDIUM,
@@ -366,8 +365,8 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            userPreferencesRepository.dacShareEnabledFlow.collect { enabled ->
-                _uiState.update { it.copy(dacShareEnabled = enabled) }
+            userPreferencesRepository.dacShareChoiceFlow.collect { choice ->
+                _uiState.update { it.copy(dacShareChoice = choice) }
             }
         }
 

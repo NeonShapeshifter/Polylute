@@ -177,12 +177,14 @@ class PurityWithDacTest {
             AudioRouteReason.CROSSFADE_REQUIRES_ANDROID, AudioRouteReason.SPEED_REQUIRES_ANDROID,
             AudioRouteReason.ANDROID_EFFECT_REQUIRES_ANDROID,
         )
+        // B68: and the DAC shared with other apps (the listener's share switch), which with Purity off showed nowhere outside Maintenance
+        val named = signal + AudioRouteReason.DAC_SHARED_WITH_OTHER_APPS
         for (reason in AudioRouteReason.values()) {
             val words = PristineLockCopy.signalBlockerReason(reason)
-            if (reason in signal) assertThat(words).isEqualTo(PristineLockCopy.routeReason(reason)) else assertThat(words).isNull()
+            if (reason in named) assertThat(words).isEqualTo(PristineLockCopy.routeReason(reason)) else assertThat(words).isNull()
         }
         // Each has its own words: "a setting needs the Android route" told nobody which.
-        assertThat(signal.map { PristineLockCopy.routeReason(it) }.toSet()).hasSize(3)
+        assertThat(named.map { PristineLockCopy.routeReason(it) }.toSet()).hasSize(4)
     }
 
     // ── the transitions never raise the level (B1) ─────────────────────────────────────────────

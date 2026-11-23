@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.service.player
 
 import com.google.common.truth.Truth.assertThat
+import com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode
 import com.lostf1sh.pixelplayeross.data.service.player.DacShareController.PauseOutcome
 import org.junit.jupiter.api.Test
 
@@ -8,13 +9,21 @@ import org.junit.jupiter.api.Test
  * B39-A7: "Share the DAC with other apps". The decisions, with a stand-in for the engine that records what it was asked to do.
  *
  * What the owner decided, one test each: another app's audio-focus request (transient or not) pauses Polylute and releases the DAC; a
- * paused or idle Polylute releases it; play takes full focus first, then the DAC, then resumes; Purity never releases; the switch off is
- * today's behaviour.
+ * paused or idle Polylute releases it; play takes full focus first, then the DAC, then resumes; Purity never releases at a DAP level; the
+ * switch off is today's behaviour. B68 (option D): in app mode Purity releases too.
+ *
+ * The stand-in defaults to the owner's S22: app mode, Purity off ("Resonance" = the Purity choice off, with or without the app's DSP).
  */
 class DacShareControllerTest {
     private class FakeHost : DacShareController.Host {
         override var enabled = true
-        override var resonance = true
+        override var purityInForce = false
+        var mode: EffectiveProductMode? = EffectiveProductMode.APP
+        var modeReads = 0
+        override fun effectiveProductMode(): EffectiveProductMode? {
+            modeReads++
+            return mode
+        }
         var focusGranted = true
         var directReadyNow = false
         var levelConfirmedNow = false
@@ -182,11 +191,12 @@ class DacShareControllerTest {
         assertThat(host.events).isEmpty()
     }
 
-    // ── Purity never releases, and the switch off is today's behaviour ────────────────────────────
+    // ── Purity never releases at a DAP level, and the switch off is today's behaviour ──────────────
 
     @Test
-    fun `Purity never releases, whatever the switch says and whoever asks`() {
-        host.resonance = false
+    fun `Purity at a DAP level never releases, whatever the switch says and whoever asks`() {
+        host.purityInForce = true
+        host.mode = EffectiveProductMode.DEDICATED_ACTIVE
         assertThat(share.active).isFalse()
         share.onFocusLost(permanent = false)
         share.onFocusLost(permanent = true)
@@ -210,19 +220,20 @@ class DacShareControllerTest {
     }
 
     @Test
-    fun `turning the switch off, or going to Purity, while the DAC is released takes it back, without playing`() {
+    fun `turning the switch off, or going to Purity at a DAP level, while the DAC is released takes it back, without playing`() {
         share.onFocusLost(permanent = false)
         host.events.clear()
         host.enabled = false
-        share.onSettingsChanged()
+        assertThat(share.onSettingsChanged(paused = true)).isEqualTo(PauseOutcome.NONE)
         assertThat(host.events).containsExactly("claim")
         assertThat(share.released).isFalse()
 
         host.enabled = true
+        host.mode = EffectiveProductMode.LAUNCHER
         share.onFocusLost(permanent = false)
         host.events.clear()
-        host.resonance = false
-        share.onSettingsChanged()
+        host.purityInForce = true
+        assertThat(share.onSettingsChanged(paused = true)).isEqualTo(PauseOutcome.NONE)
         assertThat(host.events).containsExactly("claim")
         host.becomeSafe()
         share.onRouteState()
@@ -230,8 +241,8 @@ class DacShareControllerTest {
     }
 
     @Test
-    fun `a settings change with the DAC held changes nothing`() {
-        share.onSettingsChanged()
+    fun `a settings change with the DAC held while playing changes nothing`() {
+        assertThat(share.onSettingsChanged(paused = false)).isEqualTo(PauseOutcome.NONE)
         assertThat(host.events).isEmpty()
     }
 
@@ -375,5 +386,152 @@ class DacShareControllerTest {
         share.onReleaseNotConfirmed()
         assertThat(host.events).isEmpty()
         assertThat(host.releaseNotConfirmedCount).isEqualTo(0)
+    }
+
+    // ── B68 (option D): app mode shares Purity too; a duck never releases; the switch on while paused starts the wait ──────
+
+    @Test
+    fun `B68 - the owner's case - app mode, Purity off, nothing for the app's DSP to do, paused - releases after the grace`() {
+        // the controller is not told whether the DSP has work: "Resonance" is the Purity choice being off (B68-audit H1)
+        host.purityInForce = false
+        assertThat(share.active).isTrue()
+        assertThat(share.onPaused()).isEqualTo(PauseOutcome.RELEASE_AFTER_GRACE)
+        share.onPauseGraceElapsed(playing = false)
+        assertThat(share.released).isTrue()
+        assertThat(host.events).containsExactly("release")
+    }
+
+    @Test
+    fun `B68 - Purity in app mode releases after the pause grace`() {
+        host.purityInForce = true
+        host.mode = EffectiveProductMode.APP
+        assertThat(share.active).isTrue()
+        assertThat(share.onPaused()).isEqualTo(PauseOutcome.RELEASE_AFTER_GRACE)
+        share.onPauseGraceElapsed(playing = false)
+        assertThat(share.released).isTrue()
+        assertThat(host.events).containsExactly("release")
+    }
+
+    @Test
+    fun `B68 - Purity in app mode releases on a permanent and on a transient focus loss`() {
+        host.purityInForce = true
+        share.onFocusLost(permanent = true)
+        assertThat(share.released).isTrue()
+        assertThat(host.events).containsExactly("release")
+
+        val other = FakeHost().apply { purityInForce = true }
+        val transient = DacShareController(other)
+        transient.onFocusLost(permanent = false)
+        assertThat(transient.released).isTrue()
+        assertThat(other.events).containsExactly("release")
+    }
+
+    @Test
+    fun `B68 - Purity in app mode is taken back by play with focus first, and resumes once the level is confirmed`() {
+        host.purityInForce = true
+        share.onFocusLost(permanent = true)
+        host.events.clear()
+        assertThat(share.onPlayRequested()).isFalse()
+        host.levelConfirmedNow = true   // the ordinary Direct claim restored and read the level (B40-P1: the listener's play)
+        share.onRouteState()
+        assertThat(host.events).containsExactly("focus:granted", "claim", "resume").inOrder()
+    }
+
+    @Test
+    fun `B68 - in DEDICATED Purity never releases - focus losses, pauses, the switch, nothing lets it go`() {
+        host.purityInForce = true
+        host.mode = EffectiveProductMode.DEDICATED_ACTIVE
+        share.onFocusLost(permanent = true)
+        share.onFocusLost(permanent = false)
+        assertThat(share.onPaused()).isEqualTo(PauseOutcome.NONE)
+        share.onPauseGraceElapsed(playing = false)
+        assertThat(share.onSettingsChanged(paused = true)).isEqualTo(PauseOutcome.NONE)
+        assertThat(share.released).isFalse()
+        assertThat(host.events).isEmpty()
+    }
+
+    @Test
+    fun `B68 - every DAP level keeps Purity, and an unknown mode is read as one`() {
+        for (mode in listOf(
+            EffectiveProductMode.LAUNCHER, EffectiveProductMode.PINNED, EffectiveProductMode.DEDICATED_SETUP_REQUIRED,
+            EffectiveProductMode.DEDICATED_ACTIVE, null,
+        )) {
+            val h = FakeHost().apply { purityInForce = true; this.mode = mode }
+            val c = DacShareController(h)
+            c.onFocusLost(permanent = false)
+            assertThat(c.onPaused()).isEqualTo(PauseOutcome.NONE)
+            assertThat(c.released).isFalse()
+            assertThat(h.events).isEmpty()
+        }
+    }
+
+    @Test
+    fun `B68 - Resonance at the Launcher level shares as before, Pinned and Dedicated never (owner 11-23)`() {
+        host.purityInForce = false
+        host.mode = EffectiveProductMode.LAUNCHER
+        share.onFocusLost(permanent = false)
+        assertThat(share.released).isTrue()
+        for (mode in listOf(EffectiveProductMode.PINNED, EffectiveProductMode.DEDICATED_SETUP_REQUIRED, EffectiveProductMode.DEDICATED_ACTIVE)) {
+            val h = FakeHost().apply { purityInForce = false; this.mode = mode }
+            val c = DacShareController(h)
+            c.onFocusLost(permanent = false)
+            assertThat(c.onPaused()).isEqualTo(PauseOutcome.NONE)
+            assertThat(c.released).isFalse()
+            assertThat(h.events).isEmpty()
+        }
+    }
+
+    @Test
+    fun `B68 - the switch turning on while paused schedules the grace, and while playing it does not`() {
+        host.enabled = false
+        assertThat(share.onPaused()).isEqualTo(PauseOutcome.NONE)
+        host.enabled = true
+        assertThat(share.onSettingsChanged(paused = true)).isEqualTo(PauseOutcome.RELEASE_AFTER_GRACE)
+        assertThat(host.events).isEmpty()   // the wait, not a release at once
+        share.onPauseGraceElapsed(playing = false)
+        assertThat(host.events).containsExactly("release")
+
+        val playing = FakeHost().apply { enabled = true }
+        assertThat(DacShareController(playing).onSettingsChanged(paused = false)).isEqualTo(PauseOutcome.NONE)
+    }
+
+    @Test
+    fun `B68 - sharing becoming allowed while paused (Purity turned off at a DAP level) schedules the grace`() {
+        host.purityInForce = true
+        host.mode = EffectiveProductMode.LAUNCHER
+        assertThat(share.onPaused()).isEqualTo(PauseOutcome.NONE)
+        host.purityInForce = false
+        assertThat(share.onSettingsChanged(paused = true)).isEqualTo(PauseOutcome.RELEASE_AFTER_GRACE)
+    }
+
+    @Test
+    fun `B68 - Purity turned on while released in app mode keeps it shared, at a DAP level takes it back`() {
+        share.onFocusLost(permanent = false)
+        host.events.clear()
+        host.purityInForce = true
+        assertThat(share.onSettingsChanged(paused = true)).isEqualTo(PauseOutcome.NONE)
+        assertThat(share.released).isTrue()
+        assertThat(host.events).isEmpty()
+
+        host.mode = EffectiveProductMode.LAUNCHER   // the listener made Polylute the home app meanwhile: the next settings change asks again
+        share.onSettingsChanged(paused = true)
+        assertThat(share.released).isFalse()
+        assertThat(host.events).containsExactly("claim")
+        host.becomeSafe()
+        share.onRouteState()
+        assertThat(host.events).doesNotContain("resume")   // taken back, nothing played
+    }
+
+    @Test
+    fun `B68 - the product mode is asked only when it decides - the switch on`() {
+        host.enabled = false
+        host.purityInForce = true
+        share.onPaused()
+        host.purityInForce = false
+        share.onPaused()
+        assertThat(host.modeReads).isEqualTo(0)
+        host.enabled = true
+        share.onPaused()
+        assertThat(host.modeReads).isAtLeast(1)
     }
 }
