@@ -1,165 +1,123 @@
 package com.lostf1sh.pixelplayeross.presentation.screens
 
-import com.lostf1sh.pixelplayeross.data.stats.ListenSource
-import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
-import com.lostf1sh.pixelplayeross.presentation.components.ModalInputBridge
-import com.lostf1sh.pixelplayeross.presentation.components.player.TrackDetailsHost
-import com.lostf1sh.pixelplayeross.presentation.navigation.navigateSafely
-import com.lostf1sh.pixelplayeross.presentation.navigation.navigateSafelyReplacing
-
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.RemoveCircleOutline
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.DriveFileRenameOutline
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material.icons.rounded.Merge
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.lostf1sh.pixelplayeross.presentation.components.GlassModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.HapticFeedbackConstantsCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
-import coil.size.Size
 import com.lostf1sh.pixelplayeross.R
+import com.lostf1sh.pixelplayeross.data.model.PlaylistShapeType
 import com.lostf1sh.pixelplayeross.data.model.Song
-import com.lostf1sh.pixelplayeross.presentation.components.MiniPlayerHeight
-import com.lostf1sh.pixelplayeross.presentation.components.PlaylistBottomSheet
-import com.lostf1sh.pixelplayeross.presentation.components.QueuePlaylistSongItem
-import com.lostf1sh.pixelplayeross.presentation.components.SongPickerBottomSheet
+import com.lostf1sh.pixelplayeross.data.model.SortDirection
+import com.lostf1sh.pixelplayeross.data.model.SortOption
+import com.lostf1sh.pixelplayeross.data.model.isSmartPlaylist
+import com.lostf1sh.pixelplayeross.data.stats.ListenSource
+import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
+import com.lostf1sh.pixelplayeross.presentation.components.DapBackScaffold
 import com.lostf1sh.pixelplayeross.presentation.components.ExpressiveScrollBar
-import com.lostf1sh.pixelplayeross.presentation.components.ScrollbarGutter
-import com.lostf1sh.pixelplayeross.presentation.components.SmartImage
+import com.lostf1sh.pixelplayeross.presentation.components.LibrarySortBottomSheet
+import com.lostf1sh.pixelplayeross.presentation.components.ModalInputBridge
+import com.lostf1sh.pixelplayeross.presentation.components.PlaylistBottomSheet
 import com.lostf1sh.pixelplayeross.presentation.components.SongInfoBottomSheet
-import com.lostf1sh.pixelplayeross.presentation.components.subcomps.TightWrapText
+import com.lostf1sh.pixelplayeross.presentation.components.SongPickerBottomSheet
+import com.lostf1sh.pixelplayeross.presentation.components.player.TrackDetailsHost
 import com.lostf1sh.pixelplayeross.presentation.components.resolveNavBarOccupiedHeight
+import com.lostf1sh.pixelplayeross.presentation.components.symmetricContentPadding
+import com.lostf1sh.pixelplayeross.presentation.components.subcomps.EnhancedSongListItem
+import com.lostf1sh.pixelplayeross.presentation.components.subcomps.EnhancedSongRowHorizontalPadding
+import com.lostf1sh.pixelplayeross.presentation.model.methodLabelRes
 import com.lostf1sh.pixelplayeross.presentation.navigation.Screen
-import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
-import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistViewModel
-import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistViewModel.Companion.FOLDER_PLAYLIST_PREFIX
+import com.lostf1sh.pixelplayeross.presentation.navigation.navigateSafely
+import com.lostf1sh.pixelplayeross.presentation.navigation.navigateSafelyReplacing
 import com.lostf1sh.pixelplayeross.presentation.utils.LocalAppHapticsConfig
 import com.lostf1sh.pixelplayeross.presentation.utils.performAppCompatHapticFeedback
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistSongsOrderMode
-import com.lostf1sh.pixelplayeross.utils.formatSongCountLabel
-import com.lostf1sh.pixelplayeross.utils.formatTotalDuration
-import com.lostf1sh.pixelplayeross.ui.ds.DapCollectionActions
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistViewModel
+import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlaylistViewModel.Companion.FOLDER_PLAYLIST_PREFIX
 import com.lostf1sh.pixelplayeross.ui.ds.Dap
+import com.lostf1sh.pixelplayeross.ui.ds.DapCollectionActions
+import com.lostf1sh.pixelplayeross.ui.ds.DapDivider
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenu
+import com.lostf1sh.pixelplayeross.ui.ds.DapMenuItem
 import com.lostf1sh.pixelplayeross.ui.ds.DapOverflowButton
-import com.lostf1sh.pixelplayeross.ui.ds.DapScreen
 import com.lostf1sh.pixelplayeross.ui.ds.DapScreenTitle
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
 import com.lostf1sh.pixelplayeross.ui.ds.DapTextAction
 import com.lostf1sh.pixelplayeross.ui.ds.DapTopBar
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
-import racra.compose.smooth_corner_rect_library.AbsoluteSmoothCornerShape
+import com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent
+import com.lostf1sh.pixelplayeross.ui.ds.LocalDapPlayerShelfHeight
+import com.lostf1sh.pixelplayeross.utils.formatSongCountLabel
+import com.lostf1sh.pixelplayeross.utils.formatTotalDuration
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import com.lostf1sh.pixelplayeross.presentation.components.LibrarySortBottomSheet
-import com.lostf1sh.pixelplayeross.data.model.SortOption
-import com.lostf1sh.pixelplayeross.data.model.PlaylistShapeType
-import com.lostf1sh.pixelplayeross.data.model.isSmartPlaylist
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import com.lostf1sh.pixelplayeross.presentation.components.rememberModalSheetState
-import kotlinx.collections.immutable.persistentListOf
-import com.lostf1sh.pixelplayeross.presentation.components.DapBackScaffold
 
 @androidx.annotation.OptIn(UnstableApi::class)
-@OptIn(
-    ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class,
-    ExperimentalMaterial3Api::class
-)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistDetailScreen(
     playlistId: String,
@@ -171,70 +129,42 @@ fun PlaylistDetailScreen(
 ) {
     val uiState by playlistViewModel.uiState.collectAsStateWithLifecycle()
     val playerStableState by playerViewModel.stablePlayerState.collectAsStateWithLifecycle()
-    val hasCurrentSong by remember {
-        derivedStateOf { playerStableState.currentSong != null }
-    }
     val context = LocalContext.current
-    val fallbackPlaylistName = stringResource(R.string.shortcut_playlist_short)
-    val sortSongsLabel = stringResource(R.string.presentation_batch_b_sort_songs)
-    val moreOptionsLabel = stringResource(R.string.presentation_batch_b_more_options)
-    val playItLabel = stringResource(R.string.presentation_batch_b_play_it)
-    val shuffleLabel = stringResource(R.string.shortcut_shuffle_short)
-    val addSongsCd = stringResource(R.string.presentation_batch_b_add_songs)
-    val addLabel = stringResource(R.string.presentation_batch_b_add)
-    val removeLabel = stringResource(R.string.cd_remove)
-    val removeSongsCd = stringResource(R.string.presentation_batch_b_remove_songs)
-    val reorderLabel = stringResource(R.string.presentation_batch_b_reorder)
-    val reorderSongsCd = stringResource(R.string.presentation_batch_b_reorder_songs)
-    val reorderSongCd = stringResource(R.string.presentation_batch_b_reorder_song)
-    val playlistEmptyTitle = stringResource(R.string.presentation_batch_b_playlist_empty_title)
-    val playlistEmptyFolder = stringResource(R.string.presentation_batch_b_playlist_empty_folder_body)
-    val playlistEmptyAddHint = stringResource(R.string.presentation_batch_b_playlist_empty_add_hint)
-    val playlistOptionsTitle = stringResource(R.string.presentation_batch_b_playlist_options_title)
-    val editPlaylistLabel = stringResource(R.string.presentation_batch_b_edit_playlist)
-    val deletePlaylistLabel = stringResource(R.string.presentation_batch_b_delete_playlist)
-    val setDefaultTransitionLabel = stringResource(R.string.presentation_batch_b_set_default_transition)
-    val exportPlaylistLabel = stringResource(R.string.presentation_batch_b_export_playlist)
-    val deletePlaylistConfirmTitle = stringResource(R.string.presentation_batch_b_delete_playlist_confirm_title)
-    val deletePlaylistConfirmBody = stringResource(R.string.presentation_batch_b_delete_playlist_confirm_body)
-    val sortSheetTitle = stringResource(R.string.presentation_batch_b_sort_songs)
+    val currentPlaylist = uiState.currentPlaylistDetails?.takeIf { it.id == playlistId }
+    val isFolderPlaylist = playlistId.startsWith(FOLDER_PLAYLIST_PREFIX)
+    val isSmartPlaylist = currentPlaylist?.isSmartPlaylist == true
+    val isEditablePlaylist = currentPlaylist != null && !isFolderPlaylist && !isSmartPlaylist
+    val songs = uiState.currentPlaylistSongs.takeIf { currentPlaylist != null }.orEmpty()
+    val sortOption = (uiState.playlistSongsOrderMode as? PlaylistSongsOrderMode.Sorted)?.option
+        ?: SortOption.SongDefaultOrder
+    val orderLabel = playlistOrderLabel(sortOption, isEditablePlaylist)
+    val editSongsLabel = stringResource(R.string.playlist_edit_songs)
     val toastAddedToQueue = stringResource(R.string.toast_added_to_queue)
     val toastPlayingNext = stringResource(R.string.toast_playing_next)
-    val currentPlaylist = uiState.currentPlaylistDetails
-    val isFolderPlaylist = currentPlaylist?.id?.startsWith(FOLDER_PLAYLIST_PREFIX) == true
-    val isSmartPlaylist = currentPlaylist?.isSmartPlaylist == true
-    val isEditablePlaylist = !isFolderPlaylist && !isSmartPlaylist
-    val songsInPlaylist = uiState.currentPlaylistSongs
 
     LaunchedEffect(playlistId) {
         playlistViewModel.loadPlaylistDetails(playlistId)
     }
 
-    var showAddSongsSheet by remember { mutableStateOf(false) }
-
-    var isReorderModeEnabled by remember { mutableStateOf(false) }
-    var isRemoveModeEnabled by remember { mutableStateOf(false) }
-    var showSongInfoBottomSheet by remember { mutableStateOf(false) }
-    // Cleared whenever the action sheet closes, by keying on its visibility: every
-    // dismissal path in this file sets that flag, so this cannot go stale.
+    var showAddSongsSheet by remember(playlistId) { mutableStateOf(false) }
+    var showSortSheet by remember(playlistId) { mutableStateOf(false) }
+    var editing by remember(playlistId) { mutableStateOf(false) }
+    var showSongInfoBottomSheet by remember(playlistId) { mutableStateOf(false) }
     var showTrackDetails by remember(showSongInfoBottomSheet) { mutableStateOf(false) }
-    var showPlaylistOptionsSheet by remember { mutableStateOf(false) }
-    var showEditPlaylistDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var showEditPlaylistDialog by remember(playlistId) { mutableStateOf(false) }
+    var showDeleteConfirmation by remember(playlistId) { mutableStateOf(false) }
 
     val m3uExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("audio/x-mpegurl")
     ) { uri ->
-        uri?.let {
-            currentPlaylist?.let { playlist ->
-                playlistViewModel.exportM3u(playlist, it, context)
-            }
+        if (uri != null && currentPlaylist != null) {
+            playlistViewModel.exportM3u(currentPlaylist, uri, context)
         }
     }
 
     val selectedSongForInfo by playerViewModel.selectedSongForInfo.collectAsStateWithLifecycle()
     val favoriteIds by playerViewModel.favoriteSongIds.collectAsStateWithLifecycle()
-    val stableOnMoreOptionsClick: (Song) -> Unit = remember {
+    val onSongOptions: (Song) -> Unit = remember(playerViewModel, playlistId) {
         { song ->
             playerViewModel.selectSongForInfo(song)
             showSongInfoBottomSheet = true
@@ -243,422 +173,255 @@ fun PlaylistDetailScreen(
     val systemNavBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val navBarCompactMode by playerViewModel.navBarCompactMode.collectAsStateWithLifecycle()
     val bottomBarHeightDp = resolveNavBarOccupiedHeight(systemNavBarInset, navBarCompactMode)
-    var showPlaylistBottomSheet by remember { mutableStateOf(false) }
-    var localReorderableSongs by remember(songsInPlaylist) { mutableStateOf(songsInPlaylist) }
+    var showPlaylistBottomSheet by remember(playlistId) { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
-    val located = rememberSourceLocate(Screen.PlaylistDetail.createRoute(android.net.Uri.encode(playlistId)), listState, currentPlaylist?.id == playlistId && !uiState.isLoading) { id -> localReorderableSongs.indexOfFirst { it.id == id } }
+    val located = rememberSourceLocate(
+        Screen.PlaylistDetail.createRoute(android.net.Uri.encode(playlistId)),
+        listState,
+        currentPlaylist != null && !uiState.isLoading,
+    ) { id -> songs.indexOfFirst { it.id == id } }
     val scope = rememberCoroutineScope()
-    val view = LocalView.current
-    val appHapticsConfig = LocalAppHapticsConfig.current
-    var lastMovedFrom by remember { mutableStateOf<Int?>(null) }
-    var lastMovedTo by remember { mutableStateOf<Int?>(null) }
+    var reorderPreview by remember(playlistId) { mutableStateOf<List<Song>?>(null) }
+    var movement by remember(playlistId) { mutableStateOf<Pair<Int, Int>?>(null) }
+    var pendingEdit by remember(playlistId) { mutableStateOf<Job?>(null) }
+    val shownSongs = reorderPreview ?: songs
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        reorderPreview = (reorderPreview ?: songs).toMutableList().apply { add(to.index, removeAt(from.index)) }
+        movement = (movement?.first ?: from.index) to to.index
+    }
 
-    val reorderableState = rememberReorderableLazyListState(
-        lazyListState = listState,
-        onMove = { from, to ->
-            localReorderableSongs = localReorderableSongs.toMutableList().apply {
-                add(to.index, removeAt(from.index))
-            }
-            if (lastMovedFrom == null) {
-                lastMovedFrom = from.index
-            }
-            lastMovedTo = to.index
+    LaunchedEffect(pendingEdit) {
+        val save = pendingEdit ?: return@LaunchedEffect
+        save.join()
+        reorderPreview = null
+        pendingEdit = null
+    }
+
+    fun saveReorder() {
+        val (from, to) = movement ?: return
+        movement = null
+        pendingEdit = playlistViewModel.reorderSongsInPlaylist(playlistId, from, to)
+        if (pendingEdit == null) reorderPreview = null
+    }
+
+    fun finishEditing() {
+        saveReorder()
+        editing = false
+    }
+
+    fun withSavedSongs(action: (List<Song>) -> Unit) {
+        val save = pendingEdit
+        if (save == null) {
+            if (shownSongs.isNotEmpty()) action(shownSongs)
+            return
         }
-    )
-
-    LaunchedEffect(reorderableState.isAnyItemDragging, isEditablePlaylist) {
-        if (isEditablePlaylist && !reorderableState.isAnyItemDragging && lastMovedFrom != null && lastMovedTo != null) {
-            currentPlaylist?.let {
-                playlistViewModel.reorderSongsInPlaylist(it.id, lastMovedFrom!!, lastMovedTo!!)
+        scope.launch {
+            save.join()
+            val saved = playlistViewModel.uiState.value
+            if (saved.currentPlaylistDetails?.id == playlistId && saved.currentPlaylistSongs.isNotEmpty()) {
+                action(saved.currentPlaylistSongs)
             }
-            lastMovedFrom = null
-            lastMovedTo = null
-        } else if (!isEditablePlaylist && !reorderableState.isAnyItemDragging) {
-            lastMovedFrom = null
-            lastMovedTo = null
         }
     }
 
-    DapBackScaffold(Modifier.fillMaxSize(), onBack = onBackClick) {
-        Column(Modifier.fillMaxSize()) {
-            // Back is the overlay, not the bar's own glyph: the bar draws a chevron in every Back
-            // mode, including Gestures, where the mode says a Back-only control must not be drawn.
-            // The bar keeps both real actions — the sort action and the overflow — exactly where
-            // they are.
-            DapTopBar(
-                onBack = null,
-                actions = {
-                    DapTextAction(
-                        label = sortSongsLabel,
-                        onClick = {
-                            playerViewModel.showSortingSheet()
-                        },
-                    )
-                    if (!isFolderPlaylist) {
-                        DapOverflowButton(
-                            onClick = { showPlaylistOptionsSheet = true },
-                            description = moreOptionsLabel,
-                        )
-                    }
-                },
-            )
+    BackHandler(enabled = editing, onBack = ::finishEditing)
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = DapSpacing.Gutter),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                DapScreenTitle(text = currentPlaylist?.name ?: fallbackPlaylistName)
-                Text(
-                    text = stringResource(
-                        R.string.presentation_batch_f_status_bullet_step,
-                        formatSongCountLabel(songsInPlaylist.size),
-                        formatTotalDuration(songsInPlaylist)
-                    ),
-                    style = DapType.Caption,
-                    color = Dap.secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+    PlaylistPage(
+        title = currentPlaylist?.name ?: stringResource(R.string.shortcut_playlist_short),
+        caption = if (editing) {
+            stringResource(R.string.playlist_edit_songs_hint)
+        } else {
+            stringResource(
+                R.string.presentation_batch_f_status_bullet_step,
+                formatSongCountLabel(shownSongs.size),
+                formatTotalDuration(shownSongs),
+            )
+        },
+        onBack = onBackClick,
+        topBarLabel = editSongsLabel.takeIf { editing },
+        topBarActions = if (editing) {
+            {
+                DapTextAction(
+                    label = stringResource(R.string.action_done),
+                    onClick = ::finishEditing,
+                    color = LocalDapAccent.current,
                 )
             }
-
-            if (uiState.isLoading && currentPlaylist == null) {
-                Box(
-                    Modifier
-                        .fillMaxSize(), Alignment.Center
-                ) { ContainedLoadingIndicator() }
-            } else if (uiState.playlistNotFound) {
-                Box(
-                    Modifier
-                        .fillMaxSize(), Alignment.Center
-                ) { Text(stringResource(id = R.string.playlist_not_found)) }
-            } else if (currentPlaylist == null) {
-                Box(
-                    Modifier
-                        .fillMaxSize(), Alignment.Center
-                ) { ContainedLoadingIndicator() }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
+        } else {
+            currentPlaylist?.let { playlist ->
+                {
+                    key(playlist.id) {
+                        PlaylistDetailMenu(
+                            orderLabel = orderLabel,
+                            isFolderPlaylist = isFolderPlaylist,
+                            isEditablePlaylist = isEditablePlaylist,
+                            onAdd = { showAddSongsSheet = true },
+                            onSort = { showSortSheet = true },
+                            onEditSongs = { editing = true },
+                            onEditPlaylist = { showEditPlaylistDialog = true },
+                            onTransition = { navController.navigateSafely(Screen.EditTransition.createRoute(playlistId)) },
+                            onExport = { m3uExportLauncher.launch("${PlaylistViewModel.sanitizeFileName(playlist.name)}.m3u") },
+                            onDelete = { showDeleteConfirmation = true },
+                        )
+                    }
+                }
+            }
+        },
+        belowHeader = if (currentPlaylist != null && !editing) {
+            {
+                val source = ListenSource(ListenSourceKind.PLAYLIST, playlistId)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Gutter, vertical = DapSpacing.Sm),
+                    horizontalArrangement = Arrangement.spacedBy(DapSpacing.Md),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // The row height the edit/reorder buttons below align to.
-                    val actionButtonsHeight = 48.dp
-                    val playbackControlBottomPadding = if (isFolderPlaylist) 8.dp else 6.dp
-                    // The same play / shuffle geometry as an album: play is the filled circle on
-                    // the left, shuffle the icon-only circle beside it. This row used to be two
-                    // equally weighted buttons whose content was 76 dp inside a 62 dp row.
                     DapCollectionActions(
-                        playLabel = playItLabel,
-                        shuffleLabel = shuffleLabel,
+                        playLabel = stringResource(R.string.presentation_batch_b_play_it),
+                        shuffleLabel = stringResource(R.string.shortcut_shuffle_short),
                         onPlay = {
-                            if (localReorderableSongs.isNotEmpty()) {
-                                playerViewModel.playSongs(
-                                    localReorderableSongs,
-                                    localReorderableSongs.first(),
-                                    currentPlaylist.name,
-                                    source = ListenSource(ListenSourceKind.PLAYLIST, currentPlaylist.id)
-                                )
+                            withSavedSongs { queue ->
+                                playerViewModel.playSongs(queue, queue.first(), currentPlaylist.name, source = source)
                                 if (playerStableState.isShuffleEnabled) playerViewModel.turnShuffleOff()
                             }
                         },
                         onShuffle = {
-                            if (localReorderableSongs.isNotEmpty()) {
+                            withSavedSongs { queue ->
                                 playerViewModel.playSongsShuffled(
-                                    songsToPlay = localReorderableSongs,
+                                    songsToPlay = queue,
                                     queueName = currentPlaylist.name,
-                                    playlistId = currentPlaylist.id,
+                                    playlistId = playlistId,
                                     startAtZero = true,
-                                    source = ListenSource(ListenSourceKind.PLAYLIST, currentPlaylist.id),
+                                    source = source,
                                 )
                             }
                         },
-                        modifier = Modifier.padding(
-                            horizontal = 20.dp,
-                            vertical = playbackControlBottomPadding,
-                        ),
                     )
-                    if (isEditablePlaylist) {
-                        FlowRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 20.dp, end = 20.dp, bottom = 8.dp, top = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            itemVerticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val reorderCornerRadius by animateDpAsState(
-                                targetValue = if (isReorderModeEnabled) 24.dp else 12.dp,
-                                label = "reorderCornerRadius"
-                            )
-                            val reorderButtonColor by animateColorAsState(
-                                targetValue = if (isReorderModeEnabled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                label = "reorderButtonColor"
-                            )
-                            val reorderIconColor by animateColorAsState(
-                                targetValue = if (isReorderModeEnabled) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurface,
-                                label = "reorderIconColor"
-                            )
-
-                            val removeCornerRadius by animateDpAsState(
-                                targetValue = if (isRemoveModeEnabled) 24.dp else 12.dp,
-                                label = "removeCornerRadius"
-                            )
-                            val removeButtonColor by animateColorAsState(
-                                targetValue = if (isRemoveModeEnabled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                label = "removeButtonColor"
-                            )
-                            val removeIconColor by animateColorAsState(
-                                targetValue = if (isRemoveModeEnabled) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurface,
-                                label = "removeIconColor"
-                            )
-
-                            Button(
-                                onClick = { showAddSongsSheet = true },
-                                shape = CircleShape,
-                                contentPadding = PaddingValues(horizontal = 12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                                ),
-                                modifier = Modifier
-                                    .heightIn(min = actionButtonsHeight)
-                                    .animateContentSize()
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Add,
-                                    contentDescription = addSongsCd,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    modifier = Modifier.padding(end = 4.dp),
-                                    text = addLabel,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
-
-                            Button(
-                                onClick = { isRemoveModeEnabled = !isRemoveModeEnabled },
-                                shape = RoundedCornerShape(removeCornerRadius),
-                                contentPadding = PaddingValues(horizontal = 8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = removeButtonColor,
-                                    contentColor = removeIconColor
-                                ),
-                                modifier = Modifier
-                                    .heightIn(min = actionButtonsHeight)
-                                    .animateContentSize()
-                                    .clip(RoundedCornerShape(removeCornerRadius))
-                            ) {
-                                Icon(
-                                    modifier = Modifier.size(18.dp),
-                                    imageVector = Icons.Default.RemoveCircleOutline,
-                                    contentDescription = removeSongsCd,
-                                    tint = removeIconColor
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    modifier = Modifier.padding(end = 4.dp),
-                                    text = removeLabel,
-                                    color = removeIconColor,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
-
-                            Button(
-                                onClick = { isReorderModeEnabled = !isReorderModeEnabled },
-                                shape = RoundedCornerShape(reorderCornerRadius),
-                                contentPadding = PaddingValues(horizontal = 8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = reorderButtonColor,
-                                    contentColor = reorderIconColor
-                                ),
-                                modifier = Modifier
-                                    .heightIn(min = actionButtonsHeight)
-                                    .animateContentSize()
-                                    .clip(RoundedCornerShape(reorderCornerRadius))
-                            ) {
-                                Icon(
-                                    modifier = Modifier.size(22.dp),
-                                    painter = painterResource(R.drawable.drag_order_icon),
-                                    contentDescription = reorderSongsCd,
-                                    tint = reorderIconColor
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    modifier = Modifier.padding(end = 4.dp),
-                                    text = reorderLabel,
-                                    color = reorderIconColor,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
-
-                        }
+                    Text(
+                        text = orderLabel,
+                        modifier = Modifier.weight(1f),
+                        style = DapType.Caption,
+                        color = Dap.secondaryText,
+                        textAlign = TextAlign.End,
+                    )
+                }
+            }
+        } else {
+            null
+        },
+    ) {
+        when {
+            uiState.playlistNotFound -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Text(stringResource(R.string.playlist_not_found))
+            }
+            currentPlaylist == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                ContainedLoadingIndicator()
+            }
+            shownSongs.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.MusicOff, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.presentation_batch_b_playlist_empty_title), style = MaterialTheme.typography.titleMedium)
+                    val message = when {
+                        isFolderPlaylist -> R.string.presentation_batch_b_playlist_empty_folder_body
+                        isSmartPlaylist -> R.string.presentation_batch_b_playlist_empty_smart_body
+                        else -> R.string.presentation_batch_b_playlist_empty_add_hint
                     }
-
-                    if (localReorderableSongs.isEmpty()) {
-                        Box(Modifier
-                            .fillMaxSize()
-                            .weight(1f), Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Filled.MusicOff, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(8.dp))
-                                Text(playlistEmptyTitle, style = MaterialTheme.typography.titleMedium)
-                                val emptyMessage = when {
-                                    isFolderPlaylist -> playlistEmptyFolder
-                                    isSmartPlaylist -> stringResource(R.string.presentation_batch_b_playlist_empty_smart_body)
-                                    else -> playlistEmptyAddHint
-                                }
-                                Text(emptyMessage, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .weight(1f)
-                        ) {
-                            val playbackStates = rememberLibraryPlaybackStates(playerViewModel)
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(
-                                        AbsoluteSmoothCornerShape(
-                                            cornerRadiusTR = 32.dp,
-                                            smoothnessAsPercentTR = 60,
-                                            cornerRadiusTL = 32.dp,
-                                            smoothnessAsPercentTL = 60,
-                                        )
-                                    )
-                                    .background(color = com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerHigh)),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                contentPadding = PaddingValues(
-                                    top = 12.dp,
-                                    bottom = MiniPlayerHeight + 16.dp,
-                                ).let {
-                                    PaddingValues(
-                                        top = it.calculateTopPadding(),
-                                        bottom = it.calculateBottomPadding(),
-                                        start = it.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                                        end = ScrollbarGutter.endMargin(it.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr))
-                                    )
-                                }
-                            ) {
-                                itemsIndexed(
-                                    localReorderableSongs,
-                                    key = { _, item -> item.id },
-                                    contentType = { _, _ -> "playlist_song" }) { _, song ->
-                                    // One collection of the player state for the list, a derived answer per row (B13).
-                                    val playbackUiState by remember(song.id, playbackStates) {
-                                        derivedStateOf { playbackStates.uiStateFor(song.id) }
-                                    }
-                                    ReorderableItem(
-                                        state = reorderableState,
-                                        key = song.id,
-                                    ) { isDragging ->
-                                        val scale by animateFloatAsState(
-                                            if (isDragging) 1.05f else 1f,
-                                            label = "scale"
-                                        )
-
-                                        QueuePlaylistSongItem(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(if (located == song.id) com.lostf1sh.pixelplayeross.ui.ds.Dap.panelRaised else Color.Transparent)
-                                                .padding(horizontal = 0.dp)
-                                                .graphicsLayer {
-                                                    scaleX = scale
-                                                    scaleY = scale
+                    Text(stringResource(message), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            else -> Box(Modifier.fillMaxSize()) {
+                val playback = rememberLibraryPlaybackStates(playerViewModel)
+                val shelfHeight = LocalDapPlayerShelfHeight.current
+                val view = LocalView.current
+                val haptics = LocalAppHapticsConfig.current
+                val endPadding = shelfHeight + DapSpacing.Xl
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = symmetricContentPadding(
+                        horizontal = PlaylistSongListInset,
+                        top = DapSpacing.Sm,
+                        bottom = endPadding,
+                    ),
+                ) {
+                    items(shownSongs, key = { it.id }, contentType = { "playlist_song" }) { song ->
+                        if (editing) {
+                            ReorderableItem(state = reorderState, key = song.id) { isDragging ->
+                                EnhancedSongListItem(
+                                    song = song,
+                                    isPlaying = false,
+                                    albumArtSize = 50.dp,
+                                    containerColorOverride = if (isDragging) Dap.panelRaised else null,
+                                    showMoreOptionsButton = false,
+                                    onMoreOptionsClick = {},
+                                    onClick = null,
+                                    leading = {
+                                        IconButton(
+                                            modifier = Modifier.onGutter(),
+                                            enabled = pendingEdit == null && !reorderState.isAnyItemDragging,
+                                            onClick = { pendingEdit = playlistViewModel.removeSongFromPlaylist(playlistId, song.id) },
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.RemoveCircleOutline,
+                                                stringResource(R.string.cd_remove),
+                                                tint = if (pendingEdit == null && !reorderState.isAnyItemDragging) Dap.error else Dap.disabledText,
+                                            )
+                                        }
+                                    },
+                                    trailing = {
+                                        IconButton(
+                                            onClick = {},
+                                            enabled = pendingEdit == null,
+                                            modifier = Modifier.draggableHandle(
+                                                enabled = pendingEdit == null,
+                                                onDragStarted = {
+                                                    performAppCompatHapticFeedback(view, haptics, HapticFeedbackConstantsCompat.GESTURE_START)
                                                 },
-                                            onClick = {
-                                                playerViewModel.playSongs(
-                                                    localReorderableSongs,
-                                                    song,
-                                                    currentPlaylist.name,
-                                                    currentPlaylist.id,
-                                                    source = ListenSource(ListenSourceKind.PLAYLIST, currentPlaylist.id)
-                                                )
-                                            },
-                                            song = song,
-                                            isCurrentSong = playbackUiState.isCurrentSong,
-                                            isPlaying = playbackUiState.isPlaying,
-                                            isDragging = isDragging,
-                                            onRemoveClick = {
-                                                if (isEditablePlaylist) {
-                                                    currentPlaylist.let {
-                                                        playlistViewModel.removeSongFromPlaylist(it.id, song.id)
-                                                    }
-                                                }
-                                            },
-                                            isFromPlaylist = true,
-                                            isReorderModeEnabled = isReorderModeEnabled,
-                                            isDragHandleVisible = isReorderModeEnabled && isEditablePlaylist,
-                                            isRemoveButtonVisible = isRemoveModeEnabled && isEditablePlaylist,
-                                            onMoreOptionsClick = stableOnMoreOptionsClick,
-                                            dragHandle = {
-                                                IconButton(
-                                                    onClick = {},
-                                                    modifier = Modifier
-                                                        .draggableHandle(
-                                                            onDragStarted = {
-                                                                performAppCompatHapticFeedback(
-                                                                    view,
-                                                                    appHapticsConfig,
-                                                                    HapticFeedbackConstantsCompat.GESTURE_START
-                                                                )
-                                                            },
-                                                            onDragStopped = {
-                                                                performAppCompatHapticFeedback(
-                                                                    view,
-                                                                    appHapticsConfig,
-                                                                    HapticFeedbackConstantsCompat.GESTURE_END
-                                                                )
-                                                            }
-                                                        )
-                                                        .size(40.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.DragIndicator,
-                                                        contentDescription = reorderSongCd,
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
+                                                onDragStopped = {
+                                                    saveReorder()
+                                                    performAppCompatHapticFeedback(view, haptics, HapticFeedbackConstantsCompat.GESTURE_END)
+                                                },
+                                            ),
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.DragIndicator,
+                                                stringResource(R.string.presentation_batch_b_reorder_song),
+                                                tint = Dap.secondaryText,
+                                            )
+                                        }
+                                    },
+                                )
                             }
-
-                            ExpressiveScrollBar(
-                                // the rows run to the list's edge (their own end padding is the reorder handle's), and the bar sits 14 dp in
-                                contentEndMargin = 0.dp,
-                                endInset = 14.dp,
-                                listState = listState,
-                                modifier = Modifier
-                                    .align(Alignment.CenterEnd)
-                                    .padding(
-                                        bottom = if (hasCurrentSong) MiniPlayerHeight + 20.dp else 16.dp,
-                                        end = 14.dp,
-                                        top = 18.dp
-                                    )
+                        } else {
+                            LibraryPlaybackAwareSongItem(
+                                song = song,
+                                playback = playback,
+                                showDuration = true,
+                                isLocated = located == song.id,
+                                onMoreOptionsClick = onSongOptions,
+                                onClick = {
+                                    withSavedSongs { queue ->
+                                        queue.firstOrNull { it.id == song.id }?.let { start ->
+                                            playerViewModel.playSongs(
+                                                queue, start, currentPlaylist.name, playlistId,
+                                                source = ListenSource(ListenSourceKind.PLAYLIST, playlistId),
+                                            )
+                                        }
+                                    }
+                                },
                             )
                         }
                     }
                 }
+                ExpressiveScrollBar(
+                    listState = listState,
+                    contentEndMargin = PlaylistSongListInset,
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 16.dp, bottom = endPadding),
+                )
             }
         }
-        // The bar above holds the actions; the Back affordance lives here, in the screen's
-        // BoxScope, so it floats over the page and obeys the Back mode.
     }
 
     if (showAddSongsSheet && currentPlaylist != null && isEditablePlaylist) {
@@ -672,36 +435,6 @@ fun PlaylistDetailScreen(
                 playlistViewModel.addSongsToPlaylist(currentPlaylist.id, selectedIds.toList())
                 showAddSongsSheet = false
             }
-        )
-    }
-    if (showPlaylistOptionsSheet && !isFolderPlaylist) {
-        PlaylistOptionsSheet(
-            title = playlistOptionsTitle,
-            playlistName = currentPlaylist?.name,
-            editLabel = editPlaylistLabel,
-            deleteLabel = deletePlaylistLabel,
-            transitionLabel = setDefaultTransitionLabel,
-            exportLabel = exportPlaylistLabel,
-            onDismiss = { showPlaylistOptionsSheet = false },
-            onEdit = {
-                showPlaylistOptionsSheet = false
-                showEditPlaylistDialog = true
-            },
-            onDelete = {
-                showPlaylistOptionsSheet = false
-                showDeleteConfirmation = true
-            },
-            onTransition = {
-                showPlaylistOptionsSheet = false
-                navController.navigateSafely(Screen.EditTransition.createRoute(playlistId))
-            },
-            onExport = {
-                showPlaylistOptionsSheet = false
-                val sanitizedName = PlaylistViewModel.sanitizeFileName(
-                    currentPlaylist?.name ?: fallbackPlaylistName
-                )
-                m3uExportLauncher.launch("$sanitizedName.m3u")
-            },
         )
     }
 
@@ -747,12 +480,12 @@ fun PlaylistDetailScreen(
     if (showDeleteConfirmation && currentPlaylist != null) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text(deletePlaylistConfirmTitle) },
+            title = { Text(stringResource(R.string.presentation_batch_b_delete_playlist_confirm_title)) },
             text = {
                 // An alert is a window of its own, so the activity's volume-key path does not reach
                 // it. The bridge routes Volume Up/Down to the same authority the activity uses.
                 ModalInputBridge()
-                Text(deletePlaylistConfirmBody)
+                Text(stringResource(R.string.presentation_batch_b_delete_playlist_confirm_body))
             },
             confirmButton = {
                 TextButton(
@@ -891,155 +624,155 @@ fun PlaylistDetailScreen(
         }
     }
 
-    val isSortSheetVisible by playerViewModel.isSortingSheetVisible.collectAsStateWithLifecycle()
-
-    if (isSortSheetVisible) {
-        val isManualMode = uiState.playlistSongsOrderMode is PlaylistSongsOrderMode.Manual
-        val rawOption = uiState.currentPlaylistSongsSortOption
-        val currentSortOption = if (isManualMode) {
-            SortOption.SongDefaultOrder
-        } else if (currentPlaylist != null) {
-            rawOption
-        } else {
-            SortOption.SongTitleAZ
-        }
-
-        val songSortOptions = persistentListOf(
-            SortOption.SongDefaultOrder,
-            SortOption.SongTitleAZ,
-            SortOption.SongTitleZA,
-            SortOption.SongArtist,
-            SortOption.SongArtistDesc,
-            SortOption.SongAlbum,
-            SortOption.SongAlbumDesc,
-            SortOption.SongDateAdded,
-            SortOption.SongDateAddedAsc,
-            SortOption.SongDuration,
-            SortOption.SongDurationAsc
-        )
-
-        LibrarySortBottomSheet(
-            title = sortSheetTitle,
-            options = songSortOptions,
-            selectedOption = currentSortOption,
-            onDismiss = { playerViewModel.hideSortingSheet() },
-            onOptionSelected = { option ->
-                 playlistViewModel.sortPlaylistSongs(option)
-                 playerViewModel.hideSortingSheet()
-                 scope.launch {
-                     kotlinx.coroutines.delay(100)
-                     listState.animateScrollToItem(0)
-                 }
-            },
-            onDirectionToggle = { option ->
+    if (showSortSheet && currentPlaylist != null) {
+        fun selectSort(option: SortOption) {
+            scope.launch {
+                pendingEdit?.join()
                 playlistViewModel.sortPlaylistSongs(option)
-                scope.launch {
-                    kotlinx.coroutines.delay(100)
-                    listState.animateScrollToItem(0)
-                }
+                if (listState.layoutInfo.totalItemsCount > 0) listState.scrollToItem(0)
+            }
+        }
+        LibrarySortBottomSheet(
+            title = stringResource(R.string.presentation_batch_b_sort_songs),
+            options = PlaylistSongSortOptions,
+            selectedOption = sortOption,
+            onDismiss = { showSortSheet = false },
+            onOptionSelected = { option ->
+                selectSort(option)
+                showSortSheet = false
             },
-            showViewToggle = false 
+            onDirectionToggle = ::selectSort,
         )
     }
 }
 
+private val PlaylistSongSortOptions = persistentListOf(
+    SortOption.SongDefaultOrder,
+    SortOption.SongTitleAZ, SortOption.SongTitleZA,
+    SortOption.SongArtist, SortOption.SongArtistDesc,
+    SortOption.SongAlbum, SortOption.SongAlbumDesc,
+    SortOption.SongDateAdded, SortOption.SongDateAddedAsc,
+    SortOption.SongDuration, SortOption.SongDurationAsc,
+)
 
-/**
- * The playlist's options (edit, delete, default transition, export), a bottom sheet. It is the screen's own sheet taken out of the screen
- * (B42) so it can be shown on its own; what each row does is still decided by the screen, which hands in the actions.
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun PlaylistOptionsSheet(
-    title: String,
-    playlistName: String?,
-    editLabel: String,
-    deleteLabel: String,
-    transitionLabel: String,
-    exportLabel: String,
-    onDismiss: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
+private fun playlistOrderLabel(option: SortOption, editable: Boolean): String {
+    if (option == SortOption.SongDefaultOrder) {
+        return stringResource(if (editable) R.string.playlist_custom_order else R.string.presentation_batch_g_sort_original_order)
+    }
+    val method = stringResource(option.methodLabelRes())
+    return when (option.methodKey) {
+        SortOption.SongTitleAZ.methodKey, SortOption.SongArtist.methodKey, SortOption.SongAlbum.methodKey -> {
+            val format = if (option.direction == SortDirection.Ascending) R.string.playlist_order_az else R.string.playlist_order_za
+            stringResource(format, method)
+        }
+        else -> {
+            val direction = if (option.direction == SortDirection.Ascending) {
+                R.string.presentation_batch_g_sort_ascending
+            } else {
+                R.string.presentation_batch_g_sort_descending
+            }
+            stringResource(R.string.presentation_batch_f_status_bullet_step, method, stringResource(direction))
+        }
+    }
+}
+
+@Composable
+internal fun PlaylistDetailMenu(
+    orderLabel: String,
+    isFolderPlaylist: Boolean,
+    isEditablePlaylist: Boolean,
+    onAdd: () -> Unit,
+    onSort: () -> Unit,
+    onEditSongs: () -> Unit,
+    onEditPlaylist: () -> Unit,
     onTransition: () -> Unit,
     onExport: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)
-
-    GlassModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 4.dp,
-    ) {
-        // This window is its own surface, so the activity's volume-key path does not
-        // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
-        ModalInputBridge()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                playlistName?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        DapOverflowButton(onClick = { expanded = true })
+        DapMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            fun choose(action: () -> Unit) {
+                expanded = false
+                action()
             }
-            PlaylistActionItem(icon = painterResource(R.drawable.rounded_edit_24), label = editLabel, onClick = onEdit)
-            PlaylistActionItem(icon = painterResource(R.drawable.rounded_delete_24), label = deleteLabel, onClick = onDelete)
-            PlaylistActionItem(icon = painterResource(R.drawable.outline_graph_1_24), label = transitionLabel, onClick = onTransition)
-            PlaylistActionItem(icon = painterResource(R.drawable.rounded_attach_file_24), label = exportLabel, onClick = onExport)
+            if (isEditablePlaylist) {
+                DapMenuItem(stringResource(R.string.presentation_batch_b_add_songs), { choose(onAdd) }, leadingIcon = { MenuIcon(Icons.Rounded.Add) })
+            }
+            DapMenuItem(stringResource(R.string.playlist_sort), { choose(onSort) }, subtitle = orderLabel, leadingIcon = { MenuIcon(Icons.AutoMirrored.Rounded.Sort) })
+            if (isEditablePlaylist) {
+                DapMenuItem(stringResource(R.string.playlist_edit_songs), { choose(onEditSongs) }, leadingIcon = { MenuIcon(Icons.Rounded.Edit) })
+            }
+            if (!isFolderPlaylist) {
+                DapDivider(Modifier.padding(horizontal = DapSpacing.Md))
+                DapMenuItem(stringResource(R.string.presentation_batch_b_edit_playlist), { choose(onEditPlaylist) }, leadingIcon = { MenuIcon(Icons.Rounded.DriveFileRenameOutline) })
+                DapMenuItem(stringResource(R.string.presentation_batch_b_set_default_transition), { choose(onTransition) }, leadingIcon = { MenuIcon(Icons.Rounded.Merge) })
+                DapMenuItem(stringResource(R.string.presentation_batch_b_export_playlist), { choose(onExport) }, leadingIcon = { MenuIcon(Icons.Rounded.IosShare) })
+                DapMenuItem(stringResource(R.string.presentation_batch_b_delete_playlist), { choose(onDelete) }, textColor = Dap.error, leadingIcon = { MenuIcon(Icons.Outlined.Delete, tint = Dap.error) })
+            }
         }
     }
 }
 
+internal val PlaylistSongListInset = DapSpacing.Gutter - EnhancedSongRowHorizontalPadding
+
 @Composable
-private fun PlaylistActionItem(
-    icon: Painter,
-    label: String,
-    onClick: () -> Unit
+private fun MenuIcon(icon: ImageVector, tint: Color = LocalContentColor.current) {
+    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+}
+
+/**
+ * The edit-mode remove control keeps its 48 dp touch target but takes 36 dp of the row, shifted left by
+ * the target's 12 dp inset, so the glyph starts on the page gutter like the art in the normal rows.
+ */
+private fun Modifier.onGutter(): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val inset = 12.dp.roundToPx()
+    layout(placeable.width - inset, placeable.height) { placeable.place(-inset, 0) }
+}
+
+@Composable
+internal fun PlaylistPage(
+    title: String,
+    caption: String,
+    onBack: () -> Unit,
+    topBarLabel: String? = null,
+    topBarActions: (@Composable () -> Unit)? = null,
+    belowHeader: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(com.lostf1sh.pixelplayeross.ui.glass.frostedPanelOr(MaterialTheme.colorScheme.surfaceContainerHigh))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                painter = icon,
-                contentDescription = label,
-                tint = MaterialTheme.colorScheme.primary
+    DapBackScaffold(
+        modifier = Modifier.fillMaxSize(),
+        onBack = onBack,
+        topBar = { back ->
+            DapTopBar(
+                onBack = back.takeIf { topBarLabel == null },
+                leading = topBarLabel?.let { label ->
+                    {
+                        Text(
+                            text = label,
+                            modifier = Modifier.padding(start = 12.dp),
+                            style = DapType.Row,
+                            color = Dap.primaryText,
+                        )
+                    }
+                },
+                actions = topBarActions,
             )
+        },
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Gutter),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                DapScreenTitle(text = title)
+                Text(text = caption, style = DapType.Caption, color = Dap.secondaryText)
+            }
+            belowHeader?.invoke()
+            Box(Modifier.weight(1f).fillMaxWidth()) { content() }
         }
-        Spacer(modifier = Modifier.width(14.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
     }
 }

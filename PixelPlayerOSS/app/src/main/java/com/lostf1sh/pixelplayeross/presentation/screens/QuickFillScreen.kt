@@ -162,8 +162,10 @@ fun QuickFillContent(
                         )
 
                         val filteredSongs = remember(songs, searchQuery) {
-                            if (searchQuery.isBlank()) songs 
-                            else songs.filter { it.title.contains(searchQuery, true) || it.artist.contains(searchQuery, true) }.toImmutableList()
+                            if (searchQuery.isBlank()) songs
+                            else songs.filter {
+                                com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryTabSearch.matchesQuery(searchQuery, it.title, it.artist)
+                            }.toImmutableList()
                         }
 
                         SongPickerList(

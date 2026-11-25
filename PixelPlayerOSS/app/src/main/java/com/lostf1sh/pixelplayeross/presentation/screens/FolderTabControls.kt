@@ -1,6 +1,8 @@
 package com.lostf1sh.pixelplayeross.presentation.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -8,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lostf1sh.pixelplayeross.R
+import com.lostf1sh.pixelplayeross.data.library.folderHasPlayableSongs
+import com.lostf1sh.pixelplayeross.data.library.folderRelativePath
 import com.lostf1sh.pixelplayeross.data.model.FolderSource
 import com.lostf1sh.pixelplayeross.data.model.MusicFolder
 import com.lostf1sh.pixelplayeross.presentation.components.ToggleSegmentButton
@@ -23,12 +27,6 @@ internal fun folderBreadcrumb(tree: List<MusicFolder>, path: String?): List<Musi
         if (child.isNotEmpty()) return listOf(folder) + child
     }
     return emptyList()
-}
-
-internal fun folderRelativePath(folder: MusicFolder): String {
-    val root = folder.musicRootPath.trimEnd('/')
-    return if (folder.path == root) java.io.File(root).name
-        else folder.path.removePrefix("$root/").ifBlank { folder.name }
 }
 
 /** Prefer the volume label supplied by Android; mount UUIDs are only the existing last-resort fallback. */
@@ -57,10 +55,11 @@ internal fun FolderTabControls(
                     val label = if (!internal && !descriptions[root].isNullOrBlank()) descriptions.getValue(root) else if (internal) stringResource(R.string.presentation_batch_d_storage_internal)
                         else stringResource(R.string.presentation_batch_d_storage_sd_card) +
                             (if (volumeRoots.count { it != internalVolumeRoot } > 1) " · " + java.io.File(root).name else "")
+                    val coverScheme = com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current
                     ToggleSegmentButton(
                         modifier = Modifier.width(148.dp).height(48.dp), active = root == selectedVolumeRoot,
-                        activeColor = LocalDapAccent.current, inactiveColor = Dap.surfaceRaised,
-                        activeContentColor = Dap.onFill, inactiveContentColor = Dap.secondaryText,
+                        activeColor = LocalDapAccent.current, inactiveColor = coverScheme?.secondaryContainer ?: Dap.surfaceRaised,
+                        activeContentColor = Dap.onFill, inactiveContentColor = coverScheme?.onSecondaryContainer ?: Dap.secondaryText,
                         activeCornerRadius = DapRadius.Surface, onClick = { onVolumeChange(root) }, text = label
                     )
                 }
@@ -73,6 +72,7 @@ internal fun FolderTabControls(
         if (showSearch) OutlinedTextField(
             value = query, onValueChange = onQueryChange,
             placeholder = { Text(stringResource(R.string.folders_search)) },
+            colors = com.lostf1sh.pixelplayeross.ui.ds.dapOutlinedTextFieldColors(),
             singleLine = true, modifier = Modifier.fillMaxWidth().dapTextField()
         )
     }
@@ -92,13 +92,33 @@ private fun FolderSegments(first: String, second: String, selected: Boolean, onC
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-internal fun FolderActionsSheet(folder: MusicFolder, onOpen: () -> Unit, onActions: () -> Unit, onDismiss: () -> Unit) {
+internal fun FolderActionsSheet(
+    folder: MusicFolder,
+    onOpen: () -> Unit,
+    onActions: () -> Unit,
+    onDismiss: () -> Unit,
+    onPlay: () -> Unit = {},
+    onShuffle: () -> Unit = {},
+    onPlayNext: () -> Unit = {},
+    onAddToQueue: () -> Unit = {},
+) {
+    val hasSongs = folderHasPlayableSongs(folder)
     GlassModalBottomSheet(
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
         ModalInputBridge()
-        Column(Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Gutter)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = DapSpacing.Gutter)
+        ) {
             Text(folder.name, style = DapType.Title, color = Dap.primaryText)
+            DapNavRow(label = stringResource(R.string.play_playback), enabled = hasSongs, onClick = onPlay)
+            DapNavRow(label = stringResource(R.string.shortcut_shuffle_short), enabled = hasSongs, onClick = onShuffle)
+            DapNavRow(label = stringResource(R.string.action_queue_next), enabled = hasSongs, onClick = onPlayNext)
+            DapNavRow(label = stringResource(R.string.action_add_to_queue), enabled = hasSongs, onClick = onAddToQueue)
             DapNavRow(label = stringResource(R.string.folders_open), onClick = onOpen)
             DapNavRow(label = stringResource(R.string.folders_actions), onClick = onActions)
             Spacer(Modifier.height(DapSpacing.Md))

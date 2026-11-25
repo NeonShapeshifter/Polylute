@@ -4,16 +4,23 @@ import android.content.Context
 import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.lostf1sh.pixelplayeross.data.model.Playlist
 import com.lostf1sh.pixelplayeross.data.model.SortOption
 import com.lostf1sh.pixelplayeross.data.model.isSmartPlaylistSource
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupSongCatalogResolver
+import com.lostf1sh.pixelplayeross.data.backup.restore.EmptyCatalogSource
+import com.lostf1sh.pixelplayeross.data.backup.restore.PortableSongKeys
+import com.lostf1sh.pixelplayeross.data.backup.restore.SongResolutionWay
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
-import com.lostf1sh.pixelplayeross.data.database.SongSummary
 import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.preferences.PreferenceBackupEntry
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
+import com.lostf1sh.pixelplayeross.data.stats.CatalogSource
 import com.lostf1sh.pixelplayeross.di.BackupGson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -30,8 +37,17 @@ class PlaylistsModuleHandler @Inject constructor(
     private val playlistPreferencesRepository: PlaylistPreferencesRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val musicDao: MusicDao,
-    @BackupGson private val gson: Gson
-) : BackupModuleHandler {
+    @BackupGson private val gson: Gson,
+    private val catalogSource: CatalogSource,
+) : BackupModuleHandler, ReportableRestoreHandler {
+
+    constructor(
+        context: Context,
+        playlistPreferencesRepository: PlaylistPreferencesRepository,
+        userPreferencesRepository: UserPreferencesRepository,
+        musicDao: MusicDao,
+        gson: Gson,
+    ) : this(context, playlistPreferencesRepository, userPreferencesRepository, musicDao, gson, EmptyCatalogSource)
 
     override val section = BackupSection.PLAYLISTS
 
@@ -42,19 +58,34 @@ class PlaylistsModuleHandler @Inject constructor(
 
         val allLocalSummaries = musicDao.getAllLocalSongSummaries()
         val summaryById = allLocalSummaries.associateBy { it.id.toString() }
+        val catalog = runCatching { catalogSource.load() }.getOrNull()
 
         val songMetadata = mutableMapOf<String, SongMetadataEntry>()
         val filteredPlaylists = playlists.map { playlist ->
             val localSongIds = playlist.songIds
             localSongIds.forEach { id ->
                 if (id !in songMetadata) {
-                    summaryById[id]?.let { summary ->
+                    val catalogItem = catalog?.itemAtLocator(id)
+                    if (catalogItem != null) {
                         songMetadata[id] = SongMetadataEntry(
-                            title = summary.title,
-                            artist = summary.artistName,
-                            album = summary.albumName,
-                            duration = summary.duration
+                            title = catalogItem.song.title.ifBlank { catalogItem.title },
+                            artist = catalogItem.song.artist.ifBlank { catalogItem.artistLine },
+                            album = catalogItem.song.album,
+                            duration = catalogItem.song.duration,
+                            durationMs = catalogItem.song.duration.takeIf { it > 0L },
+                            path = catalogItem.song.path.takeIf { it.isNotBlank() },
                         )
+                    } else {
+                        summaryById[id]?.let { summary ->
+                            songMetadata[id] = SongMetadataEntry(
+                                title = summary.title,
+                                artist = summary.artistName,
+                                album = summary.albumName,
+                                duration = summary.duration,
+                                durationMs = summary.duration.takeIf { it > 0L },
+                                path = null,
+                            )
+                        }
                     }
                 }
             }
@@ -101,13 +132,24 @@ class PlaylistsModuleHandler @Inject constructor(
         gson.toJson(payload)
     }
 
-    override suspend fun restore(payload: String) = restoreData(payload, rollback = false)
+    override suspend fun restore(payload: String) {
+        restoreData(payload, rollback = false, mode = BackupRestoreMode.REPLACE)
+    }
 
-    private suspend fun restoreData(payload: String, rollback: Boolean) = withContext(Dispatchers.IO) {
+    override suspend fun restoreWithReport(
+        payload: String,
+        mode: BackupRestoreMode,
+    ): BackupResolutionCounts = restoreData(payload, rollback = false, mode = mode)
+
+    private suspend fun restoreData(
+        payload: String,
+        rollback: Boolean,
+        mode: BackupRestoreMode,
+    ): BackupResolutionCounts = withContext(Dispatchers.IO) {
         val element = JsonParser.parseString(payload)
         if (element.isJsonArray) {
-            restoreLegacyPreferenceEntries(payload)
-            return@withContext
+            restoreLegacyPreferenceEntries(payload, mode)
+            return@withContext BackupResolutionCounts()
         }
 
         val parsed = runCatching {
@@ -120,27 +162,59 @@ class PlaylistsModuleHandler @Inject constructor(
         val songMetadata = parsed.songMetadata
         val coverImages = parsed.coverImages
 
-        val resolvedPlaylists = if (songMetadata != null && songMetadata.isNotEmpty()) {
-            resolvePlaylists(backupPlaylists, songMetadata)
+        val (resolvedPlaylists, counts) = if (songMetadata != null && songMetadata.isNotEmpty()) {
+            resolvePlaylists(backupPlaylists, songMetadata, mode)
         } else {
-            backupPlaylists
+            backupPlaylists to BackupResolutionCounts()
         }
 
-        val finalPlaylists = if (coverImages != null && coverImages.isNotEmpty()) {
+        val incomingPlaylists = if (coverImages != null && coverImages.isNotEmpty()) {
             restoreCoverImages(resolvedPlaylists, coverImages, rollback)
         } else {
             resolvedPlaylists
         }
 
-        playlistPreferencesRepository.replaceAllPlaylists(finalPlaylists)
-        playlistPreferencesRepository.setPlaylistSongOrderModes(parsed.playlistSongOrderModes.orEmpty())
-        playlistPreferencesRepository.setPlaylistsSortOption(
-            parsed.playlistsSortOption ?: SortOption.PlaylistNameAZ.storageKey
-        )
-        userPreferencesRepository.clearLegacyUserPlaylists()
+        if (mode == BackupRestoreMode.REPLACE) {
+            playlistPreferencesRepository.replaceAllPlaylists(incomingPlaylists)
+            playlistPreferencesRepository.setPlaylistSongOrderModes(parsed.playlistSongOrderModes.orEmpty())
+            playlistPreferencesRepository.setPlaylistsSortOption(
+                parsed.playlistsSortOption ?: SortOption.PlaylistNameAZ.storageKey
+            )
+            userPreferencesRepository.clearLegacyUserPlaylists()
+        } else {
+            val merged = playlistPreferencesRepository.getPlaylistsOnce().toMutableList()
+            incomingPlaylists.forEach { incoming ->
+                val idx = merged.indexOfFirst {
+                    it.id == incoming.id || it.name.equals(incoming.name, ignoreCase = true)
+                }
+                if (idx >= 0) {
+                    val cur = merged[idx]
+                    val existingIds = cur.songIds.toHashSet()
+                    val extraIds = incoming.songIds.filter { existingIds.add(it) }
+                    if (extraIds.isNotEmpty()) {
+                        merged[idx] = cur.copy(
+                            songIds = cur.songIds + extraIds,
+                            coverImageUri = cur.coverImageUri ?: incoming.coverImageUri,
+                        )
+                    }
+                } else {
+                    merged.add(incoming)
+                }
+            }
+            playlistPreferencesRepository.replaceAllPlaylists(merged)
+            val existingModes = playlistPreferencesRepository.playlistSongOrderModesFlow.first().toMutableMap()
+            parsed.playlistSongOrderModes.orEmpty().forEach { (k, v) ->
+                existingModes.putIfAbsent(k, v)
+            }
+            playlistPreferencesRepository.setPlaylistSongOrderModes(existingModes)
+        }
+
+        counts
     }
 
-    override suspend fun rollback(snapshot: String) = restoreData(snapshot, rollback = true)
+    override suspend fun rollback(snapshot: String) {
+        restoreData(snapshot, rollback = true, mode = BackupRestoreMode.REPLACE)
+    }
 
     private fun readFileAsBase64(path: String): String? {
         return try {
@@ -192,105 +266,72 @@ class PlaylistsModuleHandler @Inject constructor(
      */
     private suspend fun resolvePlaylists(
         playlists: List<Playlist>,
-        songMetadata: Map<String, SongMetadataEntry>
-    ): List<Playlist> {
-        val localSummaries = musicDao.getAllLocalSongSummaries()
-        val currentSongsById = localSummaries.associateBy { it.id.toString() }
-
-        val metadataIndex = mutableMapOf<String, MutableList<SongSummary>>()
-        localSummaries.forEach { song ->
-            val key = normalizeMatchKey(song.title, song.artistName)
-            metadataIndex.getOrPut(key) { mutableListOf() }.add(song)
+        songMetadata: Map<String, SongMetadataEntry>,
+        mode: BackupRestoreMode,
+    ): Pair<List<Playlist>, BackupResolutionCounts> {
+        val resolver = BackupSongCatalogResolver.loadIfAvailable(catalogSource) ?: run {
+            val summaries = musicDao.getAllLocalSongSummaries()
+            if (summaries.isEmpty()) {
+                return playlists to BackupResolutionCounts()
+            }
+            BackupSongCatalogResolver(BackupSongCatalogResolver.catalogFromSummaries(summaries))
         }
 
         val resolutionCache = mutableMapOf<String, String?>()
-        var totalSongs = 0
-        var resolvedCount = 0
-        var unresolvedCount = 0
+        var byId = 0
+        var byKeys = 0
+        var unresolved = 0
 
         playlists.forEach { playlist ->
             playlist.songIds.forEach { songId ->
                 if (songId !in resolutionCache) {
-                    totalSongs++
-                    val resolved = resolveSongId(songId, songMetadata, currentSongsById, metadataIndex)
-                    resolutionCache[songId] = resolved
-                    if (resolved != null) resolvedCount++ else unresolvedCount++
+                    val meta = songMetadata[songId]
+                    val keys = meta?.let {
+                        PortableSongKeys(
+                            title = it.title,
+                            artist = it.artist,
+                            album = it.album,
+                            durationMs = (it.durationMs ?: it.duration).takeIf { d -> d > 0L },
+                            path = it.path,
+                        )
+                    }
+                    val resolved = resolver.resolve(
+                        backupSongId = songId,
+                        backupLibraryItemId = null,
+                        keys = keys,
+                    )
+                    when (resolved.way) {
+                        SongResolutionWay.BY_ID -> byId++
+                        SongResolutionWay.BY_KEYS -> byKeys++
+                        SongResolutionWay.UNRESOLVED -> unresolved++
+                    }
+                    resolutionCache[songId] = resolved.songId
+                } else if (resolutionCache[songId] == null && mode == BackupRestoreMode.REPLACE) {
+                    // Repeated unresolved reference across playlists doesn't inflate missing ID lookup cache,
+                    // but still accurately avoids re-resolving.
                 }
             }
         }
 
-        if (unresolvedCount > 0) {
-            Timber.tag(TAG).w("Playlist restore: $resolvedCount/$totalSongs songs resolved, $unresolvedCount unresolved")
+        val totalSongs = byId + byKeys + unresolved
+        if (unresolved > 0) {
+            Timber.tag(TAG).w("Playlist restore: ${byId + byKeys}/$totalSongs songs resolved, $unresolved unresolved")
         }
 
-        return playlists.map { playlist ->
+        val mapped = playlists.map { playlist ->
             val resolvedSongIds = playlist.songIds.mapNotNull { songId ->
                 resolutionCache[songId]
             }
             playlist.copy(songIds = resolvedSongIds)
         }
+        return mapped to BackupResolutionCounts(
+            resolvedById = byId,
+            resolvedByKeys = byKeys,
+            unresolved = unresolved,
+        )
     }
 
-    private fun resolveSongId(
-        backupSongId: String,
-        songMetadata: Map<String, SongMetadataEntry>,
-        currentSongsById: Map<String, SongSummary>,
-        metadataIndex: Map<String, List<SongSummary>>
-    ): String? {
-        val meta = songMetadata[backupSongId]
-
-        val directMatch = currentSongsById[backupSongId]
-        if (directMatch != null) {
-            if (meta == null) {
-                return backupSongId
-            }
-            if (metadataMatches(meta, directMatch)) {
-                return backupSongId
-            }
-        }
-
-        if (meta == null) {
-            return if (directMatch != null) backupSongId else null
-        }
-
-        val matchKey = normalizeMatchKey(meta.title, meta.artist)
-        val candidates = metadataIndex[matchKey] ?: return null
-
-        if (candidates.size == 1) {
-            return candidates[0].id.toString()
-        }
-
-        val albumMatch = candidates.filter { candidate ->
-            normalizeText(candidate.albumName) == normalizeText(meta.album)
-        }
-        if (albumMatch.size == 1) {
-            return albumMatch[0].id.toString()
-        }
-
-        val durationCandidates = (albumMatch.ifEmpty { candidates }).filter { candidate ->
-            kotlin.math.abs(candidate.duration - meta.duration) <= DURATION_TOLERANCE_MS
-        }
-        if (durationCandidates.size == 1) {
-            return durationCandidates[0].id.toString()
-        }
-
-        return null
-    }
-
-    private fun metadataMatches(meta: SongMetadataEntry, song: SongSummary): Boolean {
-        return normalizeText(meta.title) == normalizeText(song.title) &&
-            normalizeText(meta.artist) == normalizeText(song.artistName)
-    }
-
-    private fun normalizeMatchKey(title: String, artist: String): String {
-        return "${normalizeText(title)}|${normalizeText(artist)}"
-    }
-
-    private fun normalizeText(text: String): String {
-        return text.trim().lowercase()
-    }
-
-    private suspend fun restoreLegacyPreferenceEntries(payload: String) {
+    private suspend fun restoreLegacyPreferenceEntries(payload: String, mode: BackupRestoreMode) {
         val type = TypeToken.getParameterized(List::class.java, PreferenceBackupEntry::class.java).type
         val entries: List<PreferenceBackupEntry> = gson.fromJson(payload, type)
 
@@ -322,10 +363,28 @@ class PlaylistsModuleHandler @Inject constructor(
             ?.stringValue
             ?: SortOption.PlaylistNameAZ.storageKey
 
-        playlistPreferencesRepository.replaceAllPlaylists(playlists)
-        playlistPreferencesRepository.setPlaylistSongOrderModes(playlistSongOrderModes)
-        playlistPreferencesRepository.setPlaylistsSortOption(playlistsSortOption)
-        userPreferencesRepository.clearLegacyUserPlaylists()
+        if (mode == BackupRestoreMode.REPLACE) {
+            playlistPreferencesRepository.replaceAllPlaylists(playlists)
+            playlistPreferencesRepository.setPlaylistSongOrderModes(playlistSongOrderModes)
+            playlistPreferencesRepository.setPlaylistsSortOption(playlistsSortOption)
+            userPreferencesRepository.clearLegacyUserPlaylists()
+        } else {
+            val merged = playlistPreferencesRepository.getPlaylistsOnce().toMutableList()
+            playlists.forEach { incoming ->
+                val idx = merged.indexOfFirst {
+                    it.id == incoming.id || it.name.equals(incoming.name, ignoreCase = true)
+                }
+                if (idx >= 0) {
+                    val cur = merged[idx]
+                    val existingIds = cur.songIds.toHashSet()
+                    val extraIds = incoming.songIds.filter { existingIds.add(it) }
+                    if (extraIds.isNotEmpty()) merged[idx] = cur.copy(songIds = cur.songIds + extraIds)
+                } else {
+                    merged.add(incoming)
+                }
+            }
+            playlistPreferencesRepository.replaceAllPlaylists(merged)
+        }
     }
 
     /** Song metadata stored alongside playlists for cross-device matching. */
@@ -333,7 +392,11 @@ class PlaylistsModuleHandler @Inject constructor(
         val title: String,
         val artist: String,
         val album: String,
-        val duration: Long
+        val duration: Long,
+        @SerializedName("duration_ms")
+        val durationMs: Long? = null,
+        @SerializedName("path")
+        val path: String? = null,
     )
 
     private data class PlaylistsBackupPayload(

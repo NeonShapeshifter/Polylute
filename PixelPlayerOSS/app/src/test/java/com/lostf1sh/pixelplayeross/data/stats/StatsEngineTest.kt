@@ -37,8 +37,8 @@ class StatsEngineTest {
         assertThat(c.denominatorMs).isEqualTo(100 * 3 * MIN + 4 * 3 * MIN)
         assertThat(c.top1Ms).isEqualTo(12 * MIN) // song 101, which Plays mode would never list in its top
         // The rankings differ with the mode; the concentration object is one thing.
-        assertThat(r.rankings.songs(StatsRankMode.PLAYS).first().item.identity).isNotEqualTo("item-101")
-        assertThat(r.rankings.songs(StatsRankMode.TIME).first().item.identity).isEqualTo("item-101")
+        assertThat(r.rankings.songs(StatsRankMode.PLAYS).first().item!!.identity).isNotEqualTo("item-101")
+        assertThat(r.rankings.songs(StatsRankMode.TIME).first().item!!.identity).isEqualTo("item-101")
         assertThat(r.rankings.songCount).isEqualTo(101)
     }
 
@@ -246,7 +246,7 @@ class StatsEngineTest {
             listOf(Kit.play(1, at(2026, 11, 1), occurrence = "outside")) // another month
         val period = StatsPeriod.Months(YearMonth.of(2026, 3), YearMonth.of(2026, 8))
         val top = StatsEngine.topN(Kit.ledger(events, library(7)), period, 25, StatsRankMode.PLAYS, now, Kit.zone)
-        assertThat(top.rows.map { it.item.identity }.take(3)).containsExactly("item-7", "item-6", "item-5").inOrder()
+        assertThat(top.rows.map { it.item!!.identity }.take(3)).containsExactly("item-7", "item-6", "item-5").inOrder()
         assertThat(top.rows.first().plays).isEqualTo(7)
         assertThat(top.eligible).isEqualTo(7)
         assertThat(top.isShort).isTrue()

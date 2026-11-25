@@ -5,6 +5,7 @@ import com.lostf1sh.pixelplayeross.data.worker.albumProjection
 import com.lostf1sh.pixelplayeross.data.worker.withAlbumGrouping
 
 import androidx.paging.PagingSource
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -254,6 +255,12 @@ data class MusicBrainzCurrentState(
     val mbRecordingId: String?,
     val mbReleaseId: String?,
     val mbArtistId: String?,
+)
+
+data class SongSearchRow(
+    @ColumnInfo(name = "id") val id: Long,
+    @ColumnInfo(name = "title") val title: String,
+    @ColumnInfo(name = "artist_name") val artistName: String,
 )
 
 @Dao
@@ -1242,7 +1249,7 @@ interface MusicDao {
     ): Flow<List<SongEntity>>
 
     @Query("""
-        SELECT id, parent_directory_path, title, album_art_uri_string FROM songs
+        SELECT id, parent_directory_path, title, album_art_uri_string, track_number, disc_number, album_name, album_id, file_path, artist_name FROM songs
         WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
         AND (
             :filterMode = 0
@@ -1567,6 +1574,16 @@ interface MusicDao {
         allowedParentDirs = allowedParentDirs,
         applyDirectoryFilter = applyDirectoryFilter
     )
+
+    @Query("""
+        SELECT id, title, artist_name FROM songs
+        WHERE (:applyDirectoryFilter = 0 OR id < 0 OR parent_directory_path IN (:allowedParentDirs))
+        ORDER BY title ASC
+    """)
+    fun observeSongSearchRows(
+        allowedParentDirs: List<String>,
+        applyDirectoryFilter: Boolean
+    ): Flow<List<SongSearchRow>>
 
     /**
      * Search songs with a result limit for non-paginated contexts (FTS).
@@ -1986,6 +2003,42 @@ interface MusicDao {
             albums.artist_id AS artist_id,
             albums.album_artist AS album_artist,
             albums.album_art_uri_string AS album_art_uri_string,
+            albums.grouping_key AS grouping_key,
+            albums.is_compilation AS is_compilation,
+            COUNT(songs.id) AS song_count,
+            albums.date_added AS date_added,
+            albums.year AS year
+        FROM songs
+        INNER JOIN albums ON albums.id = songs.album_id
+        WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
+        GROUP BY
+            albums.id,
+            albums.title,
+            albums.artist_name,
+            albums.artist_id,
+            albums.album_artist,
+            albums.album_art_uri_string,
+            albums.date_added,
+            albums.year,
+            albums.grouping_key,
+            albums.is_compilation
+        HAVING COUNT(songs.id) >= :minTracks
+        ORDER BY albums.title ASC
+    """)
+    fun observeSearchableAlbums(
+        allowedParentDirs: List<String>,
+        applyDirectoryFilter: Boolean,
+        minTracks: Int
+    ): Flow<List<AlbumEntity>>
+
+    @Query("""
+        SELECT
+            albums.id AS id,
+            albums.title AS title,
+            albums.artist_name AS artist_name,
+            albums.artist_id AS artist_id,
+            albums.album_artist AS album_artist,
+            albums.album_art_uri_string AS album_art_uri_string,
     albums.grouping_key AS grouping_key,
     albums.is_compilation AS is_compilation,
             COUNT(songs.id) AS song_count,
@@ -2184,6 +2237,21 @@ interface MusicDao {
         INNER JOIN song_artist_cross_ref ON song_artist_cross_ref.song_id = songs.id
         INNER JOIN artists ON artists.id = song_artist_cross_ref.artist_id
         WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
+        GROUP BY artists.id
+        ORDER BY artists.name ASC
+    """)
+    fun observeSearchableArtists(
+        allowedParentDirs: List<String>,
+        applyDirectoryFilter: Boolean
+    ): Flow<List<ArtistEntity>>
+
+    @Query("""
+        SELECT artists.id, artists.name, artists.image_url, artists.custom_image_uri,
+               COUNT(DISTINCT songs.id) AS track_count
+        FROM songs
+        INNER JOIN song_artist_cross_ref ON song_artist_cross_ref.song_id = songs.id
+        INNER JOIN artists ON artists.id = song_artist_cross_ref.artist_id
+        WHERE (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
         AND artists.name LIKE '%' || :query || '%'
         GROUP BY artists.id
         ORDER BY artists.name ASC
@@ -2314,6 +2382,16 @@ interface MusicDao {
 
     @Query("SELECT COUNT(*) FROM songs LEFT JOIN song_composers ON song_composers.song_id = songs.id WHERE song_composers.song_id IS NULL AND songs.id > 0")
     suspend fun countSongsNeedingComposer(): Int
+
+    /** All composer tag values with their song counts (filtered in Kotlin for accent- and case-blind search). */
+    @Query("""
+        SELECT song_composers.composer AS composer, COUNT(*) AS songCount FROM song_composers
+        JOIN songs ON songs.id = song_composers.song_id
+        WHERE song_composers.composer != ''
+        AND (:applyDirectoryFilter = 0 OR songs.id < 0 OR songs.parent_directory_path IN (:allowedParentDirs))
+        GROUP BY song_composers.composer
+    """)
+    fun getAllComposerValues(allowedParentDirs: List<String>, applyDirectoryFilter: Boolean): Flow<List<ComposerCountRow>>
 
     /** The composer tag values that contain [query] (case-insensitive for plain letters), with how many songs carry each. */
     @Query("""

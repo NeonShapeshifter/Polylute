@@ -6,15 +6,11 @@
     <string name="presentation_batch_b_play_it">Play it</string>
     <string name="presentation_batch_b_add_songs">Add songs</string>
     <string name="presentation_batch_b_add">Add</string>
-    <string name="presentation_batch_b_remove_songs">Remove songs</string>
-    <string name="presentation_batch_b_reorder_songs">Reorder songs</string>
-    <string name="presentation_batch_b_reorder">Reorder</string>
     <string name="presentation_batch_b_reorder_song">Reorder song</string>
     <string name="presentation_batch_b_playlist_empty_title">This playlist is empty.</string>
     <string name="presentation_batch_b_playlist_empty_folder_body">This folder doesn\'t contain songs.</string>
     <string name="presentation_batch_b_playlist_empty_add_hint">Tap on \'Add Songs\' to begin.</string>
     <string name="presentation_batch_b_playlist_empty_smart_body">No songs match this smart rule yet.</string>
-    <string name="presentation_batch_b_playlist_options_title">Playlist options</string>
     <string name="presentation_batch_b_edit_playlist">Edit playlist</string>
     <string name="presentation_batch_b_delete_playlist">Delete playlist</string>
     <string name="presentation_batch_b_set_default_transition">Set default transition</string>
@@ -48,4 +44,10 @@
 
     <string name="presentation_batch_b_genre_shuffle_label">%1$s Shuffle</string>
 
+    <string name="playlist_sort">Sort</string>
+    <string name="playlist_edit_songs">Edit songs</string>
+    <string name="playlist_edit_songs_hint">Drag to reorder · tap − to remove</string>
+    <string name="playlist_custom_order">Custom order</string>
+    <string name="playlist_order_az">%1$s A–Z</string>
+    <string name="playlist_order_za">%1$s Z–A</string>
 </resources>

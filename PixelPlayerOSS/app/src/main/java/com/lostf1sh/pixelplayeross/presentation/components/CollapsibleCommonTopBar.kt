@@ -69,9 +69,10 @@ fun CollapsibleCommonTopBar(
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     val solidAlpha = (collapseFraction * 2f).coerceIn(0f, 1f)
-    
-    val backgroundColor = containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = solidAlpha)
-    val statusBarFallbackColor = backgroundColor.compositeOver(MaterialTheme.colorScheme.surface)
+    val barScheme = com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current ?: MaterialTheme.colorScheme
+
+    val backgroundColor = containerColor ?: barScheme.surfaceContainerHigh.copy(alpha = solidAlpha)
+    val statusBarFallbackColor = backgroundColor.compositeOver(barScheme.surface)
 
     if (syncStatusBarWithContainer) {
         PixelPlayerStatusBarStyle(color = statusBarFallbackColor)
@@ -97,8 +98,8 @@ fun CollapsibleCommonTopBar(
                         .zIndex(1f),
                     onClick = onBack,
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        contentColor = MaterialTheme.colorScheme.onSurface
+                        containerColor = barScheme.surfaceContainerLow,
+                        contentColor = barScheme.onSurface
                     )
                 ) {
                     Icon(

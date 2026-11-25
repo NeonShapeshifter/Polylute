@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp as lerpDp
 import coil.size.Size
+import com.lostf1sh.pixelplayeross.utils.formatTrackLength
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.presentation.components.AutoScrollingText
@@ -128,6 +129,8 @@ private fun RowText(text: String, style: TextStyle, color: Color) {
 /** B42-fix3 (item 8): how much of the accent the playing row is washed with over the cover glass. */
 private const val GLASS_HIGHLIGHT_ALPHA = 0.12f
 
+internal val EnhancedSongRowHorizontalPadding = 13.dp
+
 /**
  * Enhanced song list item with multi-selection support.
  * 
@@ -162,7 +165,10 @@ fun EnhancedSongListItem(
     showMoreOptionsButton: Boolean = true,
     onLongPress: () -> Unit = {},
     onMoreOptionsClick: (Song) -> Unit,
-    onClick: () -> Unit
+    onClick: (() -> Unit)?,
+    showDuration: Boolean = false,
+    leading: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     if (isLoading) {
         SongRowSkeleton(
@@ -229,11 +235,10 @@ fun EnhancedSongListItem(
         )
     }
 
-    val latestOnClick by rememberUpdatedState(onClick)
-    val latestOnLongPress by rememberUpdatedState(onLongPress)
-    Box(
-        modifier = rowModifier
-            .background(containerColor, surfaceShape)
+    if (onClick != null) {
+        val latestOnClick by rememberUpdatedState(onClick)
+        val latestOnLongPress by rememberUpdatedState(onLongPress)
+        rowModifier = rowModifier
             .semantics(mergeDescendants = true) {
                 role = Role.Button
                 onClick {
@@ -261,15 +266,22 @@ fun EnhancedSongListItem(
                         latestOnLongPress()
                     }
                 )
-            },
+            }
+    }
+    Box(
+        modifier = rowModifier.background(containerColor, surfaceShape),
         propagateMinConstraints = true
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 13.dp, vertical = 12.dp),
+                .padding(horizontal = EnhancedSongRowHorizontalPadding, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (leading != null) {
+                leading()
+                Spacer(Modifier.width(DapSpacing.Sm))
+            }
             if (showAlbumArt) {
                 Box(
                     modifier = Modifier
@@ -376,6 +388,20 @@ fun EnhancedSongListItem(
 
             if (showPlayingIndicator || showTrailingAction) {
                 Spacer(modifier = Modifier.width(DapSpacing.Sm))
+            }
+
+            if (showDuration) {
+                Spacer(Modifier.width(DapSpacing.Md))
+                Text(
+                    text = formatTrackLength(song.duration),
+                    style = DapType.ValueSmall,
+                    color = palette.tertiaryText,
+                    maxLines = 1,
+                )
+            }
+            if (trailing != null) {
+                Spacer(Modifier.width(DapSpacing.Sm))
+                trailing()
             }
 
             if (showTrailingAction) {

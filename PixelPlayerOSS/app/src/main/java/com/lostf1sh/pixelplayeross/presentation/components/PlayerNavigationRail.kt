@@ -49,70 +49,72 @@ fun PlayerNavigationRail(
     val scope = rememberCoroutineScope()
     var lastSearchTapTimestamp by remember { mutableLongStateOf(0L) }
 
-    NavigationRail(modifier = modifier.fillMaxHeight()) {
-        Spacer(Modifier.weight(1f))
-        navItems.forEach { item ->
-            val isSelected = selectedRootRoute == item.screen.route
-            val iconPainterResId = if (isSelected && item.selectedIconResId != null && item.selectedIconResId != 0) {
-                item.selectedIconResId
-            } else {
-                item.iconResId
-            }
-            val onClickLambda: () -> Unit = remember(item.screen.route, scope) {
-                {
-                    val itemRoute = item.screen.route
-                    val isSearchTab = itemRoute == Screen.Search.route
-                    val isAlreadySelected = latestSelectedRootRoute == itemRoute
+    com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+        NavigationRail(modifier = modifier.fillMaxHeight()) {
+            Spacer(Modifier.weight(1f))
+            navItems.forEach { item ->
+                val isSelected = selectedRootRoute == item.screen.route
+                val iconPainterResId = if (isSelected && item.selectedIconResId != null && item.selectedIconResId != 0) {
+                    item.selectedIconResId
+                } else {
+                    item.iconResId
+                }
+                val onClickLambda: () -> Unit = remember(item.screen.route, scope) {
+                    {
+                        val itemRoute = item.screen.route
+                        val isSearchTab = itemRoute == Screen.Search.route
+                        val isAlreadySelected = latestSelectedRootRoute == itemRoute
 
-                    if (isSearchTab) {
-                        val now = SystemClock.elapsedRealtime()
-                        val isDoubleTap = now - lastSearchTapTimestamp <= 350L
-                        lastSearchTapTimestamp = now
+                        if (isSearchTab) {
+                            val now = SystemClock.elapsedRealtime()
+                            val isDoubleTap = now - lastSearchTapTimestamp <= 350L
+                            lastSearchTapTimestamp = now
 
-                        if (!isAlreadySelected) {
-                            latestOnRootTabSelected(itemRoute)
-                        }
+                            if (!isAlreadySelected) {
+                                latestOnRootTabSelected(itemRoute)
+                            }
 
-                        if (isDoubleTap) {
-                            lastSearchTapTimestamp = 0L
-                            if (isAlreadySelected) {
-                                latestOnSearchIconDoubleTap()
-                            } else {
-                                scope.launch {
-                                    delay(160L)
+                            if (isDoubleTap) {
+                                lastSearchTapTimestamp = 0L
+                                if (isAlreadySelected) {
                                     latestOnSearchIconDoubleTap()
+                                } else {
+                                    scope.launch {
+                                        delay(160L)
+                                        latestOnSearchIconDoubleTap()
+                                    }
                                 }
                             }
+                        } else if (!isAlreadySelected) {
+                            lastSearchTapTimestamp = 0L
+                            latestOnRootTabSelected(itemRoute)
+                        } else {
+                            lastSearchTapTimestamp = 0L
                         }
-                    } else if (!isAlreadySelected) {
-                        lastSearchTapTimestamp = 0L
-                        latestOnRootTabSelected(itemRoute)
-                    } else {
-                        lastSearchTapTimestamp = 0L
                     }
                 }
-            }
-            NavigationRailItem(
-                selected = isSelected,
-                onClick = onClickLambda,
-                enabled = true,
-                icon = {
-                    Icon(
-                        painter = painterResource(id = iconPainterResId),
-                        contentDescription = item.label
+                NavigationRailItem(
+                    selected = isSelected,
+                    onClick = onClickLambda,
+                    enabled = true,
+                    icon = {
+                        Icon(
+                            painter = painterResource(id = iconPainterResId),
+                            contentDescription = item.label
+                        )
+                    },
+                    label = { Text(item.label) },
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer
                     )
-                },
-                label = { Text(item.label) },
-                colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer
                 )
-            )
-            Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(4.dp))
+            }
+            Spacer(Modifier.weight(1f))
         }
-        Spacer(Modifier.weight(1f))
     }
 }

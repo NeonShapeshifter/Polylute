@@ -3,9 +3,9 @@ package com.lostf1sh.pixelplayeross.data.repository
 import android.content.Context
 import android.os.Environment
 import com.lostf1sh.pixelplayeross.data.database.FolderSongRow
+import com.lostf1sh.pixelplayeross.data.metadata.LibraryRepairPolicy
 import com.lostf1sh.pixelplayeross.data.model.FolderSource
 import com.lostf1sh.pixelplayeross.data.model.MusicFolder
-import com.lostf1sh.pixelplayeross.data.metadata.LibraryRepairPolicy
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.utils.DirectoryRuleResolver
 import com.lostf1sh.pixelplayeross.utils.LocalArtworkUri
@@ -283,7 +283,8 @@ class FolderTreeBuilder @Inject constructor() {
 
     private fun FolderSongRow.toFolderStubSong(): Song {
         val parentPath = normalizePath(parentDirectoryPath)
-        val syntheticPath = if (parentPath.isBlank()) title else "$parentPath/$title"
+        val resolvedPath = filePath.takeIf { it.isNotBlank() }
+            ?: if (parentPath.isBlank()) title else "$parentPath/$title"
         val resolvedAlbumArtUri = when {
             LocalArtworkUri.isLocalArtworkUri(albumArtUriString) -> albumArtUriString
             id > 0L && LocalArtworkUri.looksLikeVolatileArtworkUri(albumArtUriString) ->
@@ -293,15 +294,16 @@ class FolderTreeBuilder @Inject constructor() {
         return Song(
             id = id.toString(),
             title = title,
-            artist = "",
+            artist = artistName,
             artistId = -1L,
-            album = "",
-            albumId = -1L,
-            path = syntheticPath,
+            album = albumName,
+            albumId = albumId,
+            path = resolvedPath,
             contentUriString = "",
             albumArtUriString = resolvedAlbumArtUri,
             duration = 0L,
-            trackNumber = 0,
+            trackNumber = trackNumber,
+            discNumber = discNumber,
             year = 0,
             dateAdded = 0L,
             dateModified = 0L,

@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.backup.model
 
 import com.lostf1sh.pixelplayeross.data.stats.ListenAudioFacts
+import com.lostf1sh.pixelplayeross.data.stats.ListenTrackMetadata
 import com.lostf1sh.pixelplayeross.data.stats.ListenContext
 import com.lostf1sh.pixelplayeross.data.stats.PlaybackOutcome
 import com.lostf1sh.pixelplayeross.data.stats.PlaybackStatsRepository
@@ -40,9 +41,18 @@ data class PlaybackHistoryBackupEntry(
     val itemDurationMs: Long? = null,
     val audio: ListenAudioFacts? = null,
     val context: ListenContext? = null,
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    @com.google.gson.annotations.SerializedName("duration_ms")
+    val trackDurationMs: Long? = null,
+    val path: String? = null,
+    val trackMetadata: ListenTrackMetadata? = null,
 )
 
-fun PlaybackStatsRepository.PlaybackEvent.toBackupEntry() = PlaybackHistoryBackupEntry(
+fun PlaybackStatsRepository.PlaybackEvent.toBackupEntry(
+    portableKeys: com.lostf1sh.pixelplayeross.data.backup.restore.PortableSongKeys? = null,
+) = PlaybackHistoryBackupEntry(
     songId = songId,
     timestamp = timestamp,
     durationMs = durationMs,
@@ -55,6 +65,12 @@ fun PlaybackStatsRepository.PlaybackEvent.toBackupEntry() = PlaybackHistoryBacku
     itemDurationMs = itemDurationMs,
     audio = audio,
     context = context,
+    title = portableKeys?.title,
+    artist = portableKeys?.artist,
+    album = portableKeys?.album,
+    trackDurationMs = portableKeys?.durationMs,
+    path = portableKeys?.path,
+    trackMetadata = trackMetadata,
 )
 
 fun PlaybackHistoryBackupEntry.toPlaybackEvent() = PlaybackStatsRepository.PlaybackEvent(
@@ -70,6 +86,7 @@ fun PlaybackHistoryBackupEntry.toPlaybackEvent() = PlaybackStatsRepository.Playb
     itemDurationMs = itemDurationMs,
     audio = audio,
     context = context,
+    trackMetadata = trackMetadata,
 )
 
 data class ArtistImageBackupEntry(
@@ -95,7 +112,9 @@ data class RestorePlan(
     val availableModules: Set<BackupSection>,
     val selectedModules: Set<BackupSection>,
     val moduleDetails: Map<BackupSection, ModuleRestoreDetail>,
-    val warnings: List<BackupMessage> = emptyList()
+    val warnings: List<BackupMessage> = emptyList(),
+    val restoreMode: com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode =
+        com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode.REPLACE,
 )
 
 data class ModuleRestoreDetail(

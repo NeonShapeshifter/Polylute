@@ -13,14 +13,6 @@ import timber.log.Timber
 
 @ViewModelScoped
 class LibraryTabsStateHolder @Inject constructor() {
-    fun showSortingSheet(isSortingSheetVisible: MutableStateFlow<Boolean>) {
-        isSortingSheetVisible.value = true
-    }
-
-    fun hideSortingSheet(isSortingSheetVisible: MutableStateFlow<Boolean>) {
-        isSortingSheetVisible.value = false
-    }
-
     fun onLibraryTabSelected(
         tabIndex: Int,
         libraryTabs: List<String>,

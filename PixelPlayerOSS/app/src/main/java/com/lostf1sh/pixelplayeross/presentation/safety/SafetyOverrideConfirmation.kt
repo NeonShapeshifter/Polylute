@@ -59,23 +59,25 @@ fun SafetyOverrideConfirmDialog(
     /** The app's modal input contract (volume keys to the Safety authority, edge Back); off only in a JVM test, which has no Hilt. */
     bridgeInput: Boolean = true,
 ) {
-    AlertDialog(
-        modifier = Modifier.testTag(SAFETY_OVERRIDE_CONFIRM_TAG),
-        onDismissRequest = onCancel,
-        title = { Text(stringResource(R.string.safety_max_reached_title)) },
-        text = {
-            // Like every app window: the volume keys reach the same authority (and its ceiling) as in the app.
-            if (bridgeInput) {
-                ModalInputBridge()
-            }
-            Text(
-                stringResource(R.string.safety_max_reached_message, profileName) + "\n\n" +
-                    stringResource(R.string.safety_max_override_lasts, (SafetyOverridePolicy.IDLE_END_MS / 60_000L).toInt())
-            )
-        },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.safety_max_temporary_override)) } },
-        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
-    )
+    com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+        AlertDialog(
+            modifier = Modifier.testTag(SAFETY_OVERRIDE_CONFIRM_TAG),
+            onDismissRequest = onCancel,
+            title = { Text(stringResource(R.string.safety_max_reached_title)) },
+            text = {
+                // Like every app window: the volume keys reach the same authority (and its ceiling) as in the app.
+                if (bridgeInput) {
+                    ModalInputBridge()
+                }
+                Text(
+                    stringResource(R.string.safety_max_reached_message, profileName) + "\n\n" +
+                        stringResource(R.string.safety_max_override_lasts, (SafetyOverridePolicy.IDLE_END_MS / 60_000L).toInt())
+                )
+            },
+            confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.safety_max_temporary_override)) } },
+            dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
 }
 
 const val SAFETY_OVERRIDE_CONFIRM_TAG = "safety_override_confirm"

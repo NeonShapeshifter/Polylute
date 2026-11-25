@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import com.lostf1sh.pixelplayeross.ui.ds.dapReadableUnchecked
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,8 +78,9 @@ fun AddBookmarkDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
+    com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+        AlertDialog(
+            onDismissRequest = onDismiss,
         icon = {
             Surface(
                 shape = RoundedCornerShape(18.dp),
@@ -189,7 +191,7 @@ fun AddBookmarkDialog(
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = MaterialTheme.colorScheme.primary,
                                     checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f)
-                                )
+                                ).dapReadableUnchecked()
                             )
                         }
                     }
@@ -218,11 +220,19 @@ fun AddBookmarkDialog(
                         .focusRequester(focusRequester).dapTextField(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        unfocusedBorderColor = if (com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current != null || com.lostf1sh.pixelplayeross.ui.ds.Dap.glass != null) {
+                            com.lostf1sh.pixelplayeross.ui.ds.Dap.border
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        },
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        disabledBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        disabledBorderColor = if (com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current != null || com.lostf1sh.pixelplayeross.ui.ds.Dap.glass != null) {
+                            com.lostf1sh.pixelplayeross.ui.ds.Dap.border
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        },
                         disabledTextColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
@@ -251,6 +261,7 @@ fun AddBookmarkDialog(
         shape = RoundedCornerShape(32.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     )
+    }
 }
 
 internal fun resolveLyricBookmarkTitle(

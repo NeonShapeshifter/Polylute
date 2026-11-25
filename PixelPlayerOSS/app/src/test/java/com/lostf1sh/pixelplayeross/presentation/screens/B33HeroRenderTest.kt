@@ -113,7 +113,6 @@ open class B33HeroRenderTest {
         every { it.favoriteSongIds } returns MutableStateFlow(emptySet())
         every { it.navBarCompactMode } returns MutableStateFlow(false)
         every { it.selectedSongForInfo } returns MutableStateFlow(null)
-        every { it.isSortingSheetVisible } returns MutableStateFlow(false)
         every { it.themeStateHolder } returns mockk<ThemeStateHolder>(relaxed = true).also { holder ->
             every { holder.getAlbumColorSchemeFlow(any(), any()) } returns MutableStateFlow(null)
         }

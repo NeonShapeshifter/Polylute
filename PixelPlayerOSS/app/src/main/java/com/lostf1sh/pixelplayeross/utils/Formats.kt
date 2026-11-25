@@ -19,6 +19,19 @@ fun formatDuration(milliseconds: Long): String {
     }
 }
 
+/** A track's length the way the design writes it: "3:42", or "1:02:05" past an hour. */
+fun formatTrackLength(milliseconds: Long): String {
+    val totalSeconds = (milliseconds.coerceAtLeast(0L)) / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(Locale.US, "%d:%02d", minutes, seconds)
+    }
+}
+
 fun formatTotalDuration(songs: List<Song>): String {
     val totalMillis = songs.sumOf { it.duration }
     val hours = TimeUnit.MILLISECONDS.toHours(totalMillis)

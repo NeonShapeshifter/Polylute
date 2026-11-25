@@ -6,8 +6,7 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreAlbum
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreArtist
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.GenreBrowse
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.SourceOrder
-import java.text.Normalizer
-import java.util.Locale
+import com.lostf1sh.pixelplayeross.utils.TextFold
 
 /**
  * Which genres a search query names (B33-U5), for the folded "Genre · X" section at the foot of the search results.
@@ -25,16 +24,8 @@ internal object SearchGenreMatcher {
     const val MAX_SECTIONS = 3
     const val MIN_QUERY_LENGTH = 3
 
-    private val COMBINING_MARKS = Regex("\\p{Mn}+")
-    private val WHITESPACE = Regex("\\s+")
-
     /** The text as the matcher compares it: no accents, lower case, single spaces. */
-    fun fold(text: String): String =
-        Normalizer.normalize(text, Normalizer.Form.NFD)
-            .replace(COMBINING_MARKS, "")
-            .lowercase(Locale.ROOT)
-            .replace(WHITESPACE, " ")
-            .trim()
+    fun fold(text: String): String = TextFold.fold(text)
 
     fun match(query: String, genres: List<Genre>, limit: Int = MAX_SECTIONS): List<Genre> {
         val needle = fold(query)
@@ -42,7 +33,7 @@ internal object SearchGenreMatcher {
         return genres
             .mapNotNull { genre ->
                 val name = fold(genre.name)
-                val rank = SearchRelevance.rank(name, needle)
+                val rank = SearchRelevance.rankFolded(name, needle)
                 if (rank == SearchRelevance.NO_MATCH) return@mapNotNull null
                 if (rank != SearchRelevance.EXACT && needle.length < MIN_QUERY_LENGTH) return@mapNotNull null
                 Ranked(genre, rank, name)

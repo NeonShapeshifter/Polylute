@@ -170,6 +170,7 @@ data class HeadphoneProfileScreenState(
     val safety: SafetyMaxCardState?,
     /** B30: the DAC EQ presets that belong to these headphones, found here and reused by choice. Empty when there are none. */
     val dacEqPresets: List<DacEqPresetRow> = emptyList(),
+    val notificationsOff: Boolean = false,
 ) {
     companion object {
         fun from(
@@ -178,9 +179,10 @@ data class HeadphoneProfileScreenState(
             eq: EqualizerUiState,
             audio: AudioStatus,
             volume: SafetyVolumeState,
+            notificationsOff: Boolean = false,
         ): HeadphoneProfileScreenState {
             val item = profiles.profiles.firstOrNull { it.profile.profileId == profileId }
-                ?: return HeadphoneProfileScreenState(null, eq, null, null, null)
+                ?: return HeadphoneProfileScreenState(null, eq, null, null, null, notificationsOff = notificationsOff)
             val profile = item.profile
             val output = audio.equalizer(isProfileSelected = item.isSelected, enabled = profile.equalizer.enabled)
             val preset = if (profile.equalizer.mode == HeadphoneEqMode.GRAPHIC_15) {
@@ -210,6 +212,7 @@ data class HeadphoneProfileScreenState(
                             },
                         )
                     },
+                notificationsOff = notificationsOff,
             )
         }
     }
@@ -233,6 +236,7 @@ interface HeadphoneProfileScreenActions {
     fun onVirtualizerStrengthChange(strength: Int)
     fun onLoudnessEnhancerEnabledChange(enabled: Boolean)
     fun onLoudnessEnhancerStrengthChange(strength: Int)
+    fun onOpenNotificationSettings() {}
 }
 
 /** The known headphones list. */
@@ -258,10 +262,23 @@ data class SafetyMaxScreenState(
     val profileId: String,
     val profile: HeadphoneProfile?,
     val volume: SafetyVolumeState,
+    val notificationsOff: Boolean = false,
+    val canPromptForNotifications: Boolean = false,
 ) {
     companion object {
-        fun from(profileId: String, profiles: HeadphoneProfilesUiState, volume: SafetyVolumeState) =
-            SafetyMaxScreenState(profileId, profiles.profiles.firstOrNull { it.profile.profileId == profileId }?.profile, volume)
+        fun from(
+            profileId: String,
+            profiles: HeadphoneProfilesUiState,
+            volume: SafetyVolumeState,
+            notificationsOff: Boolean = false,
+            canPromptForNotifications: Boolean = false,
+        ) = SafetyMaxScreenState(
+            profileId = profileId,
+            profile = profiles.profiles.firstOrNull { it.profile.profileId == profileId }?.profile,
+            volume = volume,
+            notificationsOff = notificationsOff,
+            canPromptForNotifications = canPromptForNotifications,
+        )
     }
 }
 
@@ -271,6 +288,9 @@ interface SafetyMaxScreenActions {
     fun onSafetyMaxEnabledChange(enabled: Boolean)
     /** Saves the current level as the ceiling; [onResult] says whether it was saved and, if not, why (RT-01). */
     fun onCalibrate(onResult: (SafetyMaxCalibrationResult) -> Unit)
+    fun onOpenNotificationSettings() {}
+    fun onRequestNotificationPermission() {}
+    fun onDismissNotificationPrompt() {}
 }
 
 // ── DAC profile ──────────────────────────────────────────────────────────────────────────────────────

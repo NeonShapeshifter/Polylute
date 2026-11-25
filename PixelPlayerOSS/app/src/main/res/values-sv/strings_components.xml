@@ -54,7 +54,7 @@
     <string name="cd_play_next_in_queue">Spela härnäst i kön</string>
     <string name="cd_add_to_playlist">Lägg till i spellista</string>
     <string name="action_add_to_queue">Lägg till i kön</string>
-    <string name="action_queue_next">Nästa</string>
+    <string name="action_queue_next">Spela härnäst</string>
     <string name="song_info_path_label">Sökväg</string>
     <string name="song_info_tone_success">\"%1$s\" har angetts som %2$s</string>
     <string name="song_info_tone_ringtone_label">ringsignal</string>

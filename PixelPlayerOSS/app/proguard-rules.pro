@@ -38,6 +38,7 @@
 -keep class com.lostf1sh.pixelplayeross.data.stats.PlaybackStatsRepository$PlaybackEvent { *; }
 -keep class com.lostf1sh.pixelplayeross.data.stats.ListenAudioFacts { *; }
 -keep class com.lostf1sh.pixelplayeross.data.stats.ListenContext { *; }
+-keep class com.lostf1sh.pixelplayeross.data.stats.ListenTrackMetadata { *; }
 -keep enum com.lostf1sh.pixelplayeross.data.stats.PlaybackOutcome { *; }
 -keep enum com.lostf1sh.pixelplayeross.data.stats.TrackEndReason { *; }
 -keep enum com.lostf1sh.pixelplayeross.data.stats.ListenRoute { *; }
@@ -49,6 +50,10 @@
 -keep class com.lostf1sh.pixelplayeross.data.database.LyricsEntity { *; }
 -keep class com.lostf1sh.pixelplayeross.data.database.SearchHistoryEntity { *; }
 -keep class com.lostf1sh.pixelplayeross.data.database.TransitionRuleEntity { *; }
+-keep class com.lostf1sh.pixelplayeross.data.historyimport.ImportRecord { *; }
+-keep class com.lostf1sh.pixelplayeross.data.historyimport.ImportCounts { *; }
+-keep class com.lostf1sh.pixelplayeross.data.historyimport.UnmatchedArtistCount { *; }
+-keep enum com.lostf1sh.pixelplayeross.data.historyimport.ImportSourceKind { *; }
 
 -dontwarn kotlinx.coroutines.**
 -dontwarn org.slf4j.**

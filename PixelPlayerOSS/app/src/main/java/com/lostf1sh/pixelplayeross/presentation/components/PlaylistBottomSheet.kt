@@ -86,7 +86,9 @@ fun PlaylistBottomSheet(
     }
     val filteredPlaylists = remember(searchQuery, editablePlaylists) {
         if (searchQuery.isBlank()) editablePlaylists
-        else editablePlaylists.filter { it.name.contains(searchQuery, true) }.toImmutableList()
+        else editablePlaylists.filter {
+            com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryTabSearch.matchesQuery(searchQuery, it.name)
+        }.toImmutableList()
     }
     val selectedPlaylists = remember {
         mutableStateMapOf<String, Boolean>().apply {
@@ -234,7 +236,14 @@ fun PlaylistBottomSheet(
                     .padding(bottom = 18.dp, end = DapSpacing.Gutter).heightIn(min = 48.dp),
                 enabled = canSave,
                 shape = RoundedCornerShape(DapRadius.Surface),
-                colors = ButtonDefaults.buttonColors(),
+                colors = if (com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current != null || Dap.glass != null) {
+                    ButtonDefaults.buttonColors(
+                        disabledContainerColor = Dap.surfaceRaised,
+                        disabledContentColor = Dap.disabledText,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
                 onClick = {
                     if (songs.size == 1) {
                          playlistViewModel.addOrRemoveSongFromPlaylists(

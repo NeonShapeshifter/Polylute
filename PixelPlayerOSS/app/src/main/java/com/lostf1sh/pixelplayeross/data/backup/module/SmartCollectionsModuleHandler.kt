@@ -4,6 +4,8 @@ import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode
 import com.lostf1sh.pixelplayeross.data.collections.SmartCollection
 import com.lostf1sh.pixelplayeross.data.collections.SmartCollectionField
 import com.lostf1sh.pixelplayeross.data.collections.SmartCollectionMatchMode
@@ -30,7 +32,7 @@ import kotlinx.coroutines.withContext
 class SmartCollectionsModuleHandler @Inject constructor(
     private val repository: SmartCollectionRepository,
     @BackupGson private val gson: Gson,
-) : BackupModuleHandler {
+) : BackupModuleHandler, ReportableRestoreHandler {
 
     override val section = BackupSection.SMART_COLLECTIONS
 
@@ -48,12 +50,28 @@ class SmartCollectionsModuleHandler @Inject constructor(
 
     override suspend fun snapshot(): String = export()
 
-    override suspend fun restore(payload: String) = withContext(Dispatchers.IO) {
+    override suspend fun restore(payload: String) {
+        restoreWithReport(payload, BackupRestoreMode.REPLACE)
+    }
+
+    override suspend fun restoreWithReport(
+        payload: String,
+        mode: BackupRestoreMode,
+    ): BackupResolutionCounts = withContext(Dispatchers.IO) {
         val type = TypeToken.getParameterized(List::class.java, SmartCollectionBackupEntry::class.java).type
         val entries: List<SmartCollectionBackupEntry> = gson.fromJson(payload, type) ?: emptyList()
+        val existingNames: MutableSet<String> = if (mode == BackupRestoreMode.MERGE) {
+            repository.getAll().mapTo(HashSet()) { it.name.trim().lowercase() }
+        } else {
+            mutableSetOf()
+        }
         entries.forEach { entry ->
+            val name = entry.name ?: return@forEach
+            if (mode == BackupRestoreMode.MERGE && !existingNames.add(name.trim().lowercase())) {
+                return@forEach
+            }
             repository.create(
-                name = entry.name ?: return@forEach,
+                name = name,
                 rules = entry.toRules(),
                 matchMode = SmartCollectionMatchMode.fromStorageKey(entry.matchMode),
                 sortField = SmartCollectionSortField.fromStorageKey(entry.sortField),
@@ -61,6 +79,7 @@ class SmartCollectionsModuleHandler @Inject constructor(
                 limit = entry.limit?.takeIf { it > 0 },
             )
         }
+        BackupResolutionCounts()
     }
 
     override suspend fun rollback(snapshot: String) = restore(snapshot)

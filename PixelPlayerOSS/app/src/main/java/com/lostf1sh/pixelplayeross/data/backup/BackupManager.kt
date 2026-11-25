@@ -207,6 +207,13 @@ class BackupManager @Inject constructor(
         }
     }
 
+    private val lastRestoreResolution = java.util.concurrent.atomic.AtomicReference(
+        com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts()
+    )
+
+    fun consumeLastRestoreResolution(): com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts =
+        lastRestoreResolution.getAndSet(com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts())
+
     /**
      * Executes a restore according to the given plan. For encrypted backups
      * the decrypted copy produced by [inspectBackup] is used and cleaned up
@@ -217,6 +224,7 @@ class BackupManager @Inject constructor(
         plan: RestorePlan,
         onProgress: (BackupTransferProgressUpdate) -> Unit
     ): RestoreResult = withContext(Dispatchers.IO) {
+        lastRestoreResolution.set(com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts())
         val readableUri = try {
             resolveReadableUri(uri, passphrase = null)
         } catch (e: BackupEncryptedException) {
@@ -243,6 +251,9 @@ class BackupManager @Inject constructor(
         }
 
         if (result is RestoreResult.Success) {
+            val counts = runCatching { restoreExecutor.consumeLastResolutionCounts() }
+                .getOrDefault(com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts())
+            lastRestoreResolution.set(counts)
             try {
                 val docFile = androidx.documentfile.provider.DocumentFile.fromSingleUri(context, uri)
                 backupHistoryRepository.addEntry(
@@ -261,6 +272,20 @@ class BackupManager @Inject constructor(
         }
 
         result
+    }
+
+    suspend fun restoreWithReport(
+        uri: Uri,
+        plan: RestorePlan,
+        onProgress: (BackupTransferProgressUpdate) -> Unit,
+    ): Pair<RestoreResult, com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts> {
+        val result = restore(uri, plan, onProgress)
+        val counts = if (result is RestoreResult.Success) {
+            consumeLastRestoreResolution()
+        } else {
+            com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts()
+        }
+        return result to counts
     }
 
     fun getBackupHistory(): Flow<List<BackupHistoryEntry>> {

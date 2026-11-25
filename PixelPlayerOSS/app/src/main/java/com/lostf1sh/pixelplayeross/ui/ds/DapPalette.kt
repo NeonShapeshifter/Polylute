@@ -414,12 +414,146 @@ val LocalDapPalette = staticCompositionLocalOf { DapPalette.Default }
 /**
  * Read the active palette: `Dap.primaryText`, `Dap.background`.
  *
- * Composable-only by construction. A non-composable site — a `drawBehind`, a `Canvas` scope, a
- * `graphicsLayer` — cannot read this and must instead capture the values it needs during
- * composition and close over them. That restriction is the point: it is what stops a drawn surface
- * from silently keeping a stale colour when the palette changes.
+ * In cover modes ([LocalDapCoverScheme] active), [surface] and [surfaceRaised] delegate dynamically
+ * to the cover's tonal containers while [page], [panel], [background], ink and borders stay anchored
+ * to the theme palette.
  */
-val Dap: DapPalette
-    @androidx.compose.runtime.Composable
-    @androidx.compose.runtime.ReadOnlyComposable
-    get() = LocalDapPalette.current
+object Dap {
+    val background: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.background
+
+    val surface: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapCoverScheme.current?.surfaceContainer ?: LocalDapPalette.current.surface
+
+    val surfaceRaised: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapCoverScheme.current?.surfaceContainerHigh ?: LocalDapPalette.current.surfaceRaised
+
+    val dividerFaint: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.dividerFaint
+
+    val divider: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.divider
+
+    val border: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.border
+
+    val trackStroke: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.trackStroke
+
+    val interactiveTrack: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.interactiveTrack
+
+    val dividerStrong: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.dividerStrong
+
+    val primaryText: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.primaryText
+
+    val secondaryText: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.secondaryText
+
+    val tertiaryText: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.tertiaryText
+
+    val disabledText: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.disabledText
+
+    val warning: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.warning
+
+    val error: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.error
+
+    val artPlaceholderHigh: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.artPlaceholderHigh
+
+    val artPlaceholderLow: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.artPlaceholderLow
+
+    val artPlaceholderDisabled: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.artPlaceholderDisabled
+
+    val onFill: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.onFill
+
+    val scrim: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.scrim
+
+    val isLight: Boolean
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.isLight
+
+    val glass: com.lostf1sh.pixelplayeross.ui.glass.GlassSurfaces?
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.glass
+
+    val page: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.page
+
+    val panel: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.panel
+
+    val panelRaised: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.panelRaised
+
+    val bar: Color
+        @androidx.compose.runtime.Composable
+        @androidx.compose.runtime.ReadOnlyComposable
+        get() = LocalDapPalette.current.bar
+
+    val fadeEdge: Color
+        @androidx.compose.runtime.Composable
+        get() = LocalDapPalette.current.fadeEdge
+
+    val shelf: Color
+        @androidx.compose.runtime.Composable
+        get() = LocalDapPalette.current.shelf
+}

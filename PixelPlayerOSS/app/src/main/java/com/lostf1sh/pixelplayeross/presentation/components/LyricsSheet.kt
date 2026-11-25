@@ -500,9 +500,10 @@ fun LyricsSheet(
     if (showSaveLyricsDialog && lyrics != null && currentSong != null) {
         val hasSynced = !lyrics?.synced.isNullOrEmpty()
         val hasPlain = !lyrics?.plain.isNullOrEmpty()
-        
-        AlertDialog(
-            onDismissRequest = { showSaveLyricsDialog = false },
+
+        com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+            AlertDialog(
+                onDismissRequest = { showSaveLyricsDialog = false },
             // Behaviour unchanged: the same two conditional save actions and the same cancel.
             // Only the presentation moves to the graphite palette and the DAP button roles.
             containerColor = Dap.surfaceRaised,
@@ -563,6 +564,7 @@ fun LyricsSheet(
                 )
             }
         )
+        }
     }
 
     val editing = syncEditor

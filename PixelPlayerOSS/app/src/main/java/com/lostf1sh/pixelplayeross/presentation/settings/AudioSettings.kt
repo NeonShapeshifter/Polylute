@@ -34,6 +34,7 @@ import com.lostf1sh.pixelplayeross.data.volume.PristineModePolicy
 import com.lostf1sh.pixelplayeross.data.volume.SafetyVolumeState
 import com.lostf1sh.pixelplayeross.presentation.components.AndroidRouteHintLine
 import com.lostf1sh.pixelplayeross.presentation.components.FeatureStatusLine
+import com.lostf1sh.pixelplayeross.presentation.components.NotificationsOffNotice
 import com.lostf1sh.pixelplayeross.presentation.components.PristineFrozenFeature
 import com.lostf1sh.pixelplayeross.presentation.model.labelRes
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.AudioStatus
@@ -170,6 +171,8 @@ data class AudioSettingsState(
     val dacShareSubtitle: DacSharePolicy.Subtitle = DacSharePolicy.Subtitle.DAP_RESONANCE,
     /** B40-F8: the listener's switch for Resonance's peak limiter. */
     val resonanceLimiterEnabled: Boolean = false,
+    /** B72: POST_NOTIFICATIONS missing on API 33+, shown under the Safety Max row when a ceiling is saved. */
+    val notificationsOff: Boolean = false,
 ) {
     companion object {
         fun from(
@@ -185,6 +188,7 @@ data class AudioSettingsState(
             fixedOutputAnswer: DeviceVolumeAnswer? = null,
             /** B68: Polylute's role as Android confirms it (the Settings page's `ProductModeState.effectiveMode`); null reads as a DAP level. */
             productMode: EffectiveProductMode? = null,
+            notificationsOff: Boolean = false,
         ): AudioSettingsState {
             val selected = headphones.selected
             return AudioSettingsState(
@@ -226,6 +230,7 @@ data class AudioSettingsState(
                 dacShareEnabled = DacSharePolicy.switchOn(ui.dacShareChoice, productMode),
                 dacShareSubtitle = DacSharePolicy.subtitle(audio.purityPreference, productMode),
                 resonanceLimiterEnabled = ui.resonanceLimiterEnabled,
+                notificationsOff = notificationsOff,
             )
         }
 
@@ -274,6 +279,7 @@ interface AudioSettingsActions {
     fun onResonanceLimiterChange(value: Boolean) {}
     /** B39-A8: ask Android for the USB permission again. */
     fun onAskUsbPermission()
+    fun onOpenNotificationSettings() {}
 }
 
 @Composable
@@ -397,7 +403,7 @@ private fun PureDirectSection(state: AudioSettingsState, actions: AudioSettingsA
             label = stringResource(R.string.pristine_lock_name),
             description = if (heldOff) {
                 stringResource(
-                    if (state.fixedOutputAnswer?.hasOwnControl == false) R.string.pristine_held_off_no_control else R.string.pristine_held_off_resonance,
+                    if (state.fixedOutputAnswer.hasOwnControl == false) R.string.pristine_held_off_no_control else R.string.pristine_held_off_resonance,
                     state.fixedOutputDac?.name ?: state.currentDac?.profile?.displayName ?: stringResource(R.string.eq_the_dac),
                 )
             } else {
@@ -576,7 +582,15 @@ private fun SoundSection(state: AudioSettingsState, actions: AudioSettingsAction
                     safety.profileName
                 },
                 onClick = { actions.onOpenSafetyMax(safety.profileId) },
-                extra = { FeatureStatusLine(safety.status) },
+                extra = {
+                    FeatureStatusLine(safety.status)
+                    if (step != null && state.notificationsOff) {
+                        NotificationsOffNotice(
+                            onOpenSettings = actions::onOpenNotificationSettings,
+                            modifier = Modifier.padding(top = DapSpacing.Xs),
+                        )
+                    }
+                },
             )
         }
     }

@@ -82,12 +82,15 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapTopBar
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
 import com.lostf1sh.pixelplayeross.data.backup.model.ModuleRestoreDetail
 import com.lostf1sh.pixelplayeross.data.backup.model.RestorePlan
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode
 import com.lostf1sh.pixelplayeross.ui.theme.RoundedSans
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.res.stringResource
 import com.lostf1sh.pixelplayeross.presentation.components.DapOverlayBack
 import com.lostf1sh.pixelplayeross.presentation.navigation.LocalBackNavigationMode
+import com.lostf1sh.pixelplayeross.ui.ds.DapSegmentedPicker
 import com.lostf1sh.pixelplayeross.ui.ds.DapSizes
+import com.lostf1sh.pixelplayeross.ui.ds.DapType
 
 @OptIn(
     ExperimentalAnimationApi::class,
@@ -101,12 +104,9 @@ fun BackupModuleSelectionDialog(
     onDismiss: () -> Unit,
     onBack: () -> Unit,
     onSelectionChanged: (Set<BackupSection>) -> Unit,
+    onRestoreModeChanged: (BackupRestoreMode) -> Unit = {},
     onConfirm: () -> Unit
 ) {
-    val listState = rememberLazyListState()
-    val selectedCount = plan.selectedModules.size
-    val availableCount = plan.availableModules.size
-    val dateText = rememberBackupTimestamp(plan.manifest.createdAt)
     val transitionState = remember { MutableTransitionState(false) }
     var shouldShowDialog by remember { mutableStateOf(true) }
     var onDialogHiddenAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -145,265 +145,317 @@ fun BackupModuleSelectionDialog(
                 exit = slideOutVertically(targetOffsetY = { it / 6 }) + fadeOut(animationSpec = tween(200)),
                 label = "import_module_selection_dialog"
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.surfaceContainerLowest
+                BackupModuleSelectionContent(
+                    plan = plan,
+                    inProgress = inProgress,
+                    onBack = { closeDialog(onBack) },
+                    onSelectionChanged = onSelectionChanged,
+                    onRestoreModeChanged = onRestoreModeChanged,
+                    onConfirm = { closeDialog(onConfirm) },
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun BackupModuleSelectionContent(
+    plan: RestorePlan,
+    inProgress: Boolean,
+    onBack: () -> Unit,
+    onSelectionChanged: (Set<BackupSection>) -> Unit,
+    onRestoreModeChanged: (BackupRestoreMode) -> Unit = {},
+    onConfirm: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val selectedCount = plan.selectedModules.size
+    val availableCount = plan.availableModules.size
+    val dateText = rememberBackupTimestamp(plan.manifest.createdAt)
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                contentWindowInsets = WindowInsets.systemBars,
+                topBar = {
+                    // The bar held the title and one Back control, and nothing else. The
+                    // title is page content; the control is now the overlay below, which
+                    // — unlike the bar's own glyph — obeys the Back mode.
+                    Column {
+                        val showsBackControl =
+                            LocalBackNavigationMode.current.showsVisibleBackAffordance
+                        DapScreenTitle(
+                            text = stringResource(R.string.presentation_batch_g_backup_restore_modules),
+                            modifier = Modifier.padding(
+                                start = if (showsBackControl) DapSizes.MinTouchTarget else 16.dp,
+                                end = 16.dp,
+                            ),
+                        )
+                    }
+                },
+                bottomBar = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Dap.surface)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(
+                                horizontal = DapSpacing.Gutter,
+                                vertical = DapSpacing.Sm,
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(DapSpacing.Xs),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(DapSpacing.Xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            DapTextAction(
+                                label = stringResource(R.string.presentation_batch_g_backup_cd_select_all),
+                                onClick = { onSelectionChanged(plan.availableModules) },
+                                enabled = !inProgress,
+                            )
+                            DapTextAction(
+                                label = stringResource(R.string.presentation_batch_g_backup_cd_clear_selection),
+                                onClick = { onSelectionChanged(emptySet()) },
+                                enabled = !inProgress,
+                            )
+                        }
+
+                        if (inProgress) {
+                            DapSecondaryButton(
+                                label = stringResource(R.string.presentation_batch_g_backup_restoring),
+                                onClick = {},
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = false,
+                            )
+                        } else {
+                            DapPrimaryButton(
+                                label = stringResource(R.string.presentation_batch_g_backup_restore_selected),
+                                onClick = onConfirm,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            ) { innerPadding ->
+                Column(
+                    modifier = Modifier
+                        .padding(innerPadding)
+                        .fillMaxSize()
+                        .padding(horizontal = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                  Box(Modifier.fillMaxSize()) {
-                    Scaffold(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                        contentWindowInsets = WindowInsets.systemBars,
-                        topBar = {
-                            // The bar held the title and one Back control, and nothing else. The
-                            // title is page content; the control is now the overlay below, which
-                            // — unlike the bar's own glyph — obeys the Back mode.
-                            Column {
-                                val showsBackControl =
-                                    LocalBackNavigationMode.current.showsVisibleBackAffordance
-                                DapScreenTitle(
-                                    text = stringResource(R.string.presentation_batch_g_backup_restore_modules),
-                                    modifier = Modifier.padding(
-                                        start = if (showsBackControl) DapSizes.MinTouchTarget else 16.dp,
-                                        end = 16.dp,
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.presentation_batch_g_backup_details),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.presentation_batch_g_backup_created),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = dateText,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.presentation_batch_g_backup_app_version),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = plan.manifest.appVersion.ifEmpty { stringResource(R.string.presentation_batch_g_backup_unknown) },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.presentation_batch_g_backup_schema),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.backup_manifest_schema_v,
+                                            plan.manifest.schemaVersion
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                if (plan.manifest.deviceInfo.model.isNotBlank()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = stringResource(R.string.presentation_batch_g_backup_device),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = stringResource(
+                                                R.string.backup_manifest_device_line,
+                                                plan.manifest.deviceInfo.manufacturer,
+                                                plan.manifest.deviceInfo.model
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = stringResource(R.string.presentation_batch_g_backup_modules_selected, selectedCount, availableCount),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                val replaceLabel = stringResource(R.string.backup_restore_mode_replace)
+                                val mergeLabel = stringResource(R.string.backup_restore_mode_merge)
+                                Text(
+                                    text = stringResource(R.string.backup_restore_mode_label),
+                                    style = DapType.Caption,
+                                    color = Dap.secondaryText,
+                                )
+                                DapSegmentedPicker(
+                                    options = listOf(BackupRestoreMode.REPLACE, BackupRestoreMode.MERGE),
+                                    selected = plan.restoreMode,
+                                    onSelect = onRestoreModeChanged,
+                                    label = { mode ->
+                                        if (mode == BackupRestoreMode.REPLACE) replaceLabel else mergeLabel
+                                    },
+                                    enabled = !inProgress,
+                                    fillWidth = true,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        if (plan.restoreMode == BackupRestoreMode.REPLACE) {
+                                            R.string.backup_restore_mode_replace_desc
+                                        } else {
+                                            R.string.backup_restore_mode_merge_desc
+                                        }
                                     ),
+                                    style = DapType.Caption,
+                                    color = Dap.tertiaryText,
                                 )
                             }
-                        },
-                        bottomBar = {
-                            // The same DAP action bar as the export picker: secondary selection
-                            // actions above, the committing action on its own full-width line.
-                            // This bar was the last Material one in the backup flow — a
-                            // BottomAppBar holding two FilledIconButtons and an
-                            // ExtendedFloatingActionButton.
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Dap.surface)
-                                    .windowInsetsPadding(WindowInsets.navigationBars)
-                                    .padding(
-                                        horizontal = DapSpacing.Gutter,
-                                        vertical = DapSpacing.Sm,
-                                    ),
-                                verticalArrangement = Arrangement.spacedBy(DapSpacing.Xs),
-                            ) {
+
+                            if (inProgress) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(DapSpacing.Xs),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    DapTextAction(
-                                        label = stringResource(R.string.presentation_batch_g_backup_cd_select_all),
-                                        onClick = { onSelectionChanged(plan.availableModules) },
-                                        enabled = !inProgress,
-                                    )
-                                    DapTextAction(
-                                        label = stringResource(R.string.presentation_batch_g_backup_cd_clear_selection),
-                                        onClick = { onSelectionChanged(emptySet()) },
-                                        enabled = !inProgress,
-                                    )
-                                }
-
-                                if (inProgress) {
-                                    DapSecondaryButton(
-                                        label = stringResource(R.string.presentation_batch_g_backup_restoring),
-                                        onClick = {},
-                                        modifier = Modifier.fillMaxWidth(),
-                                        enabled = false,
-                                    )
-                                } else {
-                                    DapPrimaryButton(
-                                        label = stringResource(R.string.presentation_batch_g_backup_restore_selected),
-                                        onClick = { closeDialog(onConfirm) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
-                        }
-                    ) { innerPadding ->
-                        Column(
-                            modifier = Modifier
-                                .padding(innerPadding)
-                                .fillMaxSize()
-                                .padding(horizontal = 18.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f),
-                                shape = RoundedCornerShape(18.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 12.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
+                                    LoadingIndicator(modifier = Modifier.height(24.dp))
                                     Text(
-                                        text = stringResource(R.string.presentation_batch_g_backup_details),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                    ) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Text(
-                                                text = stringResource(R.string.presentation_batch_g_backup_created),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                text = dateText,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                    }
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                    ) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Text(
-                                                text = stringResource(R.string.presentation_batch_g_backup_app_version),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                text = plan.manifest.appVersion.ifEmpty { stringResource(R.string.presentation_batch_g_backup_unknown) },
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Text(
-                                                text = stringResource(R.string.presentation_batch_g_backup_schema),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                text = stringResource(
-                                                    R.string.backup_manifest_schema_v,
-                                                    plan.manifest.schemaVersion
-                                                ),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                        if (plan.manifest.deviceInfo.model.isNotBlank()) {
-                                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                Text(
-                                                    text = stringResource(R.string.presentation_batch_g_backup_device),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Text(
-                                                    text = stringResource(
-                                                        R.string.backup_manifest_device_line,
-                                                        plan.manifest.deviceInfo.manufacturer,
-                                                        plan.manifest.deviceInfo.model
-                                                    ),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Text(
-                                        text = stringResource(R.string.presentation_batch_g_backup_modules_selected, selectedCount, availableCount),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-
-                                    if (inProgress) {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            LoadingIndicator(modifier = Modifier.height(24.dp))
-                                            Text(
-                                                text = stringResource(R.string.presentation_batch_g_backup_transfer_progress),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (plan.warnings.isNotEmpty()) {
-                                plan.warnings.forEach { warning ->
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                                        shape = RoundedCornerShape(14.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Warning,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Text(
-                                                text = backupMessageText(warning),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onErrorContainer
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 18.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                items(plan.availableModules.toList(), key = { it.key }) { section ->
-                                    val isSelected = section in plan.selectedModules
-                                    val detail = plan.moduleDetails[section]
-                                    BackupSectionSelectableRowShared(
-                                        section = section,
-                                        selected = isSelected,
-                                        enabled = !inProgress,
-                                        detail = detail,
-                                        onToggle = {
-                                            onSelectionChanged(
-                                                if (isSelected) {
-                                                    plan.selectedModules - section
-                                                } else {
-                                                    plan.selectedModules + section
-                                                }
-                                            )
-                                        }
+                                        text = stringResource(R.string.presentation_batch_g_backup_transfer_progress),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
                         }
                     }
-                    // The Back affordance, floating over the dialog's content rather than
-                    // reserving a bar row. Mode-aware, unlike the glyph it replaces.
-                    DapOverlayBack(
-                        onClick = { closeDialog(onBack) },
-                        modifier = Modifier.align(Alignment.TopStart),
-                    )
-                  }
+
+                    if (plan.warnings.isNotEmpty()) {
+                        plan.warnings.forEach { warning ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Warning,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = backupMessageText(warning),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(plan.availableModules.toList(), key = { it.key }) { section ->
+                            val isSelected = section in plan.selectedModules
+                            val detail = plan.moduleDetails[section]
+                            BackupSectionSelectableRowShared(
+                                section = section,
+                                selected = isSelected,
+                                enabled = !inProgress,
+                                restoreMode = plan.restoreMode,
+                                detail = detail,
+                                onToggle = {
+                                    onSelectionChanged(
+                                        if (isSelected) {
+                                            plan.selectedModules - section
+                                        } else {
+                                            plan.selectedModules + section
+                                        }
+                                    )
+                                }
+                            )
+                        }
+                    }
                 }
             }
+            // The Back affordance, floating over the dialog's content rather than
+            // reserving a bar row. Mode-aware, unlike the glyph it replaces.
+            DapOverlayBack(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
         }
     }
 }
@@ -420,6 +472,7 @@ private fun BackupSectionSelectableRowShared(
     section: BackupSection,
     selected: Boolean,
     enabled: Boolean,
+    restoreMode: BackupRestoreMode = BackupRestoreMode.REPLACE,
     detail: ModuleRestoreDetail? = null,
     onToggle: () -> Unit
 ) {
@@ -427,7 +480,16 @@ private fun BackupSectionSelectableRowShared(
         append(stringResource(section.descriptionRes))
         if (detail != null && detail.entryCount > 0) {
             append(' ')
-            append(stringResource(R.string.backup_entries_will_replace, detail.entryCount))
+            append(
+                stringResource(
+                    if (restoreMode == BackupRestoreMode.MERGE) {
+                        R.string.backup_entries_will_merge
+                    } else {
+                        R.string.backup_entries_will_replace
+                    },
+                    detail.entryCount,
+                )
+            )
         }
     }
 

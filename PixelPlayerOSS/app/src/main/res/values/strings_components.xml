@@ -60,7 +60,7 @@
     <string name="cd_play_next_in_queue">Play next in queue</string>
     <string name="cd_add_to_playlist">Add to playlist</string>
     <string name="action_add_to_queue">Add to queue</string>
-    <string name="action_queue_next">Next</string>
+    <string name="action_queue_next">Play next</string>
     <string name="song_info_path_label">Path</string>
     <string name="song_info_tone_success">Set \"%1$s\" as your %2$s</string>
     <string name="song_info_tone_ringtone_label">ringtone</string>

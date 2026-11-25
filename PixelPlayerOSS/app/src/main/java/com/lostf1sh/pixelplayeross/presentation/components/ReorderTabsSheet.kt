@@ -82,8 +82,9 @@ fun ReorderTabsSheet(
     val persist: () -> Unit = { onSave(localTabs.toList(), localHidden) }
 
     if (showResetDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetDialog = false },
+        com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+            AlertDialog(
+                onDismissRequest = { showResetDialog = false },
             title = {
                 // An alert is a window of its own, so the activity's volume-key path does not reach
                 // it. The bridge routes Volume Up/Down to the same authority the activity uses.
@@ -115,6 +116,7 @@ fun ReorderTabsSheet(
                 }
             }
         )
+        }
     }
 
     val sheetState = rememberModalSheetState(skipPartiallyExpanded = true)

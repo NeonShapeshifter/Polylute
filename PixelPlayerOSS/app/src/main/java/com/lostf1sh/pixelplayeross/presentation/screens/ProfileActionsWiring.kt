@@ -40,6 +40,7 @@ internal class HeadphoneProfileScreenActionsImpl(
     private val back: () -> Unit,
     private val openEqualizer: (String) -> Unit,
     private val openSafetyMax: (String) -> Unit,
+    private val openNotificationSettings: () -> Unit = {},
 ) : HeadphoneProfileScreenActions {
     override fun onBack() = back()
     override fun onSelect(profileId: String) = profiles.select(profileId)
@@ -53,6 +54,7 @@ internal class HeadphoneProfileScreenActionsImpl(
     override fun onVirtualizerStrengthChange(strength: Int) = eq.setVirtualizerStrength(strength)
     override fun onLoudnessEnhancerEnabledChange(enabled: Boolean) = eq.setLoudnessEnhancerEnabled(enabled)
     override fun onLoudnessEnhancerStrengthChange(strength: Int) = eq.setLoudnessEnhancerStrength(strength)
+    override fun onOpenNotificationSettings() = openNotificationSettings()
 }
 
 internal class KnownHeadphonesActionsImpl(
@@ -67,12 +69,18 @@ internal class KnownHeadphonesActionsImpl(
 
 internal class SafetyMaxScreenActionsImpl(
     private val volume: SafetyVolumeViewModel,
+    private val openNotificationSettings: () -> Unit = {},
+    private val requestNotificationPermission: () -> Unit = {},
+    private val dismissNotificationPrompt: () -> Unit = {},
     private val back: () -> Unit,
 ) : SafetyMaxScreenActions {
     override fun onBack() = back()
     override fun onSetRawVolume(raw: Int) = volume.setRawVolume(raw)
     override fun onSafetyMaxEnabledChange(enabled: Boolean) = volume.setEnabled(enabled)
     override fun onCalibrate(onResult: (SafetyMaxCalibrationResult) -> Unit) = volume.calibrate(onResult)
+    override fun onOpenNotificationSettings() = openNotificationSettings()
+    override fun onRequestNotificationPermission() = requestNotificationPermission()
+    override fun onDismissNotificationPrompt() = dismissNotificationPrompt()
 }
 
 internal class KnownDacsActionsImpl(

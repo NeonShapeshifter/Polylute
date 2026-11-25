@@ -61,8 +61,8 @@ internal fun rememberLibraryPlaybackStates(playerViewModel: PlayerViewModel): Li
 @Composable
 internal fun LibraryPlaybackAwareSongItem(
     song: Song,
-    playback: LibraryPlaybackStates,
     modifier: Modifier = Modifier,
+    playback: LibraryPlaybackStates? = null,
     showMoreOptionsButton: Boolean = true,
     albumArtSize: Dp = 50.dp,
     showAlbumArt: Boolean = true,
@@ -73,12 +73,13 @@ internal fun LibraryPlaybackAwareSongItem(
     isSelectionMode: Boolean = false,
     onLongPress: () -> Unit = {},
     onMoreOptionsClick: (Song) -> Unit,
-    onClick: () -> Unit
+    onClick: (() -> Unit)?,
+    showDuration: Boolean = false,
 ) {
     // derivedStateOf: only the rows whose own answer changes recompose when the track changes,
     // not every visible row.
     val playbackUiState by remember(song.id, playback) {
-        derivedStateOf { playback.uiStateFor(song.id) }
+        derivedStateOf { playback?.uiStateFor(song.id) ?: LibrarySongPlaybackUiState() }
     }
 
     EnhancedSongListItem(
@@ -96,6 +97,7 @@ internal fun LibraryPlaybackAwareSongItem(
         isSelectionMode = isSelectionMode,
         onLongPress = onLongPress,
         onMoreOptionsClick = onMoreOptionsClick,
-        onClick = onClick
+        onClick = onClick,
+        showDuration = showDuration,
     )
 }

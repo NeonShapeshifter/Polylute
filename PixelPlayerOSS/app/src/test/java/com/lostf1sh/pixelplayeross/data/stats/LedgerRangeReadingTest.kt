@@ -94,7 +94,7 @@ class LedgerRangeReadingTest {
 
         val all = report(ledger, StatsPeriod.Preset(StatsTimeRange.ALL), at(2026, 10, 15, 12))
         assertThat(all.totals.listenedMs).isEqualTo(30 * MIN)
-        val songs = all.rankings.songs(StatsRankMode.TIME).associate { it.item.identity to it.timeMs }
+        val songs = all.rankings.songs(StatsRankMode.TIME).associate { it.item!!.identity to it.timeMs }
         assertThat(songs).containsExactly("item-1", 20 * MIN, "item-2", 10 * MIN)
     }
 

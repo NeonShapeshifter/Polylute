@@ -361,8 +361,14 @@ internal object B42Fix3Pages {
                 FullPlayerPortraitContent(
                     paddingValues = padding,
                     albumCoverSection = { m ->
-                        Box(m.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp))) {
-                            Image(cover.bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        androidx.compose.foundation.layout.BoxWithConstraints(
+                            m.fillMaxWidth().padding(vertical = 8.dp),
+                            contentAlignment = androidx.compose.ui.Alignment.TopCenter,
+                        ) {
+                            val side = minOf(maxWidth, maxHeight)
+                            Box(Modifier.size(side).clip(RoundedCornerShape(12.dp))) {
+                                Image(cover.bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            }
                         }
                     },
                     songMetadataSection = { PlayerTrackInfoSurface(state.trackInfo, state.env, actions, false, {}, {}) },

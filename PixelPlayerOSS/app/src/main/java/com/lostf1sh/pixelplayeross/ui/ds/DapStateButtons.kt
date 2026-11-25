@@ -131,13 +131,23 @@ fun DapTonalRoundButton(
     icon: @Composable (tint: Color) -> Unit,
 ) {
     val accent = LocalDapAccent.current
-    val tint = if (!enabled) Dap.disabledText else if (active) accent else Dap.primaryText
+    val coverScheme = LocalDapCoverScheme.current
+    val tonalContainer = coverScheme?.secondaryContainer ?: androidx.compose.material3.MaterialTheme.colorScheme.secondaryContainer
+    val tint = if (!enabled) Dap.disabledText else if (active) accent else (coverScheme?.onSecondaryContainer ?: Dap.primaryText)
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
         FilledTonalIconButton(
             onClick = onClick,
             enabled = enabled,
-            // The library's own colours: the theme's secondary container (`Dap.surfaceRaised`), with the glyph tinted here.
-            colors = IconButtonDefaults.filledTonalIconButtonColors(),
+            // The library's own colours: the theme's secondary container (or cover secondaryContainer), with the glyph tinted here.
+            // Review 11-25: Theme mode keeps the stock tonal colours (disabled included); only the cover modes swap the container.
+            colors = if (coverScheme != null) {
+                IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = tonalContainer,
+                    disabledContainerColor = tonalContainer.copy(alpha = 0.38f),
+                )
+            } else {
+                IconButtonDefaults.filledTonalIconButtonColors()
+            },
             modifier = Modifier
                 .size(size)
                 .semantics {

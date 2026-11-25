@@ -2,10 +2,10 @@ package com.lostf1sh.pixelplayeross.data.repository
 
 import com.google.common.truth.Truth.assertThat
 import com.lostf1sh.pixelplayeross.data.database.FolderSongRow
+import com.lostf1sh.pixelplayeross.data.library.folderRelativePath
+import com.lostf1sh.pixelplayeross.data.library.sortMusicFoldersByOption
 import com.lostf1sh.pixelplayeross.presentation.screens.flattenFolders
 import com.lostf1sh.pixelplayeross.presentation.screens.folderBreadcrumb
-import com.lostf1sh.pixelplayeross.presentation.screens.folderRelativePath
-import com.lostf1sh.pixelplayeross.presentation.screens.sortMusicFoldersByOption
 import com.lostf1sh.pixelplayeross.data.model.SortOption
 import com.lostf1sh.pixelplayeross.utils.StorageUtils
 import org.junit.jupiter.api.Test

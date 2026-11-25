@@ -2,6 +2,7 @@ package com.lostf1sh.pixelplayeross.data.media
 
 import com.lostf1sh.pixelplayeross.data.database.ComposerCountRow
 import com.lostf1sh.pixelplayeross.data.model.GenreNames
+import com.lostf1sh.pixelplayeross.utils.TextFold
 import com.lostf1sh.pixelplayeross.utils.splitArtistsByDelimiters
 
 /** A composer as search lists it: a name (one part of a COMPOSER tag), the songs that credit them, and the tag values that name them. */
@@ -19,19 +20,19 @@ object ComposerNames {
 
     /** The composers among [rows] (tag values with their song counts) whose name contains [query]; the most songs first, then by name. */
     fun matching(rows: List<ComposerCountRow>, delimiters: List<String>, query: String): List<ComposerResult> {
-        val needle = fold(query)
+        val needle = TextFold.fold(query)
         if (needle.isEmpty()) return emptyList()
         val byName = LinkedHashMap<String, Triple<String, Int, MutableSet<String>>>()
         for (row in rows) {
             for (part in parts(row.composer, delimiters)) {
+                if (!TextFold.fold(part).contains(needle)) continue
                 val key = fold(part)
-                if (!key.contains(needle)) continue
                 val entry = byName.getOrPut(key) { Triple(part, 0, LinkedHashSet()) }
                 byName[key] = Triple(entry.first, entry.second + row.songCount, entry.third.also { it += row.composer })
             }
         }
         return byName.values.map { (name, songs, raws) -> ComposerResult(name, songs, raws) }
-            .sortedWith(compareByDescending<ComposerResult> { it.songCount }.thenBy { it.name.lowercase() })
+            .sortedWith(compareByDescending<ComposerResult> { it.songCount }.thenBy { TextFold.fold(it.name) })
     }
 
     /** The tag values that name exactly [name] (one of their parts): what a query for this composer's songs matches. */

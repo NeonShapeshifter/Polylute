@@ -155,7 +155,7 @@ fun SettingsCategoryScreen(
                         SettingsCategory.APPEARANCE -> AppearanceSettingsHost(settingsViewModel, navigate, mode.product)
                         SettingsCategory.AUDIO -> AudioSettingsHost(settingsViewModel, navigate, deviceControlViewModel, mode.product.effectiveMode)
                         SettingsCategory.BEHAVIOR -> BehaviorSettingsHost(settingsViewModel)
-                        SettingsCategory.BACKUP_RESTORE -> BackupSettingsHost()
+                        SettingsCategory.BACKUP_RESTORE -> BackupSettingsHost(navigate = navigate)
                         SettingsCategory.HOME_MODE -> HomeModeHost()
                         SettingsCategory.SYSTEM -> SystemSettingsHost(settingsViewModel, navigate)
                         SettingsCategory.ABOUT -> AboutSettingsScreen(AboutSettingsActionsImpl(navigate))
@@ -296,17 +296,28 @@ private fun AudioSettingsHost(
     val transition by transitionSummaryViewModel.globalSettings.collectAsStateWithLifecycle()
     val fixedOutputDac by outputNoticesViewModel.fixedOutputDac.collectAsStateWithLifecycle()
     val fixedOutputAnswer by outputNoticesViewModel.answer.collectAsStateWithLifecycle()
-    val state = remember(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer, productMode) {
-        AudioSettingsState.from(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer, productMode)
+    val context = LocalContext.current
+    val notificationsOff = com.lostf1sh.pixelplayeross.presentation.components.rememberNotificationPermissionMissing()
+    val state = remember(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer, productMode, notificationsOff) {
+        AudioSettingsState.from(ui, playbackSpeed, audio, dacs, headphones, device, volume, transition, fixedOutputDac, fixedOutputAnswer, productMode, notificationsOff)
     }
-    val actions = remember(settingsViewModel, deviceControlViewModel, outputNoticesViewModel, navigate) {
-        AudioSettingsActionsImpl(settingsViewModel, deviceControlViewModel, navigate, outputNoticesViewModel::showFixedOutputNotice)
+    val actions = remember(settingsViewModel, deviceControlViewModel, outputNoticesViewModel, navigate, context) {
+        AudioSettingsActionsImpl(
+            settingsViewModel,
+            deviceControlViewModel,
+            navigate,
+            outputNoticesViewModel::showFixedOutputNotice,
+            openNotificationSettings = { com.lostf1sh.pixelplayeross.presentation.components.openAppNotificationSettings(context) },
+        )
     }
     AudioSettingsScreen(state, actions)
 }
 
 @Composable
-private fun BackupSettingsHost(backupViewModel: BackupSettingsViewModel = hiltViewModel()) {
+private fun BackupSettingsHost(
+    navigate: (String) -> Unit,
+    backupViewModel: BackupSettingsViewModel = hiltViewModel(),
+) {
     val context = LocalContext.current
     val state by backupViewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -317,7 +328,7 @@ private fun BackupSettingsHost(backupViewModel: BackupSettingsViewModel = hiltVi
             }
         }
     }
-    val actions = remember(backupViewModel) { BackupSettingsActionsImpl(backupViewModel) }
+    val actions = remember(backupViewModel, navigate) { BackupSettingsActionsImpl(backupViewModel, navigate) }
     BackupSettingsScreen(state, actions)
     BackupTransferProgressHost(backupViewModel)
 }

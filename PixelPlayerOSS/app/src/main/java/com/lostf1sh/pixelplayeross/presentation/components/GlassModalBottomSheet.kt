@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.contentColorFor
@@ -14,6 +15,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme
+import com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme
 import com.lostf1sh.pixelplayeross.ui.glass.LocalCoverGlass
 import com.lostf1sh.pixelplayeross.ui.glass.SheetPresence
 import com.lostf1sh.pixelplayeross.ui.glass.StillGlassSheetBody
@@ -50,19 +53,22 @@ fun GlassModalBottomSheet(
 ) {
     val scene = LocalCoverGlass.current
     val clock = rememberStillGlassClock(scene)
+    val coverScheme = LocalDapCoverScheme.current
     // B56-7: a sheet is over the player for as long as this is composed; what moves behind it (the live background, an animated cover) holds still
     SheetPresence.Hold()
-    ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        modifier = modifier,
-        sheetState = sheetState,
-        shape = shape,
-        containerColor = glassSheetContainer(containerColor, scene),
-        contentColor = contentColor,
-        tonalElevation = if (scene != null) 0.dp else tonalElevation,
-        dragHandle = dragHandle,
-        contentWindowInsets = contentWindowInsets,
-    ) {
-        StillGlassSheetBody(scene, clock, content)
+    DapCoverMaterialTheme {
+        ModalBottomSheet(
+            onDismissRequest = onDismissRequest,
+            modifier = modifier,
+            sheetState = sheetState,
+            shape = shape,
+            containerColor = glassSheetContainer(containerColor, scene),
+            contentColor = coverScheme?.onSurface ?: contentColor,
+            tonalElevation = if (scene != null) 0.dp else tonalElevation,
+            dragHandle = dragHandle,
+            contentWindowInsets = contentWindowInsets,
+        ) {
+            StillGlassSheetBody(scene, clock, content)
+        }
     }
 }

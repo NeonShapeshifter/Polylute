@@ -161,7 +161,7 @@ class StatsViewModelTest {
         runCurrent()
         val list = vm.uiState.value.topList
         assertThat(list?.period).isEqualTo(StatsPeriod.Months(YearMonth.of(2026, 4), YearMonth.of(2026, 4)))
-        assertThat(list?.rows?.map { it.item.identity }).containsExactly("item-3")
+        assertThat(list?.rows?.map { it.item!!.identity }).containsExactly("item-3")
     }
 
     @Test

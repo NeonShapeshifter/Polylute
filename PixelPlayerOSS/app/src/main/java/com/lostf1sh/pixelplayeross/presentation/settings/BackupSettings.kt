@@ -27,7 +27,12 @@ import com.lostf1sh.pixelplayeross.data.backup.model.BackupHistoryEntry
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupOperationType
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
 import com.lostf1sh.pixelplayeross.data.backup.model.RestorePlan
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode
+import com.lostf1sh.pixelplayeross.data.historyimport.ImportRecord
+import com.lostf1sh.pixelplayeross.data.historyimport.UniversalExportKind
 import com.lostf1sh.pixelplayeross.presentation.screens.ActionSettingsItem
+import com.lostf1sh.pixelplayeross.presentation.screens.ImportedHistoryListSection
+import com.lostf1sh.pixelplayeross.ui.ds.DapNavRow
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.launch
@@ -42,6 +47,8 @@ data class BackupSettingsState(
     val isInspectingBackup: Boolean = false,
     val pendingEncryptedBackupUri: String? = null,
     val wrongBackupPassword: Boolean = false,
+    val importedHistory: ImmutableList<ImportRecord> = persistentListOf(),
+    val exportablePlaylistCount: Int = 0,
 )
 
 /** Everything the Backup page can do. The file pickers and dialogs are the page's own; what they decide goes through here. */
@@ -52,8 +59,12 @@ interface BackupSettingsActions {
     fun onDismissEncryptedBackupPrompt()
     fun onClearRestorePlan()
     fun onUpdateRestorePlanSelection(selected: Set<BackupSection>)
+    fun onUpdateRestoreMode(mode: BackupRestoreMode) {}
     fun onRestore(uri: Uri)
     fun onRemoveBackupHistoryEntry(entry: BackupHistoryEntry)
+    fun onOpenHistoryImport() {}
+    fun onRemoveImportedHistory(importId: String) {}
+    fun onExportUniversal(uri: Uri, kind: UniversalExportKind) {}
 }
 
 @Composable
@@ -65,6 +76,18 @@ fun BackupSettingsScreen(state: BackupSettingsState, actions: BackupSettingsActi
     var importFileUri by remember { mutableStateOf<Uri?>(null) }
     var showExportEncryptionDialog by remember { mutableStateOf(false) }
     var exportPassphrase by remember { mutableStateOf<String?>(null) }
+    var showUniversalExportDialog by remember { mutableStateOf(false) }
+    var pendingUniversalExportKind by remember { mutableStateOf<UniversalExportKind?>(null) }
+
+    val universalExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        val kind = pendingUniversalExportKind
+        pendingUniversalExportKind = null
+        if (uri != null && kind != null) {
+            actions.onExportUniversal(uri, kind)
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -113,7 +136,6 @@ fun BackupSettingsScreen(state: BackupSettingsState, actions: BackupSettingsActi
 
     SettingsSubsection(
         title = stringResource(R.string.setcat_restore_backup_section),
-        addBottomSpace = false
     ) {
         ActionSettingsItem(
             title = stringResource(R.string.setcat_import_backup_title),
@@ -128,6 +150,47 @@ fun BackupSettingsScreen(state: BackupSettingsState, actions: BackupSettingsActi
             primaryActionLabel = stringResource(R.string.setcat_select_restore),
             onPrimaryAction = { showImportFlow = true },
             enabled = !state.isDataTransferInProgress,
+        )
+    }
+
+    SettingsSubsection(
+        title = stringResource(R.string.import_history_section_title),
+        addBottomSpace = false
+    ) {
+        DapNavRow(
+            label = stringResource(R.string.import_history_title),
+            description = stringResource(R.string.import_history_subtitle),
+            onClick = { actions.onOpenHistoryImport() },
+            divider = true,
+        )
+        DapNavRow(
+            label = stringResource(R.string.export_universal_title),
+            description = stringResource(R.string.export_universal_subtitle),
+            onClick = { showUniversalExportDialog = true },
+            enabled = !state.isDataTransferInProgress,
+            divider = false,
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        ImportedHistoryListSection(
+            records = state.importedHistory,
+            onRemove = actions::onRemoveImportedHistory,
+        )
+    }
+
+    if (showUniversalExportDialog) {
+        UniversalExportSelectionDialog(
+            inProgress = state.isDataTransferInProgress,
+            onDismiss = { showUniversalExportDialog = false },
+            onSelectKind = { kind ->
+                showUniversalExportDialog = false
+                pendingUniversalExportKind = kind
+                val suggestedName = if (kind == UniversalExportKind.PLAYLISTS_M3U8 && state.exportablePlaylistCount == 1) {
+                    "polylute-playlist.m3u8"
+                } else {
+                    kind.defaultFileName
+                }
+                universalExportLauncher.launch(suggestedName)
+            },
         )
     }
 
@@ -188,6 +251,7 @@ fun BackupSettingsScreen(state: BackupSettingsState, actions: BackupSettingsActi
                     actions.onClearRestorePlan()
                 },
                 onSelectionChanged = { actions.onUpdateRestorePlanSelection(it) },
+                onRestoreModeChanged = { actions.onUpdateRestoreMode(it) },
                 onConfirm = {
                     actions.onRestore(importFileUri!!)
                     showImportFlow = false

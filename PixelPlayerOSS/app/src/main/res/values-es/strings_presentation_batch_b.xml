@@ -23,7 +23,6 @@
     <string name="presentation_batch_b_playlist_empty_folder_body">Esta carpeta no contiene canciones.</string>
     <string name="presentation_batch_b_playlist_empty_smart_body">Todavía no hay canciones que coincidan con esta regla inteligente.</string>
     <string name="presentation_batch_b_playlist_empty_title">Esta lista de reproducción está vacía.</string>
-    <string name="presentation_batch_b_playlist_options_title">Opciones de la lista</string>
     <string name="presentation_batch_b_queue_recently_played">@string/presentation_batch_b_recently_played_title</string>
     <string name="presentation_batch_b_quick_fill">Relleno rápido</string>
     <string name="presentation_batch_b_quick_fill_choose_genre">Elegir género</string>
@@ -31,14 +30,17 @@
     <string name="presentation_batch_b_recent_empty_subtitle">Cambia el rango o reproduce más canciones para llenar esta línea de tiempo.</string>
     <string name="presentation_batch_b_recent_empty_title">Sin reproducciones recientes en %1$s</string>
     <string name="presentation_batch_b_recently_played_title">Reproducidas recientemente</string>
-    <string name="presentation_batch_b_remove_songs">Quitar canciones</string>
-    <string name="presentation_batch_b_reorder">Reordenar</string>
     <string name="presentation_batch_b_reorder_song">Reorder canción</string>
-    <string name="presentation_batch_b_reorder_songs">Reordenar canciones</string>
     <string name="presentation_batch_b_search_songs_label">Buscar canciones</string>
     <string name="presentation_batch_b_select_a_genre">Selecciona un género</string>
     <string name="presentation_batch_b_select_all">Seleccionar todo</string>
     <string name="presentation_batch_b_select_icon">Seleccionar icono</string>
     <string name="presentation_batch_b_set_default_transition">Establecer transición predeterminada</string>
     <string name="presentation_batch_b_sort_songs">Ordenar canciones</string>
+    <string name="playlist_sort">Ordenar</string>
+    <string name="playlist_edit_songs">Editar canciones</string>
+    <string name="playlist_edit_songs_hint">Arrastra para reordenar · toca − para quitar</string>
+    <string name="playlist_custom_order">Orden personalizado</string>
+    <string name="playlist_order_az">%1$s A–Z</string>
+    <string name="playlist_order_za">%1$s Z–A</string>
 </resources>

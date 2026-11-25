@@ -19,7 +19,6 @@ import com.lostf1sh.pixelplayeross.presentation.components.player.PlayerArtistPi
 import com.lostf1sh.pixelplayeross.presentation.components.subcomps.LyricsOptionsSheet
 import com.lostf1sh.pixelplayeross.presentation.screens.BookmarkMomentActionsBottomSheet
 import com.lostf1sh.pixelplayeross.presentation.screens.LibraryTabSwitcherSheet
-import com.lostf1sh.pixelplayeross.presentation.screens.PlaylistOptionsSheet
 import com.lostf1sh.pixelplayeross.presentation.screens.ThemeSelectorItem
 import com.lostf1sh.pixelplayeross.ui.ds.DapBaseTheme
 import com.lostf1sh.pixelplayeross.ui.glass.B41Renders
@@ -156,14 +155,6 @@ open class B42SheetRenderTest : B42SheetHarness() {
                 id = 1, songId = "1", songTitle = "Cine", artistName = "Gemini Sound", albumArtUri = null, title = "The chorus", timestampMs = 83_000L,
             ),
             onDismiss = {}, onRename = {}, onCopyCue = {}, onDelete = {},
-        )
-    }.let { }
-
-    @Test
-    fun `playlist options`() = shows("playlist-options") {
-        PlaylistOptionsSheet(
-            title = "Playlist options", playlistName = "Noche", editLabel = "Edit playlist", deleteLabel = "Delete playlist",
-            transitionLabel = "Default transition", exportLabel = "Export as M3U", onDismiss = {}, onEdit = {}, onDelete = {}, onTransition = {}, onExport = {},
         )
     }.let { }
 

@@ -78,4 +78,10 @@
     <string name="pristine_held_off_resonance">Desactivado para %1$s: elegiste Resonance para él. Cámbialo en la fila de volumen del dispositivo.</string>
     <!-- B40-fix1 item 1: a held play was not started because the answer's protection could not be confirmed -->
     <string name="fixed_output_toast_not_confirmed">No se inició la reproducción: Polylute no pudo confirmar a tiempo el bloqueo y el volumen de inicio seguro. Pulsa Play otra vez.</string>
+    <!-- B72: aviso contextual de permiso de notificaciones tras guardar un techo Safety Max y enlace silencioso a ajustes. -->
+    <string name="safety_max_notif_prompt_title">¿Permitir notificaciones de Polylute?</string>
+    <string name="safety_max_notif_prompt_body">Cuando llegues a tu Safety Max fuera de Polylute, una notificación te avisa y te deja subir el límite. Sin notificaciones, solo puedes subirlo dentro de la app.</string>
+    <string name="safety_max_notif_prompt_allow">Permitir</string>
+    <string name="safety_max_notifications_off_note">Las notificaciones están desactivadas: solo puedes subir el límite dentro de la app</string>
+    <string name="safety_max_open_notification_settings">Ajustes de notificaciones</string>
 </resources>

@@ -1,9 +1,13 @@
 package com.lostf1sh.pixelplayeross.data.stats
 
+import com.lostf1sh.pixelplayeross.data.historyimport.ImportedStatsInput
+import com.lostf1sh.pixelplayeross.data.historyimport.ImportedStatsTrack
+import com.lostf1sh.pixelplayeross.data.historyimport.LibraryTrackMatcher
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -84,21 +88,38 @@ object StatsEngine {
         var recordedStarts = 0
     }
 
+    private class UnmatchedAcc(val track: ImportedStatsTrack) {
+        var timeMs = 0L
+        var plays = 0
+    }
+
+    private const val IMPORTED_TIME_LOOKBACK_MS = 60L * 60 * 1000
+
+    private fun minOfNullable(a: Long?, b: Long?): Long? = when {
+        a == null -> b
+        b == null -> a
+        else -> min(a, b)
+    }
+
     fun report(
         ledger: ListeningLedger,
         period: StatsPeriod,
         nowMs: Long,
         zone: ZoneId,
         detail: Detail = Detail.FULL,
+        imported: ImportedStatsInput? = null,
     ): StatsReport {
+        val activeImported = imported?.takeIf { !it.isEmpty }
+        val combinedFirstMs = minOfNullable(ledger.firstMs, activeImported?.firstMs)
         val full = detail == Detail.FULL
-        val bounds = period.bounds(nowMs, zone, ledger.firstMs)
-        val from = bounds.fromMs ?: ledger.firstMs ?: nowMs
+        val bounds = period.bounds(nowMs, zone, combinedFirstMs)
+        val from = bounds.fromMs ?: combinedFirstMs ?: nowMs
         val to = bounds.toMs
         val clock = LocalClock(zone)
-        val days = bounds.days(zone, ledger.firstMs ?: nowMs)
+        val days = bounds.days(zone, combinedFirstMs ?: nowMs)
 
         val items = HashMap<String, ItemAcc>()
+        val unmatchedItems = HashMap<String, UnmatchedAcc>()
         val dayMs = HashMap<Long, Long>()
         val dayPlays = HashMap<Long, Int>()
         val clockMs = LongArray(7 * 24)
@@ -180,13 +201,114 @@ object StatsEngine {
             playDays += day
         }
 
+        // --- imported listening history (Stats only; never feeds AudioAcc or SkipStats) --------------------
+        var importedPlays = 0
+        var importedListenedMs = 0L
+        var importedEstimatedPlays = 0
+        var importedEstimatedMs = 0L
+        var importedZeroDurationPlays = 0
+
+        if (activeImported != null) {
+            val tsArr = activeImported.timestampsMs
+            val searchFrom = (from - IMPORTED_TIME_LOOKBACK_MS).coerceAtLeast(0L)
+            var impLo = 0
+            var impHi = tsArr.size
+            while (impLo < impHi) {
+                val mid = (impLo + impHi) ushr 1
+                if (tsArr[mid] >= searchFrom) impHi = mid else impLo = mid + 1
+            }
+            for (i in impLo until tsArr.size) {
+                val startTs = tsArr[i]
+                if (startTs >= to) break
+                val durMs = activeImported.listenedMs[i]
+                val endTs = startTs + durMs
+                val track = activeImported.tracks[activeImported.trackIndices[i]]
+                val matched = track.matchedItem
+
+                // Listening time clipped to [from, to)
+                val sliceStart = max(startTs, from)
+                val sliceEnd = min(endTs, to)
+                val sliceMs = (sliceEnd - sliceStart).coerceAtLeast(0L)
+                if (sliceMs > 0L) {
+                    listenedMs += sliceMs
+                    importedListenedMs += sliceMs
+                    if (activeImported.estimated[i]) importedEstimatedMs += sliceMs
+                    if (matched != null) {
+                        items.getOrPut(matched.identity) { ItemAcc() }.timeMs += sliceMs
+                    } else {
+                        unmatchedItems.getOrPut(track.key) { UnmatchedAcc(track) }.timeMs += sliceMs
+                    }
+                    clock.forEachHour(sliceStart, sliceEnd) { slice, day, hour ->
+                        dayMs.merge(day, slice, Long::plus)
+                        val weekday = clock.weekday(day)
+                        clockMs[weekday * 24 + hour] += slice
+                        hourMs[hour] += slice
+                    }
+                    if (full) {
+                        sessionsList += longArrayOf(sliceStart, sliceEnd)
+                    }
+                }
+
+                // Play counted in period where it ended
+                if (endTs in from until to) {
+                    plays++
+                    importedPlays++
+                    if (activeImported.estimated[i]) importedEstimatedPlays++
+                    if (durMs == 0L) importedZeroDurationPlays++
+                    if (matched != null) {
+                        items.getOrPut(matched.identity) { ItemAcc() }.plays++
+                    } else {
+                        unmatchedItems.getOrPut(track.key) { UnmatchedAcc(track) }.plays++
+                    }
+                    val day = clock.dayIndex(endTs)
+                    val hour = clock.hour(endTs)
+                    dayPlays.merge(day, 1, Int::plus)
+                    clockPlays[clock.weekday(day) * 24 + hour]++
+                    hourPlays[hour]++
+                    playDays += day
+                }
+            }
+            if (full && sessionsList.size > 1) {
+                sessionsList.sortWith(compareBy<LongArray>({ it[0] }, { it[1] }))
+                val merged = ArrayList<LongArray>(sessionsList.size)
+                for (seg in sessionsList) {
+                    val last = merged.lastOrNull()
+                    if (last != null && seg[0] - last[1] <= SESSION_GAP_MS) {
+                        last[1] = max(last[1], seg[1])
+                    } else {
+                        merged += seg
+                    }
+                }
+                sessionsList.clear()
+                sessionsList.addAll(merged)
+            }
+        }
+
         // --- rankings --------------------------------------------------------------------------------------
         val catalog = ledger.catalog
-        val songRows = ArrayList<SongRow>(items.size)
+        val songRows = ArrayList<SongRow>(items.size + unmatchedItems.size)
         for ((identity, acc) in items) {
             val item = catalog.item(identity) ?: continue
             if (acc.timeMs <= 0L && acc.plays == 0) continue
             songRows += SongRow(item, acc.plays, acc.timeMs, acc.skips)
+        }
+        for ((key, acc) in unmatchedItems) {
+            if (acc.timeMs <= 0L && acc.plays == 0) continue
+            val t = acc.track
+            songRows += SongRow(
+                item = null,
+                plays = acc.plays,
+                timeMs = acc.timeMs,
+                skips = 0,
+                title = t.title,
+                artistLine = t.artistRaw,
+                artists = t.artists,
+                album = t.album,
+                albumKey = t.unmatchedAlbumKey,
+                artUri = null,
+                genre = "",
+                key = key,
+            )
         }
 
         val artistRows = if (full) artistRows(songRows) else emptyList()
@@ -201,8 +323,8 @@ object StatsEngine {
             listenedMs = listenedMs,
             plays = plays,
             songsPlayed = songsPlayed,
-            songsHeard = songRows.count { it.timeMs > 0L },
-            activeDays = dayMs.size,
+            songsHeard = songRows.count { it.timeMs > 0L || it.plays > 0 },
+            activeDays = max(dayMs.size, playDays.size),
             days = days,
             avgPerDayMs = listenedMs / days,
             avgPlaysPerSong = if (songsPlayed > 0) playsOfListedSongs.toDouble() / songsPlayed else null,
@@ -221,6 +343,14 @@ object StatsEngine {
             identityEvents, locatorEvents, goneEvents, unattributedEvents,
         )
 
+        val importedSummary = ImportedStatsSummary(
+            plays = importedPlays,
+            listenedMs = importedListenedMs,
+            estimatedPlays = importedEstimatedPlays,
+            estimatedMs = importedEstimatedMs,
+            zeroDurationPlays = importedZeroDurationPlays,
+        )
+
         return StatsReport(
             period = period,
             fromMs = bounds.fromMs,
@@ -231,16 +361,18 @@ object StatsEngine {
             coverage = coverage,
             rankings = rankings,
             concentration = concentration,
-            timeline = timeline(period, bounds, zone, clock, dayMs, dayPlays, hourMs, hourPlays, ledger.firstMs, nowMs),
+            timeline = timeline(period, bounds, zone, clock, dayMs, dayPlays, hourMs, hourPlays, combinedFirstMs, nowMs),
             audio = audio?.finish(ledger.audioSinceMs),
             habits = if (full) {
                 habits(
                     ledger = ledger, from = from, to = to, nowMs = nowMs, zone = zone, clock = clock,
                     clockMs = clockMs, clockPlays = clockPlays, sessions = sessionsList, playDays = playDays,
                     items = items, songRows = songRows, albumRows = albumRows, inProgress = bounds.inProgress,
+                    imported = activeImported,
                 )
             } else null,
-            historyStartMs = ledger.firstMs,
+            historyStartMs = combinedFirstMs,
+            importedSummary = importedSummary,
         )
     }
 
@@ -252,7 +384,8 @@ object StatsEngine {
         mode: StatsRankMode,
         nowMs: Long,
         zone: ZoneId,
-    ): TopNReport = topList(report(ledger, period, nowMs, zone, Detail.FULL), period, size, mode)
+        imported: ImportedStatsInput? = null,
+    ): TopNReport = topList(report(ledger, period, nowMs, zone, Detail.FULL, imported), period, size, mode)
 
     /**
      * The list of a "Top N" from the report of its period: the songs that had a play, by [mode], the first [size]. A song that was
@@ -271,37 +404,53 @@ object StatsEngine {
         var timeMs = 0L
         var songs = 0
         val artists = HashSet<String>()
+        var displayName: String? = null
+        var displayFromLibrary = false
     }
 
     private fun artistRows(songs: List<SongRow>): List<ArtistRow> {
         val by = HashMap<String, NameAcc>()
         for (row in songs) {
-            val names = row.item.artists.ifEmpty { listOf("") }
+            val names = row.artists.ifEmpty { listOf("") }
             for (name in names) {
-                val acc = by.getOrPut(name) { NameAcc() }
+                val key = LibraryTrackMatcher.foldBase(name).ifEmpty { name.trim().lowercase(Locale.ROOT) }
+                val acc = by.getOrPut(key) { NameAcc() }
+                if (acc.displayName == null || (!row.isUnmatched && !acc.displayFromLibrary)) {
+                    acc.displayName = name
+                    acc.displayFromLibrary = !row.isUnmatched
+                }
                 acc.plays += row.plays; acc.timeMs += row.timeMs; acc.songs++
             }
         }
-        return by.map { (name, acc) -> ArtistRow(name, acc.plays, acc.timeMs, acc.songs) }
+        return by.values.map { acc -> ArtistRow(acc.displayName.orEmpty(), acc.plays, acc.timeMs, acc.songs) }
     }
 
     private fun albumRows(songs: List<SongRow>): List<AlbumRow> {
-        class Album(val first: CatalogItem) {
+        class Album(
+            val title: String,
+            val artist: String,
+            val artUri: String?,
+        ) {
             var plays = 0; var timeMs = 0L; var songs = 0
         }
         val by = HashMap<String, Album>()
         for (row in songs) {
-            if (row.item.album.isBlank()) continue
-            val acc = by.getOrPut(row.item.albumKey) { Album(row.item) }
+            if (row.album.isBlank()) continue
+            val key = row.albumKey ?: continue
+            val acc = by.getOrPut(key) {
+                val item = row.item
+                val artist = item?.song?.albumArtist?.takeIf { it.isNotBlank() }
+                    ?: row.artists.firstOrNull().orEmpty().ifBlank { row.artistLine }
+                Album(row.album, artist, row.artUri)
+            }
             acc.plays += row.plays; acc.timeMs += row.timeMs; acc.songs++
         }
         return by.map { (key, acc) ->
-            val song = acc.first.song
             AlbumRow(
                 key = key,
-                title = acc.first.album,
-                artist = song.albumArtist?.takeIf { it.isNotBlank() } ?: acc.first.artists.firstOrNull().orEmpty(),
-                artUri = song.albumArtUriString,
+                title = acc.title,
+                artist = acc.artist,
+                artUri = acc.artUri,
                 plays = acc.plays, timeMs = acc.timeMs, songs = acc.songs,
             )
         }
@@ -310,9 +459,10 @@ object StatsEngine {
     private fun genreRows(songs: List<SongRow>): List<GenreRow> {
         val by = HashMap<String, NameAcc>()
         for (row in songs) {
-            val acc = by.getOrPut(row.item.genre) { NameAcc() }
+            val item = row.item ?: continue
+            val acc = by.getOrPut(item.genre) { NameAcc() }
             acc.plays += row.plays; acc.timeMs += row.timeMs
-            acc.artists += row.item.artists.map { it.lowercase() }.ifEmpty { listOf("") }
+            acc.artists += item.artists.map { it.lowercase() }.ifEmpty { listOf("") }
         }
         return by.map { (name, acc) -> GenreRow(name, acc.plays, acc.timeMs, acc.artists.size) }
     }
@@ -475,6 +625,7 @@ object StatsEngine {
         songRows: List<SongRow>,
         albumRows: List<AlbumRow>,
         inProgress: Boolean,
+        imported: ImportedStatsInput? = null,
     ): Habits {
         val catalog = ledger.catalog
 
@@ -494,7 +645,7 @@ object StatsEngine {
             if (run > longest) { longest = run; longestStart = runStart; longestEnd = day }
             previous = day
         }
-        val current = if (inProgress) currentStreak(ledger, clock.dayIndex(nowMs), clock) else null
+        val current = if (inProgress) currentStreak(ledger, clock.dayIndex(nowMs), clock, imported) else null
         val streaks = Streaks(
             current = current,
             longest = longest,
@@ -503,23 +654,46 @@ object StatsEngine {
         )
 
         // discoveries: tracks, artists and albums whose first play of all is inside the period
+        val songFirstPlay = HashMap<String, Long>()
+        for (item in catalog.items) {
+            ledger.stats(item.identity)?.firstPlayMs?.let { songFirstPlay[item.identity] = it }
+        }
+        val artistFirstPlay = HashMap<String, Long>(ledger.artistFirstPlayMs)
+        val albumFirstPlay = HashMap<String, Long>(ledger.albumFirstPlayMs)
+        if (imported != null && !imported.isEmpty) {
+            val n = imported.timestampsMs.size
+            for (i in 0 until n) {
+                val endTs = imported.timestampsMs[i] + imported.listenedMs[i]
+                val track = imported.tracks[imported.trackIndices[i]]
+                val matched = track.matchedItem
+                if (matched != null) {
+                    songFirstPlay.merge(matched.identity, endTs, ::minOf)
+                    if (matched.album.isNotBlank()) albumFirstPlay.merge(matched.albumKey, endTs, ::minOf)
+                }
+                for (artist in track.artists) {
+                    if (artist.isNotBlank()) artistFirstPlay.merge(artist, endTs, ::minOf)
+                }
+            }
+        }
+
         val discovered = ArrayList<DiscoveredSong>()
         for (row in songRows) {
-            val first = ledger.stats(row.item.identity)?.firstPlayMs ?: continue
-            if (first in from until to) discovered += DiscoveredSong(row.item, first, row.plays)
+            val item = row.item ?: continue
+            val first = songFirstPlay[item.identity] ?: continue
+            if (first in from until to) discovered += DiscoveredSong(item, first, row.plays)
         }
         discovered.sortByDescending { it.firstPlayMs }
-        val newArtists = ledger.artistFirstPlayMs.filterValues { it in from until to }.keys
+        val newArtists = artistFirstPlay.filterValues { it in from until to }.keys
             .sortedBy { it.lowercase() }
         val albumsByKey = albumRows.associateBy { it.key }
-        val newAlbums = ledger.albumFirstPlayMs.filterValues { it in from until to }.keys
+        val newAlbums = albumFirstPlay.filterValues { it in from until to }.keys
             .mapNotNull { albumsByKey[it] }
             .sortedWith(compareByDescending<AlbumRow> { it.plays }.thenBy { it.title.lowercase() })
         val discoveries = Discoveries(
             songs = discovered.take(DISCOVERY_LIST_SIZE),
             songCount = discovered.size,
             artistCount = newArtists.size,
-            albumCount = ledger.albumFirstPlayMs.count { it.value in from until to },
+            albumCount = albumFirstPlay.count { it.value in from until to },
             artists = newArtists.take(DISCOVERY_LIST_SIZE),
             albums = newAlbums.take(DISCOVERY_LIST_SIZE),
         )
@@ -551,9 +725,14 @@ object StatsEngine {
     }
 
     /** The run of days with a play that ends today, or yesterday (a day that has not had its first play yet is not a broken streak). */
-    private fun currentStreak(ledger: ListeningLedger, todayIndex: Long, clock: LocalClock): Int {
+    private fun currentStreak(ledger: ListeningLedger, todayIndex: Long, clock: LocalClock, imported: ImportedStatsInput? = null): Int {
         val days = java.util.TreeSet<Long>()
         for (o in ledger.occurrences) if (o.isPlay) days += clock.dayIndex(o.endMs)
+        if (imported != null && !imported.isEmpty) {
+            for (i in 0 until imported.timestampsMs.size) {
+                days += clock.dayIndex(imported.timestampsMs[i] + imported.listenedMs[i])
+            }
+        }
         var day = when {
             todayIndex in days -> todayIndex
             todayIndex - 1 in days -> todayIndex - 1
@@ -570,13 +749,14 @@ object StatsEngine {
         val songs = ArrayList<SkipRow>()
         val byArtist = HashMap<String, IntArray>()
         for (row in songRows) {
-            val acc = items[row.item.identity] ?: continue
+            val item = row.item ?: continue
+            val acc = items[item.identity] ?: continue
             recordedStarts += acc.recordedStarts
             skipsTotal += acc.skips
             if (acc.recordedStarts >= MIN_SONG_SKIP_SAMPLE && acc.skips > 0) {
-                songs += SkipRow(row.item.title, row.item.artistLine.ifBlank { null }, row.item, acc.skips, acc.recordedStarts)
+                songs += SkipRow(item.title, item.artistLine.ifBlank { null }, item, acc.skips, acc.recordedStarts)
             }
-            for (artist in row.item.artists) {
+            for (artist in item.artists) {
                 val counts = byArtist.getOrPut(artist) { IntArray(2) }
                 counts[0] += acc.skips; counts[1] += acc.recordedStarts
             }

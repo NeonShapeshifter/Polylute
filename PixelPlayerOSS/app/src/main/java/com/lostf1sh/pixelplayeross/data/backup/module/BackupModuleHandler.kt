@@ -1,6 +1,15 @@
 package com.lostf1sh.pixelplayeross.data.backup.module
 
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode
+
+interface ReportableRestoreHandler {
+    suspend fun restoreWithReport(
+        payload: String,
+        mode: BackupRestoreMode = BackupRestoreMode.REPLACE,
+    ): BackupResolutionCounts
+}
 
 interface BackupModuleHandler {
     val section: BackupSection

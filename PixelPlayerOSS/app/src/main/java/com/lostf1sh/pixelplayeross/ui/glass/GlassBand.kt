@@ -118,12 +118,17 @@ object GlassBands {
  * Nothing in the result depends on the song: the ink is the same for every cover, and the panels are the theme's background at a fixed
  * strength over whatever glass is behind them. What changes with the song is the glass, drawn behind, and the accent.
  */
-fun DapPalette.onGlass(look: GlassLook): DapPalette = copy(
-    primaryText = look.ink.primary,
-    secondaryText = look.ink.secondary,
-    tertiaryText = look.ink.tertiary,
-    glass = GlassSurfaces.of(this),
-)
+fun DapPalette.onGlass(look: GlassLook): DapPalette {
+    val textFloor = GlassBands.AA_TEXT * (look.band.top * (1f + GlassBands.MARGIN) + 0.05f) - 0.05f
+    return copy(
+        primaryText = look.ink.primary,
+        secondaryText = look.ink.secondary,
+        tertiaryText = look.ink.tertiary,
+        warning = if (isLight) warning else GlassBands.liftedTo(warning, textFloor),
+        error = if (isLight) error else GlassBands.liftedTo(error, textFloor),
+        glass = GlassSurfaces.of(this),
+    )
+}
 
 /** Relative luminance and contrast on the integer pixels the field is made of (the same constants as [androidx.compose.ui.graphics.luminance]). */
 object GlassLuma {

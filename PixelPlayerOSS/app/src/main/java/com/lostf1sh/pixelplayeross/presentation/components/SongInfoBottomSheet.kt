@@ -466,101 +466,107 @@ fun SongInfoBottomSheet(
         is SongInfoBottomSheetViewModel.MusicBrainzUiState.Applied -> Unit
 
         SongInfoBottomSheetViewModel.MusicBrainzUiState.Loading -> {
-            AlertDialog(
-                onDismissRequest = {},
-                confirmButton = {},
-                title = { Text(stringResource(R.string.musicbrainz_lookup)) },
-                text = {
-                    // An alert is a window of its own, so the activity's volume-key path does not reach
-                    // it. The bridge routes Volume Up/Down to the same authority the activity uses.
-                    ModalInputBridge()
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                        Text(stringResource(R.string.musicbrainz_searching))
+            com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+                AlertDialog(
+                    onDismissRequest = {},
+                    confirmButton = {},
+                    title = { Text(stringResource(R.string.musicbrainz_lookup)) },
+                    text = {
+                        // An alert is a window of its own, so the activity's volume-key path does not reach
+                        // it. The bridge routes Volume Up/Down to the same authority the activity uses.
+                        ModalInputBridge()
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                            Text(stringResource(R.string.musicbrainz_searching))
+                        }
                     }
-                }
-            )
+                )
+            }
         }
 
         is SongInfoBottomSheetViewModel.MusicBrainzUiState.Error -> {
-            AlertDialog(
-                onDismissRequest = songInfoViewModel::dismissMusicBrainz,
-                confirmButton = {
-                    TextButton(onClick = { songInfoViewModel.searchMusicBrainz(song) }) {
-                        Text(stringResource(R.string.musicbrainz_retry))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = songInfoViewModel::dismissMusicBrainz) {
-                        Text(stringResource(R.string.cancel))
-                    }
-                },
-                title = {
-                    // An alert is a window of its own, so the activity's volume-key path does not reach
-                    // it. The bridge routes Volume Up/Down to the same authority the activity uses.
-                    ModalInputBridge()
-                    Text(stringResource(R.string.musicbrainz_lookup_failed))
-                },
-                text = { Text(state.message) }
-            )
+            com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+                AlertDialog(
+                    onDismissRequest = songInfoViewModel::dismissMusicBrainz,
+                    confirmButton = {
+                        TextButton(onClick = { songInfoViewModel.searchMusicBrainz(song) }) {
+                            Text(stringResource(R.string.musicbrainz_retry))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = songInfoViewModel::dismissMusicBrainz) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    },
+                    title = {
+                        // An alert is a window of its own, so the activity's volume-key path does not reach
+                        // it. The bridge routes Volume Up/Down to the same authority the activity uses.
+                        ModalInputBridge()
+                        Text(stringResource(R.string.musicbrainz_lookup_failed))
+                    },
+                    text = { Text(state.message) }
+                )
+            }
         }
 
         is SongInfoBottomSheetViewModel.MusicBrainzUiState.Results -> {
-            AlertDialog(
-                onDismissRequest = songInfoViewModel::dismissMusicBrainz,
-                confirmButton = {
-                    TextButton(onClick = songInfoViewModel::dismissMusicBrainz) {
-                        Text(stringResource(R.string.cancel))
-                    }
-                },
-                title = { Text(stringResource(R.string.musicbrainz_choose_match)) },
-                text = {
-                    // An alert is a window of its own, so the activity's volume-key path does not reach
-                    // it. The bridge routes Volume Up/Down to the same authority the activity uses.
-                    ModalInputBridge()
-                    if (state.matches.isEmpty()) {
-                        Text(stringResource(R.string.musicbrainz_no_results))
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.heightIn(max = 420.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(state.matches, key = { it.recordingId + (it.releaseId ?: "") }) { match ->
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            songInfoViewModel.applyMusicBrainzMatch(song, match)
-                                        },
-                                    color = Dap.surfaceRaised,
-                                    shape = RoundedCornerShape(DapRadius.Surface)
-                                ) {
-                                    Column(Modifier.padding(DapSpacing.Md)) {
-                                        Text(match.title, fontWeight = FontWeight.Bold)
-                                        Text(
-                                            listOfNotNull(
-                                                match.artist.takeIf { it.isNotBlank() },
-                                                match.album.takeIf { it.isNotBlank() },
-                                                match.year.takeIf { it > 0 }?.toString()
-                                            ).joinToString(" · "),
-                                            style = DapType.Caption,
-                                            color = Dap.secondaryText
-                                        )
-                                        Text(
-                                            stringResource(R.string.musicbrainz_match_score, match.score),
-                                            style = DapType.Caption,
-                                            color = LocalDapAccent.current
-                                        )
+            com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+                AlertDialog(
+                    onDismissRequest = songInfoViewModel::dismissMusicBrainz,
+                    confirmButton = {
+                        TextButton(onClick = songInfoViewModel::dismissMusicBrainz) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    },
+                    title = { Text(stringResource(R.string.musicbrainz_choose_match)) },
+                    text = {
+                        // An alert is a window of its own, so the activity's volume-key path does not reach
+                        // it. The bridge routes Volume Up/Down to the same authority the activity uses.
+                        ModalInputBridge()
+                        if (state.matches.isEmpty()) {
+                            Text(stringResource(R.string.musicbrainz_no_results))
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = 420.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(state.matches, key = { it.recordingId + (it.releaseId ?: "") }) { match ->
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                songInfoViewModel.applyMusicBrainzMatch(song, match)
+                                            },
+                                        color = Dap.surfaceRaised,
+                                        shape = RoundedCornerShape(DapRadius.Surface)
+                                    ) {
+                                        Column(Modifier.padding(DapSpacing.Md)) {
+                                            Text(match.title, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                listOfNotNull(
+                                                    match.artist.takeIf { it.isNotBlank() },
+                                                    match.album.takeIf { it.isNotBlank() },
+                                                    match.year.takeIf { it > 0 }?.toString()
+                                                ).joinToString(" · "),
+                                                style = DapType.Caption,
+                                                color = Dap.secondaryText
+                                            )
+                                            Text(
+                                                stringResource(R.string.musicbrainz_match_score, match.score),
+                                                style = DapType.Caption,
+                                                color = LocalDapAccent.current
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            )
+                )
+            }
         }
     }
 

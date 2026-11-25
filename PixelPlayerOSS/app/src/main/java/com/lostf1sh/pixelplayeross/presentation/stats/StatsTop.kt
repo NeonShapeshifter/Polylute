@@ -130,7 +130,7 @@ internal fun LazyListScope.statsTop(
             }
         }
         item(key = "top-rows-spacer") { Spacer(Modifier.height(DapSpacing.Sm)) }
-        items(count = list.rows.size, key = { "top-row-$it-${list.rows[it].item.identity}" }) { index ->
+        items(count = list.rows.size, key = { "top-row-$it-${list.rows[it].key.ifEmpty { list.rows[it].item?.identity.orEmpty() }}" }) { index ->
             SongRankRow(index + 1, list.rows[index], look)
         }
     }
@@ -182,7 +182,7 @@ private fun PeriodControls(
                 selected = years.firstOrNull { period.isWholeYear && period.from.year == it } ?: -1,
                 onSelect = actions.onYear,
                 label = { it.toString() },
-                fillWidth = true,
+                scrollable = true,
             )
         }
         MonthStepper(
@@ -277,11 +277,12 @@ private fun TopActionsRow(state: TopUiState, list: TopNReport, actions: TopActio
                 shuffleLabel = stringResource(R.string.shortcut_shuffle_short),
             )
             Spacer(Modifier.weight(1f))
+            val hasPlayable = list.rows.any { it.item != null }
             DapButton(
                 label = stringResource(R.string.stats_top_save),
                 onClick = { actions.onSave(title) },
                 variant = DapButtonVariant.Secondary,
-                enabled = list.rows.isNotEmpty() && !state.isSaving,
+                enabled = hasPlayable && !state.isSaving,
             )
         }
         state.savedAs?.let { name ->

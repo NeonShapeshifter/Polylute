@@ -2,9 +2,13 @@ package com.lostf1sh.pixelplayeross.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lostf1sh.pixelplayeross.data.historyimport.ImportRecord
+import com.lostf1sh.pixelplayeross.data.historyimport.ImportedStatsInput
+import com.lostf1sh.pixelplayeross.data.historyimport.ImportedStatsProvider
 import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.stats.ClockChanges
 import com.lostf1sh.pixelplayeross.data.stats.LedgerProvider
+import com.lostf1sh.pixelplayeross.data.stats.LibraryCatalog
 import com.lostf1sh.pixelplayeross.data.stats.LibraryChangeSignal
 import com.lostf1sh.pixelplayeross.data.stats.StatsEngine
 import com.lostf1sh.pixelplayeross.data.stats.StatsPeriod
@@ -13,6 +17,7 @@ import com.lostf1sh.pixelplayeross.data.stats.StatsReport
 import com.lostf1sh.pixelplayeross.data.stats.StatsTimeRange
 import com.lostf1sh.pixelplayeross.data.stats.TopNReport
 import com.lostf1sh.pixelplayeross.di.DispatcherProvider
+import com.lostf1sh.pixelplayeross.di.IncludeImportedPreference
 import com.lostf1sh.pixelplayeross.presentation.stats.StatsLinks
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.YearMonth
@@ -20,11 +25,15 @@ import java.time.ZoneId
 import javax.inject.Inject
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,6 +81,8 @@ data class StatsUiState(
      * clock in composition, so it is the clock the ViewModel follows and the one a test can move.
      */
     val month: YearMonth = YearMonth.now(),
+    val hasImportedHistory: Boolean = false,
+    val includeImportedHistory: Boolean = true,
 ) {
     /** The report is the one of the period the screen is on (a stale one is never shown under another period's selector). */
     val current: StatsReport? get() = report?.takeIf { it.period == period }
@@ -96,6 +107,20 @@ data class StatsUiState(
  *
  * Nothing here runs on the main thread but the state updates: the ledger is read and the report built on the default dispatcher.
  */
+internal object EmptyImportedStatsProvider : ImportedStatsProvider {
+    override val records: StateFlow<List<ImportRecord>> = MutableStateFlow(emptyList())
+    override val changes: Flow<Long> = emptyFlow()
+    override suspend fun statsInput(catalog: LibraryCatalog): ImportedStatsInput = ImportedStatsInput.Empty
+}
+
+internal class InMemoryIncludeImportedPreference(initial: Boolean = true) : IncludeImportedPreference {
+    private val state = MutableStateFlow(initial)
+    override val includeImported: Flow<Boolean> = state
+    override suspend fun setIncludeImported(include: Boolean) {
+        state.value = include
+    }
+}
+
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val ledgers: LedgerProvider,
@@ -103,7 +128,25 @@ class StatsViewModel @Inject constructor(
     private val librarySignal: LibraryChangeSignal,
     private val dispatchers: DispatcherProvider,
     private val clockChanges: ClockChanges,
+    private val importedStats: ImportedStatsProvider,
+    private val includeImportedPref: IncludeImportedPreference,
 ) : ViewModel() {
+
+    constructor(
+        ledgers: LedgerProvider,
+        playlists: PlaylistPreferencesRepository,
+        librarySignal: LibraryChangeSignal,
+        dispatchers: DispatcherProvider,
+        clockChanges: ClockChanges,
+    ) : this(
+        ledgers = ledgers,
+        playlists = playlists,
+        librarySignal = librarySignal,
+        dispatchers = dispatchers,
+        clockChanges = clockChanges,
+        importedStats = EmptyImportedStatsProvider,
+        includeImportedPref = InMemoryIncludeImportedPreference(true),
+    )
 
     /** The clock and the zone, replaceable by a test. */
     internal var clock: () -> Long = System::currentTimeMillis
@@ -131,6 +174,7 @@ class StatsViewModel @Inject constructor(
     private var topFollowsClock = true
 
     init {
+        observeImportedState()
         loadSummary(silent = false)
         loadOverview()
         observeChanges()
@@ -159,6 +203,19 @@ class StatsViewModel @Inject constructor(
         if (layer == StatsLayer.TOP && !_uiState.value.top.isCurrent) loadTop(silent = false)
     }
 
+    fun onIncludeImportedHistoryChanged(include: Boolean) {
+        if (include == _uiState.value.includeImportedHistory) return
+        _uiState.update { it.copy(includeImportedHistory = include) }
+        viewModelScope.launch {
+            includeImportedPref.setIncludeImported(include)
+            loadSummary(silent = true)
+            if (_uiState.value.layer == StatsLayer.TOP || _uiState.value.top.report != null) loadTop(silent = true)
+        }
+    }
+
+    private suspend fun activeImported(catalog: LibraryCatalog): ImportedStatsInput? =
+        if (_uiState.value.includeImportedHistory) importedStats.statsInput(catalog) else null
+
     private fun loadSummary(silent: Boolean) {
         val token = ++summaryToken
         summaryJob?.cancel()
@@ -170,7 +227,8 @@ class StatsViewModel @Inject constructor(
             val result = runCatching {
                 withContext(dispatchers.default) {
                     val ledger = ledgers.ledger()
-                    StatsEngine.report(ledger, period, clock(), zone()) to StatsLinks.of(ledger.catalog)
+                    val imported = activeImported(ledger.catalog)
+                    StatsEngine.report(ledger, period, clock(), zone(), imported = imported) to StatsLinks.of(ledger.catalog)
                 }
             }
             if (token != summaryToken) return@launch
@@ -215,7 +273,8 @@ class StatsViewModel @Inject constructor(
             val result = runCatching {
                 withContext(dispatchers.default) {
                     val ledger = ledgers.ledger()
-                    StatsEngine.report(ledger, period, clock(), zone()) to StatsLinks.of(ledger.catalog)
+                    val imported = activeImported(ledger.catalog)
+                    StatsEngine.report(ledger, period, clock(), zone(), imported = imported) to StatsLinks.of(ledger.catalog)
                 }
             }
             if (token != topToken) return@launch
@@ -235,11 +294,12 @@ class StatsViewModel @Inject constructor(
      */
     fun saveTopAsPlaylist(name: String) {
         val list = _uiState.value.topList ?: return
-        if (list.rows.isEmpty() || _uiState.value.top.isSaving) return
+        val playableIds = list.rows.mapNotNull { it.item?.locator }
+        if (playableIds.isEmpty() || _uiState.value.top.isSaving) return
         _uiState.update { it.copy(top = it.top.copy(isSaving = true, savedAs = null)) }
         viewModelScope.launch {
             val saved = runCatching {
-                playlists.createPlaylist(name = name, songIds = list.rows.map { it.item.locator })
+                playlists.createPlaylist(name = name, songIds = playableIds)
             }
             saved.exceptionOrNull()?.let { Timber.e(it, "Failed to save the top list as a playlist") }
             _uiState.update { it.copy(top = it.top.copy(isSaving = false, savedAs = if (saved.isSuccess) name else null)) }
@@ -248,7 +308,7 @@ class StatsViewModel @Inject constructor(
 
     /** The songs of the list on screen, in the order shown: what "play it" queues. */
     fun topSongsInOrder(): List<com.lostf1sh.pixelplayeross.data.model.Song> =
-        _uiState.value.topList?.rows?.map { it.item.song }.orEmpty()
+        _uiState.value.topList?.rows?.mapNotNull { it.item?.song }.orEmpty()
 
     // --- Home's card ----------------------------------------------------------------------------------------
 
@@ -280,12 +340,36 @@ class StatsViewModel @Inject constructor(
      * A listen that ends, or a change of the library, refreshes what is on screen, a moment after the last one: a screen that is
      * open follows what is being played, and a run of changes costs one rebuild.
      */
+    private fun observeImportedState() {
+        viewModelScope.launch {
+            importedStats.records.collect { records ->
+                _uiState.update { it.copy(hasImportedHistory = records.isNotEmpty()) }
+            }
+        }
+        viewModelScope.launch {
+            includeImportedPref.includeImported.distinctUntilChanged().collect { include ->
+                val changed = _uiState.value.includeImportedHistory != include
+                _uiState.update { it.copy(includeImportedHistory = include) }
+                if (changed) {
+                    loadSummary(silent = true)
+                    if (_uiState.value.layer == StatsLayer.TOP || _uiState.value.top.report != null) loadTop(silent = true)
+                }
+            }
+        }
+    }
+
     @OptIn(FlowPreview::class)
     private fun observeChanges() {
         viewModelScope.launch {
             ledgers.changes.drop(1).debounce(RefreshDebounceMs).collect {
                 loadSummary(silent = true)
                 loadOverview()
+                if (_uiState.value.layer == StatsLayer.TOP || _uiState.value.top.report != null) loadTop(silent = true)
+            }
+        }
+        viewModelScope.launch {
+            importedStats.changes.drop(1).collect {
+                loadSummary(silent = true)
                 if (_uiState.value.layer == StatsLayer.TOP || _uiState.value.top.report != null) loadTop(silent = true)
             }
         }

@@ -70,6 +70,7 @@ import com.lostf1sh.pixelplayeross.data.stats.ListenAudioFacts
 import com.lostf1sh.pixelplayeross.data.stats.ListenAudioFactsAssembler
 import com.lostf1sh.pixelplayeross.data.stats.ListenContext
 import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
+import com.lostf1sh.pixelplayeross.data.stats.ListenTrackMetadata
 import com.lostf1sh.pixelplayeross.data.stats.TrackEndReason
 import com.lostf1sh.pixelplayeross.data.stats.trackEndReasonFromTransition
 import com.lostf1sh.pixelplayeross.data.service.player.AndroidOutputReader
@@ -534,6 +535,9 @@ class MusicService : MediaLibraryService() {
         // First, so a session that opens below books its time against the audio that is playing now (B28a).
         pushListenAudioFacts()
         val context = listenContextOf(player, mediaItem)
+        val trackMetadata = mediaItem.mediaMetadata.let {
+            ListenTrackMetadata.from(it.title, it.artist, it.albumTitle)
+        }
         listeningStatsTracker.setQueueSource(PlaybackOrigin.from(mediaItem)?.source())
         // The library identity is not passed: the item carries the locator only, and the tracker asks for the identity
         // itself, off the main thread, when the session opens (an external item has none and records none).
@@ -546,6 +550,7 @@ class MusicService : MediaLibraryService() {
                 isPlaying = player.isPlaying,
                 previousEndReason = previousEndReason,
                 context = context,
+                trackMetadata = trackMetadata,
             )
         } else {
             listeningStatsTracker.ensureSession(
@@ -555,6 +560,7 @@ class MusicService : MediaLibraryService() {
                 fallbackDurationMs = fallbackDurationMs,
                 isPlaying = player.isPlaying,
                 context = context,
+                trackMetadata = trackMetadata,
             )
         }
     }

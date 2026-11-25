@@ -103,6 +103,7 @@ class PlaybackStatsRepository @Inject constructor(
      * @property itemDurationMs the track's length when the listen ended, 0 or less never recorded.
      * @property audio the route, signal and source facts that carried it ([ListenAudioFacts]).
      * @property context where the play came from and whether shuffle was on ([ListenContext]).
+     * @property trackMetadata the recorded track names, when available.
      */
     data class PlaybackEvent(
         val songId: String,
@@ -117,6 +118,7 @@ class PlaybackStatsRepository @Inject constructor(
         val itemDurationMs: Long? = null,
         val audio: ListenAudioFacts? = null,
         val context: ListenContext? = null,
+        val trackMetadata: ListenTrackMetadata? = null,
     )
 
     /**
@@ -154,6 +156,7 @@ class PlaybackStatsRepository @Inject constructor(
         itemDurationMs: Long? = null,
         audio: ListenAudioFacts? = null,
         context: ListenContext? = null,
+        trackMetadata: ListenTrackMetadata? = null,
     ) = withContext(Dispatchers.IO) {
         if (songId.isBlank()) return@withContext
         val coercedTimestamp = timestamp.coerceAtLeast(0L)
@@ -173,6 +176,7 @@ class PlaybackStatsRepository @Inject constructor(
                 itemDurationMs = itemDurationMs,
                 audio = audio,
                 context = context,
+                trackMetadata = trackMetadata,
             )
         )
         val written = writeGate.withLock { synchronized(fileLock) { appendLocked(sanitizedEvent) } }
@@ -449,6 +453,13 @@ class PlaybackStatsRepository @Inject constructor(
             itemDurationMs = event.itemDurationMs?.takeIf { it > 0L },
             audio = event.audio?.let(::sanitizeAudio),
             context = event.context?.let(::sanitizeContext),
+            trackMetadata = event.trackMetadata?.let { names ->
+                ListenTrackMetadata.from(
+                    names.title.take(MAX_TRACK_NAME_LENGTH),
+                    names.artist?.take(MAX_TRACK_NAME_LENGTH),
+                    names.album?.take(MAX_TRACK_NAME_LENGTH),
+                )
+            },
         )
     }
 
@@ -482,6 +493,7 @@ class PlaybackStatsRepository @Inject constructor(
         private const val MAX_PLAYBACK_HISTORY_LIMIT = 5_000
         private const val MAX_WIRE_ID_LENGTH = 64
         private const val MAX_WIRE_TEXT_LENGTH = 128
+        private const val MAX_TRACK_NAME_LENGTH = 1024
 
         /** How much of the end of the file an append looks at to find the closing bracket. */
         private const val TAIL_BYTES = 64

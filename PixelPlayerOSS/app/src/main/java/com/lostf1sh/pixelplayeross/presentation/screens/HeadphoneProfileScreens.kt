@@ -29,7 +29,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.lostf1sh.pixelplayeross.ui.ds.dapReadableUnchecked
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,8 +78,20 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.HeadphoneProfilesViewM
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.SafetyVolumeViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.safetyMaxOutputCompatible
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.safetyMaxOutputState
-import com.lostf1sh.pixelplayeross.data.volume.SafetyMaxCalibrationResult
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.ui.platform.LocalContext
+import com.lostf1sh.pixelplayeross.data.volume.SafetyMaxCalibrationResult
+import com.lostf1sh.pixelplayeross.data.volume.SafetyMaxNotificationPromptPolicy
+import com.lostf1sh.pixelplayeross.presentation.components.NotificationsOffNotice
+import com.lostf1sh.pixelplayeross.presentation.components.SafetyMaxNotificationPromptSheet
+import com.lostf1sh.pixelplayeross.presentation.components.finishNotificationPermissionFlow
+import com.lostf1sh.pixelplayeross.presentation.components.isNotificationPermissionMissing
+import com.lostf1sh.pixelplayeross.presentation.components.launchPostNotificationsRequest
+import com.lostf1sh.pixelplayeross.presentation.components.openAppNotificationSettings
+import com.lostf1sh.pixelplayeross.presentation.components.rememberNotificationPermissionMissing
 import kotlin.math.roundToInt
 
 /** The known-headphones route. B21: a host that joins the state and the actions for [KnownHeadphonesContent]. */
@@ -213,16 +228,19 @@ fun HeadphoneProfileScreen(
     val volumeState by volumeViewModel.state.collectAsStateWithLifecycle()
     val eqState by equalizerViewModel.uiState.collectAsStateWithLifecycle()
     val audio by equalizerViewModel.audioStatus.collectAsStateWithLifecycle()
-    val state = remember(profileId, profiles, eqState, audio, volumeState) {
-        HeadphoneProfileScreenState.from(profileId, profiles, eqState, audio, volumeState)
+    val context = LocalContext.current
+    val notificationsOff = rememberNotificationPermissionMissing()
+    val state = remember(profileId, profiles, eqState, audio, volumeState, notificationsOff) {
+        HeadphoneProfileScreenState.from(profileId, profiles, eqState, audio, volumeState, notificationsOff = notificationsOff)
     }
-    val actions = remember(viewModel, equalizerViewModel, onBack, onOpenEqualizer, onOpenSafetyMax) {
+    val actions = remember(viewModel, equalizerViewModel, onBack, onOpenEqualizer, onOpenSafetyMax, context) {
         HeadphoneProfileScreenActionsImpl(
             profiles = viewModel,
             eq = equalizerViewModel,
             back = onBack,
             openEqualizer = onOpenEqualizer,
             openSafetyMax = onOpenSafetyMax,
+            openNotificationSettings = { openAppNotificationSettings(context) },
         )
     }
     HeadphoneProfileScreenContent(state, actions)
@@ -436,6 +454,10 @@ fun HeadphoneProfileScreenContent(state: HeadphoneProfileScreenState, actions: H
                             )
                             Spacer(Modifier.height(DapSpacing.Xs))
                             SafetyMaxOutputStatus(safety.outputState, safety.backendKind)
+                            if (safety.ceilingRaw != null && state.notificationsOff) {
+                                Spacer(Modifier.height(DapSpacing.Sm))
+                                NotificationsOffNotice(onOpenSettings = actions::onOpenNotificationSettings)
+                            }
                             Spacer(Modifier.height(DapSpacing.Md))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -573,8 +595,51 @@ fun SafetyMaxVolumeScreen(
 ) {
     val headphones by headphoneViewModel.uiState.collectAsStateWithLifecycle()
     val volumeState by volumeViewModel.state.collectAsStateWithLifecycle()
-    val state = remember(profileId, headphones, volumeState) { SafetyMaxScreenState.from(profileId, headphones, volumeState) }
-    val actions = remember(volumeViewModel, onBack) { SafetyMaxScreenActionsImpl(volumeViewModel, onBack) }
+    val notificationPromptAsked by volumeViewModel.notificationPromptAsked.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val resumeMissing = rememberNotificationPermissionMissing()
+    var permissionMissingAfterDialog by remember { mutableStateOf<Boolean?>(null) }
+    // Reviewer 11-24: a later return from Settings (resume) replaces the dialog's answer, so the line never sticks.
+    LaunchedEffect(resumeMissing) { permissionMissingAfterDialog = null }
+    val notificationsOff = permissionMissingAfterDialog ?: resumeMissing
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) {
+        finishNotificationPermissionFlow(context)
+        permissionMissingAfterDialog = isNotificationPermissionMissing(context)
+    }
+    val dapLevel = remember(volumeState) { volumeViewModel.currentDapLevel() }
+    val canPrompt = SafetyMaxNotificationPromptPolicy.shouldAskAfterCeilingSaved(
+        androidApi = Build.VERSION.SDK_INT,
+        permissionGranted = !notificationsOff,
+        ceilingJustSaved = true,
+        alreadyAsked = notificationPromptAsked,
+        dapLevel = dapLevel,
+    )
+    val state = remember(profileId, headphones, volumeState, notificationsOff, canPrompt) {
+        SafetyMaxScreenState.from(
+            profileId = profileId,
+            profiles = headphones,
+            volume = volumeState,
+            notificationsOff = notificationsOff,
+            canPromptForNotifications = canPrompt,
+        )
+    }
+    val actions = remember(volumeViewModel, onBack, context, permissionLauncher) {
+        SafetyMaxScreenActionsImpl(
+            volume = volumeViewModel,
+            back = onBack,
+            openNotificationSettings = { openAppNotificationSettings(context) },
+            requestNotificationPermission = {
+                launchPostNotificationsRequest(
+                    context = context,
+                    onLaunched = volumeViewModel::markNotificationPromptAsked,
+                    launchPermission = permissionLauncher::launch,
+                )
+            },
+            dismissNotificationPrompt = volumeViewModel::markNotificationPromptAsked,
+        )
+    }
     SafetyMaxScreenContent(state, actions)
 }
 
@@ -587,6 +652,7 @@ fun SafetyMaxScreenContent(state: SafetyMaxScreenState, actions: SafetyMaxScreen
     var notSaved by remember(profileId, volume.backend.outputContextId, volume.backend.kind, volume.selectedProfileId) {
         mutableStateOf<SafetyMaxCalibrationResult?>(null)
     }
+    var showNotificationPrompt by remember { mutableStateOf(false) }
     val outputCompatible = safetyMaxOutputCompatible(volume.backend)
     DapBackScaffold(Modifier.fillMaxSize(), onBack = actions::onBack) {
         LazyColumn(
@@ -667,6 +733,7 @@ fun SafetyMaxScreenContent(state: SafetyMaxScreenState, actions: SafetyMaxScreen
                                 checked = profile.safetyMax.enabled,
                                 onCheckedChange = actions::onSafetyMaxEnabledChange,
                                 enabled = volume.selectedProfileId == profileId && profile.safetyMax.calibrations.isNotEmpty(),
+                                colors = SwitchDefaults.colors().dapReadableUnchecked(),
                             )
                         }
                         Text(stringResource(R.string.safety_max_saved_limit), style = MaterialTheme.typography.bodySmall)
@@ -676,6 +743,9 @@ fun SafetyMaxScreenContent(state: SafetyMaxScreenState, actions: SafetyMaxScreen
                             profile.safetyMax.calibrations.isNotEmpty() -> stringResource(R.string.safety_max_other_output)
                             else -> stringResource(R.string.safety_max_not_set)
                         })
+                        if (state.notificationsOff) {
+                            NotificationsOffNotice(onOpenSettings = actions::onOpenNotificationSettings)
+                        }
                     }
                 }
             }
@@ -695,7 +765,12 @@ fun SafetyMaxScreenContent(state: SafetyMaxScreenState, actions: SafetyMaxScreen
                     )
                     FilledTonalButton(
                         onClick = {
-                            actions.onCalibrate { result -> notSaved = result.takeUnless { it == SafetyMaxCalibrationResult.SAVED } }
+                            actions.onCalibrate { result ->
+                                notSaved = result.takeUnless { it == SafetyMaxCalibrationResult.SAVED }
+                                if (result == SafetyMaxCalibrationResult.SAVED && state.canPromptForNotifications) {
+                                    showNotificationPrompt = true
+                                }
+                            }
                         },
                         enabled = outputCompatible && volume.selectedProfileId == profileId,
                         modifier = Modifier.fillMaxWidth(),
@@ -709,6 +784,18 @@ fun SafetyMaxScreenContent(state: SafetyMaxScreenState, actions: SafetyMaxScreen
                     }
                 }
             }
+        }
+        if (showNotificationPrompt) {
+            SafetyMaxNotificationPromptSheet(
+                onAllow = {
+                    showNotificationPrompt = false
+                    actions.onRequestNotificationPermission()
+                },
+                onNotNow = {
+                    showNotificationPrompt = false
+                    actions.onDismissNotificationPrompt()
+                },
+            )
         }
     }
 }

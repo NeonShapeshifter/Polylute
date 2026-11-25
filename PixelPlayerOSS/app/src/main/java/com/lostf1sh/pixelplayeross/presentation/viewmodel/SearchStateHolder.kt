@@ -4,9 +4,10 @@ import com.lostf1sh.pixelplayeross.data.model.SearchFilterType
 import com.lostf1sh.pixelplayeross.data.model.SearchHistoryItem
 import com.lostf1sh.pixelplayeross.data.model.SearchResultItem
 import com.lostf1sh.pixelplayeross.presentation.utils.primaryText
-import com.lostf1sh.pixelplayeross.presentation.utils.relevanceRank
+import com.lostf1sh.pixelplayeross.presentation.utils.relevanceRankFolded
 import com.lostf1sh.pixelplayeross.presentation.utils.typeOrder
 import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
+import com.lostf1sh.pixelplayeross.utils.TextFold
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -104,12 +105,15 @@ class SearchStateHolder @Inject constructor(
 
                     try {
                         val currentFilter = _selectedSearchFilter.value
+                        val needle = TextFold.fold(normalizedQuery)
                         musicRepository.searchAll(normalizedQuery, currentFilter).collect { resultsList ->
-                            val sortedResults = resultsList.sortedWith(
-                                compareBy<SearchResultItem> { it.typeOrder() }
-                                    .thenBy { it.relevanceRank(normalizedQuery) }
-                                    .thenBy { it.primaryText.lowercase() }
-                            )
+                            val sortedResults = withContext(Dispatchers.Default) {
+                                resultsList.sortedWith(
+                                    compareBy<SearchResultItem> { it.typeOrder() }
+                                        .thenBy { it.relevanceRankFolded(needle) }
+                                        .thenBy { TextFold.fold(it.primaryText) }
+                                )
+                            }
 
                             if (request.requestId != latestSearchRequestId.get()) {
                                 return@collect

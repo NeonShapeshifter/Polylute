@@ -2,7 +2,7 @@ package com.lostf1sh.pixelplayeross.presentation.viewmodel
 
 import com.lostf1sh.pixelplayeross.data.model.LibraryTabId
 import com.lostf1sh.pixelplayeross.data.model.Song
-import com.lostf1sh.pixelplayeross.presentation.utils.SearchGenreMatcher
+import com.lostf1sh.pixelplayeross.utils.TextFold
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -17,11 +17,13 @@ class LibraryTabSearch {
     fun matches(tab: LibraryTabId, vararg text: String): Boolean = matchesQuery(query(tab), *text)
     companion object {
         fun matchesQuery(query: String, vararg text: String): Boolean {
-            val needle = SearchGenreMatcher.fold(query)
-            return needle.isEmpty() || text.any { needle in SearchGenreMatcher.fold(it) }
+            val needle = TextFold.fold(query)
+            return needle.isEmpty() || text.any { needle in TextFold.fold(it) }
         }
         fun songMatches(query: String, song: Song): Boolean = matchesQuery(query, song.title, song.displayArtist, song.album, song.path)
-        fun <T> filter(rows: List<T>, query: String, text: (T) -> String): List<T> =
-            if (query.isBlank()) rows else rows.filter { matchesQuery(query, text(it)) }
+        fun <T> filter(rows: List<T>, query: String, text: (T) -> String): List<T> {
+            val needle = TextFold.fold(query)
+            return if (needle.isEmpty()) rows else rows.filter { needle in TextFold.fold(text(it)) }
+        }
     }
 }

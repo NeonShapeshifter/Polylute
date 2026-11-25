@@ -1,8 +1,10 @@
 package com.lostf1sh.pixelplayeross.ui.ds
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
@@ -10,11 +12,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -22,7 +31,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -47,9 +61,98 @@ fun <T> DapSegmentedPicker(
     enabled: Boolean = true,
     /** Segments share the width equally. Used when the picker has a line of its own. */
     fillWidth: Boolean = false,
+    /** Scrolls horizontally instead of compressing segments when many options exist, keeping [selected] in view. */
+    scrollable: Boolean = false,
     /** The track the segments sit on: the page's surface, or the page itself when the picker is on a surface. */
     containerColor: Color = Dap.panel,
 ) {
+    if (scrollable) {
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+            val needsScroll = remember(options, constraints.maxWidth, density) {
+                val chipPadPx = with(density) { (DapSpacing.Md * 2).roundToPx() }
+                val gapPx = with(density) { 2.dp.roundToPx() }
+                val trackPadPx = with(density) { 4.dp.roundToPx() }
+                val totalWidth = trackPadPx +
+                    options.sumOf { opt -> textMeasurer.measure(label(opt), style = DapType.Action).size.width + chipPadPx } +
+                    (options.size - 1).coerceAtLeast(0) * gapPx
+                totalWidth > constraints.maxWidth
+            }
+            if (!needsScroll) {
+                DapSegmentedPicker(
+                    options = options,
+                    selected = selected,
+                    onSelect = onSelect,
+                    label = label,
+                    enabled = enabled,
+                    fillWidth = true,
+                    scrollable = false,
+                    containerColor = containerColor,
+                )
+            } else {
+                val scrollState = rememberScrollState()
+                val chipBounds = remember { mutableStateMapOf<T, IntRange>() }
+                var viewportWidthPx by remember { mutableIntStateOf(0) }
+
+                LaunchedEffect(selected, chipBounds[selected], viewportWidthPx) {
+                    val bounds = chipBounds[selected] ?: return@LaunchedEffect
+                    if (viewportWidthPx <= 0) return@LaunchedEffect
+                    val target = when {
+                        bounds.first < scrollState.value -> bounds.first
+                        bounds.last > scrollState.value + viewportWidthPx -> bounds.last - viewportWidthPx
+                        else -> return@LaunchedEffect
+                    }
+                    scrollState.animateScrollTo(target.coerceIn(0, scrollState.maxValue))
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(DapRadius.Surface))
+                        .background(containerColor)
+                        .onSizeChanged { viewportWidthPx = it.width },
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(scrollState)
+                            .padding(2.dp)
+                            .selectableGroup(),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        options.forEach { option ->
+                            val isSelected = option == selected
+                            Box(
+                                modifier = Modifier
+                                    .defaultMinSize(minHeight = 44.dp)
+                                    .onGloballyPositioned { coords ->
+                                        val left = coords.positionInParent().x.toInt()
+                                        val right = left + coords.size.width
+                                        chipBounds[option] = left..right
+                                    }
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(if (isSelected) Dap.primaryText else Color.Transparent)
+                                    .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) { onSelect(option) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = label(option),
+                                    style = DapType.Action,
+                                    color = if (isSelected) Dap.onFill else Dap.secondaryText,
+                                    maxLines = 1,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = DapSpacing.Md, vertical = DapSpacing.Sm),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
+
     Row(
         modifier = modifier
             .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier.width(IntrinsicSize.Max))

@@ -8,17 +8,17 @@ import org.junit.Test
 class B43VersionTest {
     @Test fun `the next release has its own version and user changelog`() {
         val properties = Properties().apply { File("../gradle.properties").inputStream().use { load(it) } }
-        assertThat(properties.getProperty("APP_VERSION_NAME")).isEqualTo("1.4.0-rc.3")
-        assertThat(properties.getProperty("APP_VERSION_CODE")).isEqualTo("10")
+        assertThat(properties.getProperty("APP_VERSION_NAME")).isEqualTo("1.4.0")
+        assertThat(properties.getProperty("APP_VERSION_CODE")).isEqualTo("12")
         val changelog = File("../CHANGELOG.md").readText()
         val headings = Regex("(?m)^## (.+)$").findAll(changelog).map { it.groupValues[1] }.toList()
-        assertThat(headings.take(2)).containsExactly("1.4.0-rc.3", "1.4.0-rc.2").inOrder()
+        assertThat(headings.take(2)).containsExactly("1.4.0", "1.4.0-rc.4").inOrder()
         assertThat(changelog.substringAfter("## 1.2.0").substringBefore("## 1.1.1"))
             .contains("Purity has one playback path")
         val build = File("build.gradle.kts").readText()
-        assertThat(build).contains("toInt() ?: 10")
-        assertThat(build).contains("?: \"1.4.0-rc.3\"")
-        assertThat(File("../fastlane/metadata/android/en-US/changelogs/10.txt").isFile).isTrue()
-        assertThat(File("../fastlane/metadata/android/en-US/changelogs/10.txt").readText().length).isAtMost(500)
+        assertThat(build).contains("toInt() ?: 12")
+        assertThat(build).contains("?: \"1.4.0\"")
+        assertThat(File("../fastlane/metadata/android/en-US/changelogs/12.txt").isFile).isTrue()
+        assertThat(File("../fastlane/metadata/android/en-US/changelogs/12.txt").readText().length).isAtMost(500)
     }
 }

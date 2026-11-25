@@ -124,16 +124,17 @@ fun MultiSelectionBottomSheet(
         cornerRadiusBL = evenCornerRadius, smoothnessAsPercentTR = 60
     )
 
+    val sheetScheme = com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current ?: MaterialTheme.colorScheme
     val favoriteButtonCornerRadius by animateDpAsState(
         targetValue = if (allAreLiked) evenCornerRadius else 60.dp,
         animationSpec = tween(durationMillis = 300), label = "FavoriteCornerAnimation"
     )
     val favoriteButtonContainerColor by animateColorAsState(
-        targetValue = if (allAreLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        targetValue = if (allAreLiked) sheetScheme.primary else sheetScheme.surfaceVariant,
         animationSpec = tween(durationMillis = 300), label = "FavoriteContainerColorAnimation"
     )
     val favoriteButtonContentColor by animateColorAsState(
-        targetValue = if (allAreLiked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        targetValue = if (allAreLiked) sheetScheme.onPrimary else sheetScheme.onSurfaceVariant,
         animationSpec = tween(durationMillis = 300), label = "FavoriteContentColorAnimation"
     )
 

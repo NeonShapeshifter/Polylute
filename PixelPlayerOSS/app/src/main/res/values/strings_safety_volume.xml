@@ -88,4 +88,10 @@
     <string name="pristine_held_off_resonance">Off for %1$s: you chose Resonance for it. Change that in the device\'s volume row.</string>
     <!-- B40-fix1 item 1: a held play was not started because the answer's protection could not be confirmed -->
     <string name="fixed_output_toast_not_confirmed">Playback was not started: Polylute could not confirm the lock and the safe start volume in time. Press Play again.</string>
+    <!-- B72: in-context notification permission prompt after saving a Safety Max ceiling, and quiet settings link. -->
+    <string name="safety_max_notif_prompt_title">Let Polylute notify you?</string>
+    <string name="safety_max_notif_prompt_body">When you reach your Safety Max outside Polylute, a notification tells you and lets you raise the limit. Without notifications, you can only raise it inside the app.</string>
+    <string name="safety_max_notif_prompt_allow">Allow</string>
+    <string name="safety_max_notifications_off_note">Notifications are off: you can only raise the limit inside the app</string>
+    <string name="safety_max_open_notification_settings">Notification settings</string>
 </resources>

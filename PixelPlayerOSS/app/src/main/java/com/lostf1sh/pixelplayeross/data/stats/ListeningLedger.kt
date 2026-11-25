@@ -74,7 +74,10 @@ class Occurrence(
     val isRecorded: Boolean,
     val endReason: TrackEndReason?,
     val fragments: List<Fragment>,
-)
+) {
+    val recordedTrackMetadata: ListenTrackMetadata?
+        get() = fragments.firstNotNullOfOrNull { it.event.trackMetadata }
+}
 
 /** Everything the whole history says about one track, by identity. */
 class ItemStats(

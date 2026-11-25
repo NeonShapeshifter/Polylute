@@ -159,14 +159,14 @@ fun LyricsOptionsSheet(
             SheetSection(stringResource(R.string.lyrics_menu_section_reading))
             val left = stringResource(R.string.lyrics_menu_align_left)
             val center = stringResource(R.string.lyrics_menu_align_center)
+            val trackColor = if (Dap.glass != null) Dap.panel else (com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current?.surfaceContainerLow ?: Dap.background)
             DapSegmentedRow(
                 label = stringResource(R.string.lyrics_menu_alignment),
                 options = listOf("left", "center"),
                 selected = lyricsAlignment,
                 onSelect = onLyricsAlignmentChange,
                 optionLabel = { if (it == "left") left else center },
-                // The sheet is the surface; the track sits one step below it, as in the design.
-                containerColor = Dap.background,
+                containerColor = trackColor,
             )
             val sizeLabels = mapOf(
                 LyricsTextSize.SMALL.key to stringResource(R.string.lyrics_menu_size_small),
@@ -180,7 +180,7 @@ fun LyricsOptionsSheet(
                 selected = lyricsTextSize,
                 onSelect = onLyricsTextSizeChange,
                 optionLabel = { sizeLabels.getValue(it) },
-                containerColor = Dap.background,
+                containerColor = trackColor,
             )
             DapSwitchRow(
                 label = stringResource(R.string.lyrics_menu_translation),
@@ -218,34 +218,36 @@ fun LyricsOptionsSheet(
     }
 
     if (showResetDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetDialog = false },
-            containerColor = Dap.surface,
-            shape = RoundedCornerShape(DapRadius.Surface),
-            title = {
-                // An alert is a window of its own: the volume keys must still reach the Safety authority.
-                if (mountInputBridge) {
-                    ModalInputBridge()
-                }
-                Text(stringResource(R.string.lyrics_more_dialog_reset_title), style = DapType.Heading, color = Dap.primaryText)
-            },
-            text = {
-                Text(stringResource(R.string.lyrics_more_dialog_reset_message), style = DapType.Body, color = Dap.secondaryText)
-            },
-            confirmButton = {
-                DapDestructiveAction(
-                    label = stringResource(R.string.action_reset),
-                    onClick = {
-                        showResetDialog = false
-                        onDismissRequest()
-                        onResetLyrics()
-                    },
-                )
-            },
-            dismissButton = {
-                DapTextAction(label = stringResource(R.string.cancel), onClick = { showResetDialog = false })
-            },
-        )
+        com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+            AlertDialog(
+                onDismissRequest = { showResetDialog = false },
+                containerColor = Dap.surface,
+                shape = RoundedCornerShape(DapRadius.Surface),
+                title = {
+                    // An alert is a window of its own: the volume keys must still reach the Safety authority.
+                    if (mountInputBridge) {
+                        ModalInputBridge()
+                    }
+                    Text(stringResource(R.string.lyrics_more_dialog_reset_title), style = DapType.Heading, color = Dap.primaryText)
+                },
+                text = {
+                    Text(stringResource(R.string.lyrics_more_dialog_reset_message), style = DapType.Body, color = Dap.secondaryText)
+                },
+                confirmButton = {
+                    DapDestructiveAction(
+                        label = stringResource(R.string.action_reset),
+                        onClick = {
+                            showResetDialog = false
+                            onDismissRequest()
+                            onResetLyrics()
+                        },
+                    )
+                },
+                dismissButton = {
+                    DapTextAction(label = stringResource(R.string.cancel), onClick = { showResetDialog = false })
+                },
+            )
+        }
     }
 }
 
@@ -335,11 +337,12 @@ private fun LyricsSyncRow(offsetMs: Int, onOffsetChange: (Int) -> Unit) {
 
 @Composable
 private fun SquareButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit) {
+    val fill = if (Dap.glass != null) Dap.panel else (com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current?.surfaceContainerLow ?: Dap.background)
     Box(
         Modifier
             .size(40.dp)
             .clip(RoundedCornerShape(DapRadius.Surface))
-            .background(Dap.background)
+            .background(fill)
             .border(1.dp, Dap.border, RoundedCornerShape(DapRadius.Surface))
             .semantics { contentDescription = description }
             .clickable(role = Role.Button, onClick = onClick),

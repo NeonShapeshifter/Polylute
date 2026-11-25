@@ -368,7 +368,7 @@ private fun AddToPlaylistList(
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun UserPlaylistRow(
+internal fun UserPlaylistRow(
     playlist: Playlist,
     observeSongs: (List<String>) -> Flow<List<Song>>,
     onClick: () -> Unit,
@@ -378,6 +378,10 @@ private fun UserPlaylistRow(
     selectionIndex: Int = -1,
     checked: Boolean? = null,
     onCheckedChange: (Boolean) -> Unit = {},
+    // Review 11-25 (B77): the import review reuses this exact row for a playlist found in an export ("32 of 40 songs"
+    // and its include switch). Library callers pass neither and draw as before.
+    subtitle: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val previewSongIds = remember(playlist.songIds) { playlist.songIds.take(4) }
     val initial = remember(previewSongIds) { if (previewSongIds.isEmpty()) emptyList<Song>() else null }
@@ -411,7 +415,7 @@ private fun UserPlaylistRow(
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    text = formatSongCountLabel(playlist.songIds.size),
+                    text = subtitle ?: formatSongCountLabel(playlist.songIds.size),
                     style = DapType.Note,
                     color = Dap.secondaryText,
                     maxLines = 1,
@@ -431,6 +435,10 @@ private fun UserPlaylistRow(
             if (checked != null) {
                 Spacer(Modifier.width(DapSpacing.Sm))
                 Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+            }
+            if (trailing != null) {
+                Spacer(Modifier.width(DapSpacing.Md))
+                trailing()
             }
         }
         DapDivider()

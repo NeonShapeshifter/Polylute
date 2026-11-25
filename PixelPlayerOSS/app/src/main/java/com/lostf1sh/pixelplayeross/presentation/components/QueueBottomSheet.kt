@@ -1392,7 +1392,7 @@ fun SaveQueueAsPlaylistSheet(
     val filteredSongs = remember(searchQuery, songs) {
         if (searchQuery.isBlank()) songs
         else songs.filter {
-            it.title.contains(searchQuery, true) || it.artist.contains(searchQuery, true)
+            com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryTabSearch.matchesQuery(searchQuery, it.title, it.artist)
         }
     }
 

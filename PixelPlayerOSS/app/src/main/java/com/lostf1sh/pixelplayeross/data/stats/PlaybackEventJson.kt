@@ -72,6 +72,7 @@ internal object PlaybackEventJson {
         var itemDurationMs: Long? = null
         var audio: ListenAudioFacts? = null
         var context: ListenContext? = null
+        var trackMetadata: ListenTrackMetadata? = null
         reader.beginObject()
         while (reader.hasNext()) {
             when (reader.nextName()) {
@@ -87,6 +88,7 @@ internal object PlaybackEventJson {
                 "itemDurationMs" -> itemDurationMs = reader.longOrNull()
                 "audio" -> audio = readAudio(reader)
                 "context" -> context = readContext(reader)
+                "trackMetadata" -> trackMetadata = readTrackMetadata(reader)
                 else -> reader.skipValue()
             }
         }
@@ -105,6 +107,7 @@ internal object PlaybackEventJson {
             itemDurationMs = itemDurationMs,
             audio = audio,
             context = context,
+            trackMetadata = trackMetadata,
         )
     }
 
@@ -158,6 +161,27 @@ internal object PlaybackEventJson {
         }
         reader.endObject()
         return context
+    }
+
+    private fun readTrackMetadata(reader: JsonReader): ListenTrackMetadata? {
+        if (reader.peek() != JsonToken.BEGIN_OBJECT) {
+            reader.skipValue()
+            return null
+        }
+        var title: String? = null
+        var artist: String? = null
+        var album: String? = null
+        reader.beginObject()
+        while (reader.hasNext()) {
+            when (reader.nextName()) {
+                "title" -> title = reader.stringOrNull()
+                "artist" -> artist = reader.stringOrNull()
+                "album" -> album = reader.stringOrNull()
+                else -> reader.skipValue()
+            }
+        }
+        reader.endObject()
+        return ListenTrackMetadata.from(title, artist, album)
     }
 
     private fun JsonReader.stringOrNull(): String? = when (peek()) {

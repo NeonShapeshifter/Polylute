@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.Settings
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupHistoryEntry
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
+import com.lostf1sh.pixelplayeross.data.historyimport.UniversalExportKind
 import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
@@ -144,6 +145,7 @@ internal class AudioSettingsActionsImpl(
     private val device: DeviceControlViewModel,
     private val navigate: (String) -> Unit,
     private val showFixedOutputNotice: () -> Unit = {},
+    private val openNotificationSettings: () -> Unit = {},
 ) : AudioSettingsActions {
     // B22: the Pure Direct switch lives on this page now. It is the same preference and the same action the Settings
     // root had: `DeviceControlViewModel.setPristineMode`, with its confirmation of a rise.
@@ -171,13 +173,17 @@ internal class AudioSettingsActionsImpl(
     override fun onDacShareChange(value: Boolean) = vm.setDacShareEnabled(value)
     override fun onResonanceLimiterChange(value: Boolean) = vm.setResonanceLimiterEnabled(value)
     override fun onAskUsbPermission() = vm.askForUsbPermissionAgain()
+    override fun onOpenNotificationSettings() = openNotificationSettings()
 }
 
 internal class AboutSettingsActionsImpl(private val navigate: (String) -> Unit) : AboutSettingsActions {
     override fun onOpenAbout() = navigate(Screen.About.route)
 }
 
-internal class BackupSettingsActionsImpl(private val vm: BackupSettingsViewModel) : BackupSettingsActions {
+internal class BackupSettingsActionsImpl(
+    private val vm: BackupSettingsViewModel,
+    private val navigate: (String) -> Unit = {},
+) : BackupSettingsActions {
     override fun onDismissInfo() = vm.setBackupInfoDismissed(true)
     override fun onExport(uri: Uri, sections: Set<BackupSection>, passphrase: String?) =
         vm.exportAppData(uri, sections, passphrase)
@@ -185,8 +191,13 @@ internal class BackupSettingsActionsImpl(private val vm: BackupSettingsViewModel
     override fun onDismissEncryptedBackupPrompt() = vm.dismissEncryptedBackupPrompt()
     override fun onClearRestorePlan() = vm.clearRestorePlan()
     override fun onUpdateRestorePlanSelection(selected: Set<BackupSection>) = vm.updateRestorePlanSelection(selected)
+    override fun onUpdateRestoreMode(mode: com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode) =
+        vm.updateRestoreMode(mode)
     override fun onRestore(uri: Uri) = vm.restoreFromPlan(uri)
     override fun onRemoveBackupHistoryEntry(entry: BackupHistoryEntry) = vm.removeBackupHistoryEntry(entry)
+    override fun onOpenHistoryImport() = navigate(Screen.HistoryImport.route)
+    override fun onRemoveImportedHistory(importId: String) = vm.removeImportedHistory(importId)
+    override fun onExportUniversal(uri: Uri, kind: UniversalExportKind) = vm.exportUniversal(uri, kind)
 }
 
 internal class MaintenanceToolsActionsImpl(

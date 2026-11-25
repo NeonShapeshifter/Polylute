@@ -76,7 +76,15 @@ class B41NoGlassPaletteTest {
             val p = theme.palette
             val look = GlassBands.of(p, p.accentColor(DapAccent.Sage))
             val g = p.onGlass(look)
-            assertThat(g.copy(primaryText = p.primaryText, secondaryText = p.secondaryText, tertiaryText = p.tertiaryText, glass = null)).isEqualTo(p)
+            assertThat(g.copy(primaryText = p.primaryText, secondaryText = p.secondaryText, tertiaryText = p.tertiaryText, warning = p.warning, error = p.error, glass = null)).isEqualTo(p)
+            if (!p.isLight) {
+                val topColor = Color(GlassLuma.greyArgb(GlassBands.TOP))
+                val laTop = GlassLuma.luminance(topColor.red, topColor.green, topColor.blue)
+                fun ratio(c: Color): Float =
+                    GlassLuma.contrast(GlassLuma.luminance(c.red, c.green, c.blue), laTop)
+                assertThat(ratio(g.error)).isAtLeast(GlassBands.AA_TEXT)
+                assertThat(ratio(g.warning)).isAtLeast(GlassBands.AA_TEXT)
+            }
         }
     }
 

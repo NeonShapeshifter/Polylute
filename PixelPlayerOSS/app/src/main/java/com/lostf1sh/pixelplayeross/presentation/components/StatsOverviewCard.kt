@@ -131,7 +131,7 @@ private fun OverviewContent(summary: StatsReport) {
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = topTrack.item.title,
+                    text = topTrack.title,
                     style = DapType.MediaRow,
                     color = Dap.primaryText,
                     maxLines = 1,
@@ -140,7 +140,7 @@ private fun OverviewContent(summary: StatsReport) {
                 Text(
                     text = stringResource(
                         R.string.presentation_batch_g_stats_overview_top_track_line,
-                        topTrack.item.artistLine,
+                        topTrack.artistLine,
                         topTrack.plays
                     ),
                     style = DapType.Caption,

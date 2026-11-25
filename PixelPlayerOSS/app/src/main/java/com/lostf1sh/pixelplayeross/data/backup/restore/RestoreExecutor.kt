@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 
 @Singleton
@@ -27,6 +28,11 @@ class RestoreExecutor @Inject constructor(
     private val validationPipeline: ValidationPipeline,
     private val handlers: Map<BackupSection, @JvmSuppressWildcards BackupModuleHandler>
 ) {
+    private val lastResolutionCounts = AtomicReference(BackupResolutionCounts())
+
+    fun consumeLastResolutionCounts(): BackupResolutionCounts =
+        lastResolutionCounts.getAndSet(BackupResolutionCounts())
+
     companion object {
         private const val TAG = "RestoreExecutor"
     }
@@ -36,6 +42,7 @@ class RestoreExecutor @Inject constructor(
         plan: RestorePlan,
         onProgress: (BackupTransferProgressUpdate) -> Unit
     ): RestoreResult = withContext(Dispatchers.IO) {
+        lastResolutionCounts.set(BackupResolutionCounts())
         val selectedModules = plan.selectedModules.toList().sortedBy { it.key }
         val totalSteps = selectedModules.size * 2 + 3
         var step = 0
@@ -74,6 +81,7 @@ class RestoreExecutor @Inject constructor(
         )
 
         val restoredModules = mutableListOf<BackupSection>()
+        var accumulatedResolution = BackupResolutionCounts()
         var currentSection: BackupSection? = null
         try {
             selectedModules.forEach { section ->
@@ -123,7 +131,13 @@ class RestoreExecutor @Inject constructor(
 
                 val handler = handlers[section]
                     ?: throw IllegalStateException("No handler for module ${section.key}")
-                handler.restore(payload)
+                val sectionResolution = if (handler is com.lostf1sh.pixelplayeross.data.backup.module.ReportableRestoreHandler) {
+                    handler.restoreWithReport(payload, plan.restoreMode)
+                } else {
+                    handler.restore(payload)
+                    BackupResolutionCounts()
+                }
+                accumulatedResolution += sectionResolution
                 restoredModules.add(section)
             }
         } catch (e: Exception) {
@@ -179,6 +193,7 @@ class RestoreExecutor @Inject constructor(
             BackupMessage.of(R.string.backup_step_restore_done_detail),
         )
 
+        lastResolutionCounts.set(accumulatedResolution)
         RestoreResult.Success
     }
 

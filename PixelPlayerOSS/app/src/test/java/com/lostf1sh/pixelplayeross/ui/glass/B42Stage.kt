@@ -42,6 +42,13 @@ internal class B42Setup(
         systemDark = true,
     )
     val look: AlbumArtColors.Look = AlbumArtColors.look(drawnTheme.palette, cover.dominant, accent)
+    val coverScheme: androidx.compose.material3.ColorScheme =
+        com.lostf1sh.pixelplayeross.ui.theme.generateColorSchemeFromSeed(
+            androidx.compose.ui.graphics.Color(
+                com.lostf1sh.pixelplayeross.ui.theme.selectSeedColorArgbFromPixels(cover.pixels)
+            ),
+            com.lostf1sh.pixelplayeross.data.preferences.AlbumArtPaletteStyle.TONAL_SPOT,
+        ).dark
     val glass: GlassLook = GlassBands.of(look.palette, look.accent)
     val field: GlassField = GlassFieldMath.field(
         when (kind) {
@@ -77,6 +84,8 @@ internal fun B42GlassApp(setup: B42Setup, scene: CoverGlassScene, expansion: Flo
         darkTheme = setup.dark, baseTheme = setup.drawnTheme, accent = setup.accent,
         palette = if (glassOn) setup.palette else setup.look.palette,
         accentColorOverride = if (glassOn) setup.glass.ink.accent else setup.look.accent,
+        coverSchemeOverride = setup.coverScheme,
+        coverAccentOverride = setup.look.accent,
     ) {
         CompositionLocalProvider(LocalCoverGlass provides (if (glassOn) scene else null)) {
             // the root of the app: a Surface in the Material background, which is what gives every text with no colour of its own (and every

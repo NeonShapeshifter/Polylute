@@ -47,6 +47,7 @@ class GlassSheetBoundaryTest {
         "presentation/components/PlaylistBottomSheet.kt" to 1,
         "presentation/components/PlaylistMultiSelectionBottomSheet.kt" to 1,
         "presentation/components/ReorderTabsSheet.kt" to 1,
+        "presentation/components/SafetyMaxNotificationPromptSheet.kt" to 1,
         "presentation/components/SongInfoBottomSheet.kt" to 1,
         "presentation/components/SongPickerBottomSheet.kt" to 1,
         "presentation/components/subcomps/LyricsModeSheet.kt" to 1,
@@ -56,7 +57,6 @@ class GlassSheetBoundaryTest {
         "presentation/screens/FolderTabControls.kt" to 1,
         "presentation/screens/DacEqualizerScreen.kt" to 2,
         "presentation/screens/LibraryScreen.kt" to 1,
-        "presentation/screens/PlaylistDetailScreen.kt" to 1,
         "presentation/screens/SettingsComponents.kt" to 1,
         "presentation/settings/MaintenanceTools.kt" to 1,
     )
@@ -129,7 +129,7 @@ class GlassSheetBoundaryTest {
         "presentation/components/EditAlbumSheet.kt" to 1,              // B57 1.3: the whole-album tag editor, a full-screen dialog like the two above
         "presentation/screens/CreatePlaylistScreen.kt" to 2,           // create and edit a playlist
         "presentation/components/BackupModuleSelectionDialog.kt" to 1, // choose what a restore brings back
-        "presentation/settings/BackupDialogs.kt" to 2,                 // the backup's export and import pages
+        "presentation/settings/BackupDialogs.kt" to 3,                 // the backup's export, import, and universal export pages
     )
 
     /** Small dialogs: a card over a dimmed app, opaque and tinted by the cover, as it was. */

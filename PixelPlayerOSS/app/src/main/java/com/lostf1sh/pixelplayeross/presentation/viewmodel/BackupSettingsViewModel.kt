@@ -16,6 +16,9 @@ import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupTransferProgressUpdate
 import com.lostf1sh.pixelplayeross.data.backup.model.RestoreResult
 import com.lostf1sh.pixelplayeross.data.backup.model.resolve
+import com.lostf1sh.pixelplayeross.data.historyimport.ImportedHistoryStore
+import com.lostf1sh.pixelplayeross.data.historyimport.UniversalExportKind
+import com.lostf1sh.pixelplayeross.data.historyimport.UniversalExporter
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.worker.SyncManager
 import com.lostf1sh.pixelplayeross.presentation.settings.BackupSettingsState
@@ -46,7 +49,24 @@ class BackupSettingsViewModel @Inject constructor(
     private val syncManager: SyncManager,
     private val backupManager: BackupManager,
     @ApplicationContext private val context: Context,
+    private val importedHistoryStore: ImportedHistoryStore?,
+    private val universalExporter: UniversalExporter? = null,
 ) : ViewModel() {
+
+    constructor(
+        userPreferencesRepository: UserPreferencesRepository,
+        syncManager: SyncManager,
+        backupManager: BackupManager,
+        context: Context,
+    ) : this(userPreferencesRepository, syncManager, backupManager, context, null, null)
+
+    constructor(
+        userPreferencesRepository: UserPreferencesRepository,
+        syncManager: SyncManager,
+        backupManager: BackupManager,
+        context: Context,
+        importedHistoryStore: ImportedHistoryStore?,
+    ) : this(userPreferencesRepository, syncManager, backupManager, context, importedHistoryStore, null)
 
     private val _uiState = MutableStateFlow(BackupSettingsState())
     val uiState: StateFlow<BackupSettingsState> = _uiState.asStateFlow()
@@ -67,6 +87,21 @@ class BackupSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             userPreferencesRepository.backupInfoDismissedFlow.collect { dismissed ->
                 _uiState.update { it.copy(infoDismissed = dismissed) }
+            }
+        }
+
+        importedHistoryStore?.let { store ->
+            viewModelScope.launch {
+                store.records.collect { records ->
+                    _uiState.update { it.copy(importedHistory = records.toImmutableList()) }
+                }
+            }
+        }
+
+        universalExporter?.let { exporter ->
+            viewModelScope.launch {
+                val count = runCatching { exporter.getPlaylistCountForExport() }.getOrDefault(0)
+                _uiState.update { it.copy(exportablePlaylistCount = count) }
             }
         }
     }
@@ -178,6 +213,14 @@ class BackupSettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateRestoreMode(mode: com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode) {
+        _uiState.update { state ->
+            state.restorePlan?.let { plan ->
+                state.copy(restorePlan = plan.copy(restoreMode = mode))
+            } ?: state
+        }
+    }
+
     fun restoreFromPlan(uri: Uri) {
         val plan = _uiState.value.restorePlan ?: return
         if (plan.selectedModules.isEmpty() || _uiState.value.isDataTransferInProgress) return
@@ -197,7 +240,19 @@ class BackupSettingsViewModel @Inject constructor(
                 }
                 when (result) {
                     is RestoreResult.Success -> {
-                        _dataTransferEvents.send(context.getString(R.string.data_restored_successfully))
+                        val resolution = runCatching { backupManager.consumeLastRestoreResolution() }
+                            .getOrDefault(com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts())
+                        val message = if (resolution.total > 0) {
+                            context.getString(
+                                R.string.backup_restore_done_with_resolution,
+                                resolution.resolvedById,
+                                resolution.resolvedByKeys,
+                                resolution.unresolved,
+                            )
+                        } else {
+                            context.getString(R.string.data_restored_successfully)
+                        }
+                        _dataTransferEvents.send(message)
                         syncManager.sync()
                     }
                     is RestoreResult.PartialFailure -> {
@@ -247,6 +302,34 @@ class BackupSettingsViewModel @Inject constructor(
     fun removeBackupHistoryEntry(entry: BackupHistoryEntry) {
         viewModelScope.launch {
             backupManager.removeBackupHistoryEntry(entry.uri)
+        }
+    }
+
+    fun removeImportedHistory(importId: String) {
+        viewModelScope.launch {
+            importedHistoryStore?.removeImport(importId)
+        }
+    }
+
+    fun exportUniversal(uri: Uri, kind: UniversalExportKind) {
+        val exporter = universalExporter ?: return
+        if (_uiState.value.isDataTransferInProgress) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isDataTransferInProgress = true) }
+            runCatching { exporter.exportToUri(uri, kind) }.fold(
+                onSuccess = { count ->
+                    _dataTransferEvents.send(context.getString(R.string.export_universal_success, count))
+                },
+                onFailure = { err ->
+                    _dataTransferEvents.send(
+                        context.getString(
+                            R.string.export_failed_format,
+                            err.localizedMessage ?: context.getString(R.string.error_unknown),
+                        ),
+                    )
+                },
+            )
+            _uiState.update { it.copy(isDataTransferInProgress = false) }
         }
     }
 }

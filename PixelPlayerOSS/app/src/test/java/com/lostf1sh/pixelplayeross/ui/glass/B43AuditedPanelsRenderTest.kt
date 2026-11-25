@@ -11,7 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.rememberNavController
@@ -49,7 +48,7 @@ import kotlin.math.abs
 class B43AuditedPanelsRenderTest {
     @get:Rule val compose = createComposeRule()
     private enum class Page { BOOKMARKS, CREATE_PLAYLIST, DELIMITERS, WORD_DELIMITERS, CAPABILITIES, TRANSITIONS,
-        HEADPHONES, QUICK_FILL, RECENT, DEVICE, MAINTENANCE, PLAYLIST, MAINTENANCE_TOOLS }
+        HEADPHONES, QUICK_FILL, RECENT, DEVICE, MAINTENANCE, MAINTENANCE_TOOLS }
     private data class Shot(val page: Page, val mode: Fix3Mode, val content: Boolean)
     private val shot = MutableStateFlow(Shot(Page.BOOKMARKS, Fix3Mode.COVER_GLASS, true))
     private val settings = mockk<ArtistSettingsViewModel>(relaxed = true).also {
@@ -92,7 +91,6 @@ class B43AuditedPanelsRenderTest {
             Page.RECENT -> Panel("presentation.screens.RecentlyPlayedScreenKt", "RecentlyPlayedEmptyState", StatsTimeRange.ALL, Modifier)
             Page.DEVICE -> B42Fix3Pages.Device(cover)
             Page.MAINTENANCE -> MaintenanceSection("Maintenance", text)
-            Page.PLAYLIST -> Panel("presentation.screens.PlaylistDetailScreenKt", "PlaylistActionItem", ColorPainter(Color.White), "Playlist", noClick)
             Page.MAINTENANCE_TOOLS -> Panel("presentation.settings.MaintenanceToolsKt", "PaletteRegenerateSongSheetContent",
                 persistentListOf<Song>(), false, "", { _: String -> }, noClick, { _: Song -> })
         }

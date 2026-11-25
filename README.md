@@ -108,6 +108,12 @@ For the reasoning behind selected build and implementation choices, see the [eng
 
 The repository has two parts: `PixelPlayerOSS/` is the app, and `decent-player/` holds the USB audio driver, the Media3 wrapper and the FLAC decoder.
 
+## Support
+
+Enjoying Polylute? You can support it on Ko-fi. ☕
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/L0X62B8EHV)
+
 ## Privacy and notices
 
 What the app stores and every network request it can make: [PixelPlayerOSS/PRIVACY.md](PixelPlayerOSS/PRIVACY.md).

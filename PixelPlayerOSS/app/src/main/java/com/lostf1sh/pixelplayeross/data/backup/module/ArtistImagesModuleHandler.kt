@@ -6,6 +6,8 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.lostf1sh.pixelplayeross.data.backup.model.ArtistImageBackupEntry
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
 import com.lostf1sh.pixelplayeross.di.BackupGson
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -23,7 +25,7 @@ class ArtistImagesModuleHandler @Inject constructor(
     @BackupGson private val gson: Gson,
     private val genreImages: com.lostf1sh.pixelplayeross.data.repository.GenreImageRepository =
         com.lostf1sh.pixelplayeross.data.repository.GenreImageRepository(context, musicDao),
-) : BackupModuleHandler {
+) : BackupModuleHandler, ReportableRestoreHandler {
 
     override val section = BackupSection.ARTIST_IMAGES
 
@@ -58,12 +60,32 @@ class ArtistImagesModuleHandler @Inject constructor(
 
     override suspend fun snapshot(): String = export()
 
-    override suspend fun restore(payload: String) = withContext(Dispatchers.IO) {
+    override suspend fun restore(payload: String) {
+        restoreWithReport(payload, BackupRestoreMode.REPLACE)
+    }
+
+    override suspend fun restoreWithReport(
+        payload: String,
+        mode: BackupRestoreMode,
+    ): BackupResolutionCounts = withContext(Dispatchers.IO) {
         val type = TypeToken.getParameterized(List::class.java, ArtistImageBackupEntry::class.java).type
-        val entries: List<ArtistImageBackupEntry> = gson.fromJson(payload, type)
+        val entries: List<ArtistImageBackupEntry> = gson.fromJson(payload, type) ?: emptyList()
+        val existingArtistsById = if (mode == BackupRestoreMode.MERGE) {
+            musicDao.getAllArtistsListRaw().associateBy { it.id }
+        } else {
+            emptyMap()
+        }
+        val existingGenres = if (mode == BackupRestoreMode.MERGE) {
+            musicDao.getGenreImagesOnce().mapTo(HashSet()) { it.genreKey }
+        } else {
+            emptySet()
+        }
         val failed = mutableListOf<String>()
         entries.forEach { entry ->
             if (entry.genreKey != null) {
+                if (mode == BackupRestoreMode.MERGE && entry.genreKey in existingGenres) {
+                    return@forEach
+                }
                 try { restoreGenre(entry) } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     failed += entry.genreKey
@@ -71,11 +93,16 @@ class ArtistImagesModuleHandler @Inject constructor(
                 return@forEach
             }
             val artistId = musicDao.getArtistIdByName(entry.artistName) ?: return@forEach
-            if (entry.imageUrl.isNotBlank()) {
+            val existingArtist = existingArtistsById[artistId]
+            if (entry.imageUrl.isNotBlank() &&
+                (mode == BackupRestoreMode.REPLACE || existingArtist?.imageUrl.isNullOrBlank())
+            ) {
                 musicDao.updateArtistImageUrl(artistId, entry.imageUrl)
             }
             val customBase64 = entry.customImageBase64
-            if (customBase64 != null) {
+            if (customBase64 != null &&
+                (mode == BackupRestoreMode.REPLACE || existingArtist?.customImageUri.isNullOrBlank())
+            ) {
                 try {
                     val bytes = Base64.decode(customBase64, Base64.NO_WRAP)
                     val file = File(context.filesDir, "artist_art_${artistId}.jpg")
@@ -89,6 +116,7 @@ class ArtistImagesModuleHandler @Inject constructor(
             }
         }
         if (failed.isNotEmpty()) throw imageItemsFailed(failed)
+        BackupResolutionCounts()
     }
 
     /**

@@ -115,9 +115,12 @@ fun MaintenanceToolsSection(
             state.paletteTargets
         } else {
             state.paletteTargets.filter { song ->
-                song.title.contains(query, ignoreCase = true) ||
-                    song.displayArtist.contains(query, ignoreCase = true) ||
-                    song.album.contains(query, ignoreCase = true)
+                com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryTabSearch.matchesQuery(
+                    query,
+                    song.title,
+                    song.displayArtist,
+                    song.album
+                )
             }
         }.toImmutableList()
     }

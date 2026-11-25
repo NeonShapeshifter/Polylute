@@ -35,7 +35,9 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapMediaRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
 import com.lostf1sh.pixelplayeross.ui.ds.DapStateKind
 import com.lostf1sh.pixelplayeross.ui.ds.DapType
+import com.lostf1sh.pixelplayeross.utils.currentLocale
 import com.lostf1sh.pixelplayeross.utils.formatListeningDurationCompact
+import java.text.NumberFormat
 import java.time.ZoneId
 import java.time.format.TextStyle
 import java.util.Locale
@@ -144,7 +146,10 @@ internal fun Headline(report: StatsReport) {
 @Composable
 internal fun AttributionNotes(report: StatsReport) {
     val note = report.note
-    if (note.unattributedMs <= 0L && note.goneMs <= 0L && note.locatorMs <= 0L) return
+    val imp = report.importedSummary
+    val hasImportedNotes = imp.hasImported && (imp.estimatedMs > 0L || imp.zeroDurationPlays > 0)
+    if (note.unattributedMs <= 0L && note.goneMs <= 0L && note.locatorMs <= 0L && !hasImportedNotes) return
+    val locale = currentLocale()
     Column(Modifier.fillMaxWidth().padding(top = DapSpacing.Lg)) {
         if (note.unattributedMs > 0L) {
             StatsNote(
@@ -158,6 +163,13 @@ internal fun AttributionNotes(report: StatsReport) {
         }
         if (note.locatorMs > 0L) {
             StatsNote(text = stringResource(R.string.stats_note_locator_body, formatListeningDurationCompact(note.locatorMs)))
+        }
+        if (imp.estimatedMs > 0L) {
+            StatsNote(text = stringResource(R.string.stats_note_imported_estimated, formatListeningDurationCompact(imp.estimatedMs)))
+        }
+        if (imp.zeroDurationPlays > 0) {
+            val formatted = NumberFormat.getIntegerInstance(locale).format(imp.zeroDurationPlays)
+            StatsNote(text = pluralStringResource(R.plurals.stats_note_imported_zero_duration, imp.zeroDurationPlays, formatted))
         }
     }
 }
@@ -215,16 +227,16 @@ internal fun RankingRows(kind: StatsList, report: StatsReport, look: StatsLook, 
 
 @Composable
 internal fun SongRankRow(rank: Int, row: SongRow, look: StatsLook) {
-    androidx.compose.foundation.layout.Box(Modifier.background(if (look.locatedSongId == row.item.song.id) Dap.panelRaised else androidx.compose.ui.graphics.Color.Transparent)) {
+    androidx.compose.foundation.layout.Box(Modifier.background(if (look.locatedSongId != null && look.locatedSongId == row.item?.song?.id) Dap.panelRaised else androidx.compose.ui.graphics.Color.Transparent)) {
     RankRow(
         rank = rank,
-        title = row.item.title,
-        subtitle = row.item.artistLine.ifBlank { stringResource(R.string.stats_unknown_artist) },
+        title = row.title,
+        subtitle = row.artistLine.ifBlank { stringResource(R.string.stats_unknown_artist) },
         plays = row.plays,
         timeMs = row.timeMs,
         mode = look.mode,
         open = look.opener.song(row.item),
-    ) { RowCover(row.item.song.albumArtUriString, row.item.title) }
+    ) { RowCover(row.artUri, row.title) }
     }
 }
 

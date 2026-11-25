@@ -48,6 +48,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.lostf1sh.pixelplayeross.ui.ds.dapReadableUnchecked
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,7 +77,9 @@ import com.lostf1sh.pixelplayeross.data.backup.model.BackupOperationType
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
 import com.lostf1sh.pixelplayeross.data.backup.model.ModuleRestoreDetail
 import com.lostf1sh.pixelplayeross.data.backup.model.RestorePlan
+import com.lostf1sh.pixelplayeross.data.historyimport.UniversalExportKind
 import com.lostf1sh.pixelplayeross.presentation.components.BackupModuleSelectionDialog
+import com.lostf1sh.pixelplayeross.presentation.components.DapBackScaffold
 import com.lostf1sh.pixelplayeross.presentation.components.DapOverlayBack
 import com.lostf1sh.pixelplayeross.presentation.components.ModalInputBridge
 import com.lostf1sh.pixelplayeross.presentation.components.rememberBackupTimestamp
@@ -625,6 +629,7 @@ internal fun ImportModuleSelectionDialog(
     onDismiss: () -> Unit,
     onBack: () -> Unit,
     onSelectionChanged: (Set<BackupSection>) -> Unit,
+    onRestoreModeChanged: (com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode) -> Unit = {},
     onConfirm: () -> Unit
 ) {
     BackupModuleSelectionDialog(
@@ -633,6 +638,7 @@ internal fun ImportModuleSelectionDialog(
         onDismiss = onDismiss,
         onBack = onBack,
         onSelectionChanged = onSelectionChanged,
+        onRestoreModeChanged = onRestoreModeChanged,
         onConfirm = onConfirm
     )
 }
@@ -674,7 +680,8 @@ internal fun BackupEncryptionDialog(
                     )
                     Switch(
                         checked = encryptEnabled,
-                        onCheckedChange = { encryptEnabled = it }
+                        onCheckedChange = { encryptEnabled = it },
+                        colors = SwitchDefaults.colors().dapReadableUnchecked(),
                     )
                 }
                 if (encryptEnabled) {
@@ -780,4 +787,105 @@ internal fun BackupPasswordPromptDialog(
             }
         }
     )
+}
+
+@Composable
+internal fun UniversalExportSelectionDialog(
+    inProgress: Boolean,
+    onDismiss: () -> Unit,
+    onSelectKind: (UniversalExportKind) -> Unit,
+) {
+    Dialog(
+        onDismissRequest = { if (!inProgress) onDismiss() },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        ModalInputBridge()
+        UniversalExportSelectionContent(
+            inProgress = inProgress,
+            onDismiss = onDismiss,
+            onSelectKind = onSelectKind,
+        )
+    }
+}
+
+@Composable
+internal fun UniversalExportSelectionContent(
+    inProgress: Boolean,
+    onDismiss: () -> Unit,
+    onSelectKind: (UniversalExportKind) -> Unit,
+) {
+    DapBackScaffold(
+        modifier = Modifier.fillMaxSize(),
+        onBack = { if (!inProgress) onDismiss() },
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = DapSpacing.Gutter,
+                end = DapSpacing.Gutter,
+                top = DapSpacing.Sm,
+                bottom = 24.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(DapSpacing.SectionGap),
+        ) {
+            item {
+                DapScreenTitle(text = stringResource(R.string.export_universal_title))
+            }
+            item {
+                Text(
+                    text = stringResource(R.string.export_universal_dialog_subtitle),
+                    style = DapType.Caption,
+                    color = Dap.secondaryText,
+                )
+            }
+            item {
+                DapGroup(title = stringResource(R.string.import_preview_title)) {
+                    DapNavRow(
+                        label = stringResource(R.string.export_universal_history_csv),
+                        description = stringResource(R.string.export_universal_history_csv_desc),
+                        enabled = !inProgress,
+                        onClick = { onSelectKind(UniversalExportKind.HISTORY_CSV) },
+                    )
+                    DapNavRow(
+                        label = stringResource(R.string.export_universal_history_json),
+                        description = stringResource(R.string.export_universal_history_json_desc),
+                        enabled = !inProgress,
+                        onClick = { onSelectKind(UniversalExportKind.HISTORY_JSON) },
+                        divider = false,
+                    )
+                }
+            }
+            item {
+                DapGroup(title = stringResource(R.string.import_preview_likes_title)) {
+                    DapNavRow(
+                        label = stringResource(R.string.export_universal_likes_csv),
+                        description = stringResource(R.string.export_universal_likes_csv_desc),
+                        enabled = !inProgress,
+                        onClick = { onSelectKind(UniversalExportKind.LIKES_CSV) },
+                        divider = false,
+                    )
+                }
+            }
+            item {
+                DapGroup(title = stringResource(R.string.import_preview_playlists_title)) {
+                    DapNavRow(
+                        label = stringResource(R.string.export_universal_playlists_m3u8),
+                        description = stringResource(R.string.export_universal_playlists_m3u8_desc),
+                        enabled = !inProgress,
+                        onClick = { onSelectKind(UniversalExportKind.PLAYLISTS_M3U8) },
+                    )
+                    DapNavRow(
+                        label = stringResource(R.string.export_universal_playlists_csv),
+                        description = stringResource(R.string.export_universal_playlists_csv_desc),
+                        enabled = !inProgress,
+                        onClick = { onSelectKind(UniversalExportKind.PLAYLISTS_CSV) },
+                        divider = false,
+                    )
+                }
+            }
+        }
+    }
 }

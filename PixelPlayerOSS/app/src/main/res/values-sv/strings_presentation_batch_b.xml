@@ -5,15 +5,11 @@
     <string name="presentation_batch_b_play_it">Spela upp</string>
     <string name="presentation_batch_b_add_songs">Lägg till låtar</string>
     <string name="presentation_batch_b_add">Lägg till</string>
-    <string name="presentation_batch_b_remove_songs">Ta bort låtar</string>
-    <string name="presentation_batch_b_reorder_songs">Ändra ordning på låtar</string>
-    <string name="presentation_batch_b_reorder">Ändra ordning</string>
     <string name="presentation_batch_b_reorder_song">Ändra låtens plats</string>
     <string name="presentation_batch_b_playlist_empty_title">Den här spellistan är tom.</string>
     <string name="presentation_batch_b_playlist_empty_folder_body">Den här mappen innehåller inga låtar.</string>
     <string name="presentation_batch_b_playlist_empty_add_hint">Tryck på ”Lägg till låtar” för att börja.</string>
     <string name="presentation_batch_b_playlist_empty_smart_body">Inga låtar matchar den här smarta regeln ännu.</string>
-    <string name="presentation_batch_b_playlist_options_title">Spellistealternativ</string>
     <string name="presentation_batch_b_edit_playlist">Redigera spellista</string>
     <string name="presentation_batch_b_delete_playlist">Ta bort spellista</string>
     <string name="presentation_batch_b_set_default_transition">Ange standardövergång</string>
@@ -41,4 +37,10 @@
     <string name="presentation_batch_b_date_today">Idag</string>
     <string name="presentation_batch_b_date_yesterday">Igår</string>
     <string name="presentation_batch_b_genre_shuffle_label">Blanda %1$s</string>
+    <string name="playlist_sort">Sortera</string>
+    <string name="playlist_edit_songs">Redigera låtar</string>
+    <string name="playlist_edit_songs_hint">Dra för att flytta · tryck på − för att ta bort</string>
+    <string name="playlist_custom_order">Anpassad ordning</string>
+    <string name="playlist_order_az">%1$s A–Ö</string>
+    <string name="playlist_order_za">%1$s Ö–A</string>
 </resources>

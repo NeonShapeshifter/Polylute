@@ -2,6 +2,7 @@ package com.lostf1sh.pixelplayeross.presentation.viewmodel
 
 import android.os.SystemClock
 import com.google.common.truth.Truth.assertThat
+import com.lostf1sh.pixelplayeross.data.stats.ListenTrackMetadata
 import com.lostf1sh.pixelplayeross.data.stats.PlaybackOutcome
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.stats.PlaybackStatsRepository
@@ -60,6 +61,7 @@ class ListeningStatsTrackerTest {
             // B28a: the event now also carries the identity, the occurrence, the outcome, the reason, the length, the audio and the context.
             playbackStatsRepository.recordPlayback(
                 song.id, listenedMs, any(), any(), any(), PlaybackOutcome.COMPLETED, any(), any(), any(), any(),
+                trackMetadata = ListenTrackMetadata(song.title, song.artist, song.album),
             )
         }
     }
@@ -93,6 +95,7 @@ class ListeningStatsTrackerTest {
         coVerify(timeout = 2_000) {
             playbackStatsRepository.recordPlayback(
                 song.id, expectedDurationMs, any(), any(), any(), any(), any(), any(), any(), any(),
+                trackMetadata = ListenTrackMetadata(song.title, song.artist, song.album),
             )
         }
         assertThat(expectedDurationMs).isGreaterThan(TimeUnit.SECONDS.toMillis(5))

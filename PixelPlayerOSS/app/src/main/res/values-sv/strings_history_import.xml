@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stats_include_imported_title">Ta med importerad historik</string>
+    <string name="stats_include_imported_desc">Lägg till lyssningar från Spotify, YouTube Music och CSV i statistiken</string>
+    <string name="stats_note_imported_estimated">%1$s av den importerade lyssningstiden är uppskattad från låtlängden.</string>
+    <plurals name="stats_note_imported_zero_duration">
+        <item quantity="one">%1$s importerad lyssning saknade längd och räknas med 0 lyssnad tid.</item>
+        <item quantity="other">%1$s importerade lyssningar saknade längd och räknas med 0 lyssnad tid.</item>
+    </plurals>
+
+    <string name="import_history_section_title">Importera och exportera</string>
+    <string name="import_history_title">Importera från en annan app</string>
+    <string name="import_history_subtitle">Spotify, YouTube Music, CSV, M3U/M3U8 eller Polylute-filer. Läses lokalt på enheten.</string>
+    <string name="import_history_past_title">Importerad historik</string>
+    <string name="import_history_empty">Ingen importerad historik än.</string>
+    <string name="import_history_remove">Ta bort</string>
+    <string name="import_history_remove_confirm_title">Ta bort importerad historik?</string>
+    <string name="import_history_remove_confirm_body">Tar bort %1$s lyssningar från %2$s. Din egen lyssningshistorik i Polylute rörs inte.</string>
+    <string name="import_history_cancel">Avbryt</string>
+
+    <string name="import_history_pick_title">Välj filer</string>
+    <string name="import_history_formats_note">Stöder Spotify Extended och kontodata (.json eller .zip), Google Takeout YouTube Music (watch-history.json eller .zip), M3U/M3U8-spellistor, CSV-filer och Polylute-exporter. Inget lämnar enheten.</string>
+    <string name="import_history_pinned_note">Lossa appen först för att öppna Androids filväljare.</string>
+    <string name="import_history_reading_title">Läser filer…</string>
+    <string name="import_history_reading_progress">Fil %1$d av %2$d · %3$s rader lästa</string>
+    <string name="import_history_error_title">Kunde inte läsa filen</string>
+    <string name="import_history_error_musicolet">Det här är en krypterad säkerhetskopia från Musicolet (%1$s). Polylute kan inte läsa den. Exportera dina spellistor från Musicolet som M3U för att ta med dem.</string>
+    <string name="import_history_error_ytm_html">Den här Google Takeout-filen är i HTML-format. Exportera historiken för YouTube och YouTube Music som JSON (watch-history.json) och välj den filen.</string>
+    <string name="import_history_error_generic">Kunde inte läsa den här filen (%1$s).</string>
+
+    <string name="import_csv_title">Kontrollera CSV-kolumner</string>
+    <string name="import_csv_delimiter">Avgränsare</string>
+    <string name="import_csv_has_header">Första raden är rubrik</string>
+    <string name="import_csv_col_date">Datum</string>
+    <string name="import_csv_col_artist">Artist</string>
+    <string name="import_csv_col_title">Titel</string>
+    <string name="import_csv_col_album">Album (valfri)</string>
+    <string name="import_csv_col_duration">Lyssnad tid (valfri)</string>
+    <string name="import_csv_col_none">Ingen</string>
+    <string name="import_csv_unit_ms">Millisekunder</string>
+    <string name="import_csv_unit_s">Sekunder</string>
+    <string name="import_csv_preview_rows">Exempelrader</string>
+    <string name="import_csv_continue">Fortsätt</string>
+
+    <string name="import_preview_files_title">Hittade filer</string>
+    <string name="import_file_kind_spotify_extended">Spotifys lyssningshistorik (Utökad)</string>
+    <string name="import_file_kind_spotify_short">Spotifys lyssningshistorik</string>
+    <string name="import_file_kind_spotify_playlists">Spotify-spellistor</string>
+    <string name="import_file_kind_spotify_likes">Gillade låtar på Spotify</string>
+    <string name="import_file_kind_ytm_history">YouTube Music-historik</string>
+    <string name="import_file_kind_csv_history">CSV-historik</string>
+    <string name="import_file_kind_m3u">M3U-spellista</string>
+    <string name="import_file_kind_polylute_history">Polylute-historik</string>
+    <string name="import_file_kind_polylute_likes">Gillade låtar från Polylute</string>
+    <string name="import_file_kind_polylute_playlists">Polylute-spellistor</string>
+    <string name="import_file_skip_ytm_video_ids">Överhoppad: innehåller bara video-ID:n utan låttitel eller artist</string>
+    <string name="import_file_skip_duplicate">Överhoppad: dubblettfil</string>
+    <string name="import_file_skip_metadata">Överhoppad: kontometadata utan musikspår</string>
+    <string name="import_file_skip_unsupported">Överhoppad: filformatet stöds inte</string>
+    <string name="import_file_skip_empty">Överhoppad: inga spår hittades</string>
+
+    <string name="import_preview_title">Lyssningshistorik</string>
+    <string name="import_preview_source">Källa</string>
+    <string name="import_preview_dates">Datumintervall</string>
+    <string name="import_preview_rows_read">Lästa rader</string>
+    <string name="import_preview_plays">Lyssningar</string>
+    <string name="import_preview_skips">Överhoppade (under lyssningsgränsen)</string>
+    <string name="import_preview_podcasts">Poddar och ljudböcker överhoppade</string>
+    <string name="import_preview_non_music">Icke-musikposter överhoppade</string>
+    <string name="import_preview_duplicates">Dubbletter överhoppade</string>
+    <string name="import_preview_rejected">Avvisade rader</string>
+    <string name="import_preview_matched_exact">Träff (exakt)</string>
+    <string name="import_preview_matched_folded">Träff (normaliserad)</string>
+    <string name="import_preview_matched_partial">Träff (delvis)</string>
+    <string name="import_preview_unmatched">Omatchade (endast namn)</string>
+    <string name="import_preview_estimated_time">Uppskattad lyssningstid</string>
+    <string name="import_preview_zero_duration">Omatchade utan längd (0 tid)</string>
+    <string name="import_preview_ytm_note">YouTube Music exporterar varje öppnad video utan längd, så antalen är uppskattade och kan vara höga.</string>
+    <string name="import_preview_top_unmatched">Främsta omatchade artister</string>
+
+    <string name="import_preview_likes_title">Gillade låtar</string>
+    <string name="import_likes_summary">%1$s gillade låtar hittades, %2$s finns redan i dina favoriter.</string>
+
+    <string name="import_preview_playlists_title">Spellistor</string>
+    <string name="import_playlist_match_count">%1$s av %2$s låtar</string>
+    <string name="import_playlist_include">Skapa den här spellistan</string>
+    <plurals name="import_playlist_unmatched_count">
+        <item quantity="one">%1$s låt som du inte har</item>
+        <item quantity="other">%1$s låtar som du inte har</item>
+    </plurals>
+    <plurals name="import_playlists_hidden_zero">
+        <item quantity="one">%1$s spellista dold (0 av dina låtar)</item>
+        <item quantity="other">%1$s spellistor dolda (0 av dina låtar)</item>
+    </plurals>
+    <string name="import_playlists_skipped_items">Överhoppade i spellistor: %1$s avsnitt, %2$s lokala filer</string>
+
+    <string name="import_preview_confirm">Klar</string>
+    <string name="import_preview_nothing_new">Inget nytt att importera</string>
+    <string name="import_history_done_summary">Lade till %1$s lyssningar, %2$s gillade, %3$s spellistor</string>
+    <string name="import_history_done_line">Importerade %1$s lyssningar (%2$s). %3$d %% matchade ditt bibliotek.</string>
+    <string name="import_history_done_line_no_dates">Importerade %1$s lyssningar. %2$d %% matchade ditt bibliotek.</string>
+
+    <string name="import_source_spotify_extended">Spotify (Utökad)</string>
+    <string name="import_source_spotify_short">Spotify (Kontodata)</string>
+    <string name="import_source_youtube_music">YouTube Music</string>
+    <string name="import_source_csv">CSV</string>
+    <string name="import_source_polylute">Polylute</string>
+    <string name="import_history_row_summary">%1$s lyssn. · %2$d %% matchade</string>
+
+    <string name="export_universal_title">Exportera till en fil</string>
+    <string name="export_universal_subtitle">Historik (CSV eller JSON), gillade (CSV) och spellistor (M3U8 eller CSV).</string>
+    <string name="export_universal_dialog_subtitle">Välj ett format som fungerar i Polylute och andra spelare.</string>
+    <string name="export_universal_history_csv">Lyssningshistorik (CSV)</string>
+    <string name="export_universal_history_csv_desc">played_at, artist, title, album, ms_played, duration_ms, path</string>
+    <string name="export_universal_history_json">Lyssningshistorik (JSON)</string>
+    <string name="export_universal_history_json_desc">Samma fält som CSV, i JSON-format</string>
+    <string name="export_universal_likes_csv">Gillade låtar (CSV)</string>
+    <string name="export_universal_likes_csv_desc">artist, title, album, duration_ms, path</string>
+    <string name="export_universal_playlists_m3u8">Spellistor (M3U8)</string>
+    <string name="export_universal_playlists_m3u8_desc">En .m3u8-fil (eller en .zip när det finns flera)</string>
+    <string name="export_universal_playlists_csv">Spellistor (CSV)</string>
+    <string name="export_universal_playlists_csv_desc">playlist, position, artist, title, album, duration_ms, path</string>
+    <string name="export_universal_success">Exporterade %1$d poster</string>
+
+    <string name="backup_restore_mode_label">Återställningsläge</string>
+    <string name="backup_restore_mode_replace">Ersätt</string>
+    <string name="backup_restore_mode_merge">Slå samman</string>
+    <string name="backup_restore_mode_replace_desc">Rensar valda delar innan säkerhetskopian återställs.</string>
+    <string name="backup_restore_mode_merge_desc">Behåller nuvarande data och lägger till poster som saknas.</string>
+    <string name="backup_entries_will_merge">%1$d poster · Slås samman med nuvarande data</string>
+    <string name="backup_restore_done_with_resolution">Återställt: %1$d via ID, %2$d via låtinfo, %3$d olösta</string>
+</resources>

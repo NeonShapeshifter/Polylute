@@ -84,9 +84,11 @@ class BackAffordanceBoundaryTest {
 
         val playlist = code("presentation/screens/PlaylistDetailScreen.kt")
         assertThat(playlist).contains("DapBackScaffold(")
-        // The bar keeps both real actions — the sort action and the overflow.
-        assertThat(playlist).contains("onBack = null")
-        assertThat(playlist).contains("DapTextAction(")
+        // The shared top bar draws Back only when the scaffold enables it.
+        assertThat(playlist).contains("onBack = back.takeIf { topBarLabel == null }")
+        val scaffold = code("presentation/components/DapBackScaffold.kt")
+        assertThat(scaffold).contains("topBar(goBack.takeIf { showsBack })")
+        assertThat(playlist).contains("DapMenu(")
         assertThat(playlist).contains("DapOverflowButton(")
     }
 
@@ -152,8 +154,7 @@ class BackAffordanceBoundaryTest {
         // overlay, or it is on a surface whose bar carries actions the brief keeps. Anything else
         // is a chevron that shows itself in Gestures mode.
         val allowed = setOf(
-            // A bar kept for the actions it carries; its own back is null, so the chevron the
-            // reader sees is the mode-aware overlay.
+            // The artist's image overlay owns Back. The playlist's top bar gets Back from its scaffold.
             "presentation/screens/ArtistDetailScreen.kt",
             "presentation/screens/PlaylistDetailScreen.kt",
             // Internal diagnostics, deliberately not churned.

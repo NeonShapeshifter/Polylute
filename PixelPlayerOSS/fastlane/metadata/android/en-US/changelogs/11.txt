@@ -1,0 +1,1 @@
+Import your listening history from Spotify, YouTube Music or a CSV file into Stats. Play a folder from the Folders tab in the order you see it. Search ignores accents and capital letters. Home's recent rows show the newest first. Safety Max can ask for notifications.

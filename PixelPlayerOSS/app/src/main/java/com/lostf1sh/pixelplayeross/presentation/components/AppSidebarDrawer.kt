@@ -44,17 +44,19 @@ fun AppSidebarDrawer(
         drawerState = drawerState,
         gesturesEnabled = false,
         drawerContent = {
-            ModalDrawerSheet(
-                modifier = Modifier
-                    .width(300.dp)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)),
-                drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
-            ) {
-                DrawerContent(
-                    selectedRoute = selectedRoute(),
-                    onDestinationSelected = onDestinationSelected
-                )
+            com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+                ModalDrawerSheet(
+                    modifier = Modifier
+                        .width(300.dp)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)),
+                    drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                ) {
+                    DrawerContent(
+                        selectedRoute = selectedRoute(),
+                        onDestinationSelected = onDestinationSelected
+                    )
+                }
             }
         },
         content = content

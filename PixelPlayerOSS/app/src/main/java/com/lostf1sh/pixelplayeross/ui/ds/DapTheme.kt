@@ -4,7 +4,10 @@ import com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.SwitchColors
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -175,6 +178,76 @@ val LocalDapPlayerShelfHeight = androidx.compose.runtime.compositionLocalOf { 0.
  * artwork tint on the Now Playing Artwork view, and the album/artist detail headers. Everything
  * else stays graphite.
  */
+/**
+ * B76: Dynamic active cover [ColorScheme] (`ColorRoles` `TONAL_SPOT` dark scheme) when the app is in
+ * `ALBUM_ART` or `COVER_GLASS` mode, normalized via [dapCoverColorScheme]. Null in Theme mode.
+ */
+val LocalDapCoverScheme = compositionLocalOf<ColorScheme?> { null }
+
+/**
+ * B76: Un-washed cover accent before glass-luma lifting, for opaque tinted surfaces like [DapMenuSurface].
+ * Null in Theme mode.
+ */
+val LocalDapCoverAccent = compositionLocalOf<Color?> { null }
+
+/**
+ * Normalizes a song's `ColorRoles` scheme so modal sheets, dialogs, drawers and tonal containers share
+ * the Queue's tonal palette while keeping page transparency, hairline outlines and accessible glass error ink.
+ */
+internal fun dapCoverColorScheme(coverScheme: ColorScheme, palette: DapPalette): ColorScheme =
+    coverScheme.copy(
+        background = palette.page,
+        onBackground = palette.primaryText,
+        outline = palette.border,
+        outlineVariant = palette.divider,
+        error = palette.error,
+        onError = palette.onFill,
+        scrim = palette.scrim,
+        surfaceTint = Color.Transparent,
+    )
+
+/**
+ * Wraps floating containers (sheets, alerts, dialogs, bars, drawers) in the active cover scheme when
+ * in cover modes without changing the root `MaterialTheme` across songs.
+ */
+@Composable
+fun DapCoverMaterialTheme(content: @Composable () -> Unit) {
+    val coverScheme = LocalDapCoverScheme.current
+    if (coverScheme != null) {
+        MaterialTheme(colorScheme = coverScheme, content = content)
+    } else {
+        content()
+    }
+}
+
+/**
+ * OutlinedTextField colors that keep [Dap.border] as unfocused hairline in cover modes instead of bright
+ * Material outlines, while staying unchanged in Theme mode.
+ */
+@Composable
+fun dapOutlinedTextFieldColors(): TextFieldColors =
+    if (LocalDapCoverScheme.current != null || Dap.glass != null) {
+        OutlinedTextFieldDefaults.colors(
+            unfocusedBorderColor = Dap.border,
+            focusedBorderColor = LocalDapAccent.current,
+            focusedLabelColor = LocalDapAccent.current,
+            cursorColor = LocalDapAccent.current,
+        )
+    } else {
+        OutlinedTextFieldDefaults.colors()
+    }
+
+/**
+ * Review 11-25 (B76): a Material switch draws its unchecked thumb and border in `outline`. Over the cover glass `outline` is now the
+ * hairline [Dap.border] (decision 5, meant for text fields), which left an unchecked switch at about 1.4:1. Unchecked switches keep
+ * the tertiary ink they had before B76; in Theme mode that is exactly what `outline` already was, so nothing changes there.
+ */
+@Composable
+fun SwitchColors.dapReadableUnchecked(): SwitchColors = copy(
+    uncheckedThumbColor = Dap.tertiaryText,
+    uncheckedBorderColor = Dap.tertiaryText,
+)
+
 @Composable
 fun DapTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -184,30 +257,26 @@ fun DapTheme(
     colorSchemeOverride: ColorScheme? = null,
     /** B40-F1: the colour of the accent when the cover decides it (album-art mode); already readable on [palette]. */
     accentColorOverride: Color? = null,
+    coverSchemeOverride: ColorScheme? = null,
+    coverAccentOverride: Color? = null,
     content: @Composable () -> Unit,
 ) {
-    // B40-F1: the listener picks an accent by name; the theme decides how that name looks on its own surfaces ([DapAccentTables]), each
-    // at WCAG AA or better. In album-art mode the cover decides it, after the same floor.
     val accentColor = accentColorOverride ?: palette.accentColor(accent)
-    // B42-fix3 (item 1): **the Material scheme is the listener's own accent, never the song's.** Material3 1.5 hands its scheme to everything below
-    // through ONE static composition local holding the scheme by value (`ColorScheme` is immutable now: no state-backed fields to update in place),
-    // so a scheme that differs by a single colour (the accent of the next song) gave the whole app below this point no group that could skip: every
-    // row, artwork painter and bar ran again on every song change (the trace of the HONOR: `rememberAsyncImagePainter` 1,764 times). The song's accent
-    // goes where it is read granularly instead: [LocalDapAccent] and [LocalDapAppAccent] (dynamic: only a composable that reads one runs), which is what
-    // the design system's own components wear. What reads `MaterialTheme.colorScheme.primary` outside the player (a Material default in a dialog, a
-    // progress bar) is the listener's accent, as with "Theme and accent" (lifted to read, over the glass): the player, the queue and the lock screen draw in their own scheme.
-    // Over the cover glass the listener's accent is lifted to read on it (4.5:1 on the lightest page glass), as the song's is: a Material default that is text on the
-    // glass (a section header, a link) keeps its contrast. It is one colour per listener and theme, the same for every song.
     val materialAccent = remember(palette, accent) {
         val own = palette.accentColor(accent)
         if (palette.glass != null) com.lostf1sh.pixelplayeross.ui.glass.GlassBands.of(palette, own).ink.accent else own
     }
     val scheme = colorSchemeOverride
         ?: remember(palette, materialAccent) { dapColorScheme(materialAccent, palette) }
+    val resolvedCoverScheme = remember(coverSchemeOverride, palette) {
+        coverSchemeOverride?.let { dapCoverColorScheme(it, palette) }
+    }
     CompositionLocalProvider(
         LocalDapAccent provides accentColor,
         LocalDapAppAccent provides accentColor,
         LocalDapPalette provides palette,
+        LocalDapCoverScheme provides resolvedCoverScheme,
+        LocalDapCoverAccent provides coverAccentOverride,
     ) {
         MaterialTheme(
             colorScheme = scheme,
@@ -304,7 +373,7 @@ private fun baseDapColorScheme(accent: Color, palette: DapPalette) = if (palette
         surfaceContainerHighest = palette.surfaceRaised,
         surfaceContainerLow = palette.background,
         surfaceContainerLowest = palette.background,
-        outline = palette.tertiaryText,
+        outline = if (palette.glass != null) palette.border else palette.tertiaryText,
         outlineVariant = palette.divider,
         error = palette.error,
         onError = palette.onFill,
@@ -334,11 +403,12 @@ private fun baseDapColorScheme(accent: Color, palette: DapPalette) = if (palette
         surfaceContainerHighest = palette.surfaceRaised,
         surfaceContainerLow = palette.background,
         surfaceContainerLowest = palette.background,
-        outline = palette.tertiaryText,
+        outline = if (palette.glass != null) palette.border else palette.tertiaryText,
         outlineVariant = palette.divider,
         // A dark theme's "error" role has always carried the attention colour here; the palette
-        // keeps both, and the dark family keeps the existing choice so graphite does not shift.
-        error = palette.warning,
+        // keeps both, and the dark family keeps the existing choice so graphite does not shift,
+        // while light and glass schemes use the contrast-adapted palette error.
+        error = if (palette.isLight || palette.glass != null) palette.error else palette.warning,
         onError = palette.onFill,
         scrim = palette.scrim,
     )

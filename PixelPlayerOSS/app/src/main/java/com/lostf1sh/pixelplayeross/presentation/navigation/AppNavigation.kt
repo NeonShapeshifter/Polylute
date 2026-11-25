@@ -31,6 +31,7 @@ import com.lostf1sh.pixelplayeross.presentation.screens.KnownDacsScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.DacProfileScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.KnownHeadphonesScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.HeadphoneProfileScreen
+import com.lostf1sh.pixelplayeross.presentation.screens.HistoryImportScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.SafetyMaxVolumeScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.EditTransitionScreen
 import com.lostf1sh.pixelplayeross.presentation.screens.LicensesScreen
@@ -467,6 +468,17 @@ fun DetailNavigation(
                         profileId = backStackEntry.arguments?.getString("profileId").orEmpty(),
                         onBack = { navController.popBackStack() },
                     )
+                }
+            }
+            composable(
+                Screen.HistoryImport.route,
+                enterTransition = { settingsEnterTransition() },
+                exitTransition = { settingsExitTransition() },
+                popEnterTransition = { settingsPopEnterTransition() },
+                popExitTransition = { settingsPopExitTransition() },
+            ) {
+                ScreenWrapper(navController = navController, playerViewModel = playerViewModel) {
+                    HistoryImportScreen(navController = navController)
                 }
             }
             composable(

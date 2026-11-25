@@ -559,58 +559,62 @@ fun DacEqualizerContent(state: DacEqUiState, actions: DacEqScreenActions) {
 @Composable
 private fun DacEqSlotChoiceDialog(prompt: DacEqSlotChoicePrompt, actions: DacEqScreenActions) {
     var picked by remember(prompt) { mutableIntStateOf(prompt.preselected) }
-    AlertDialog(
-        onDismissRequest = actions::onCancelSlotChoice,
-        title = {
-            ModalInputBridge()
-            Text(stringResource(R.string.dac_eq_slot_choice_title))
-        },
-        text = {
-            Column {
-                Text(stringResource(R.string.dac_eq_slot_choice_body), style = DapType.Body, color = Dap.secondaryText)
-                prompt.options.forEach { option ->
-                    Row(
-                        Modifier.fillMaxWidth().defaultMinSize(minHeight = DapSpacing.Xl).clickable(role = Role.RadioButton) { picked = option.slotId }
-                            .padding(top = DapSpacing.Sm),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = picked == option.slotId, onClick = null)
-                        Text(
-                            text = option.netPeakDb?.let { stringResource(R.string.dac_eq_slot_choice_row, option.name, "%.1f".format(it)) }
-                                ?: stringResource(R.string.dac_eq_slot_choice_row_unknown, option.name),
-                            style = DapType.Body,
-                            modifier = Modifier.padding(start = DapSpacing.Sm),
-                        )
+    com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+        AlertDialog(
+            onDismissRequest = actions::onCancelSlotChoice,
+            title = {
+                ModalInputBridge()
+                Text(stringResource(R.string.dac_eq_slot_choice_title))
+            },
+            text = {
+                Column {
+                    Text(stringResource(R.string.dac_eq_slot_choice_body), style = DapType.Body, color = Dap.secondaryText)
+                    prompt.options.forEach { option ->
+                        Row(
+                            Modifier.fillMaxWidth().defaultMinSize(minHeight = DapSpacing.Xl).clickable(role = Role.RadioButton) { picked = option.slotId }
+                                .padding(top = DapSpacing.Sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = picked == option.slotId, onClick = null)
+                            Text(
+                                text = option.netPeakDb?.let { stringResource(R.string.dac_eq_slot_choice_row, option.name, "%.1f".format(it)) }
+                                    ?: stringResource(R.string.dac_eq_slot_choice_row_unknown, option.name),
+                                style = DapType.Body,
+                                modifier = Modifier.padding(start = DapSpacing.Sm),
+                            )
+                        }
                     }
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { actions.onChooseSlot(picked) }) {
-                Text(stringResource(R.string.dac_eq_slot_choice_action), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = actions::onCancelSlotChoice) {
-                Text(stringResource(R.string.cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        },
-    )
+            },
+            confirmButton = {
+                TextButton(onClick = { actions.onChooseSlot(picked) }) {
+                    Text(stringResource(R.string.dac_eq_slot_choice_action), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = actions::onCancelSlotChoice) {
+                    Text(stringResource(R.string.cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            },
+        )
+    }
 }
 
 /** A yes/no in the app's own words: an alert is a window of its own, so the volume-key bridge is routed in its title like the others. */
 @Composable
 private fun DacEqConfirmDialog(title: String, body: String, confirmLabel: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            ModalInputBridge()
-            Text(title)
-        },
-        text = { Text(body) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-    )
+    com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = {
+                ModalInputBridge()
+                Text(title)
+            },
+            text = { Text(body) },
+            confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+        )
+    }
 }
 
 /** What the screen is doing on the DAC that is not an edit: one line and the indeterminate bar. */

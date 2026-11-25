@@ -16,7 +16,9 @@ import com.lostf1sh.pixelplayeross.data.playlist.M3uManager
 import com.lostf1sh.pixelplayeross.data.playlist.NlpPlaylistGenerator
 import com.lostf1sh.pixelplayeross.data.collections.LegacySmartPlaylistDefinitions
 import com.lostf1sh.pixelplayeross.data.collections.SmartCollectionRepository
+import com.lostf1sh.pixelplayeross.data.library.folderSongsInOrder
 import com.lostf1sh.pixelplayeross.data.preferences.PlaylistPreferencesRepository
+import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +82,7 @@ data class NlpPlaylistPreviewState(
 @HiltViewModel
 class PlaylistViewModel @Inject constructor(
     private val playlistPreferencesRepository: PlaylistPreferencesRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
     private val musicRepository: MusicRepository,
     private val smartCollectionRepository: SmartCollectionRepository,
     private val m3uManager: M3uManager,
@@ -178,10 +182,18 @@ class PlaylistViewModel @Inject constructor(
                     val folder = findFolder(folderPath, folders)
 
                     if (folder != null) {
+                        val folderViewSortKey = userPreferencesRepository.foldersSortOptionFlow.first()
+                        val folderViewSortOption = SortOption.fromStorageKey(
+                            folderViewSortKey,
+                            SortOption.FOLDERS,
+                            SortOption.FolderNameAZ,
+                        )
                         val songsList = withContext(Dispatchers.IO) {
-                            val rawSongs = folder.collectAllSongs()
+                            val rawSongs = folderSongsInOrder(folder, folderViewSortOption)
                             if (rawSongs.any { it.contentUriString.isBlank() }) {
-                                musicRepository.getSongsByIds(rawSongs.map { it.id }).first()
+                                val hydratedById = musicRepository.getSongsByIds(rawSongs.map { it.id }).first()
+                                    .associateBy { it.id }
+                                rawSongs.mapNotNull { stub -> hydratedById[stub.id] ?: stub.takeUnless { it.contentUriString.isBlank() } }
                             } else {
                                 rawSongs
                             }
@@ -192,15 +204,20 @@ class PlaylistViewModel @Inject constructor(
                             songIds = songsList.map { it.id }
                         )
 
-                        val folderSortOption = _uiState.value.currentPlaylistSongsSortOption
-                        val sortedFolderSongs = withContext(Dispatchers.Default) {
-                            applySortToSongs(songsList, folderSortOption)
+                        val orderMode = _uiState.value.playlistOrderModes[playlistId]
+                        val orderedFolderSongs = when (orderMode) {
+                            is PlaylistSongsOrderMode.Sorted -> withContext(Dispatchers.Default) {
+                                applySortToSongs(songsList, orderMode.option)
+                            }
+                            else -> songsList
                         }
                         _uiState.update {
                             it.copy(
                                 currentPlaylistDetails = pseudoPlaylist,
-                                currentPlaylistSongs = sortedFolderSongs,
-                                playlistSongsOrderMode = PlaylistSongsOrderMode.Sorted(folderSortOption),
+                                currentPlaylistSongs = orderedFolderSongs,
+                                currentPlaylistSongsSortOption = (orderMode as? PlaylistSongsOrderMode.Sorted)?.option
+                                    ?: it.currentPlaylistSongsSortOption,
+                                playlistSongsOrderMode = orderMode ?: PlaylistSongsOrderMode.Manual,
                                 isLoading = false,
                                 playlistNotFound = false
                             )
@@ -646,26 +663,31 @@ class PlaylistViewModel @Inject constructor(
         }
     }
 
-    fun removeSongFromPlaylist(playlistId: String, songIdToRemove: String) {
-        if (isFolderPlaylistId(playlistId)) return
-        viewModelScope.launch {
+    fun removeSongFromPlaylist(playlistId: String, songIdToRemove: String): Job? {
+        if (isFolderPlaylistId(playlistId)) return null
+        return viewModelScope.launch {
             if (playlistPreferencesRepository.getPlaylistsOnce().any { it.id == playlistId && it.isSmartPlaylist }) {
                 return@launch
             }
             playlistPreferencesRepository.removeSongFromPlaylist(playlistId, songIdToRemove)
             if (_uiState.value.currentPlaylistDetails?.id == playlistId) {
                 _uiState.update {
-                    it.copy(currentPlaylistSongs = it.currentPlaylistSongs.filterNot { s -> s.id == songIdToRemove })
+                    it.copy(
+                        currentPlaylistDetails = it.currentPlaylistDetails?.let { playlist ->
+                            playlist.copy(songIds = playlist.songIds.filterNot { id -> id == songIdToRemove })
+                        },
+                        currentPlaylistSongs = it.currentPlaylistSongs.filterNot { song -> song.id == songIdToRemove },
+                    )
                 }
             }
         }
     }
 
-    fun reorderSongsInPlaylist(playlistId: String, fromIndex: Int, toIndex: Int) {
-        if (isFolderPlaylistId(playlistId)) return
-        val currentPlaylist = _uiState.value.currentPlaylistDetails ?: return
-        if (currentPlaylist.id != playlistId || currentPlaylist.isSmartPlaylist) return
-        viewModelScope.launch {
+    fun reorderSongsInPlaylist(playlistId: String, fromIndex: Int, toIndex: Int): Job? {
+        if (isFolderPlaylistId(playlistId)) return null
+        val currentPlaylist = _uiState.value.currentPlaylistDetails ?: return null
+        if (currentPlaylist.id != playlistId || currentPlaylist.isSmartPlaylist) return null
+        return viewModelScope.launch {
             val currentSongs = _uiState.value.currentPlaylistSongs.toMutableList()
             if (fromIndex in currentSongs.indices && toIndex in currentSongs.indices) {
                 val item = currentSongs.removeAt(fromIndex)
@@ -678,7 +700,11 @@ class PlaylistViewModel @Inject constructor(
                 )
                 _uiState.update {
                     val updatedModes = it.playlistOrderModes + (playlistId to PlaylistSongsOrderMode.Manual)
+                    if (it.currentPlaylistDetails?.id != playlistId) {
+                        return@update it.copy(playlistOrderModes = updatedModes)
+                    }
                     it.copy(
+                        currentPlaylistDetails = it.currentPlaylistDetails.copy(songIds = newSongOrderIds),
                         currentPlaylistSongs = currentSongs,
                         playlistSongsOrderMode = PlaylistSongsOrderMode.Manual,
                         playlistOrderModes = updatedModes
@@ -769,10 +795,6 @@ class PlaylistViewModel @Inject constructor(
             folder.subFolders.forEach { queue.addLast(it) }
         }
         return null
-    }
-
-    private fun com.lostf1sh.pixelplayeross.data.model.MusicFolder.collectAllSongs(): List<Song> {
-        return songs + subFolders.flatMap { it.collectAllSongs() }
     }
 
     private fun applySortToSongs(songs: List<Song>, sortOption: SortOption): List<Song> {

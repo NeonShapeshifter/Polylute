@@ -18,8 +18,12 @@ import com.lostf1sh.pixelplayeross.data.repository.MusicRepository
 import io.mockk.*
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import com.lostf1sh.pixelplayeross.data.library.folderSongsInOrder
+import com.lostf1sh.pixelplayeross.data.model.MusicFolder
+import com.lostf1sh.pixelplayeross.utils.PlayOrder
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -775,6 +779,169 @@ class PlayerViewModelTest {
                 assertEquals(newFilter, emittedItem.selectedSearchFilter)
                 cancelAndConsumeRemainingEvents()
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("B72 Folder Playback and Queue Actions Tests")
+    inner class B72FolderPlaybackTests {
+        private val root = "/storage/emulated/0/Music"
+
+        private fun stubSong(id: String, title: String) = Song.emptySong().copy(
+            id = id,
+            title = title,
+            path = "$root/$title.flac",
+            contentUriString = "",
+        )
+
+        private fun hydratedSong(id: String, title: String) = Song.emptySong().copy(
+            id = id,
+            title = title,
+            artist = "Synthetic Artist",
+            album = "Synthetic Album",
+            path = "$root/$title.flac",
+            contentUriString = "content://media/external/audio/media/$id",
+            mimeType = "audio/flac",
+        )
+
+        private fun nestedFolder(): MusicFolder {
+            val sub = MusicFolder(
+                path = "$root/Root/Sub",
+                name = "Sub",
+                songs = listOf(stubSong("2", "Sub Track")).toImmutableList(),
+                musicRootPath = root,
+            )
+            return MusicFolder(
+                path = "$root/Root",
+                name = "Root",
+                songs = listOf(stubSong("1", "Root Track")).toImmutableList(),
+                subFolders = listOf(sub).toImmutableList(),
+                musicRootPath = root,
+            )
+        }
+
+        private fun mockHydrationAndMediaItems(): Map<String, Song> {
+            val fullSongs = mapOf(
+                "1" to hydratedSong("1", "Root Track"),
+                "2" to hydratedSong("2", "Sub Track"),
+            )
+            every { mockLibraryStateHolder.allSongsById } returns MutableStateFlow(emptyMap())
+            every { mockMusicRepository.getSongsByIds(any()) } answers {
+                val ids = firstArg<List<String>>()
+                flowOf(ids.mapNotNull { fullSongs[it] })
+            }
+            mockkObject(MediaItemBuilder)
+            every { MediaItemBuilder.build(any(), any()) } answers {
+                val song = firstArg<Song>()
+                MediaItem.Builder().setMediaId(song.id).setUri(song.contentUriString).build()
+            }
+            every { MediaItemBuilder.build(any()) } answers {
+                val song = firstArg<Song>()
+                MediaItem.Builder().setMediaId(song.id).setUri(song.contentUriString).build()
+            }
+            val mockedUri = mockk<android.net.Uri>(relaxed = true)
+            every { mockedUri.scheme } returns "content"
+            every { MediaItemBuilder.playbackUri(any<Song>()) } returns mockedUri
+            mockkStatic(android.net.Uri::class)
+            every { android.net.Uri.parse(any()) } answers {
+                val raw = firstArg<String>()
+                mockk<android.net.Uri>(relaxed = true) {
+                    every { this@mockk.toString() } returns raw
+                    every { scheme } returns raw.substringBefore(":", "")
+                }
+            }
+            return fullSongs
+        }
+
+        private fun TestScope.settleAsync() {
+            repeat(15) {
+                testScheduler.advanceUntilIdle()
+                Thread.sleep(20)
+            }
+        }
+
+        @Test
+        fun `playFolderNext hydrates stubs and inserts folderSongsInOrder in one batch`() = runTest {
+            mockHydrationAndMediaItems()
+            every { mockDualPlayerEngine.isShuffleEnabled } returns false
+            every { mockController.currentMediaItemIndex } returns 0
+            every { mockController.mediaItemCount } returns 2
+
+            val folder = nestedFolder()
+            val expectedIds = folderSongsInOrder(folder, SortOption.FolderNameAZ).map { it.id }
+
+            playerViewModel.playFolderNext(folder, SortOption.FolderNameAZ)
+            settleAsync()
+
+            val itemsSlot = slot<List<MediaItem>>()
+            verify(exactly = 1) { mockController.addMediaItems(1, capture(itemsSlot)) }
+            assertEquals(expectedIds, itemsSlot.captured.map { it.mediaId })
+        }
+
+        @Test
+        fun `addFolderToQueue with shuffle on appends batch and updates PlayOrder`() = runTest {
+            mockHydrationAndMediaItems()
+            val master = mockk<androidx.media3.exoplayer.ExoPlayer>(relaxed = true)
+            every { master.mediaItemCount } returns 3
+            every { mockDualPlayerEngine.masterPlayer } returns master
+            every { mockDualPlayerEngine.isShuffleEnabled } returns true
+            every { mockDualPlayerEngine.isUsingWindowedQueue() } returns false
+            every { mockDualPlayerEngine.currentPlayOrder() } returns intArrayOf(2, 0, 1)
+
+            val folder = nestedFolder()
+            val expectedIds = folderSongsInOrder(folder, SortOption.FolderNameAZ).map { it.id }
+
+            playerViewModel.addFolderToQueue(folder, SortOption.FolderNameAZ)
+            settleAsync()
+
+            val itemsSlot = slot<List<MediaItem>>()
+            verify(exactly = 1) { master.addMediaItems(capture(itemsSlot)) }
+            assertEquals(expectedIds, itemsSlot.captured.map { it.mediaId })
+            val orderSlot = slot<IntArray>()
+            verify(exactly = 1) { mockDualPlayerEngine.setPlayOrder(capture(orderSlot)) }
+            assertEquals(listOf(2, 0, 1, 3, 4), orderSlot.captured.toList())
+        }
+
+        @Test
+        fun `shuffleFolder hydrates stubs before dealing shuffled queue`() = runTest {
+            mockHydrationAndMediaItems()
+            every { mockDualPlayerEngine.queueLoadHold } returns com.lostf1sh.pixelplayeross.data.service.player.QueueLoadSkipHold { 0L }
+            coEvery { mockQueueStateHolder.dealShuffledQueue(any(), any()) } answers {
+                val songs = firstArg<List<Song>>()
+                QueueStateHolder.ShuffleDeal(songs.first(), 0, IntArray(songs.size) { it })
+            }
+
+            playerViewModel.shuffleFolder(nestedFolder(), SortOption.FolderNameAZ, "Root")
+            settleAsync()
+
+            val queueSlot = slot<List<Song>>()
+            coVerify(atLeast = 1) { mockQueueStateHolder.dealShuffledQueue(capture(queueSlot), true) }
+            assertEquals(listOf("2", "1"), queueSlot.captured.map { it.id })
+            assertEquals(
+                listOf("content://media/external/audio/media/2", "content://media/external/audio/media/1"),
+                queueSlot.captured.map { it.contentUriString },
+            )
+        }
+
+        @Test
+        fun `playFolderView queues only current folder shown songs and matches list ids`() = runTest {
+            mockHydrationAndMediaItems()
+            every { mockDualPlayerEngine.isShuffleEnabled } returns false
+            val folder = nestedFolder()
+            val expectedIds = com.lostf1sh.pixelplayeross.data.library.sortSongsForFolderView(
+                folder.songs,
+                SortOption.FolderNameAZ,
+            ).map { it.id }
+
+            val spyVm = io.mockk.spyk(playerViewModel)
+            val songsSlot = slot<List<Song>>()
+            every { spyVm.playSongs(capture(songsSlot), any(), any(), any(), any()) } returns Unit
+
+            spyVm.playFolderView(folder, SortOption.FolderNameAZ, "Root")
+            settleAsync()
+
+            assertEquals(expectedIds, songsSlot.captured.map { it.id })
+            assertEquals(listOf("1"), songsSlot.captured.map { it.id })
         }
     }
 

@@ -7,7 +7,7 @@
     <string name="action_export">Exportar</string>
     <string name="action_merge">Combinar</string>
     <string name="action_play_all">Reproducir todo</string>
-    <string name="action_queue_next">Siguiente</string>
+    <string name="action_queue_next">Reproducir a continuación</string>
     <string name="action_rename">Renombrar</string>
     <string name="action_save">Guardar</string>
     <string name="action_undo">Deshacer</string>

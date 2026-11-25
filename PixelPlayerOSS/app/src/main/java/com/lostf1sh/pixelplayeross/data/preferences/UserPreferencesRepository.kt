@@ -194,6 +194,7 @@ constructor(
 
     private val backupExcludedKeyNames = setOf(
         PreferencesKeys.INITIAL_SETUP_DONE.name,
+        PreferencesKeys.SAFETY_MAX_NOTIFICATION_PROMPT_ASKED.name,
         "lastfm_session_key"
     )
 
@@ -377,6 +378,8 @@ constructor(
 
         val REPLAYGAIN_ENABLED = booleanPreferencesKey("replaygain_enabled")
         val REPLAYGAIN_USE_ALBUM_GAIN = booleanPreferencesKey("replaygain_use_album_gain")
+        val SAFETY_MAX_NOTIFICATION_PROMPT_ASKED = booleanPreferencesKey("safety_max_notification_prompt_asked")
+        val INCLUDE_IMPORTED_HISTORY = booleanPreferencesKey("include_imported_history")
     }
 
     val appRebrandDialogShownFlow: Flow<Boolean> =
@@ -1421,6 +1424,28 @@ constructor(
 
     suspend fun setInitialSetupDone(isDone: Boolean) {
         dataStore.edit { preferences -> preferences[PreferencesKeys.INITIAL_SETUP_DONE] = isDone }
+    }
+
+    val safetyMaxNotificationPromptAskedFlow: Flow<Boolean> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.SAFETY_MAX_NOTIFICATION_PROMPT_ASKED] ?: false
+        }
+
+    suspend fun setSafetyMaxNotificationPromptAsked(asked: Boolean = true) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SAFETY_MAX_NOTIFICATION_PROMPT_ASKED] = asked
+        }
+    }
+
+    val includeImportedHistoryFlow: Flow<Boolean> =
+        dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.INCLUDE_IMPORTED_HISTORY] ?: true
+        }
+
+    suspend fun setIncludeImportedHistory(include: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.INCLUDE_IMPORTED_HISTORY] = include
+        }
     }
 
     val songsSortOptionFlow: Flow<String> =

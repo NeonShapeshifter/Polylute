@@ -7,6 +7,12 @@ import com.lostf1sh.pixelplayeross.presentation.viewmodel.LibraryTabSearch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 
+import com.lostf1sh.pixelplayeross.data.library.folderDiscHasSongs
+import com.lostf1sh.pixelplayeross.data.library.folderHasPlayableSongs
+import com.lostf1sh.pixelplayeross.data.library.folderRelativePath
+import com.lostf1sh.pixelplayeross.data.library.folderSongsInOrder
+import com.lostf1sh.pixelplayeross.data.library.sortMusicFoldersByOption
+import com.lostf1sh.pixelplayeross.data.library.sortSongsForFolderView
 import com.lostf1sh.pixelplayeross.data.stats.ListenSource
 import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
 import com.lostf1sh.pixelplayeross.utils.currentLocale
@@ -481,7 +487,7 @@ fun LibraryScreen(
             )
         }
     }
-    val isSortSheetVisible by playerViewModel.isSortingSheetVisible.collectAsStateWithLifecycle()
+    var isSortSheetVisible by remember { mutableStateOf(false) }
     val canNavigateBackInFolders by remember(playerViewModel) {
         playerViewModel.playerUiState
             .map { uiState -> uiState.currentFolder != null && uiState.folderBackGestureNavigationEnabled }
@@ -744,6 +750,12 @@ fun LibraryScreen(
     val navBarCompactMode by playerViewModel.navBarCompactMode.collectAsStateWithLifecycle()
     val bottomBarHeightDp = resolveNavBarOccupiedHeight(systemNavBarInset, navBarCompactMode)
 
+    val playerUiState by remember(playerViewModel) {
+        playerViewModel.playerUiState
+            .map { uiState -> uiState.toLibraryScreenProjection() }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = LibraryScreenPlayerProjection())
+    val defaultFolderName = stringResource(R.string.presentation_batch_d_folder_name_fallback)
     val fabTab = currentTabId
     val fabShowLocate = when (fabTab) {
         LibraryTabId.SONGS -> songsShowLocateButton
@@ -757,12 +769,20 @@ fun LibraryScreen(
         LibraryTabId.FOLDERS -> foldersLocateAction
         else -> null
     }
+    val currentFolder = playerUiState.currentFolder
+    val currentFolderQuery = appliedQueries[LibraryTabId.FOLDERS].orEmpty()
+    val currentFolderHasSongs = remember(currentFolder, playerUiState.currentFolderSortOption, currentFolderQuery) {
+        currentFolder?.let { folderDiscHasSongs(it, currentFolderQuery) } == true
+    }
+    val folderDiscs = remember(fabTab, currentFolder, currentFolderHasSongs) {
+        libraryFolderDiscsState(fabTab, currentFolder, currentFolderHasSongs)
+    }
     val showFloatingActions = fabTab != LibraryTabId.PLAYLISTS &&
-        (fabTab != LibraryTabId.FOLDERS || fabShowLocate)
+        (fabTab != LibraryTabId.FOLDERS || folderDiscs.showPlay || folderDiscs.showShuffle || fabShowLocate)
     // Scaffold places FABs 16 dp above its inset, then our modifier adds 8 dp. Reserve
     // their actual height (48 dp, or two buttons plus an 8 dp gap), plus 8 dp breathing room.
     val floatingActionsGap = if (!showFloatingActions) 16.dp
-        else if (fabShowLocate && fabTab != LibraryTabId.FOLDERS) 136.dp else 80.dp
+        else if (fabShowLocate && (fabTab != LibraryTabId.FOLDERS || folderDiscs.showShuffle)) 136.dp else 80.dp
 
     // B58 5 (#76): the discs fade while a scroll bar is dragged, so the bubble over the list is never under one
     val floatingDiscAlpha by androidx.compose.animation.core.animateFloatAsState(
@@ -785,22 +805,41 @@ fun LibraryScreen(
                 ).graphicsLayer { alpha = floatingDiscAlpha },
                 // Play the whole list from the top only where the list *is* the thing to play.
                 // Albums and artists are lists of containers: "play all" there is ambiguous.
-                showPlay = fabTab == LibraryTabId.SONGS || fabTab == LibraryTabId.LIKED,
+                showPlay = fabTab == LibraryTabId.SONGS || fabTab == LibraryTabId.LIKED || folderDiscs.showPlay,
+                playEnabled = fabTab != LibraryTabId.FOLDERS || folderDiscs.enabled,
                 onPlayClick = {
                     when (fabTab) {
                         LibraryTabId.LIKED -> playerViewModel.playFavoritesFromStart()
+                        LibraryTabId.FOLDERS -> currentFolder?.let { folder ->
+                            playerViewModel.playFolderView(
+                                folder = folder,
+                                sortOption = playerUiState.currentFolderSortOption,
+                                queueName = folder.name.ifBlank { defaultFolderName },
+                                query = currentFolderQuery,
+                            )
+                        }
                         else -> playerViewModel.playLibraryFromStart()
                     }
                 },
                 showLocate = fabShowLocate && appliedQueries[fabTab].isNullOrBlank(),
                 onLocateClick = { fabLocate?.invoke() },
-                showShuffle = fabTab != LibraryTabId.PLAYLISTS && fabTab != LibraryTabId.FOLDERS && fabTab != LibraryTabId.COLLECTIONS,
+                showShuffle = (fabTab != LibraryTabId.PLAYLISTS && fabTab != LibraryTabId.FOLDERS && fabTab != LibraryTabId.COLLECTIONS) ||
+                    folderDiscs.showShuffle,
+                shuffleEnabled = fabTab != LibraryTabId.FOLDERS || folderDiscs.enabled,
                 onShuffleClick = {
                     when (fabTab) {
                         LibraryTabId.LIKED -> playerViewModel.shuffleFavoriteSongs()
                         LibraryTabId.ALBUMS -> playerViewModel.shuffleRandomAlbum()
                         LibraryTabId.ARTISTS -> playerViewModel.shuffleRandomArtist()
                         LibraryTabId.GENRES -> playerViewModel.shuffleRandomGenre()
+                        LibraryTabId.FOLDERS -> currentFolder?.let { folder ->
+                            playerViewModel.shuffleFolderView(
+                                folder = folder,
+                                sortOption = playerUiState.currentFolderSortOption,
+                                queueName = folder.name.ifBlank { defaultFolderName },
+                                query = currentFolderQuery,
+                            )
+                        }
                         else -> playerViewModel.shuffleAllSongs()
                     }
                 }
@@ -918,11 +957,6 @@ fun LibraryScreen(
             }
         },
     ) { innerScaffoldPadding ->
-        val playerUiState by remember(playerViewModel) {
-            playerViewModel.playerUiState
-                .map { uiState -> uiState.toLibraryScreenProjection() }
-                .distinctUntilChanged()
-        }.collectAsStateWithLifecycle(initialValue = LibraryScreenPlayerProjection())
         val isLibraryContentEmpty by remember(playerViewModel) {
             combine(
                 playerViewModel.songCountFlow,
@@ -1133,7 +1167,7 @@ fun LibraryScreen(
                                     onSearchQuery = { searchEdits[currentTabId] = it },
                                     onSearchClose = { openSearchTabs[currentTabId] = false; searchEdits[currentTabId] = ""; libraryViewModel.tabSearch.set(currentTabId, "") },
                                     showLocateButton = showLocateButton,
-                                    onSortClick = { playerViewModel.showSortingSheet() },
+                                    onSortClick = { isSortSheetVisible = true },
                                     onLocateClick = { locateAction?.invoke() },
                                     isPlaylistTab = currentTabId == LibraryTabId.PLAYLISTS,
                                     isFoldersTab = currentTabId == LibraryTabId.FOLDERS && (!playerUiState.isFoldersPlaylistView || playerUiState.currentFolder != null),
@@ -1176,10 +1210,10 @@ fun LibraryScreen(
                                 title = stringResource(R.string.presentation_batch_d_sort_by),
                                 options = sanitizedSortOptions,
                                 selectedOption = selectedOptionForSheet,
-                                onDismiss = { playerViewModel.hideSortingSheet() },
+                                onDismiss = { isSortSheetVisible = false },
                                 onOptionSelected = { option ->
                                     onSortOptionChanged(option)
-                                    playerViewModel.hideSortingSheet()
+                                    isSortSheetVisible = false
                                 },
                                 onDirectionToggle = { option ->
                                     onSortOptionChanged(option)
@@ -1429,6 +1463,32 @@ fun LibraryScreen(
                                             stablePlayerState = stablePlayerState,
                                             onNavigateBack = { playerViewModel.navigateBackFolder() },
                                             onFolderClick = { folderPath -> playerViewModel.navigateToFolder(folderPath) },
+                                            onPlayFolder = { folder ->
+                                                playerViewModel.playFolder(
+                                                    folder = folder,
+                                                    sortOption = playerUiState.currentFolderSortOption,
+                                                    queueName = folder.name.ifBlank { defaultFolderName },
+                                                )
+                                            },
+                                            onShuffleFolder = { folder ->
+                                                playerViewModel.shuffleFolder(
+                                                    folder = folder,
+                                                    sortOption = playerUiState.currentFolderSortOption,
+                                                    queueName = folder.name.ifBlank { defaultFolderName },
+                                                )
+                                            },
+                                            onPlayFolderNext = { folder ->
+                                                playerViewModel.playFolderNext(
+                                                    folder = folder,
+                                                    sortOption = playerUiState.currentFolderSortOption,
+                                                )
+                                            },
+                                            onAddFolderToQueue = { folder ->
+                                                playerViewModel.addFolderToQueue(
+                                                    folder = folder,
+                                                    sortOption = playerUiState.currentFolderSortOption,
+                                                )
+                                            },
                                             onFolderAsPlaylistClick = { folder ->
                                                 val encodedPath = Uri.encode(folder.path)
                                                 navController.navigateSafelyReplacing(
@@ -1842,67 +1902,70 @@ fun LibraryScreen(
     if (showMergePlaylistDialog && pendingMergePlaylistIds.isNotEmpty()) {
         var mergePlaylistName by remember { mutableStateOf("") }
 
-        AlertDialog(
-            onDismissRequest = {
-                showMergePlaylistDialog = false
-                pendingMergePlaylistIds = emptyList()
-                mergePlaylistName = ""
-            },
-            title = { Text(stringResource(R.string.presentation_batch_d_merge_playlists_title)) },
-            text = {
-                // An alert is a window of its own, so the activity's volume-key path does not reach
-                // it. The bridge routes Volume Up/Down to the same authority the activity uses.
-                ModalInputBridge()
-                Column {
-                    Text(stringResource(R.string.presentation_batch_d_merge_playlists_prompt))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = mergePlaylistName,
-                        keyboardActions = dapDismissKeyboardActions(),
-                        onValueChange = { mergePlaylistName = it },
-                        placeholder = { Text(stringResource(R.string.presentation_batch_d_merge_playlists_placeholder)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().dapTextField()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(
-                            R.string.presentation_batch_d_merge_playlists_body,
-                            pendingMergePlaylistIds.size
-                        ),
-                        style = DapType.Note,
-                        color = Dap.tertiaryText
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (mergePlaylistName.isNotEmpty()) {
-                            playlistViewModel.mergePlaylistsIntoOne(
-                                pendingMergePlaylistIds,
-                                mergePlaylistName
-                            )
-                            playlistMultiSelectionState.clearSelection()
-                            showMergePlaylistDialog = false
-                            pendingMergePlaylistIds = emptyList()
-                            mergePlaylistName = ""
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.action_merge))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
+        com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+            AlertDialog(
+                onDismissRequest = {
                     showMergePlaylistDialog = false
                     pendingMergePlaylistIds = emptyList()
                     mergePlaylistName = ""
-                }) {
-                    Text(stringResource(R.string.cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
+                title = { Text(stringResource(R.string.presentation_batch_d_merge_playlists_title)) },
+                text = {
+                    // An alert is a window of its own, so the activity's volume-key path does not reach
+                    // it. The bridge routes Volume Up/Down to the same authority the activity uses.
+                    ModalInputBridge()
+                    Column {
+                        Text(stringResource(R.string.presentation_batch_d_merge_playlists_prompt))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = mergePlaylistName,
+                            keyboardActions = dapDismissKeyboardActions(),
+                            onValueChange = { mergePlaylistName = it },
+                            placeholder = { Text(stringResource(R.string.presentation_batch_d_merge_playlists_placeholder)) },
+                            colors = com.lostf1sh.pixelplayeross.ui.ds.dapOutlinedTextFieldColors(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().dapTextField()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.presentation_batch_d_merge_playlists_body,
+                                pendingMergePlaylistIds.size
+                            ),
+                            style = DapType.Note,
+                            color = Dap.tertiaryText
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (mergePlaylistName.isNotEmpty()) {
+                                playlistViewModel.mergePlaylistsIntoOne(
+                                    pendingMergePlaylistIds,
+                                    mergePlaylistName
+                                )
+                                playlistMultiSelectionState.clearSelection()
+                                showMergePlaylistDialog = false
+                                pendingMergePlaylistIds = emptyList()
+                                mergePlaylistName = ""
+                            }
+                        }
+                    ) {
+                        Text(stringResource(R.string.action_merge))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showMergePlaylistDialog = false
+                        pendingMergePlaylistIds = emptyList()
+                        mergePlaylistName = ""
+                    }) {
+                        Text(stringResource(R.string.cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     if (showBatchEditSheet && selectedSongs.isNotEmpty()) {
@@ -2370,7 +2433,11 @@ fun LibraryFoldersTab(
     internalVolumeRoot: String = "",
     onVolumeChange: (String) -> Unit = {},
     query: String? = null,
-    onQueryChange: (String) -> Unit = {}
+    onQueryChange: (String) -> Unit = {},
+    onPlayFolder: (MusicFolder) -> Unit = {},
+    onShuffleFolder: (MusicFolder) -> Unit = {},
+    onPlayFolderNext: (MusicFolder) -> Unit = {},
+    onAddFolderToQueue: (MusicFolder) -> Unit = {},
 ) {
 
 
@@ -2381,6 +2448,10 @@ fun LibraryFoldersTab(
     actionFolder?.let { folder ->
         FolderActionsSheet(
             folder = folder,
+            onPlay = { actionFolder = null; onPlayFolder(folder) },
+            onShuffle = { actionFolder = null; onShuffleFolder(folder) },
+            onPlayNext = { actionFolder = null; onPlayFolderNext(folder) },
+            onAddToQueue = { actionFolder = null; onAddFolderToQueue(folder) },
             onOpen = { actionFolder = null; onFolderClick(folder.path) },
             onActions = { actionFolder = null; onFolderAsPlaylistClick(folder) },
             onDismiss = { actionFolder = null }
@@ -2668,7 +2739,7 @@ fun LibraryFoldersTab(
 
 @Composable
 fun FolderPlaylistItem(folder: MusicFolder, onClick: () -> Unit) {
-    val previewSongs = remember(folder) { folder.collectAllSongs().take(9).toImmutableList() }
+    val previewSongs = remember(folder) { folderSongsInOrder(folder, SortOption.FolderNameAZ).take(9).toImmutableList() }
 
     Column(Modifier.fillMaxWidth()) {
         DapAlbumRow(
@@ -2708,64 +2779,6 @@ internal fun flattenFolders(folders: List<MusicFolder>): List<MusicFolder> {
         val current = if (folder.songs.isNotEmpty()) listOf(folder) else emptyList()
         current + flattenFolders(folder.subFolders)
     }
-}
-
-internal fun sortMusicFoldersByOption(folders: List<MusicFolder>, sortOption: SortOption): List<MusicFolder> {
-    return when (sortOption) {
-        SortOption.FolderPathAZ -> folders.sortedBy { folderRelativePath(it).lowercase(java.util.Locale.ROOT) }
-        SortOption.FolderPathZA -> folders.sortedByDescending { folderRelativePath(it).lowercase(java.util.Locale.ROOT) }
-        SortOption.FolderNameAZ -> folders.sortedWith(
-            compareBy<MusicFolder> { it.name.lowercase() }
-                .thenBy { it.path }
-        )
-        SortOption.FolderNameZA -> folders.sortedWith(
-            compareByDescending<MusicFolder> { it.name.lowercase() }
-                .thenBy { it.path }
-        )
-        SortOption.FolderSongCountAsc -> folders.sortedWith(
-            compareBy<MusicFolder> { it.totalSongCount }
-                .thenBy { it.name.lowercase() }
-                .thenBy { it.path }
-        )
-        SortOption.FolderSongCountDesc -> folders.sortedWith(
-            compareByDescending<MusicFolder> { it.totalSongCount }
-                .thenBy { it.name.lowercase() }
-                .thenBy { it.path }
-        )
-        SortOption.FolderSubdirCountAsc -> folders.sortedWith(
-            compareBy<MusicFolder> { it.totalSubFolderCount }
-                .thenBy { it.name.lowercase() }
-                .thenBy { it.path }
-        )
-        SortOption.FolderSubdirCountDesc -> folders.sortedWith(
-            compareByDescending<MusicFolder> { it.totalSubFolderCount }
-                .thenBy { it.name.lowercase() }
-                .thenBy { it.path }
-        )
-        else -> folders.sortedWith(
-            compareBy<MusicFolder> { it.name.lowercase() }
-                .thenBy { it.path }
-        )
-    }
-}
-
-private fun sortSongsForFolderView(songs: List<Song>, sortOption: SortOption): List<Song> {
-    return when (sortOption) {
-        SortOption.FolderNameZA -> songs.sortedWith(
-            compareByDescending<Song> { it.title.lowercase() }
-                .thenBy { it.artist.lowercase() }
-                .thenBy { it.id }
-        )
-        else -> songs.sortedWith(
-            compareBy<Song> { it.title.lowercase() }
-                .thenBy { it.artist.lowercase() }
-                .thenBy { it.id }
-        )
-    }
-}
-
-private fun MusicFolder.collectAllSongs(): List<Song> {
-    return songs + subFolders.flatMap { it.collectAllSongs() }
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -3003,8 +3016,25 @@ private fun LibraryMenuItem(label: String, onClick: () -> Unit) {
  * PHASE 14.0 still holds: none of this takes part in the list's layout. These used to be header
  * items, and Locate appearing pushed the header onto a second line and took 104 px off the list.
  */
+internal data class FolderFloatingDiscsState(
+    val showPlay: Boolean,
+    val showShuffle: Boolean,
+    val enabled: Boolean,
+)
+
+internal fun libraryFolderDiscsState(
+    tab: LibraryTabId,
+    currentFolder: MusicFolder?,
+    folderHasSongs: Boolean,
+): FolderFloatingDiscsState {
+    if (tab != LibraryTabId.FOLDERS || currentFolder == null) {
+        return FolderFloatingDiscsState(showPlay = false, showShuffle = false, enabled = false)
+    }
+    return FolderFloatingDiscsState(showPlay = true, showShuffle = true, enabled = folderHasSongs)
+}
+
 @Composable
-private fun LibraryFloatingActions(
+internal fun LibraryFloatingActions(
     modifier: Modifier = Modifier,
     showPlay: Boolean,
     onPlayClick: () -> Unit,
@@ -3012,6 +3042,8 @@ private fun LibraryFloatingActions(
     onShuffleClick: () -> Unit,
     showLocate: Boolean,
     onLocateClick: () -> Unit,
+    playEnabled: Boolean = true,
+    shuffleEnabled: Boolean = true,
 ) {
     if (!showPlay && !showShuffle && !showLocate) return
     // Bottom-aligned: Play shares its height with Shuffle, the one that is always there, so Locate
@@ -3024,7 +3056,8 @@ private fun LibraryFloatingActions(
             DapFloatingLibraryAction(
                 icon = Icons.Rounded.PlayArrow,
                 contentDescription = stringResource(R.string.play_playback),
-                onClick = onPlayClick
+                onClick = onPlayClick,
+                enabled = playEnabled,
             )
         }
         Spacer(Modifier.weight(1f))
@@ -3043,7 +3076,8 @@ private fun LibraryFloatingActions(
                 DapFloatingLibraryAction(
                     icon = Icons.Rounded.Shuffle,
                     contentDescription = stringResource(R.string.cd_shuffle_play),
-                    onClick = onShuffleClick
+                    onClick = onShuffleClick,
+                    enabled = shuffleEnabled,
                 )
             }
         }
@@ -3055,13 +3089,20 @@ private fun DapFloatingLibraryAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
+    val coverScheme = com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current
+    val container = coverScheme?.secondaryContainer ?: Dap.surfaceRaised
+    val content = coverScheme?.onSecondaryContainer ?: Dap.secondaryText
     FilledTonalIconButton(
         onClick = onClick,
+        enabled = enabled,
         shape = CircleShape,
         colors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = Dap.surfaceRaised,
-            contentColor = Dap.secondaryText
+            containerColor = container,
+            contentColor = content,
+            disabledContainerColor = container.copy(alpha = 0.5f),
+            disabledContentColor = Dap.disabledText,
         ),
         modifier = Modifier.size(48.dp)
     ) {

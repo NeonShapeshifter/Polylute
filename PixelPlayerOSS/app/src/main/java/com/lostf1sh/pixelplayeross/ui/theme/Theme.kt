@@ -7,6 +7,7 @@ import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.view.View
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
@@ -188,6 +189,8 @@ fun PixelPlayerTheme(
     palette: DapPalette = baseTheme.palette,
     /** B40-F1: album-art mode: the accent is the cover's, already readable on [palette]. */
     accentColorOverride: Color? = null,
+    coverSchemeOverride: ColorScheme? = null,
+    coverAccentOverride: Color? = null,
     content: @Composable () -> Unit
 ) {
     val override = colorSchemePairOverride?.let { if (darkTheme) it.dark else it.light }
@@ -210,6 +213,8 @@ fun PixelPlayerTheme(
             palette = palette,
             colorSchemeOverride = override,
             accentColorOverride = accentColorOverride,
+            coverSchemeOverride = coverSchemeOverride,
+            coverAccentOverride = coverAccentOverride,
         ) {
             MaterialTheme(
                 motionScheme = MotionScheme.expressive(),

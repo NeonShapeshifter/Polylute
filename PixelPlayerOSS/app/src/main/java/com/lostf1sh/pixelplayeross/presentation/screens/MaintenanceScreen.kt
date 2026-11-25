@@ -33,6 +33,8 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.lostf1sh.pixelplayeross.ui.ds.dapReadableUnchecked
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -876,7 +878,7 @@ private fun MaintenanceOverrideGroup(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = isOn, onCheckedChange = { onSetOverride(override, it) })
+            Switch(checked = isOn, onCheckedChange = { onSetOverride(override, it) }, colors = SwitchDefaults.colors().dapReadableUnchecked())
         }
     }
 }

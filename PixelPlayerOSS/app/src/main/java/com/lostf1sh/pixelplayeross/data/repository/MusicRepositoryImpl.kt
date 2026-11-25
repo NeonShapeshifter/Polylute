@@ -26,10 +26,13 @@ import com.lostf1sh.pixelplayeross.data.database.FavoritesDao
 import com.lostf1sh.pixelplayeross.data.database.MusicDao
 import com.lostf1sh.pixelplayeross.data.database.SearchHistoryDao
 import com.lostf1sh.pixelplayeross.data.database.SearchHistoryEntity
+import com.lostf1sh.pixelplayeross.data.database.SongSearchRow
 import com.lostf1sh.pixelplayeross.data.database.toAlbum
 import com.lostf1sh.pixelplayeross.data.database.toArtist
 import com.lostf1sh.pixelplayeross.data.database.toSearchHistoryItem
 import com.lostf1sh.pixelplayeross.data.database.toSong
+import com.lostf1sh.pixelplayeross.presentation.utils.SearchRelevance
+import com.lostf1sh.pixelplayeross.utils.TextFold
 import com.lostf1sh.pixelplayeross.data.model.Album
 import com.lostf1sh.pixelplayeross.data.model.Artist
 import com.lostf1sh.pixelplayeross.data.model.Genre
@@ -540,57 +543,71 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override fun searchSongs(query: String, titleOnly: Boolean): Flow<List<Song>> {
-        if (query.isBlank()) return flowOf(emptyList())
+        val needle = TextFold.fold(query)
+        if (needle.isEmpty()) return flowOf(emptyList())
         return combine(
             userPreferencesRepository.allowedDirectoriesFlow,
             userPreferencesRepository.blockedDirectoriesFlow
         ) { allowedDirs, blockedDirs ->
             allowedDirs to blockedDirs
         }.flatMapLatest { (allowedDirs, blockedDirs) ->
-            flow {
-                val (allowedParentDirs, applyDirectoryFilter) =
-                    computeAllowedDirs(allowedDirs, blockedDirs)
-                emit(
-                    musicDao.searchSongsLimited(
-                        query = query,
-                        allowedParentDirs = allowedParentDirs,
-                        applyDirectoryFilter = applyDirectoryFilter,
-                        limit = SEARCH_RESULTS_LIMIT,
-                        titleOnly = titleOnly
-                    )
-                )
-            }.flatMapLatest { it }
-        }.map { entities ->
-            entities.map { it.toSong() }
+            val (allowedParentDirs, applyDirectoryFilter) =
+                computeAllowedDirs(allowedDirs, blockedDirs)
+            musicDao.observeSongSearchRows(allowedParentDirs, applyDirectoryFilter)
+                .map { rows ->
+                    withContext(Dispatchers.Default) {
+                        rankAndSelectSongSearchIds(rows, needle, titleOnly, SEARCH_RESULTS_LIMIT)
+                    }
+                }
+                .distinctUntilChanged()
+                .flatMapLatest { matchedIds ->
+                    if (matchedIds.isEmpty()) {
+                        flowOf(emptyList())
+                    } else {
+                        val order = HashMap<Long, Int>(matchedIds.size * 2).apply {
+                            matchedIds.forEachIndexed { index, id -> put(id, index) }
+                        }
+                        musicDao.getSongsByIds(matchedIds, allowedParentDirs, applyDirectoryFilter).map { entities ->
+                            entities.sortedBy { order[it.id] ?: Int.MAX_VALUE }.map { it.toSong() }
+                        }
+                    }
+                }
         }.flowOn(Dispatchers.IO)
     }
 
 
     override fun searchAlbums(query: String, minTracks: Int): Flow<List<Album>> {
-        if (query.isBlank()) return flowOf(emptyList())
-        return musicDao.searchAlbums(query, emptyList(), false, minTracks).map { entities ->
-            entities.map { it.toAlbum() }
-        }.flowOn(Dispatchers.IO)
+        val needle = TextFold.fold(query)
+        if (needle.isEmpty()) return flowOf(emptyList())
+        return musicDao.observeSearchableAlbums(emptyList(), false, minTracks).map { entities ->
+            entities.filter { album ->
+                needle in TextFold.fold(album.title) || needle in TextFold.fold(album.artistName)
+            }.map { it.toAlbum() }
+        }.flowOn(Dispatchers.Default)
     }
 
     override fun searchArtists(query: String): Flow<List<Artist>> {
-        if (query.isBlank()) return flowOf(emptyList())
-        return musicDao.searchArtists(query, emptyList(), false).map { entities ->
-            entities.map { it.toArtist() }
-        }.flowOn(Dispatchers.IO)
+        val needle = TextFold.fold(query)
+        if (needle.isEmpty()) return flowOf(emptyList())
+        return musicDao.observeSearchableArtists(emptyList(), false).map { entities ->
+            entities.filter { artist ->
+                needle in TextFold.fold(artist.name)
+            }.map { it.toArtist() }
+        }.flowOn(Dispatchers.Default)
     }
 
     override suspend fun searchPlaylists(query: String): List<Playlist> {
-        if (query.isBlank()) return emptyList()
+        val needle = TextFold.fold(query)
+        if (needle.isEmpty()) return emptyList()
         return playlistPreferencesRepository.userPlaylistsFlow.first()
             .filter { playlist ->
-                playlist.name.contains(query, ignoreCase = true)
+                needle in TextFold.fold(playlist.name)
             }
     }
 
     override fun searchComposers(query: String): Flow<List<com.lostf1sh.pixelplayeross.data.media.ComposerResult>> {
-        if (query.isBlank()) return flowOf(emptyList())
-        return composerRows(query).combine(userPreferencesRepository.artistDelimitersFlow) { rows, delimiters ->
+        if (TextFold.fold(query).isEmpty()) return flowOf(emptyList())
+        return composerRows().combine(userPreferencesRepository.artistDelimitersFlow) { rows, delimiters ->
             com.lostf1sh.pixelplayeross.data.media.ComposerNames.matching(rows, delimiters, query).take(MAX_COMPOSER_RESULTS)
         }.flowOn(Dispatchers.Default)
     }
@@ -600,7 +617,7 @@ class MusicRepositoryImpl @Inject constructor(
         return combine(userPreferencesRepository.allowedDirectoriesFlow, userPreferencesRepository.blockedDirectoriesFlow) { allowed, blocked -> allowed to blocked }
             .flatMapLatest { (allowed, blocked) ->
                 observeAllowedDirs(allowed, blocked).flatMapLatest { (parents, apply) ->
-                    musicDao.searchComposerValues(name, parents, apply)
+                    musicDao.getAllComposerValues(parents, apply)
                         .combine(userPreferencesRepository.artistDelimitersFlow) { rows, delimiters ->
                             com.lostf1sh.pixelplayeross.data.media.ComposerNames.valuesFor(rows, delimiters, name).toList().sorted()
                         }
@@ -614,16 +631,19 @@ class MusicRepositoryImpl @Inject constructor(
             .flowOn(Dispatchers.IO)
     }
 
-    /** The composer tag values containing [query], for the allowed folders. */
-    private fun composerRows(query: String): Flow<List<com.lostf1sh.pixelplayeross.data.database.ComposerCountRow>> =
+    /** All composer tag values with song counts, for the allowed folders. */
+    private fun composerRows(): Flow<List<com.lostf1sh.pixelplayeross.data.database.ComposerCountRow>> =
         combine(userPreferencesRepository.allowedDirectoriesFlow, userPreferencesRepository.blockedDirectoriesFlow) { allowed, blocked -> allowed to blocked }
             .flatMapLatest { (allowed, blocked) ->
-                observeAllowedDirs(allowed, blocked).flatMapLatest { (parents, apply) -> musicDao.searchComposerValues(query, parents, apply) }
+                observeAllowedDirs(allowed, blocked).flatMapLatest { (parents, apply) -> musicDao.getAllComposerValues(parents, apply) }
             }
 
     override fun searchAll(query: String, filterType: SearchFilterType): Flow<List<SearchResultItem>> {
-        if (query.isBlank()) return flowOf(emptyList())
-        val playlistsFlow = flow { emit(searchPlaylists(query)) }
+        val needle = TextFold.fold(query)
+        if (needle.isEmpty()) return flowOf(emptyList())
+        val playlistsFlow = playlistPreferencesRepository.userPlaylistsFlow.map { playlists ->
+            playlists.filter { playlist -> needle in TextFold.fold(playlist.name) }
+        }
 
         return combine(
             userPreferencesRepository.minTracksPerAlbumFlow
@@ -655,6 +675,39 @@ class MusicRepositoryImpl @Inject constructor(
                 SearchFilterType.COMPOSERS -> searchComposers(query).map { composers -> composers.map { SearchResultItem.ComposerItem(it.name, it.songCount) } }
             }
         }.flowOn(Dispatchers.Default)
+    }
+
+    internal fun rankAndSelectSongSearchIds(
+        rows: List<SongSearchRow>,
+        foldedNeedle: String,
+        titleOnly: Boolean,
+        limit: Int = SEARCH_RESULTS_LIMIT,
+    ): List<Long> {
+        if (foldedNeedle.isEmpty() || rows.isEmpty() || limit <= 0) return emptyList()
+        data class RankedRow(val id: Long, val rank: Int, val foldedTitle: String)
+        val matched = ArrayList<RankedRow>()
+        for (row in rows) {
+            val foldedTitle = TextFold.fold(row.title)
+            val titleRank = SearchRelevance.rankFolded(foldedTitle, foldedNeedle)
+            val rank = if (titleRank != SearchRelevance.NO_MATCH) {
+                titleRank
+            } else if (!titleOnly) {
+                val artistRank = SearchRelevance.rankFolded(TextFold.fold(row.artistName), foldedNeedle)
+                if (artistRank != SearchRelevance.NO_MATCH) artistRank + SearchRelevance.SECONDARY_OFFSET
+                else SearchRelevance.NO_MATCH
+            } else {
+                SearchRelevance.NO_MATCH
+            }
+            if (rank != SearchRelevance.NO_MATCH) {
+                matched.add(RankedRow(row.id, rank, foldedTitle))
+            }
+        }
+        if (matched.isEmpty()) return emptyList()
+        matched.sortWith(compareBy<RankedRow> { it.rank }.thenBy { it.foldedTitle }.thenBy { it.id })
+        val count = minOf(matched.size, limit)
+        val ids = ArrayList<Long>(count)
+        for (i in 0 until count) ids.add(matched[i].id)
+        return ids
     }
 
     override suspend fun addSearchHistoryItem(query: String) {

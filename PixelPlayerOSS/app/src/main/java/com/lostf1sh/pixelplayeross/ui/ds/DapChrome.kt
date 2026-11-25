@@ -102,12 +102,13 @@ fun DapOverflowButton(
 
 /**
  * The standard bar above a screen's content: a back glyph on the left, optional actions on the
- * right. No elevation, no container colour, no title — titles are set in the page body.
+ * right. Page titles live in the body. The optional leading slot can label a temporary mode.
  */
 @Composable
 fun DapTopBar(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
 ) {
     Row(
@@ -117,7 +118,11 @@ fun DapTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        if (onBack != null) DapBackButton(onBack) else Spacer(Modifier.width(DapSizes.MinTouchTarget))
+        when {
+            leading != null -> leading()
+            onBack != null -> DapBackButton(onBack)
+            else -> Spacer(Modifier.width(DapSizes.MinTouchTarget))
+        }
         if (actions != null) actions()
     }
 }

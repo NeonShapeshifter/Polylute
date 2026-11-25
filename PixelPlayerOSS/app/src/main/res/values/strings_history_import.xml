@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="stats_include_imported_title">Include imported history</string>
+    <string name="stats_include_imported_desc">Add Spotify, YouTube Music and CSV plays to statistics</string>
+    <string name="stats_note_imported_estimated">%1$s of imported listening time is estimated from track lengths.</string>
+    <plurals name="stats_note_imported_zero_duration">
+        <item quantity="one">%1$s imported play had no duration and counts with 0 listened time.</item>
+        <item quantity="other">%1$s imported plays had no duration and count with 0 listened time.</item>
+    </plurals>
+
+    <string name="import_history_section_title">Import &amp; export</string>
+    <string name="import_history_title">Import from another app</string>
+    <string name="import_history_subtitle">Spotify, YouTube Music, CSV, M3U/M3U8 or Polylute files. Read locally on your device.</string>
+    <string name="import_history_past_title">Imported history</string>
+    <string name="import_history_empty">No imported history yet.</string>
+    <string name="import_history_remove">Remove</string>
+    <string name="import_history_remove_confirm_title">Remove imported history?</string>
+    <string name="import_history_remove_confirm_body">Deletes %1$s plays from %2$s. Your own Polylute listening history is untouched.</string>
+    <string name="import_history_cancel">Cancel</string>
+
+    <string name="import_history_pick_title">Choose files</string>
+    <string name="import_history_formats_note">Supports Spotify Extended &amp; Account Data (.json or .zip), Google Takeout YouTube Music (watch-history.json or .zip), M3U/M3U8 playlists, CSV files and Polylute exports. Nothing leaves this device.</string>
+    <string name="import_history_pinned_note">Unpin Polylute first to open Android\'s file picker.</string>
+    <string name="import_history_reading_title">Reading files…</string>
+    <string name="import_history_reading_progress">File %1$d of %2$d · %3$s rows read</string>
+    <string name="import_history_error_title">Could not read file</string>
+    <string name="import_history_error_musicolet">This is an encrypted Musicolet backup (%1$s). Polylute can\'t read it. To bring your playlists over, export them from Musicolet as M3U.</string>
+    <string name="import_history_error_ytm_html">This Google Takeout file is HTML. Export YouTube and YouTube Music history in JSON format (watch-history.json) and pick that file.</string>
+    <string name="import_history_error_generic">Could not read this file (%1$s).</string>
+
+    <string name="import_csv_title">Check CSV columns</string>
+    <string name="import_csv_delimiter">Delimiter</string>
+    <string name="import_csv_has_header">First row is header</string>
+    <string name="import_csv_col_date">Date</string>
+    <string name="import_csv_col_artist">Artist</string>
+    <string name="import_csv_col_title">Title</string>
+    <string name="import_csv_col_album">Album (optional)</string>
+    <string name="import_csv_col_duration">Listened time (optional)</string>
+    <string name="import_csv_col_none">None</string>
+    <string name="import_csv_unit_ms">Milliseconds</string>
+    <string name="import_csv_unit_s">Seconds</string>
+    <string name="import_csv_preview_rows">Sample rows</string>
+    <string name="import_csv_continue">Continue</string>
+
+    <string name="import_preview_files_title">Files found</string>
+    <string name="import_file_kind_spotify_extended">Spotify streaming history (Extended)</string>
+    <string name="import_file_kind_spotify_short">Spotify streaming history</string>
+    <string name="import_file_kind_spotify_playlists">Spotify playlists</string>
+    <string name="import_file_kind_spotify_likes">Spotify liked tracks</string>
+    <string name="import_file_kind_ytm_history">YouTube Music history</string>
+    <string name="import_file_kind_csv_history">CSV history</string>
+    <string name="import_file_kind_m3u">M3U playlist</string>
+    <string name="import_file_kind_polylute_history">Polylute history</string>
+    <string name="import_file_kind_polylute_likes">Polylute likes</string>
+    <string name="import_file_kind_polylute_playlists">Polylute playlists</string>
+    <string name="import_file_skip_ytm_video_ids">Skipped: contains only video IDs without song title or artist</string>
+    <string name="import_file_skip_duplicate">Skipped: duplicate file</string>
+    <string name="import_file_skip_metadata">Skipped: account metadata without music tracks</string>
+    <string name="import_file_skip_unsupported">Skipped: unsupported file format</string>
+    <string name="import_file_skip_empty">Skipped: no tracks found</string>
+
+    <string name="import_preview_title">Listening history</string>
+    <string name="import_preview_source">Source</string>
+    <string name="import_preview_dates">Date range</string>
+    <string name="import_preview_rows_read">Rows read</string>
+    <string name="import_preview_plays">Plays</string>
+    <string name="import_preview_skips">Skipped (below play threshold)</string>
+    <string name="import_preview_podcasts">Podcasts &amp; audiobooks skipped</string>
+    <string name="import_preview_non_music">Non-music entries skipped</string>
+    <string name="import_preview_duplicates">Duplicates skipped</string>
+    <string name="import_preview_rejected">Rows rejected</string>
+    <string name="import_preview_matched_exact">Matched (exact)</string>
+    <string name="import_preview_matched_folded">Matched (folded)</string>
+    <string name="import_preview_matched_partial">Matched (partial)</string>
+    <string name="import_preview_unmatched">Unmatched (name-only)</string>
+    <string name="import_preview_estimated_time">Estimated listening time</string>
+    <string name="import_preview_zero_duration">Unmatched plays with 0 time</string>
+    <string name="import_preview_ytm_note">YouTube Music exports every video opened without durations, so counts are estimated and can run high.</string>
+    <string name="import_preview_top_unmatched">Top unmatched artists</string>
+
+    <string name="import_preview_likes_title">Likes</string>
+    <string name="import_likes_summary">%1$s liked songs found, %2$s already in your favorites.</string>
+
+    <string name="import_preview_playlists_title">Playlists</string>
+    <string name="import_playlist_match_count">%1$s of %2$s songs</string>
+    <string name="import_playlist_include">Create this playlist</string>
+    <plurals name="import_playlist_unmatched_count">
+        <item quantity="one">%1$s song you don\'t have</item>
+        <item quantity="other">%1$s songs you don\'t have</item>
+    </plurals>
+    <plurals name="import_playlists_hidden_zero">
+        <item quantity="one">%1$s playlist hidden (0 of your songs)</item>
+        <item quantity="other">%1$s playlists hidden (0 of your songs)</item>
+    </plurals>
+    <string name="import_playlists_skipped_items">Skipped in playlists: %1$s episodes, %2$s local files</string>
+
+    <string name="import_preview_confirm">Done</string>
+    <string name="import_preview_nothing_new">Nothing new to import</string>
+    <string name="import_history_done_summary">Added %1$s plays, %2$s likes, %3$s playlists</string>
+    <string name="import_history_done_line">Imported %1$s plays (%2$s). %3$d %% matched your library.</string>
+    <string name="import_history_done_line_no_dates">Imported %1$s plays. %2$d %% matched your library.</string>
+
+    <string name="import_source_spotify_extended">Spotify (Extended)</string>
+    <string name="import_source_spotify_short">Spotify (Account data)</string>
+    <string name="import_source_youtube_music">YouTube Music</string>
+    <string name="import_source_csv">CSV</string>
+    <string name="import_source_polylute">Polylute</string>
+    <string name="import_history_row_summary">%1$s plays · %2$d %% matched</string>
+
+    <string name="export_universal_title">Export to a file</string>
+    <string name="export_universal_subtitle">History (CSV or JSON), likes (CSV), and playlists (M3U8 or CSV).</string>
+    <string name="export_universal_dialog_subtitle">Choose a format compatible with Polylute and other music players.</string>
+    <string name="export_universal_history_csv">Listening history (CSV)</string>
+    <string name="export_universal_history_csv_desc">played_at, artist, title, album, ms_played, duration_ms, path</string>
+    <string name="export_universal_history_json">Listening history (JSON)</string>
+    <string name="export_universal_history_json_desc">Same fields as CSV, in JSON array format</string>
+    <string name="export_universal_likes_csv">Liked songs (CSV)</string>
+    <string name="export_universal_likes_csv_desc">artist, title, album, duration_ms, path</string>
+    <string name="export_universal_playlists_m3u8">Playlists (M3U8)</string>
+    <string name="export_universal_playlists_m3u8_desc">One .m3u8 file (or a .zip when there are several)</string>
+    <string name="export_universal_playlists_csv">Playlists (CSV)</string>
+    <string name="export_universal_playlists_csv_desc">playlist, position, artist, title, album, duration_ms, path</string>
+    <string name="export_universal_success" tools:ignore="PluralsCandidate">Exported %1$d items</string>
+
+    <string name="backup_restore_mode_label">Restore mode</string>
+    <string name="backup_restore_mode_replace">Replace</string>
+    <string name="backup_restore_mode_merge">Merge</string>
+    <string name="backup_restore_mode_replace_desc">Clears selected sections before restoring from the backup.</string>
+    <string name="backup_restore_mode_merge_desc">Keeps current items and adds missing entries from the backup.</string>
+    <string name="backup_entries_will_merge" tools:ignore="PluralsCandidate">%1$d entries · Will merge into current data</string>
+    <string name="backup_restore_done_with_resolution" tools:ignore="PluralsCandidate">Restored: %1$d by ID, %2$d by track info, %3$d unresolved</string>
+</resources>

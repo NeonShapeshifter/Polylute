@@ -76,4 +76,10 @@
     <string name="pristine_held_off_resonance">Av för %1$s: du valde Resonance för den. Ändra det i enhetens volymrad.</string>
     <!-- B40-fix1 item 1: a held play was not started because the answer's protection could not be confirmed -->
     <string name="fixed_output_toast_not_confirmed">Uppspelningen startades inte: Polylute kunde inte bekräfta låset och den säkra startvolymen i tid. Tryck på Play igen.</string>
+    <!-- B72: kontextuell fråga om aviseringstillstånd efter att ett Safety Max-tak har sparats, och en diskret genväg till inställningar. -->
+    <string name="safety_max_notif_prompt_title">Låt Polylute skicka aviseringar?</string>
+    <string name="safety_max_notif_prompt_body">När du når ditt Safety Max utanför Polylute talar en avisering om det och låter dig höja gränsen. Utan aviseringar kan du bara höja den inne i appen.</string>
+    <string name="safety_max_notif_prompt_allow">Tillåt</string>
+    <string name="safety_max_notifications_off_note">Aviseringar är avstängda: du kan bara höja gränsen inne i appen</string>
+    <string name="safety_max_open_notification_settings">Aviseringsinställningar</string>
 </resources>

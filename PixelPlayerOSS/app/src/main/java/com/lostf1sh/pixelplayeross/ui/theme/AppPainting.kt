@@ -73,12 +73,13 @@ fun rememberAppPainting(
 ): AppPainting {
     val drawnBaseTheme = resolveDrawnBaseTheme(appColorSource, appThemeMode, storedBaseTheme, systemDark)
     val useDarkTheme = !drawnBaseTheme.palette.isLight
-    val coverColor by remember(useDarkTheme, albumArtColorScheme) {
+    val coverScheme by remember(useDarkTheme, albumArtColorScheme) {
         albumArtColorScheme
-            .map { pair -> pair?.let { if (useDarkTheme) it.dark else it.light }?.primary }
+            .map { pair -> pair?.let { if (useDarkTheme) it.dark else it.light } }
             .distinctUntilChanged()
             .debounce(settleMs)
     }.collectAsStateWithLifecycle(initialValue = null)
+    val coverColor = coverScheme?.primary
     val albumArtLook = remember(appColorSource, drawnBaseTheme, accent, coverColor) {
         if (AppColorSource.takesColoursFromCover(appColorSource)) {
             AlbumArtColors.look(drawnBaseTheme.palette, coverColor, accent)
@@ -94,6 +95,6 @@ fun rememberAppPainting(
     }
     val band = remember(drawnBaseTheme) { GlassBands.of(drawnBaseTheme.palette, Color.White).band }
     val scene = rememberCoverGlassScene(kind = kind, band = band, coverUri = themedCoverUri, fields = fields, settleMs = settleMs)
-    val painted = rememberGlassPainted(drawnBaseTheme, albumArtLook, glassLook, scene)
+    val painted = rememberGlassPainted(drawnBaseTheme, albumArtLook, glassLook, scene, coverScheme = coverScheme)
     return AppPainting(painted, scene)
 }

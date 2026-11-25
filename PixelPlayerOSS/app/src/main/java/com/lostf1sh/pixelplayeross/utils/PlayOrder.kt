@@ -200,6 +200,57 @@ object PlayOrder {
     }
 
     /**
+     * Appends [count] newly added items starting at [firstNewIndex] to the end of [order] in one allocation.
+     */
+    fun appendBatch(order: IntArray, firstNewIndex: Int, count: Int): IntArray {
+        if (count <= 0) return order.copyOf()
+        val result = IntArray(order.size + count)
+        order.copyInto(result)
+        for (offset in 0 until count) {
+            result[order.size + offset] = firstNewIndex + offset
+        }
+        return result
+    }
+
+    /**
+     * Updates [order] (captured before inserting [count] items at [insertionIndex]) so the newly inserted
+     * range plays sequentially right after [afterTimelineIndex], shifting prior indices >= [insertionIndex] by [count].
+     */
+    fun placeBatchAfter(
+        order: IntArray,
+        insertionIndex: Int,
+        count: Int,
+        afterTimelineIndex: Int?,
+    ): IntArray {
+        if (count <= 0) return order.copyOf()
+        val result = IntArray(order.size + count)
+        val anchorPos = afterTimelineIndex?.let { positionOf(order, it) } ?: -1
+        if (anchorPos < 0) {
+            for (i in order.indices) {
+                val old = order[i]
+                result[i] = if (old >= insertionIndex) old + count else old
+            }
+            for (offset in 0 until count) {
+                result[order.size + offset] = insertionIndex + offset
+            }
+            return result
+        }
+        var out = 0
+        for (i in 0..anchorPos) {
+            val old = order[i]
+            result[out++] = if (old >= insertionIndex) old + count else old
+        }
+        for (offset in 0 until count) {
+            result[out++] = insertionIndex + offset
+        }
+        for (i in (anchorPos + 1) until order.size) {
+            val old = order[i]
+            result[out++] = if (old >= insertionIndex) old + count else old
+        }
+        return result
+    }
+
+    /**
      * An [order] over a list that was then filtered to [keptIndices] (the old index of each kept item, ascending):
      * the same sequence over the survivors, renumbered. Null if [order] is not a permutation of the old list.
      * A snapshot's order refers to the saved list, the restore plays a subset of it.

@@ -105,12 +105,14 @@ fun TimerOptionsBottomSheet(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                             keyboardActions = dapDismissKeyboardActions(),
                             textStyle = DapType.Value, shape = RoundedCornerShape(DapRadius.Surface),
+                            colors = com.lostf1sh.pixelplayeross.ui.ds.dapOutlinedTextFieldColors(),
                             isError = customMinutes == null, modifier = Modifier.weight(1f).dapTextField())
                         OutlinedTextField(value = minutes, onValueChange = { minutes = it }, singleLine = true,
                             label = { Text(stringResource(R.string.timer_minutes), style = DapType.Caption) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                             keyboardActions = dapDismissKeyboardActions(),
                             textStyle = DapType.Value, shape = RoundedCornerShape(DapRadius.Surface),
+                            colors = com.lostf1sh.pixelplayeross.ui.ds.dapOutlinedTextFieldColors(),
                             isError = customMinutes == null, modifier = Modifier.weight(1f).dapTextField())
                     }
                     if (customMinutes == null) Text(stringResource(R.string.timer_interval_error),

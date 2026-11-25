@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.4.0
+
+1.4 brings your music life from other apps into Polylute, a working EQ on the Snowsky Melody, Android Auto, and an app that takes the album's colours everywhere.
+
+- **Import from another app.** Pick one or more files, or the ZIP exactly as the service sends it: Spotify (account data or extended history, with liked songs and playlists), YouTube Music history (Google Takeout), M3U/M3U8 playlists, a CSV, or a Polylute export. Polylute works out what each file is. One review screen shows the plays, the liked songs and each playlist ("32 of 40 songs"), with a switch per playlist. Nothing is saved until you press Done. Playlists only hold songs you have; the others are listed, never added. Everything stays on the phone.
+- **Export to a file.** Listening history as CSV or JSON, liked songs as CSV, playlists as M3U8 or CSV, in the same format the import reads, so other players can use them too.
+- **Backups (.pxpl).** Backups now carry each song's title, artist, album, length and path, so favorites, playlists and history find their songs on a new phone or a rescanned library. A new **Merge** restore keeps what you have and adds what is missing; **Replace** works as before. Older backups restore as before.
+- **Colours.** In the "From album art" and cover glass modes, cards, sheets, dialogs, menus, the floating buttons and placeholders take the album's colours, like the Queue. Warnings and errors stay readable on glass.
+- **Playlist page.** A cleaner page: Back and one ⋮ menu (add songs, sort, edit songs, edit, transitions, export, delete), the same song rows as the Songs tab, and one edit mode to remove and reorder. Sort opens one sheet, not two. A playlist found during import opens on the same page.
+- **Import details.** A CSV with dates but no times counts two plays of a song on the same day as two plays. Importing a Polylute export back into the same phone skips the plays it already has. The history export keeps plays of songs you have since removed (recorded from 1.4 on), with an empty path.
+
+Also in 1.4 (see the release candidates below): DAC EQ writes on the Snowsky Melody and Purity closing the DAC's EQ, faster recovery when the DAC's clock feedback runs away, Android Auto browsing, USB audio sharing, listening history import into Stats, folders that play what you see, accent-blind search, a much faster Full Rescan, and animated covers per disc.
+
+### Known issues
+- YouTube Music playlists and likes from Google Takeout hold only video IDs, no titles, so they are skipped.
+
+## 1.4.0-rc.4
+
+- **Import your listening history.** Bring your Spotify (extended or account data), YouTube Music (Google Takeout) or CSV history into Stats, so earlier years show up. The import is local only, skips plays you already have, and can be removed later. Stats can show it or hide it.
+- **Folders.** The Play and Shuffle buttons inside a folder play what you see there, in the order shown. A folder with one album plays in disc and track order; a mixed folder plays by file name. Hold a folder to play, shuffle or queue its whole tree.
+- **Search.** Accents and capital letters no longer matter: "arcangel" finds "Arcángel".
+- **Home.** Recently played and Recent artists go back to the newest item when a new one arrives.
+- **Stats.** The year buttons scroll when there are many years.
+- **Safety Max.** If notifications are off, Polylute can ask for them so the Safety Max notice can show outside the app.
+
 ## 1.4.0-rc.3
 
 - **DAC EQ.** The Snowsky Melody's pre-gain direction is now verified on hardware. The app accounts for the DAC's rounding when it checks the saved filters.

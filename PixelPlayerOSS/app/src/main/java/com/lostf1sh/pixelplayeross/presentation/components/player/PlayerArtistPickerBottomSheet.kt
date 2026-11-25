@@ -163,12 +163,12 @@ private fun PlayerArtistShortcutCard(
         colorScheme.onSurface
     }
     val labelContainerColor = if (isPrimary) {
-        colorScheme.tertiary
+        com.lostf1sh.pixelplayeross.ui.ds.LocalDapAccent.current
     } else {
         colorScheme.surfaceContainerHighest
     }
     val labelContentColor = if (isPrimary) {
-        colorScheme.onTertiary
+        com.lostf1sh.pixelplayeross.ui.ds.Dap.onFill
     } else {
         colorScheme.onSurfaceVariant
     }

@@ -64,6 +64,7 @@ import com.lostf1sh.pixelplayeross.ui.ds.DapSegmentedRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapScreenTitle
 import com.lostf1sh.pixelplayeross.ui.ds.DapSkeletonList
 import com.lostf1sh.pixelplayeross.ui.ds.DapSpacing
+import com.lostf1sh.pixelplayeross.ui.ds.DapSwitchRow
 import com.lostf1sh.pixelplayeross.ui.ds.DapTextAction
 import com.lostf1sh.pixelplayeross.ui.ds.DapTitleMeta
 import com.lostf1sh.pixelplayeross.ui.ds.LocalDapPlayerShelfHeight
@@ -133,6 +134,7 @@ fun StatsScreen(
         onMode = statsViewModel::onRankModeSelected,
         onLayer = statsViewModel::onLayerSelected,
         onRetry = statsViewModel::requestStatsRefresh,
+        onIncludeImportedChanged = statsViewModel::onIncludeImportedHistoryChanged,
         topActions = actions,
         // B32-Q2: a row opens what it names, on top of this screen, so Back returns here: the range, the face and the scroll are
         // this screen's (its view model and its saved list state), and nothing here resets them on the way back.
@@ -153,6 +155,7 @@ internal fun StatsContent(
     onLayer: (StatsLayer) -> Unit,
     onRetry: () -> Unit,
     topActions: TopActions,
+    onIncludeImportedChanged: (Boolean) -> Unit = {},
     /** Where a tap on a row goes; null where nothing is wired (the rows are text). */
     onOpen: ((StatsTarget) -> Unit)? = null,
     /** B58 6 (#74): the photo the library has for each artist, by name. */
@@ -168,7 +171,8 @@ internal fun StatsContent(
     val located = rememberSourceLocate(com.lostf1sh.pixelplayeross.presentation.navigation.Screen.Stats.route, listState,
         ui.layer == StatsLayer.TOP && ui.topList != null && !ui.top.isLoading && targetSizeReady && targetModeReady && (targetPeriod == null || targetPeriod == "${ui.top.from}..${ui.top.to}")) { id ->
         val top = ui.topList
-        top?.rows?.indexOfFirst { it.item.song.id == id }?.takeIf { it >= 0 }?.let { it + 8 + if (top.isShort) 1 else 0 } ?: -1
+        top?.rows?.indexOfFirst { it.item?.song?.id == id }?.takeIf { it >= 0 }
+            ?.let { it + 8 + (if (top.isShort) 1 else 0) + (if (ui.hasImportedHistory) 1 else 0) } ?: -1
     }
     val look = StatsLook(ui.rankMode, zone, locale, StatsOpener(ui.links, onOpen), artistImages, located)
     val report = ui.current
@@ -202,9 +206,9 @@ internal fun StatsContent(
                 )
             }
             if (ui.layer == StatsLayer.SUMMARY) {
-                summaryFace(ui, report, look, onRange, onMode, onSeeAll, onRetry)
+                summaryFace(ui, report, look, onRange, onMode, onIncludeImportedChanged, onSeeAll, onRetry)
             } else {
-                topFace(ui, look, onMode, topActions)
+                topFace(ui, look, onMode, onIncludeImportedChanged, topActions)
             }
         }
     }
@@ -222,6 +226,7 @@ private fun LazyListScope.summaryFace(
     look: StatsLook,
     onRange: (StatsTimeRange) -> Unit,
     onMode: (StatsRankMode) -> Unit,
+    onIncludeImportedChanged: (Boolean) -> Unit,
     onSeeAll: (StatsList) -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -238,6 +243,11 @@ private fun LazyListScope.summaryFace(
         )
     }
     item(key = "sort") { SortRow(ui.rankMode, onMode) }
+    if (ui.hasImportedHistory) {
+        item(key = "include-imported") {
+            IncludeImportedRow(ui.includeImportedHistory, onIncludeImportedChanged)
+        }
+    }
 
     when {
         report == null && ui.failed -> item(key = "failed") {
@@ -273,9 +283,15 @@ private fun LazyListScope.topFace(
     ui: StatsUiState,
     look: StatsLook,
     onMode: (StatsRankMode) -> Unit,
+    onIncludeImportedChanged: (Boolean) -> Unit,
     actions: TopActions,
 ) {
     item(key = "sort") { SortRow(ui.rankMode, onMode) }
+    if (ui.hasImportedHistory) {
+        item(key = "include-imported") {
+            IncludeImportedRow(ui.includeImportedHistory, onIncludeImportedChanged)
+        }
+    }
     // The months the history spans: from its first one to the end of the current year, so a whole year can be asked for and shown as it goes.
     // B42-fix1: "now" is the month the view model has on the device's clock, which it moves with the clock (midnight, a zone or date change),
     // not a read in composition that nothing would ask to run again.
@@ -321,6 +337,16 @@ private fun SortRow(mode: StatsRankMode, onMode: (StatsRankMode) -> Unit) {
     )
 }
 
+@Composable
+private fun IncludeImportedRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    DapSwitchRow(
+        label = stringResource(R.string.stats_include_imported_title),
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        divider = false,
+    )
+}
+
 /** The whole of one ranking: the rows "see all" leads to. */
 @Composable
 private fun FullRanking(kind: StatsList, report: StatsReport, look: StatsLook) {
@@ -347,7 +373,7 @@ private fun FullRanking(kind: StatsList, report: StatsReport, look: StatsLook) {
             Spacer(Modifier.height(DapSpacing.Sm))
         }
         when (kind) {
-            StatsList.SONGS -> itemsIndexed(report.rankings.songs(look.mode), key = { _, row -> row.item.identity }) { index, row -> SongRankRow(index + 1, row, look) }
+            StatsList.SONGS -> itemsIndexed(report.rankings.songs(look.mode), key = { idx, row -> row.key.ifEmpty { row.item?.identity ?: "song-$idx" } }) { index, row -> SongRankRow(index + 1, row, look) }
             StatsList.ARTISTS -> itemsIndexed(report.rankings.artists(look.mode), key = { _, row -> row.name }) { index, row -> ArtistRankRow(index + 1, row, look) }
             StatsList.ALBUMS -> itemsIndexed(report.rankings.albums(look.mode), key = { _, row -> row.key }) { index, row -> AlbumRankRow(index + 1, row, look) }
             StatsList.GENRES -> itemsIndexed(report.rankings.genres(look.mode), key = { _, row -> row.name }) { index, row -> GenreRankRow(index + 1, row, look) }

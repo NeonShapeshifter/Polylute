@@ -89,5 +89,6 @@ sealed class Screen(val route: String) {
     object AudioBookmarkFolder : Screen("audio_bookmarks/{songId}") {
         fun createRoute(songId: String) = "audio_bookmarks/${Uri.encode(songId)}"
     }
+    object HistoryImport : Screen("history_import")
 
 }

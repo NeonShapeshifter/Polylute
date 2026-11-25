@@ -2,6 +2,7 @@ package com.lostf1sh.pixelplayeross.presentation.utils
 
 import com.lostf1sh.pixelplayeross.data.model.SearchFilterType
 import com.lostf1sh.pixelplayeross.data.model.SearchResultItem
+import com.lostf1sh.pixelplayeross.utils.TextFold
 
 /**
  * Ordering a search result by how well it answers what was typed.
@@ -62,10 +63,15 @@ object SearchRelevance {
         }
     }
 
-    /** How well [text] answers [query]. See the rank constants. */
+    /** How well [text] answers [query] (accent- and case-blind). See the rank constants. */
     fun rank(text: String?, query: String): Int {
-        val haystack = text?.trim()?.lowercase().orEmpty()
-        val needle = query.trim().lowercase()
+        val haystack = TextFold.fold(text.orEmpty())
+        val needle = TextFold.fold(query)
+        return rankFolded(haystack, needle)
+    }
+
+    /** Ranks already-folded [haystack] against already-folded [needle]. */
+    internal fun rankFolded(haystack: String, needle: String): Int {
         if (haystack.isEmpty() || needle.isEmpty()) return NO_MATCH
         return when {
             haystack == needle -> EXACT
@@ -100,18 +106,19 @@ internal fun searchResultsLayout(
     query: String,
     selectedFilter: SearchFilterType
 ): SearchResultsLayout {
+    val needle = TextFold.fold(query)
     val uniqueResults = results.distinctBy(SearchResultItem::searchRowKey)
     val grouped = uniqueResults.groupBy(SearchResultItem::filterType)
     val best = if (selectedFilter == SearchFilterType.ALL) {
         uniqueResults
             .mapNotNull { item ->
-                val rank = SearchRelevance.rank(item.primaryText, query)
+                val rank = SearchRelevance.rankFolded(TextFold.fold(item.primaryText), needle)
                 if (rank < SearchRelevance.NO_MATCH) item to rank else null
             }
             .sortedWith(
                 compareBy<Pair<SearchResultItem, Int>> { (_, rank) -> rank }
                     .thenBy { (item, _) -> DEFAULT_SECTION_ORDER.indexOf(item.filterType) }
-                    .thenBy { (item, _) -> item.primaryText.lowercase() }
+                    .thenBy { (item, _) -> TextFold.fold(item.primaryText) }
             )
             .take(BEST_MATCHES_LIMIT)
             .map { (item, _) -> item }
@@ -123,7 +130,7 @@ internal fun searchResultsLayout(
     val featured = best.toSet()
     val sections = sectionOrder.mapNotNull { type ->
         val rows = grouped[type].orEmpty().filterNot { it in featured }
-            .sortedWith(compareBy<SearchResultItem> { it.relevanceRank(query) }.thenBy { it.primaryText.lowercase() })
+            .sortedWith(compareBy<SearchResultItem> { it.relevanceRankFolded(needle) }.thenBy { TextFold.fold(it.primaryText) })
         if (rows.isEmpty()) null else type to rows
     }
     return SearchResultsLayout(best, sections)
@@ -182,10 +189,13 @@ private val SearchResultItem.secondaryText: String?
  * [SearchRelevance.NO_MATCH], which keeps the row — the query matched some other field the row
  * does not lead with — but puts it last.
  */
-fun SearchResultItem.relevanceRank(query: String): Int {
-    val primary = SearchRelevance.rank(primaryText, query)
+fun SearchResultItem.relevanceRank(query: String): Int =
+    relevanceRankFolded(TextFold.fold(query))
+
+internal fun SearchResultItem.relevanceRankFolded(needle: String): Int {
+    val primary = SearchRelevance.rankFolded(TextFold.fold(primaryText), needle)
     if (primary != SearchRelevance.NO_MATCH) return primary
-    val secondary = SearchRelevance.rank(secondaryText, query)
+    val secondary = SearchRelevance.rankFolded(TextFold.fold(secondaryText.orEmpty()), needle)
     return if (secondary == SearchRelevance.NO_MATCH) SearchRelevance.NO_MATCH
     else secondary + SearchRelevance.SECONDARY_OFFSET
 }

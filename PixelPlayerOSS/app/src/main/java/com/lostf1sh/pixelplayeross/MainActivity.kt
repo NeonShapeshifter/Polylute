@@ -587,6 +587,8 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                 baseTheme = painted.baseTheme,
                 palette = themedLook?.palette ?: painted.baseTheme.palette,
                 accentColorOverride = themedLook?.accent,
+                coverSchemeOverride = painted.coverScheme,
+                coverAccentOverride = painted.coverAccent,
             ) {
                 // B16-G3: whatever the window shows where the content does not reach is the app's colour, never the default.
                 // B41: the theme's own opaque background, not the page's see-through one the glass leaves the Material scheme with.
@@ -813,53 +815,55 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
                         )
                     }
                     if (safetyVolumeState.showOverrideConfirmation) {
-                        androidx.compose.material3.AlertDialog(
-                            onDismissRequest = safetyVolumeController::cancelOverrideDialog,
-                            title = { Text(stringResource(R.string.safety_max_reached_title)) },
-                            text = {
-                                // This window is its own surface, so the activity's volume-key path does not
-                                // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
-                                ModalInputBridge()
+                        com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+                            androidx.compose.material3.AlertDialog(
+                                onDismissRequest = safetyVolumeController::cancelOverrideDialog,
+                                title = { Text(stringResource(R.string.safety_max_reached_title)) },
+                                text = {
+                                    // This window is its own surface, so the activity's volume-key path does not
+                                    // reach it. The bridge routes Volume Up/Down to the same authority the activity uses.
+                                    ModalInputBridge()
 
-                                Text(
-                                    stringResource(
-                                        R.string.safety_max_reached_message,
-                                        safetyVolumeState.selectedProfileName.orEmpty(),
-                                    ) + "\n\n" + stringResource(
-                                        R.string.safety_max_override_lasts,
-                                        (SafetyOverridePolicy.IDLE_END_MS / 60_000L).toInt(),
-                                    ) + if (safetyVolumeState.overrideConfirmationOverLock) {
-                                        // FIX-5: asked with the screen off; it closes by itself.
-                                        "\n\n" + stringResource(
-                                            R.string.safety_max_override_closes_soon,
-                                            (ScreenOffOverridePolicy.CONFIRM_TIMEOUT_MS / 1_000L).toInt(),
-                                        )
-                                    } else {
-                                        ""
-                                    }
-                                )
-                            },
-                            confirmButton = {
-                                androidx.compose.material3.TextButton(
-                                    onClick = safetyVolumeController::allowTemporaryOverride,
-                                ) { Text(stringResource(R.string.safety_max_temporary_override)) }
-                            },
-                            dismissButton = {
-                                Column(horizontalAlignment = Alignment.End) {
-                                    // Permanently disabling Safety Max for a headphone is not offered
-                                    // from a locked screen (FIX-5): there the choice is the temporary
-                                    // override or nothing.
-                                    if (!safetyVolumeState.overrideConfirmationOverLock) {
-                                        androidx.compose.material3.TextButton(
-                                            onClick = { safetyVolumeController.setSafetyEnabled(false) },
-                                        ) { Text(stringResource(R.string.safety_max_disable)) }
-                                    }
+                                    Text(
+                                        stringResource(
+                                            R.string.safety_max_reached_message,
+                                            safetyVolumeState.selectedProfileName.orEmpty(),
+                                        ) + "\n\n" + stringResource(
+                                            R.string.safety_max_override_lasts,
+                                            (SafetyOverridePolicy.IDLE_END_MS / 60_000L).toInt(),
+                                        ) + if (safetyVolumeState.overrideConfirmationOverLock) {
+                                            // FIX-5: asked with the screen off; it closes by itself.
+                                            "\n\n" + stringResource(
+                                                R.string.safety_max_override_closes_soon,
+                                                (ScreenOffOverridePolicy.CONFIRM_TIMEOUT_MS / 1_000L).toInt(),
+                                            )
+                                        } else {
+                                            ""
+                                        }
+                                    )
+                                },
+                                confirmButton = {
                                     androidx.compose.material3.TextButton(
-                                        onClick = safetyVolumeController::cancelOverrideDialog,
-                                    ) { Text(stringResource(R.string.cancel)) }
-                                }
-                            },
-                        )
+                                        onClick = safetyVolumeController::allowTemporaryOverride,
+                                    ) { Text(stringResource(R.string.safety_max_temporary_override)) }
+                                },
+                                dismissButton = {
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        // Permanently disabling Safety Max for a headphone is not offered
+                                        // from a locked screen (FIX-5): there the choice is the temporary
+                                        // override or nothing.
+                                        if (!safetyVolumeState.overrideConfirmationOverLock) {
+                                            androidx.compose.material3.TextButton(
+                                                onClick = { safetyVolumeController.setSafetyEnabled(false) },
+                                            ) { Text(stringResource(R.string.safety_max_disable)) }
+                                        }
+                                        androidx.compose.material3.TextButton(
+                                            onClick = safetyVolumeController::cancelOverrideDialog,
+                                        ) { Text(stringResource(R.string.cancel)) }
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
                 }
@@ -2178,41 +2182,44 @@ class MainActivity : ComponentActivity(), SystemSurfaceHost, ModeLevelHost {
             label = "SyncProgressAnimation"
         )
         
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.9f))
-                .clickable(enabled = false, onClick = {}),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 32.dp)
+        val coverSurface = com.lostf1sh.pixelplayeross.ui.ds.LocalDapCoverScheme.current?.surfaceContainerLow ?: Dap.background
+        com.lostf1sh.pixelplayeross.ui.ds.DapCoverMaterialTheme {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(coverSurface.copy(alpha = 0.9f))
+                    .clickable(enabled = false, onClick = {}),
+                contentAlignment = Alignment.Center
             ) {
-                CircularWavyProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = stringResource(R.string.sync_preparing_library),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                
-                if (syncProgress.hasProgress) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                ) {
+                    CircularWavyProgressIndicator()
                     Spacer(modifier = Modifier.height(16.dp))
-                    androidx.compose.material3.LinearWavyProgressIndicator(
-                        progress = { animatedProgress },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = stringResource(
-                            R.string.sync_scanned_count,
-                            syncProgress.currentCount,
-                            syncProgress.totalCount
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = stringResource(R.string.sync_preparing_library),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
+
+                    if (syncProgress.hasProgress) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        androidx.compose.material3.LinearWavyProgressIndicator(
+                            progress = { animatedProgress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.sync_scanned_count,
+                                syncProgress.currentCount,
+                                syncProgress.totalCount
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

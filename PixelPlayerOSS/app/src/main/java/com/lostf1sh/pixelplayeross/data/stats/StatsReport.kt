@@ -9,8 +9,23 @@ import java.util.Locale
  * the screen shows is made from these by the screen, in the language of the app.
  */
 
-/** One song of a ranking. [plays] and [timeMs] are for the period; both are on every row. */
-class SongRow(val item: CatalogItem, val plays: Int, val timeMs: Long, val skips: Int = 0)
+/** One song of a ranking. [plays] and [timeMs] are for the period; both are on every row. [item] is null for unmatched imported plays. */
+class SongRow(
+    val item: CatalogItem?,
+    val plays: Int,
+    val timeMs: Long,
+    val skips: Int = 0,
+    val title: String = item?.title.orEmpty(),
+    val artistLine: String = item?.artistLine.orEmpty(),
+    val artists: List<String> = item?.artists.orEmpty(),
+    val album: String = item?.album.orEmpty(),
+    val albumKey: String? = item?.albumKey,
+    val artUri: String? = item?.song?.albumArtUriString,
+    val genre: String = item?.genre.orEmpty(),
+    val key: String = item?.identity.orEmpty(),
+) {
+    val isUnmatched: Boolean get() = item == null
+}
 
 /** One artist of a ranking. A play of a song credits every artist the song names. An empty [name] is "unknown artist". */
 class ArtistRow(val name: String, val plays: Int, val timeMs: Long, val songs: Int)
@@ -51,7 +66,7 @@ class Rankings(
 
     @Synchronized
     fun songs(mode: StatsRankMode): List<SongRow> = songsBy.getOrPut(mode) {
-        songRows.sortedWith(rankingComparator(mode, { it.plays }, { it.timeMs }, { it.item.title }))
+        songRows.sortedWith(rankingComparator(mode, { it.plays }, { it.timeMs }, { it.title }))
     }
 
     @Synchronized
@@ -326,6 +341,20 @@ class Habits(
     }
 }
 
+data class ImportedStatsSummary(
+    val plays: Int = 0,
+    val listenedMs: Long = 0L,
+    val estimatedPlays: Int = 0,
+    val estimatedMs: Long = 0L,
+    val zeroDurationPlays: Int = 0,
+) {
+    val hasImported: Boolean get() = plays > 0 || listenedMs > 0L
+
+    companion object {
+        val Empty = ImportedStatsSummary()
+    }
+}
+
 /**
  * Everything the Stats screen shows for one period.
  *
@@ -347,6 +376,7 @@ class StatsReport(
     val habits: Habits?,
     /** When the history begins, for "since" notes; null for none. */
     val historyStartMs: Long?,
+    val importedSummary: ImportedStatsSummary = ImportedStatsSummary.Empty,
 ) {
     val note: AttributionNote get() = AttributionNote(coverage)
 

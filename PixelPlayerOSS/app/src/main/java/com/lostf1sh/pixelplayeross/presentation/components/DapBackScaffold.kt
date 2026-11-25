@@ -23,7 +23,8 @@ import com.lostf1sh.pixelplayeross.ui.theme.PixelPlayerStatusBarStyle
  * A screen must therefore **not** add the navigation bar's height to its own end padding: the last row rests at the viewport's end
  * plus the mini player's height ([com.lostf1sh.pixelplayeross.ui.ds.LocalDapPlayerShelfHeight]) and what air the screen wants.
  *
- * Back normally uses a plain chevron with a 48 dp target. The genre hero supplies its own disc via [headerBackAction].
+ * Back normally uses a plain chevron with a 48 dp target. A page with [topBar] places that chevron
+ * alongside its actions. The genre hero supplies its own disc via [headerBackAction].
  *
  * **[overHeaderArt]** is for a page whose header is a picture (Album, Artist, Genre): the picture runs to the top edge, under the status
  * bar, and the chevron floats over it where the row used to be, so there is no band across the top. The page then owns the status-bar
@@ -36,6 +37,7 @@ fun DapBackScaffold(
     onBack: (() -> Unit)? = null,
     overHeaderArt: Boolean = false,
     headerBackAction: (@Composable (String, () -> Unit) -> Unit)? = null,
+    topBar: (@Composable (back: (() -> Unit)?) -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     PixelPlayerStatusBarStyle(color = Dap.background)
@@ -71,7 +73,9 @@ fun DapBackScaffold(
         return
     }
     Column(modifier.fillMaxSize().background(Dap.page).statusBarsPadding()) {
-        if (showsBack) {
+        if (topBar != null) {
+            topBar(goBack.takeIf { showsBack })
+        } else if (showsBack) {
             Row(Modifier.fillMaxWidth().padding(horizontal = DapSpacing.Md, vertical = DapSpacing.Xs)) {
                 DapOverlayAction(
                     kind = DapIconKind.Chevron,

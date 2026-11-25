@@ -54,7 +54,10 @@ import com.lostf1sh.pixelplayeross.data.model.FolderSource
 import com.lostf1sh.pixelplayeross.data.model.Genre
 import com.lostf1sh.pixelplayeross.data.model.Lyrics
 import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
+import com.lostf1sh.pixelplayeross.data.model.MusicFolder
 import com.lostf1sh.pixelplayeross.data.model.SearchFilterType
+import com.lostf1sh.pixelplayeross.data.library.folderDiscSongsInOrder
+import com.lostf1sh.pixelplayeross.data.library.folderSongsInOrder
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.model.SortOption
 import com.lostf1sh.pixelplayeross.data.model.toLibraryTabIdOrNull
@@ -1307,9 +1310,6 @@ class PlayerViewModel @Inject constructor(
 
     private val _currentLibraryTabId = MutableStateFlow(LibraryTabId.SONGS)
     val currentLibraryTabId: StateFlow<LibraryTabId> = _currentLibraryTabId.asStateFlow()
-
-    private val _isSortingSheetVisible = MutableStateFlow(false)
-    val isSortingSheetVisible: StateFlow<Boolean> = _isSortingSheetVisible.asStateFlow()
 
     val availableSortOptions: StateFlow<List<SortOption>> =
         currentLibraryTabId.map { tabId ->
@@ -4175,6 +4175,143 @@ class PlayerViewModel @Inject constructor(
     private fun buildPlaybackMediaItem(song: Song, playlistId: String? = null): MediaItem = MediaItemBuilder.build(song, playlistId)
 
     /**
+     * B72/B74: plays a whole folder tree in [folderSongsInOrder] order (sheet actions), starting from its first song.
+     */
+    fun playFolder(folder: MusicFolder, sortOption: SortOption, queueName: String) {
+        playResolvedFolderSongs(queueName) { folderSongsInOrder(folder, sortOption) }
+    }
+
+    /**
+     * B74: plays what is shown inside [folder] via the floating Play disc ([folderDiscSongsInOrder]).
+     */
+    fun playFolderView(folder: MusicFolder, sortOption: SortOption, queueName: String, query: String = "") {
+        playResolvedFolderSongs(queueName) { folderDiscSongsInOrder(folder, sortOption, query) }
+    }
+
+    private fun playResolvedFolderSongs(queueName: String, resolve: () -> List<Song>) {
+        viewModelScope.launch {
+            val ordered = withContext(Dispatchers.Default) { resolve() }
+            if (ordered.isEmpty()) {
+                _toastEvents.emit(context.getString(R.string.no_valid_songs))
+                return@launch
+            }
+            playSongs(
+                songsToPlay = ordered,
+                startSong = ordered.first(),
+                queueName = queueName,
+                source = ListenSource(ListenSourceKind.OTHER, "folder"),
+            )
+        }
+    }
+
+    /**
+     * B72/B74: shuffles a whole folder tree using the exact [folderSongsInOrder] list hydrated before loading.
+     */
+    fun shuffleFolder(folder: MusicFolder, sortOption: SortOption, queueName: String) {
+        shuffleResolvedFolderSongs(queueName) { folderSongsInOrder(folder, sortOption) }
+    }
+
+    /**
+     * B74: shuffles what is shown inside [folder] via the floating Shuffle disc ([folderDiscSongsInOrder]).
+     */
+    fun shuffleFolderView(folder: MusicFolder, sortOption: SortOption, queueName: String, query: String = "") {
+        shuffleResolvedFolderSongs(queueName) { folderDiscSongsInOrder(folder, sortOption, query) }
+    }
+
+    private fun shuffleResolvedFolderSongs(queueName: String, resolve: () -> List<Song>) {
+        viewModelScope.launch {
+            val ordered = withContext(Dispatchers.Default) { resolve() }
+            val hydrated = hydrateSongsIfNeeded(ordered)
+            if (hydrated.isEmpty()) {
+                _toastEvents.emit(context.getString(R.string.player_no_songs_to_shuffle))
+                return@launch
+            }
+            playSongsShuffled(
+                songsToPlay = hydrated,
+                queueName = queueName,
+                startAtZero = true,
+                source = ListenSource(ListenSourceKind.OTHER, "folder"),
+            )
+        }
+    }
+
+    /**
+     * B72: inserts a whole folder tree right after the current song in one batch.
+     */
+    fun playFolderNext(folder: MusicFolder, sortOption: SortOption) {
+        viewModelScope.launch {
+            val ordered = withContext(Dispatchers.Default) { folderSongsInOrder(folder, sortOption) }
+            val hydrated = hydrateSongsIfNeeded(ordered)
+            if (hydrated.isEmpty()) {
+                _toastEvents.emit(context.getString(R.string.no_valid_songs))
+                return@launch
+            }
+            val mediaItems = withContext(QueueBuildDispatcher.dispatcher) {
+                hydrated.map { buildPlaybackMediaItem(it) }
+            }
+            if (editsShuffleOrder()) {
+                val master = dualPlayerEngine.masterPlayer
+                val currentIndex = master.currentMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+                val insertionIndex = if (currentIndex != null) {
+                    (currentIndex + 1).coerceAtMost(master.mediaItemCount)
+                } else {
+                    master.mediaItemCount
+                }
+                val orderBefore = dualPlayerEngine.currentPlayOrder()
+                master.addMediaItems(insertionIndex, mediaItems)
+                if (orderBefore != null) {
+                    dualPlayerEngine.setPlayOrder(
+                        PlayOrder.placeBatchAfter(orderBefore, insertionIndex, mediaItems.size, currentIndex)
+                    )
+                }
+            } else {
+                mediaController?.let { controller ->
+                    val insertionIndex = if (controller.currentMediaItemIndex != C.INDEX_UNSET) {
+                        (controller.currentMediaItemIndex + 1).coerceAtMost(controller.mediaItemCount)
+                    } else {
+                        controller.mediaItemCount
+                    }
+                    controller.addMediaItems(insertionIndex, mediaItems)
+                }
+            }
+            val n = hydrated.size
+            _toastEvents.emit(context.resources.getQuantityString(R.plurals.n_songs_will_play_next, n, n))
+        }
+    }
+
+    /**
+     * B72: appends a whole folder tree to the end of the queue in one batch.
+     */
+    fun addFolderToQueue(folder: MusicFolder, sortOption: SortOption) {
+        viewModelScope.launch {
+            val ordered = withContext(Dispatchers.Default) { folderSongsInOrder(folder, sortOption) }
+            val hydrated = hydrateSongsIfNeeded(ordered)
+            if (hydrated.isEmpty()) {
+                _toastEvents.emit(context.getString(R.string.no_valid_songs))
+                return@launch
+            }
+            val mediaItems = withContext(QueueBuildDispatcher.dispatcher) {
+                hydrated.map { buildPlaybackMediaItem(it) }
+            }
+            if (editsShuffleOrder()) {
+                val master = dualPlayerEngine.masterPlayer
+                val firstNew = master.mediaItemCount
+                val orderBefore = dualPlayerEngine.currentPlayOrder()
+                master.addMediaItems(mediaItems)
+                if (orderBefore != null) {
+                    dualPlayerEngine.setPlayOrder(
+                        PlayOrder.appendBatch(orderBefore, firstNew, mediaItems.size)
+                    )
+                }
+            } else {
+                mediaController?.addMediaItems(mediaItems)
+            }
+            val n = hydrated.size
+            _toastEvents.emit(context.resources.getQuantityString(R.plurals.n_songs_added_to_queue, n, n))
+        }
+    }
+
+    /**
      * Plays all selected songs, preserving their selection order.
      * Clears selection after starting playback.
      */
@@ -5031,14 +5168,6 @@ class PlayerViewModel @Inject constructor(
         return musicRepository.getMusicByGenre(genreId).map { songs ->
             songs.take(4).mapNotNull { it.albumArtUriString?.takeIf { uri -> uri.isNotBlank() } }
         }
-    }
-
-    fun showSortingSheet() {
-        libraryTabsStateHolder.showSortingSheet(_isSortingSheetVisible)
-    }
-
-    fun hideSortingSheet() {
-        libraryTabsStateHolder.hideSortingSheet(_isSortingSheetVisible)
     }
 
     fun onLibraryTabSelected(tabIndex: Int) {

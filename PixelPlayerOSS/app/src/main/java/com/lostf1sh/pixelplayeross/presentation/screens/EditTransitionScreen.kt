@@ -311,8 +311,16 @@ private fun TransitionSummaryCard(
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                 checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                uncheckedBorderColor = MaterialTheme.colorScheme.outline,
-                                uncheckedThumbColor = MaterialTheme.colorScheme.outline
+                                uncheckedBorderColor = if (com.lostf1sh.pixelplayeross.ui.ds.Dap.glass != null) {
+                                    com.lostf1sh.pixelplayeross.ui.ds.Dap.tertiaryText
+                                } else {
+                                    MaterialTheme.colorScheme.outline
+                                },
+                                uncheckedThumbColor = if (com.lostf1sh.pixelplayeross.ui.ds.Dap.glass != null) {
+                                    com.lostf1sh.pixelplayeross.ui.ds.Dap.tertiaryText
+                                } else {
+                                    MaterialTheme.colorScheme.outline
+                                }
                             )
                         )
                     }

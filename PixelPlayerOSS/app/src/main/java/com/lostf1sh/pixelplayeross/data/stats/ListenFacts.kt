@@ -108,6 +108,24 @@ data class ListenContext(
 )
 
 /** One output the platform lists: its `AudioDeviceInfo.TYPE_*` and the name it gives. */
+/** The track names known when a listen opens, kept even when its library item later disappears. */
+data class ListenTrackMetadata(
+    val title: String,
+    val artist: String? = null,
+    val album: String? = null,
+) {
+    companion object {
+        fun from(title: CharSequence?, artist: CharSequence?, album: CharSequence?): ListenTrackMetadata? {
+            val trackTitle = title?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return ListenTrackMetadata(
+                title = trackTitle,
+                artist = artist?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+                album = album?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+            )
+        }
+    }
+}
+
 data class AndroidOutputDevice(val type: Int, val productName: String?)
 
 /** The Android output a listen is going to when the app is not driving the DAC. */

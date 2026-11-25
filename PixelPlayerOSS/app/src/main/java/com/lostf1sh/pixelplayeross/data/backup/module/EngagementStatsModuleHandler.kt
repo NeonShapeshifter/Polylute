@@ -5,8 +5,15 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.lostf1sh.pixelplayeross.data.backup.model.BackupSection
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupResolutionCounts
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupRestoreMode
+import com.lostf1sh.pixelplayeross.data.backup.restore.BackupSongCatalogResolver
+import com.lostf1sh.pixelplayeross.data.backup.restore.EmptyCatalogSource
+import com.lostf1sh.pixelplayeross.data.backup.restore.PortableSongKeys
+import com.lostf1sh.pixelplayeross.data.backup.restore.SongResolutionWay
 import com.lostf1sh.pixelplayeross.data.database.EngagementDao
 import com.lostf1sh.pixelplayeross.data.database.SongEngagementEntity
+import com.lostf1sh.pixelplayeross.data.stats.CatalogSource
 import com.lostf1sh.pixelplayeross.di.BackupGson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,13 +27,36 @@ import javax.inject.Singleton
 @Singleton
 class EngagementStatsModuleHandler @Inject constructor(
     private val engagementDao: EngagementDao,
-    @BackupGson private val gson: Gson
-) : BackupModuleHandler {
+    @BackupGson private val gson: Gson,
+    private val catalogSource: CatalogSource,
+) : BackupModuleHandler, ReportableRestoreHandler {
+
+    constructor(
+        engagementDao: EngagementDao,
+        gson: Gson,
+    ) : this(engagementDao, gson, EmptyCatalogSource)
 
     override val section = BackupSection.ENGAGEMENT_STATS
 
     override suspend fun export(): String = withContext(Dispatchers.IO) {
-        gson.toJson(engagementDao.getAllEngagements())
+        val catalog = runCatching { catalogSource.load() }.getOrNull()
+        val array = com.google.gson.JsonArray()
+        engagementDao.getAllEngagements().forEach { entity ->
+            val obj = gson.toJsonTree(entity).asJsonObject
+            val item = catalog?.let {
+                it.itemAtLocator(entity.songId)
+                    ?: entity.libraryItemId.takeIf { id -> id.isNotBlank() }?.let(it::item)
+            }
+            BackupSongCatalogResolver.keysFor(item)?.let { keys ->
+                keys.title?.let { obj.addProperty("title", it) }
+                keys.artist?.let { obj.addProperty("artist", it) }
+                keys.album?.let { obj.addProperty("album", it) }
+                keys.durationMs?.let { obj.addProperty("duration_ms", it) }
+                keys.path?.let { obj.addProperty("path", it) }
+            }
+            array.add(obj)
+        }
+        gson.toJson(array)
     }
 
     override suspend fun countEntries(): Int = withContext(Dispatchers.IO) {
@@ -35,28 +65,95 @@ class EngagementStatsModuleHandler @Inject constructor(
 
     override suspend fun snapshot(): String = export()
 
-    override suspend fun restore(payload: String) = withContext(Dispatchers.IO) {
+    override suspend fun restore(payload: String) {
+        restoreWithReport(payload, BackupRestoreMode.REPLACE)
+    }
+
+    override suspend fun restoreWithReport(
+        payload: String,
+        mode: BackupRestoreMode,
+    ): BackupResolutionCounts = withContext(Dispatchers.IO) {
         val parsed = JsonParser.parseString(payload)
         require(parsed.isJsonArray) { "Engagement stats payload must be a JSON array." }
 
         val sourceEntries = parsed.asJsonArray.size()
-        val stats = parseEntries(parsed.asJsonArray)
-        if (sourceEntries > 0 && stats.isEmpty()) {
+        val parsedWithKeys = parseEntriesWithKeys(parsed.asJsonArray)
+        if (sourceEntries > 0 && parsedWithKeys.isEmpty()) {
             throw IllegalArgumentException("Engagement stats backup does not contain any valid entries.")
         }
 
-        engagementDao.replaceAll(stats)
+        val resolver = BackupSongCatalogResolver.loadIfAvailable(catalogSource)
+        var byId = 0
+        var byKeys = 0
+        var unresolved = 0
+        val resolvedMap = linkedMapOf<String, SongEngagementEntity>()
+
+        for ((entity, keys) in parsedWithKeys) {
+            if (resolver == null) {
+                resolvedMap.merge(entity.songId, entity, ::mergeEntries)
+                continue
+            }
+            val resolved = resolver.resolve(
+                backupSongId = entity.songId,
+                backupLibraryItemId = entity.libraryItemId,
+                keys = keys,
+            )
+            when (resolved.way) {
+                SongResolutionWay.BY_ID -> byId++
+                SongResolutionWay.BY_KEYS -> byKeys++
+                SongResolutionWay.UNRESOLVED -> unresolved++
+            }
+            val target = if (resolved.songId != null) {
+                entity.copy(
+                    songId = resolved.songId,
+                    libraryItemId = resolved.libraryItemId ?: entity.libraryItemId,
+                )
+            } else if (!keys.hasAny() && mode == BackupRestoreMode.REPLACE) {
+                entity
+            } else {
+                null
+            }
+            if (target != null) {
+                resolvedMap.merge(target.songId, target, ::mergeEntries)
+            }
+        }
+
+        val stats = resolvedMap.values.toList()
+        if (mode == BackupRestoreMode.REPLACE) {
+            engagementDao.replaceAll(stats)
+        } else {
+            val existingById = engagementDao.getAllEngagements().associateBy { it.songId }
+            val toInsert = stats.filter { it.songId !in existingById }
+            if (toInsert.isNotEmpty()) {
+                engagementDao.upsertEngagements(toInsert)
+            }
+        }
+
+        BackupResolutionCounts(
+            resolvedById = byId,
+            resolvedByKeys = byKeys,
+            unresolved = unresolved,
+        )
     }
 
     override suspend fun rollback(snapshot: String) = restore(snapshot)
 
-    private fun parseEntries(array: com.google.gson.JsonArray): List<SongEngagementEntity> {
-        val merged = linkedMapOf<String, SongEngagementEntity>()
+    private fun parseEntriesWithKeys(array: com.google.gson.JsonArray): List<Pair<SongEngagementEntity, PortableSongKeys>> {
+        val result = ArrayList<Pair<SongEngagementEntity, PortableSongKeys>>(array.size())
         array.forEach { element ->
+            if (!element.isJsonObject) return@forEach
+            val obj = element.asJsonObject
             val entry = parseEntry(element) ?: return@forEach
-            merged.merge(entry.songId, entry, ::mergeEntries)
+            val keys = PortableSongKeys(
+                title = readString(obj, "title"),
+                artist = readString(obj, "artist"),
+                album = readString(obj, "album"),
+                durationMs = readLong(obj, "duration_ms"),
+                path = readString(obj, "path"),
+            )
+            result.add(entry to keys)
         }
-        return merged.values.toList()
+        return result
     }
 
     private fun parseEntry(element: JsonElement): SongEngagementEntity? {

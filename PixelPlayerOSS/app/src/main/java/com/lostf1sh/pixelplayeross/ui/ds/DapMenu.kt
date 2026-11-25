@@ -120,6 +120,8 @@ fun DapMenuItem(
     modifier: Modifier = Modifier,
     leadingIcon: (@Composable () -> Unit)? = null,
     enabled: Boolean = true,
+    subtitle: String? = null,
+    textColor: Color = Dap.primaryText,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -141,13 +143,24 @@ fun DapMenuItem(
                 CompositionLocalProvider(LocalContentColor provides (if (enabled) Dap.secondaryText else Dap.disabledText)) { leadingIcon() }
             }
         }
-        Text(
-            text = text,
-            style = DapType.RowSmall,
-            color = if (enabled) Dap.primaryText else Dap.disabledText,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column {
+            Text(
+                text = text,
+                style = DapType.RowSmall,
+                color = if (enabled) textColor else Dap.disabledText,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = DapType.Caption,
+                    color = if (enabled) Dap.secondaryText else Dap.disabledText,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -171,11 +184,15 @@ object DapMenuDefaults {
 internal fun dapMenuContainer(): Color {
     val raised = Dap.surfaceRaised
     val opaque = if (raised.alpha < 1f) raised.compositeOver(if (Dap.isLight) Color.White else Color.Black) else raised
-    return LocalDapAccent.current.copy(alpha = DapMenuDefaults.TintAlpha).compositeOver(opaque)
+    val tint = LocalDapCoverAccent.current ?: LocalDapAccent.current
+    return tint.copy(alpha = DapMenuDefaults.TintAlpha).compositeOver(opaque)
 }
 
 @Composable
-internal fun dapMenuPressed(): Color = LocalDapAccent.current.copy(alpha = DapMenuDefaults.PressedAlpha).compositeOver(dapMenuContainer())
+internal fun dapMenuPressed(): Color {
+    val tint = LocalDapCoverAccent.current ?: LocalDapAccent.current
+    return tint.copy(alpha = DapMenuDefaults.PressedAlpha).compositeOver(dapMenuContainer())
+}
 
 /** The platform's way of asking where a popup goes, answered by [DapMenuPlacement]. */
 internal class DapMenuPositionProvider(private val edgePx: Int) : PopupPositionProvider {

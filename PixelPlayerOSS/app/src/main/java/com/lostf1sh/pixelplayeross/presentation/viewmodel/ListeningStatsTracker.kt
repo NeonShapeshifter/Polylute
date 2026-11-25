@@ -9,6 +9,7 @@ import com.lostf1sh.pixelplayeross.data.stats.ListenContext
 import com.lostf1sh.pixelplayeross.data.stats.ListenOccurrence
 import com.lostf1sh.pixelplayeross.data.stats.ListenSource
 import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
+import com.lostf1sh.pixelplayeross.data.stats.ListenTrackMetadata
 import com.lostf1sh.pixelplayeross.data.stats.PlaybackOutcome
 import com.lostf1sh.pixelplayeross.data.stats.PlaybackOutcomeClassifier
 import com.lostf1sh.pixelplayeross.data.stats.PlaybackStatsRepository
@@ -138,6 +139,7 @@ class ListeningStatsTracker @Inject constructor(
             isPlaying = isPlaying,
             libraryItemId = song?.libraryItemId,
             context = context,
+            trackMetadata = song?.let { ListenTrackMetadata.from(it.title, it.artist, it.album) },
         )
     }
 
@@ -167,6 +169,7 @@ class ListeningStatsTracker @Inject constructor(
         previousEndReason: TrackEndReason = TrackEndReason.UNKNOWN,
         libraryItemId: String? = null,
         context: ListenContext? = null,
+        trackMetadata: ListenTrackMetadata? = null,
     ) {
         // The reason describes the session being closed here, not the one starting.
         finalizeCurrentSession(endReason = previousEndReason)
@@ -191,6 +194,7 @@ class ListeningStatsTracker @Inject constructor(
             isPlaying = isPlaying,
             occurrenceId = newOccurrenceId(),
             context = withQueueSource(context),
+            trackMetadata = trackMetadata,
         )
         if (isPlaying) session.run = ListenRun(nowEpoch)
         currentSession = session
@@ -247,6 +251,7 @@ class ListeningStatsTracker @Inject constructor(
             isPlaying = isPlaying,
             libraryItemId = song?.libraryItemId,
             context = context,
+            trackMetadata = song?.let { ListenTrackMetadata.from(it.title, it.artist, it.album) },
         )
     }
 
@@ -275,6 +280,7 @@ class ListeningStatsTracker @Inject constructor(
         isPlaying: Boolean,
         libraryItemId: String? = null,
         context: ListenContext? = null,
+        trackMetadata: ListenTrackMetadata? = null,
     ) {
         val safeSongId = songId?.takeIf { it.isNotBlank() }
         if (safeSongId == null) {
@@ -299,6 +305,7 @@ class ListeningStatsTracker @Inject constructor(
             isPlaying = isPlaying,
             libraryItemId = libraryItemId,
             context = context,
+            trackMetadata = trackMetadata,
         )
     }
 
@@ -347,6 +354,7 @@ class ListeningStatsTracker @Inject constructor(
             previousEndReason = TrackEndReason.USER_REPLAY,
             libraryItemId = session.libraryItemId,
             context = session.context,
+            trackMetadata = session.trackMetadata,
         )
     }
 
@@ -589,6 +597,7 @@ class ListeningStatsTracker @Inject constructor(
                 itemDurationMs = session.totalDurationMs.takeIf { it > 0L },
                 audio = fragment.audio,
                 context = session.context,
+                trackMetadata = session.trackMetadata,
             )
         }
     }
@@ -714,6 +723,7 @@ data class ActiveSession(
     val occurrenceId: String = "",
     /** Where the play came from and whether shuffle was on, as it was when the session opened. */
     val context: ListenContext? = null,
+    val trackMetadata: ListenTrackMetadata? = null,
 ) {
     /** The lookup that fills in [libraryItemId], when the caller did not know it. */
     @Volatile var identityJob: Job? = null

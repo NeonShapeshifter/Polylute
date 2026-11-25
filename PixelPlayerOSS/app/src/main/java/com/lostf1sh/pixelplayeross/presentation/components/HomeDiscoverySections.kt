@@ -20,7 +20,8 @@ fun RecentArtistsSection(artists: List<Artist>, onArtistClick:(Artist)->Unit, mo
     if(artists.isEmpty()) return
     Column(modifier.fillMaxWidth().testTag("recent-artists"),verticalArrangement=Arrangement.spacedBy(DapSpacing.Md)) {
         DapFeatureHeader(stringResource(R.string.home_recent_artists),Modifier.padding(horizontal=DapSpacing.Gutter))
-        LazyRow(contentPadding=PaddingValues(horizontal=DapSpacing.Gutter),horizontalArrangement=Arrangement.spacedBy(DapSpacing.Md)) {
+        val rowState=rememberNewestFirstRowState(artists.first().id.toString())
+        LazyRow(state=rowState,contentPadding=PaddingValues(horizontal=DapSpacing.Gutter),horizontalArrangement=Arrangement.spacedBy(DapSpacing.Md)) {
             items(artists,key={it.id}) { artist ->
                 DapArtistGridItem(artistNameLabel(artist),Modifier.width(DapSizes.ThumbGrid),artwork={
                     if(artist.effectiveImageUrl == null) DapArtworkPlaceholder(Modifier.fillMaxSize())
