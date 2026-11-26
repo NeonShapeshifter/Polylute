@@ -81,7 +81,7 @@ class DetailedLoggingWiringTest {
         assertThat(privacy).contains("30 minutes")
         assertThat(privacy).contains("Include song titles and file paths")
         assertThat(privacy).contains("The app never sends it")
-        assertThat(privacy).contains("This page describes version 1.4.0.") // B67: the page was brought up to 1.4.0
+        assertThat(privacy).contains("This page describes version 1.4.1.") // B67: the page was brought up to 1.4.0
     }
 
     @Test

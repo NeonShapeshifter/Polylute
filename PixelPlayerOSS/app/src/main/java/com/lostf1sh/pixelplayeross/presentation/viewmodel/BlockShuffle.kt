@@ -3,6 +3,7 @@ package com.lostf1sh.pixelplayeross.presentation.viewmodel
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.stats.ListenSource
 import com.lostf1sh.pixelplayeross.data.stats.ListenSourceKind
+import com.lostf1sh.pixelplayeross.utils.Shuffler
 import kotlin.random.Random
 
 internal data class SourceSongBlock(val source: ListenSource, val songs: List<Song>)
@@ -15,11 +16,11 @@ internal data class BlockQueue(
 /** Randomness moves source pages; shared items belong to the first page unless repetition is chosen. */
 internal fun blockQueue(
     blocks: List<SourceSongBlock>,
-    random: Random = Random.Default,
+    random: Random = Shuffler.defaultKotlinRandom(),
     repeatSharedSongs: Boolean = false,
 ): BlockQueue {
     val seen = HashSet<String>()
-    val ordered = blocks.filter { it.songs.isNotEmpty() }.shuffled(random).mapNotNull { block ->
+    val ordered = Shuffler.shuffleList(blocks.filter { it.songs.isNotEmpty() }, random).mapNotNull { block ->
         val base = when (block.source.kind) {
             ListenSourceKind.ALBUM -> SourceOrder.albumPage(block.songs)
             ListenSourceKind.ARTIST -> SourceOrder.artistPage(block.songs)

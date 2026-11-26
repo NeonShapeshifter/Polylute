@@ -769,13 +769,6 @@ class MusicService : MediaLibraryService() {
             }
         }
 
-        // B18-R1: what switching shuffle on does to the order. The engine is the one that deals it, so it holds the choice.
-        serviceScope.launch {
-            userPreferencesRepository.randomModeFlow.collect { mode ->
-                engine.randomMode = mode
-            }
-        }
-
         serviceScope.launch {
             userPreferencesRepository.replayGainEnabledFlow.collect { enabled ->
                 replayGainProcessor.setEnabled(enabled)

@@ -55,16 +55,16 @@ class QueueAndShuffleModeWiringBoundaryTest {
     fun `the new order is built off the main thread and published on it`() {
         val redraw = source("$main/data/service/player/ShuffleRedraw.kt")
         assertThat(redraw).contains("withContext(Dispatchers.Default) { PlayOrder.randomPermutation(count, source) }")
+        assertThat(redraw).contains("random: Random = Shuffler.defaultJavaRandom()")
         // The engine's job runs on the engine scope (Main), so the publication is on the thread the player belongs to.
         assertThat(engine).contains("redrawJob = scope.launch {")
     }
 
     @Test
-    fun `only a switch ON by a listener in classic mode deals again, a load and fast mode do not`() {
+    fun `only a switch ON by a listener deals again, a load does not`() {
         val setFlag = block(engine, "        override fun setFlag(enabled: Boolean, freshOrder: Boolean)", "        override fun watchTransitionEnd()")
-        assertThat(setFlag).contains("if (enabled && freshOrder && randomMode == RandomMode.CLASSIC)")
+        assertThat(setFlag).contains("if (enabled && freshOrder)")
         assertThat(setFlag).contains("dealQueueAgain()")
-        // Fast keeps B17's wording, which the reviewer greps for: a flag and no timeline change.
         assertThat(setFlag).contains("Shuffle %s: flag only, %d items, no timeline change")
 
         assertThat(engine).contains("shuffleGate.request(enabled, freshOrder = true)")
@@ -75,45 +75,53 @@ class QueueAndShuffleModeWiringBoundaryTest {
     }
 
     @Test
-    fun `classic is the engine's starting mode and the service keeps the stored choice in step`() {
-        assertThat(engine).contains("var randomMode: RandomMode = RandomMode.DEFAULT")
-        val collector = block(service, "userPreferencesRepository.randomModeFlow.collect", "replayGainEnabledFlow")
-        assertThat(collector).contains("engine.randomMode = mode")
-    }
-
-    @Test
-    fun `persistent random deals a new order on every load whatever the random mode is`() {
-        // The load never reads the random mode: a new list with persistent random is always a fresh draw (B17), in both modes.
+    fun `B79 - RandomMode is gone from engine, service, preferences, and Audio Queue section`() {
+        assertThat(engine).doesNotContain("RandomMode")
+        assertThat(engine).doesNotContain("randomMode")
+        assertThat(service).doesNotContain("RandomMode")
+        assertThat(service).doesNotContain("randomModeFlow")
         assertThat(vm).doesNotContain("RandomMode")
         val playSongs = block(vm, "    fun playSongs(\n        songsToPlay: List<Song>,", "    fun playSongsShuffled(")
         assertThat(playSongs).contains("QueueUtils.buildAnchoredShuffleQueueSuspending(")
         assertThat(playSongs).contains("playSequence = playSequence")
-    }
 
-    @Test
-    fun `the setting is in the Audio page's Queue section with one row, in three languages`() {
-        // B22: random mode (and the persistent mix) moved from Behavior to Audio, Queue. Same preference, same action.
         val screen = source("$main/presentation/settings/AudioSettings.kt")
-        val queueSection = block(screen, "private fun QueueSection(", "audio_persistent_mix_title")
-        assertThat(queueSection).contains("RandomMode.entries")
-        assertThat(queueSection).contains("actions::onRandomModeChange")
-        assertThat(queueSection).contains("setcat_random_mode_title")
-        // ...and it is no longer on Behavior.
+        val queueSection = block(screen, "private fun QueueSection(", "\n}\n")
+        assertThat(queueSection).doesNotContain("RandomMode")
+        assertThat(queueSection).doesNotContain("setcat_random_mode_title")
+        assertThat(queueSection).contains("audio_persistent_mix_title")
         assertThat(source("$main/presentation/settings/BehaviorSettings.kt")).doesNotContain("RandomMode")
-        // ...and the action is the one writer of the random mode.
-        assertThat(source("$main/presentation/settings/SettingsActionsWiring.kt")).contains("vm.setRandomMode(value)")
+        assertThat(source("$main/presentation/settings/SettingsActionsWiring.kt")).doesNotContain("RandomMode")
 
         for (locale in listOf("values", "values-es", "values-sv")) {
             val strings = source("$res/$locale/strings_settings.xml")
-            for (name in listOf("setcat_random_mode_title", "random_mode_classic", "random_mode_fast")) {
-                val match = Regex("""<string name="$name">([^<]+)</string>""").find(strings)
-                assertThat(match).isNotNull()
-                assertThat(match!!.groupValues[1].trim()).isNotEmpty()
+            for (name in listOf("setcat_random_mode_title", "random_mode_classic", "random_mode_fast", "random_mode_classic_hint", "random_mode_fast_hint")) {
+                assertThat(strings).doesNotContain(name)
             }
-            // The design's Queue rows carry no per-mode explanation: those strings are gone.
-            assertThat(strings).doesNotContain("random_mode_classic_hint")
-            assertThat(strings).doesNotContain("random_mode_fast_hint")
         }
+    }
+
+    @Test
+    fun `B79 - every queue shuffle routes through the central Shuffler backed by SecureRandom`() {
+        val shuffler = source("$main/utils/Shuffler.kt")
+        assertThat(shuffler).contains("SecureRandom()")
+        assertThat(shuffler).contains("BufferedSecureRandom(SecureRandom())")
+        assertThat(source("$main/utils/PlayOrder.kt")).contains("Shuffler.deal(")
+        assertThat(source("$main/utils/QueueUtils.kt")).contains("Shuffler.dealSuspending(")
+        assertThat(source("$main/presentation/viewmodel/BlockShuffle.kt")).contains("Shuffler.shuffleList(")
+        assertThat(source("$main/presentation/viewmodel/QueueStateHolder.kt")).contains("Shuffler.nextIndex(")
+        assertThat(source("$main/presentation/viewmodel/QueueStateHolder.kt")).doesNotContain(".random(")
+        assertThat(source("$main/presentation/viewmodel/BlockShuffle.kt")).doesNotContain(".shuffled(")
+    }
+
+    @Test
+    fun `B79 - repeat-all wrap in DualPlayerEngine deals a fresh order via dealQueueAgain`() {
+        val transition = block(engine, "        override fun onMediaItemTransition(", "        override fun onTimelineChanged(")
+        assertThat(transition).contains("Player.MEDIA_ITEM_TRANSITION_REASON_AUTO")
+        assertThat(transition).contains("Player.REPEAT_MODE_ALL")
+        assertThat(transition).contains("getLastWindowIndex(true)")
+        assertThat(transition).contains("getFirstWindowIndex(true)")
+        assertThat(transition).contains("dealQueueAgain()")
     }
 
     // --- R2: the first load brings its neighbours, a skip is never lost --------------------------------

@@ -28,7 +28,6 @@ import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqState
 import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneProfile
 import com.lostf1sh.pixelplayeross.data.model.TransitionMode
 import com.lostf1sh.pixelplayeross.data.model.TransitionSettings
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.service.player.AudioBackend
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteReason
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteState
@@ -93,7 +92,6 @@ open class AudioPageRenderTest {
         override fun onCrossfadeEnabledChange(value: Boolean) { calls += "crossfade:$value" }
         override fun onSmartCrossfadeEnabledChange(value: Boolean) { calls += "smart:$value" }
         override fun onPlaybackSpeedChange(value: Float) { calls += "speed:$value" }
-        override fun onRandomModeChange(value: RandomMode) { calls += "random:${value.id}" }
         override fun onPersistentShuffleEnabledChange(value: Boolean) { calls += "persistent:$value" }
         override fun onOpenDacProfile(profileId: String) { calls += "dac:$profileId" }
         override fun onOpenKnownDacs() { calls += "knownDacs" }
@@ -548,15 +546,13 @@ open class AudioPageRenderTest {
     }
 
     @Test
-    fun `random mode and the persistent mix are in the Queue section and call their actions`() {
+    fun `the persistent mix is in the Queue section without random mode and calls its action`() {
         val actions = Recorder()
-        setPage(state(dacResonance, ui = SettingsUiState(randomMode = RandomMode.CLASSIC, persistentShuffleEnabled = false)), actions)
-        compose.onNodeWithText(s(R.string.setcat_random_mode_title)).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(s(R.string.random_mode_fast)).performScrollTo().performClick()
+        setPage(state(dacResonance, ui = SettingsUiState(persistentShuffleEnabled = false)), actions)
         compose.onNodeWithText(s(R.string.audio_persistent_mix_sub)).performScrollTo().assertIsDisplayed()
         val switches = compose.onAllNodes(isToggleable())
         switches[switches.fetchSemanticsNodes().lastIndex].performScrollTo().performClick()
-        assertEquals(listOf("random:fast", "persistent:true"), actions.calls)
+        assertEquals(listOf("persistent:true"), actions.calls)
     }
 
     @Test

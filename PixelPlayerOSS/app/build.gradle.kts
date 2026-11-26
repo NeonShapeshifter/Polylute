@@ -125,8 +125,8 @@ android {
         targetSdk = 37
         // Both overridable with -PAPP_VERSION_CODE / -PAPP_VERSION_NAME; gradle.properties holds the release's values (1.4.0-rc.4, code 11) and
         // these are what is used when it holds none.
-        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 12
-        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.4.0"
+        versionCode = (project.findProperty("APP_VERSION_CODE") as? String)?.toInt() ?: 13
+        versionName = (project.findProperty("APP_VERSION_NAME") as? String) ?: "1.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

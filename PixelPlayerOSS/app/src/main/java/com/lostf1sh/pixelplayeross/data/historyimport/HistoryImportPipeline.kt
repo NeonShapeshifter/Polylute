@@ -214,15 +214,7 @@ internal object HistoryImportPipeline {
         require(sources.isNotEmpty()) { "At least one file is required" }
         val matcher = LibraryTrackMatcher.build(catalog, artistDelimiters)
         val matchCache = HashMap<Triple<String, String, String?>, Pair<TrackMatchResult, CatalogItem?>>()
-        val byExactPath = HashMap<String, CatalogItem>(catalog.items.size * 2)
-        val byNormalizedPath = HashMap<String, CatalogItem>(catalog.items.size * 2)
-        for (item in catalog.items) {
-            val p = item.song.path
-            if (p.isNotBlank()) {
-                byExactPath.putIfAbsent(p, item)
-                byNormalizedPath.putIfAbsent(p.replace('\\', '/'), item)
-            }
-        }
+        val pathIndex = CatalogPathIndex.from(catalog)
 
         fun matchTrack(
             artistRaw: String,
@@ -231,11 +223,9 @@ internal object HistoryImportPipeline {
             durationHintMs: Long?,
             path: String?,
         ): Pair<TrackMatchResult, CatalogItem?> {
-            if (!path.isNullOrBlank()) {
-                val item = byExactPath[path] ?: byNormalizedPath[path.replace('\\', '/')]
-                if (item != null) {
-                    return TrackMatchResult(item.identity, item.locator, MatchConfidence.EXACT) to item
-                }
+            val byPath = pathIndex.find(path)
+            if (byPath != null) {
+                return TrackMatchResult(byPath.identity, byPath.locator, MatchConfidence.EXACT) to byPath
             }
             val cacheKey = Triple(artistRaw, titleRaw, albumRaw)
             return matchCache.getOrPut(cacheKey) {

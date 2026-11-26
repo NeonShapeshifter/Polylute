@@ -29,7 +29,6 @@ import com.lostf1sh.pixelplayeross.data.preferences.CarouselStyle
 import com.lostf1sh.pixelplayeross.data.preferences.DEFAULT_SHOW_QUEUE_HISTORY
 import com.lostf1sh.pixelplayeross.data.preferences.LYRICS_ALIGNMENT_DEFAULT
 import com.lostf1sh.pixelplayeross.data.preferences.LibraryNavigationMode
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.preferences.ThemePreference
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
@@ -86,8 +85,6 @@ data class SettingsUiState(
     val isCrossfadeEnabled: Boolean = false,
     val smartCrossfadeEnabled: Boolean = false,
     val persistentShuffleEnabled: Boolean = false,
-    /** What switching shuffle on does to the order; defaulted from the mode's own default so the row cannot show a value the store does not hold. */
-    val randomMode: RandomMode = RandomMode.DEFAULT,
     val folderBackGestureNavigation: Boolean = true,
     /**
      * App-level Back navigation. Defaulted from the mode's own default rather than duplicated here,
@@ -202,8 +199,7 @@ private sealed interface SettingsUiUpdate {
         val immersiveLyricsTimeout: Long,
         val animatedLyricsBlurEnabled: Boolean,
         val animatedLyricsBlurStrength: Float,
-        val backNavigationMode: BackNavigationMode,
-        val randomMode: RandomMode
+        val backNavigationMode: BackNavigationMode
     ) : SettingsUiUpdate
 }
 
@@ -511,8 +507,7 @@ class SettingsViewModel @Inject constructor(
                 userPreferencesRepository.animatedLyricsBlurStrengthFlow,
                 // Appended rather than inserted: the indices below are literals and every existing
                 // one of them has to keep pointing at the flow it points at today.
-                userPreferencesRepository.backNavigationModeFlow,
-                userPreferencesRepository.randomModeFlow
+                userPreferencesRepository.backNavigationModeFlow
             ) { values ->
                 // Positional by necessity: `combine` has typed overloads only up to five flows,
                 // so this reads an Array. Every index is a literal next to the flow it reads,
@@ -533,8 +528,7 @@ class SettingsViewModel @Inject constructor(
                     immersiveLyricsTimeout = values[11] as Long,
                     animatedLyricsBlurEnabled = values[12] as Boolean,
                     animatedLyricsBlurStrength = values[13] as Float,
-                    backNavigationMode = values[14] as BackNavigationMode,
-                    randomMode = values[15] as RandomMode
+                    backNavigationMode = values[14] as BackNavigationMode
                 )
             }.collect { update ->
                 _uiState.update { state ->
@@ -553,8 +547,7 @@ class SettingsViewModel @Inject constructor(
                         immersiveLyricsTimeout = update.immersiveLyricsTimeout,
                         animatedLyricsBlurEnabled = update.animatedLyricsBlurEnabled,
                         animatedLyricsBlurStrength = update.animatedLyricsBlurStrength,
-                        backNavigationMode = update.backNavigationMode,
-                        randomMode = update.randomMode
+                        backNavigationMode = update.backNavigationMode
                     )
                 }
             }
@@ -1018,13 +1011,6 @@ class SettingsViewModel @Inject constructor(
     fun setPersistentShuffleEnabled(enabled: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.setPersistentShuffleEnabled(enabled)
-        }
-    }
-
-    /** The one writer for the random mode; the service reads the same repository flow, so the change reaches the engine on its own. */
-    fun setRandomMode(mode: RandomMode) {
-        viewModelScope.launch {
-            userPreferencesRepository.setRandomMode(mode)
         }
     }
 

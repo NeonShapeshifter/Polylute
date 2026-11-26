@@ -5,7 +5,6 @@ import com.google.common.truth.Truth.assertThat
 import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.worker.SyncProgress
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.AudioStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacProfilesUiState
@@ -36,7 +35,6 @@ class SettingsStatesTest {
         coverGlassMoving = false,
         lyricsMode = LyricsMode.FULL_PAGE,
         persistentShuffleEnabled = true,
-        randomMode = RandomMode.FAST,
         showQueueHistory = false,
         folderBackGestureNavigation = false,
         tapBackgroundClosesPlayer = true,
@@ -136,8 +134,7 @@ class SettingsStatesTest {
         assertThat(state.replayGainUseAlbumGain).isTrue()
         assertThat(state.isCrossfadeEnabled).isTrue()
         assertThat(state.smartCrossfadeEnabled).isTrue()
-        // B22: the random mode and the persistent mix are read from the same preferences, on this page now.
-        assertThat(state.randomMode).isEqualTo(RandomMode.FAST)
+        // B22: the persistent mix is read from the same preferences, on this page now.
         assertThat(state.persistentShuffleEnabled).isTrue()
         assertThat(state.playbackSpeed).isEqualTo(1.25f)
         assertThat(state.audio).isSameInstanceAs(audio)
@@ -170,8 +167,8 @@ class SettingsStatesTest {
     @Test
     fun `the defaults are what the store's defaults are`() {
         val defaults = SettingsUiState()
-        assertThat(AudioSettingsState.from(defaults, 1f, AudioStatus(), DacProfilesUiState(), HeadphoneProfilesUiState()).randomMode)
-            .isEqualTo(RandomMode.CLASSIC)
+        assertThat(AudioSettingsState.from(defaults, 1f, AudioStatus(), DacProfilesUiState(), HeadphoneProfilesUiState()).persistentShuffleEnabled)
+            .isFalse()
         assertThat(BehaviorSettingsState.from(defaults).backNavigationMode).isEqualTo(BackNavigationMode.DEFAULT)
         assertThat(AppearanceSettingsState.from(defaults).animatedLyricsBlurStrength).isEqualTo(defaults.animatedLyricsBlurStrength)
         // B41: both new switches are on until the listener turns them off

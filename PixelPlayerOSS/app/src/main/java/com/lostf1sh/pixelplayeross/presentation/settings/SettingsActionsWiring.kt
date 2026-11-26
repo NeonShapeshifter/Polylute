@@ -21,7 +21,6 @@ import com.lostf1sh.pixelplayeross.dap.admin.SystemSurfaceHost
 import com.lostf1sh.pixelplayeross.dap.admin.SystemSurfaceOutcome
 import com.lostf1sh.pixelplayeross.dap.mode.ProductLevel
 import com.lostf1sh.pixelplayeross.dap.mode.ProductModeState
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.presentation.navigation.Screen
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.BackupSettingsViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DeviceControlViewModel
@@ -158,8 +157,6 @@ internal class AudioSettingsActionsImpl(
     override fun onCrossfadeEnabledChange(value: Boolean) = vm.setCrossfadeEnabled(value)
     override fun onSmartCrossfadeEnabledChange(value: Boolean) = vm.setSmartCrossfadeEnabled(value)
     override fun onPlaybackSpeedChange(value: Float) = vm.setPlaybackSpeed(value)
-    // B22: random mode and the persistent mix moved here from Behavior; same preferences, same methods.
-    override fun onRandomModeChange(value: RandomMode) = vm.setRandomMode(value)
     override fun onPersistentShuffleEnabledChange(value: Boolean) = vm.setPersistentShuffleEnabled(value)
     override fun onOpenDacProfile(profileId: String) = navigate(Screen.DacProfile.createRoute(profileId))
     override fun onOpenKnownDacs() = navigate(Screen.KnownDacs.route)

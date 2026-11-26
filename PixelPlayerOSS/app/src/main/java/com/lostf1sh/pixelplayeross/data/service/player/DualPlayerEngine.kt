@@ -44,7 +44,6 @@ import com.lostf1sh.pixelplayeross.data.diagnostics.HardwareEventType
 import com.lostf1sh.pixelplayeross.data.diagnostics.MaintenanceOverrideStore
 import com.lostf1sh.pixelplayeross.di.AppScope
 import com.lostf1sh.pixelplayeross.data.model.TransitionSettings
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.volume.PristineModePolicy
 import com.lostf1sh.pixelplayeross.utils.PlayOrder
 import android.hardware.usb.UsbDevice
@@ -527,6 +526,10 @@ class DualPlayerEngine @Inject constructor(
                 androidUsbRouteGuard.onDeviceLost()
                 mainHandler.removeCallbacks(androidUsbRouteTimeout)
             }
+        }
+        if (!present) {
+            mainHandler.removeCallbacks(dacSharePauseRelease)
+            dacShare.onDacDetached()
         }
         if (loss != null) pauseForOutputLoss(loss, trigger)
     }
@@ -1647,6 +1650,9 @@ class DualPlayerEngine @Inject constructor(
     private var lastResetOutcome: com.decent.usbaudio.ResetLevelRestorer.Outcome? = null
 
     private val dacShare: DacShareController = DacShareController(object : DacShareController.Host {
+        // B79: null/unknown reads as not attached for releasing — nothing to share without a USB DAC.
+        override val usbDacPresent: Boolean get() = usbDacPresentFact == true
+
         override val enabled: Boolean get() = dacShareEnabled
 
         // B68: the listener's Purity choice in force (the same lock the signal path applies), not whether the DSP has anything to do.
@@ -1659,9 +1665,16 @@ class DualPlayerEngine @Inject constructor(
             // B68: the route reads the mode of this release until the DAC is taken back (set before the fact, so no decision sees one without the other).
             dacShareReleaseMode = if (released) effectiveProductMode() else null
             dacReleasedForSharing = released
-            traceRoute("DAC_SHARE", if (released) "releasing the DAC to other apps" else "taking the DAC back")
+            traceRoute(
+                "DAC_SHARE",
+                when {
+                    released -> "releasing the DAC to other apps"
+                    dacShare.claiming -> "taking the DAC back"
+                    else -> "dropping DAC share release"
+                },
+            )
             mainHandler.removeCallbacks(dacShareClaimTimeout)
-            if (!released) mainHandler.postDelayed(dacShareClaimTimeout, DacShareController.CLAIM_TIMEOUT_MS)
+            if (!released && dacShare.claiming) mainHandler.postDelayed(dacShareClaimTimeout, DacShareController.CLAIM_TIMEOUT_MS)
             usbRouteFacts.invalidate()
             // Posted: the play gate and the focus callbacks run inside the player's own calls, and a rebuild must not start in the middle of them.
             mainHandler.post { reevaluateAutomaticRoute(if (released) "DAC released for sharing" else "DAC taken back from sharing") }
@@ -1859,6 +1872,7 @@ class DualPlayerEngine @Inject constructor(
     private var lastSeekAtMs: Long = 0L
     private var lastTransitionFinishedAtMs: Long = 0L
     private var lastMediaItemTransitionAtMs: Long = 0L
+    private var lastMasterMediaItemIndex: Int = C.INDEX_UNSET
 
     /**
      * The **effective gain** the incoming track must land on when a crossfade completes:
@@ -2050,6 +2064,10 @@ class DualPlayerEngine @Inject constructor(
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val previousIndex = lastMasterMediaItemIndex
+            val currentIndex = if (::playerA.isInitialized) playerA.currentMediaItemIndex else C.INDEX_UNSET
+            lastMasterMediaItemIndex = currentIndex
+
             // A handoff is only allowed to restore the item the user was on. Next/previous/seeks are
             // the user moving on, and abort it; a natural end-of-track advance is not a user action
             // and re-targets instead. The Direct rebuild restores the same queue and reports
@@ -2069,6 +2087,27 @@ class DualPlayerEngine @Inject constructor(
                 cancelNext()
             }
 
+            // B79: when repeat-all wraps at the end of a shuffled pass, deal a fresh order through ShuffleRedraw
+            // instead of letting Media3 replay the exact same permutation.
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+                ::playerA.isInitialized &&
+                playerA.repeatMode == Player.REPEAT_MODE_ALL &&
+                playerA.shuffleModeEnabled &&
+                !activePlayerUsesWindowedQueue &&
+                previousIndex != C.INDEX_UNSET &&
+                currentIndex != C.INDEX_UNSET &&
+                previousIndex != currentIndex &&
+                playerA.mediaItemCount >= 2
+            ) {
+                val timeline = playerA.currentTimeline
+                if (timeline.windowCount >= 2 &&
+                    previousIndex == timeline.getLastWindowIndex(true) &&
+                    currentIndex == timeline.getFirstWindowIndex(true)
+                ) {
+                    dealQueueAgain()
+                }
+            }
+
             timedSection("DualPlayerEngine.applyWakeMode") { applyWakeModeForCurrentItem() }
         }
 
@@ -2076,6 +2115,7 @@ class DualPlayerEngine @Inject constructor(
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
                 playlistGeneration++
                 queueRevision = Any()
+                if (::playerA.isInitialized) lastMasterMediaItemIndex = playerA.currentMediaItemIndex
             }
             if (transitionRunning) return
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED || queueSnapshot.isEmpty()) {
@@ -2149,6 +2189,7 @@ class DualPlayerEngine @Inject constructor(
         // some other level.
         cachedMasterVolume = player.volume.coerceIn(0f, 1f)
         _gainModel.value = _gainModel.value.copy(combinedGain = cachedMasterVolume)
+        lastMasterMediaItemIndex = player.currentMediaItemIndex
         player.addListener(masterPlayerListener)
         player.addAnalyticsListener(masterPlayerListener)
         player.addAudioOffloadListener(masterPlayerListener)
@@ -2431,13 +2472,6 @@ class DualPlayerEngine @Inject constructor(
      */
     val queueLoadHold = QueueLoadSkipHold()
 
-    /**
-     * What switching shuffle on does to the order (B18-R1): classic deals the queue again, fast leaves the order the player
-     * holds. The service keeps this in step with the stored preference; the default is the preference's.
-     */
-    @Volatile
-    var randomMode: RandomMode = RandomMode.DEFAULT
-
     /** Counts the replacements and re-orderings of the master's queue (main thread): a draw made for one queue is never applied to another. */
     private var playlistGeneration = 0L
 
@@ -2503,8 +2537,8 @@ class DualPlayerEngine @Inject constructor(
         override fun setFlag(enabled: Boolean, freshOrder: Boolean) {
             val player = playerA
             player.shuffleModeEnabled = enabled
-            if (enabled && freshOrder && randomMode == RandomMode.CLASSIC) {
-                Timber.tag("DualPlayerEngine").i("Shuffle on: flag set, %d items; classic mode deals them again", player.mediaItemCount)
+            if (enabled && freshOrder) {
+                Timber.tag("DualPlayerEngine").i("Shuffle on: flag set, %d items; dealing a fresh order", player.mediaItemCount)
                 dealQueueAgain()
             } else {
                 Timber.tag("DualPlayerEngine").i(

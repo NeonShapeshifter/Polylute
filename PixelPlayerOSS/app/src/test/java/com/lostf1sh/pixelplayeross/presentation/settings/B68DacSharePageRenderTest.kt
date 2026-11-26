@@ -12,7 +12,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.decent.usbaudio.media3.DirectSignalMode
 import com.lostf1sh.pixelplayeross.R
 import com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.service.player.AudioBackend
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteReason
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteState
@@ -59,7 +58,6 @@ open class B68DacSharePageRenderTest {
         override fun onCrossfadeEnabledChange(value: Boolean) = Unit
         override fun onSmartCrossfadeEnabledChange(value: Boolean) = Unit
         override fun onPlaybackSpeedChange(value: Float) = Unit
-        override fun onRandomModeChange(value: RandomMode) = Unit
         override fun onPersistentShuffleEnabledChange(value: Boolean) = Unit
         override fun onOpenDacProfile(profileId: String) = Unit
         override fun onOpenKnownDacs() = Unit

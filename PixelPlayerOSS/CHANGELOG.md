@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1
+
+- **Bluetooth and the phone speaker.** Play no longer waits 10 seconds and stays paused with "The DAC did not come back in time" when no USB DAC is connected. "Share the DAC with other apps" (on by default in App mode) now only lets go of a DAC that is actually there.
+- **Shuffle.** One shuffle, always fresh: turning it on or pressing Shuffle deals a new order every time, and repeat-all deals the queue again after each pass. Orders come from a secure random source. The Random mode setting (Classic / Fast) is gone.
+- **Import.** Paths written as `file://` links (Musicolet and other players write them that way) now match your songs in liked songs, playlist CSVs and M3U/M3U8 files.
+
 ## 1.4.0
 
 1.4 brings your music life from other apps into Polylute, a working EQ on the Snowsky Melody, Android Auto, and an app that takes the album's colours everywhere.

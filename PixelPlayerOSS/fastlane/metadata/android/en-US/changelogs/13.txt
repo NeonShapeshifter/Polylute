@@ -1,0 +1,1 @@
+Fixes play staying paused with "The DAC did not come back in time" on Bluetooth or the speaker, when no USB DAC is connected. One shuffle, always fresh: a new order every time you turn it on or press Shuffle, and after each repeat-all pass, from a secure random source; the Random mode setting is gone. Imported liked songs and playlists now match paths written as file:// links.

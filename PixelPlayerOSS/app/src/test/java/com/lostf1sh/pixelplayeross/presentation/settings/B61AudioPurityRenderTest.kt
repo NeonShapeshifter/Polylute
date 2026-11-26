@@ -23,7 +23,6 @@ import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqState
 import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneProfile
 import com.lostf1sh.pixelplayeross.data.model.TransitionMode
 import com.lostf1sh.pixelplayeross.data.model.TransitionSettings
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.service.player.AudioBackend
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteReason
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteState
@@ -74,7 +73,6 @@ open class B61AudioPurityRenderTest {
         override fun onCrossfadeEnabledChange(value: Boolean) {}
         override fun onSmartCrossfadeEnabledChange(value: Boolean) {}
         override fun onPlaybackSpeedChange(value: Float) {}
-        override fun onRandomModeChange(value: RandomMode) {}
         override fun onPersistentShuffleEnabledChange(value: Boolean) {}
         override fun onOpenDacProfile(profileId: String) {}
         override fun onOpenKnownDacs() {}

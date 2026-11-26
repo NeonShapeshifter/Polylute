@@ -2,6 +2,8 @@ package com.lostf1sh.pixelplayeross.data.playlist
 
 import android.content.Context
 import android.net.Uri
+import com.lostf1sh.pixelplayeross.data.historyimport.CatalogPathIndex
+import com.lostf1sh.pixelplayeross.data.historyimport.ImportPathNormalizer
 import com.lostf1sh.pixelplayeross.data.historyimport.LibraryTrackMatcher
 import com.lostf1sh.pixelplayeross.data.model.Playlist
 import com.lostf1sh.pixelplayeross.data.model.Song
@@ -168,17 +170,14 @@ class M3uManager @Inject constructor(
             matcher: LibraryTrackMatcher = LibraryTrackMatcher.build(catalog),
         ): M3uMatchedPlaylist {
             val (playlistName, entries) = parseM3uEntries(input, fileName)
-            val byExactPath = HashMap<String, CatalogItem>(catalog.items.size * 2)
-            val byNormalizedPath = HashMap<String, CatalogItem>(catalog.items.size * 2)
+            val pathIndex = CatalogPathIndex.from(catalog)
             val byFileName = HashMap<String, MutableList<CatalogItem>>(catalog.items.size)
             val byContentUriFileName = HashMap<String, MutableList<CatalogItem>>(catalog.items.size)
 
             for (item in catalog.items) {
                 val p = item.song.path
                 if (p.isNotBlank()) {
-                    byExactPath.putIfAbsent(p, item)
-                    byNormalizedPath.putIfAbsent(p.replace('\\', '/'), item)
-                    val fn = p.replace('\\', '/').substringAfterLast('/')
+                    val fn = ImportPathNormalizer.normalize(p).substringAfterLast('/')
                     if (fn.isNotBlank()) byFileName.getOrPut(fn) { ArrayList(1) }.add(item)
                 }
                 val uriName = item.song.contentUriString.substringAfterLast('/')
@@ -186,8 +185,7 @@ class M3uManager @Inject constructor(
             }
 
             val matched = entries.map { entry ->
-                val normPath = entry.path.replace('\\', '/')
-                val byPath = byExactPath[entry.path] ?: byNormalizedPath[normPath]
+                val byPath = pathIndex.find(entry.path)
                 if (byPath != null) {
                     return@map M3uMatchedItem(entry, byPath)
                 }
@@ -201,7 +199,7 @@ class M3uManager @Inject constructor(
                     }
                 }
 
-                val fileNamePart = normPath.substringAfterLast('/')
+                val fileNamePart = ImportPathNormalizer.normalize(entry.path).substringAfterLast('/')
                 val byName = if (fileNamePart.isNotBlank()) {
                     byFileName[fileNamePart]?.firstOrNull() ?: byContentUriFileName[fileNamePart]?.firstOrNull()
                 } else {

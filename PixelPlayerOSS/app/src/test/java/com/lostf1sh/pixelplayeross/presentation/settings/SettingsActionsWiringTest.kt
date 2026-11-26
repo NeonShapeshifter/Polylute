@@ -9,7 +9,6 @@ import com.lostf1sh.pixelplayeross.data.model.LyricsSourcePreference
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.presentation.navigation.Screen
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.BackupSettingsViewModel
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DeviceControlViewModel
@@ -221,12 +220,10 @@ class SettingsActionsWiringTest {
     }
 
     @Test
-    fun `the two settings that moved to Audio write the same preferences from there`() {
+    fun `the persistent mix setting writes the same preference from Audio`() {
         val actions = AudioSettingsActionsImpl(vm, mockk(relaxed = true), navigate)
         actions.onPersistentShuffleEnabledChange(true)
-        actions.onRandomModeChange(RandomMode.FAST)
         verify(exactly = 1) { vm.setPersistentShuffleEnabled(true) }
-        verify(exactly = 1) { vm.setRandomMode(RandomMode.FAST) }
     }
 
     @Test

@@ -138,7 +138,7 @@ class DacShareWiringBoundaryTest {
     @Test
     fun `B68 - both layers read the one share policy - the controller's active and the route fact the engine builds`() {
         val controller = source("data/service/player/DacShareController.kt")
-        assertThat(controller).contains("val active: Boolean get() = DacSharePolicy.shareAllowed(host.enabled, host.purityInForce) { host.effectiveProductMode() }")
+        assertThat(controller).contains("val active: Boolean\n        get() = host.usbDacPresent && DacSharePolicy.shareAllowed(host.enabled, host.purityInForce) { host.effectiveProductMode() }")
         assertThat(controller).doesNotContain("host.resonance")
         // the route fact: read only while released, with the mode latched at the release
         assertThat(engine).contains(
@@ -150,7 +150,11 @@ class DacShareWiringBoundaryTest {
         )
         val host = engine.substringAfter("private val dacShare: DacShareController = DacShareController(object : DacShareController.Host {").substringBefore("private val dacSharePauseRelease")
         // "Resonance" is the Purity choice, not "the DSP has work" (B68-audit H1)
+        assertThat(host).contains("override val usbDacPresent: Boolean get() = usbDacPresentFact == true")
         assertThat(host).contains("override val purityInForce: Boolean get() = PristineModePolicy.lockInForce(pristineLockPreference, usbDacPresentFact)")
+        assertThat(host).contains("if (!released && dacShare.claiming) mainHandler.postDelayed(dacShareClaimTimeout, DacShareController.CLAIM_TIMEOUT_MS)")
+        assertThat(engine.substringAfter("private fun observeUsbPresence(").substringBefore("private fun pauseForOutputLoss("))
+            .contains("dacShare.onDacDetached()")
         assertThat(host).doesNotContain("requiresPcmProcessing")
         assertThat(host).contains("dacShareReleaseMode = if (released) effectiveProductMode() else null")
         assertThat(host.indexOf("dacShareReleaseMode = if (released)")).isLessThan(host.indexOf("dacReleasedForSharing = released"))

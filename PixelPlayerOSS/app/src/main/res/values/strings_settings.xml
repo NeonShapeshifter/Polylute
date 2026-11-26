@@ -113,9 +113,6 @@
     <string name="setcat_crossfade_duration">Crossfade Duration</string>
     <string name="setcat_smart_crossfade_title">Smart crossfade</string>
     <string name="setcat_smart_crossfade_subtitle">Match the crossfade length to the songs\' tempo when their BPM tags are compatible.</string>
-    <string name="setcat_random_mode_title">Random mode</string>
-    <string name="random_mode_classic">Classic</string>
-    <string name="random_mode_fast">Fast</string>
     <string name="setcat_show_queue_history_title">Show queue history</string>
     <string name="setcat_show_queue_history_subtitle">Show previously played songs in the queue.</string>
 

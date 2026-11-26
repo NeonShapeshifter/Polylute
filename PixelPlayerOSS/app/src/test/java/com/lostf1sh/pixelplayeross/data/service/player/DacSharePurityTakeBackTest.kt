@@ -46,6 +46,7 @@ class DacSharePurityTakeBackTest {
         var focusRequests = 0
         val resumes = mutableListOf<String>()
 
+        override val usbDacPresent get() = dacPresent
         override val purityInForce get() = PristineModePolicy.lockInForce(lockPreference, dacPresent)
         override fun effectiveProductMode() = mode
         override fun setReleased(released: Boolean) {

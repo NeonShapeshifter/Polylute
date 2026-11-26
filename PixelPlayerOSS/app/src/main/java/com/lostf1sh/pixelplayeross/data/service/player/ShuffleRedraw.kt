@@ -1,6 +1,7 @@
 package com.lostf1sh.pixelplayeross.data.service.player
 
 import com.lostf1sh.pixelplayeross.utils.PlayOrder
+import com.lostf1sh.pixelplayeross.utils.Shuffler
 import java.util.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,7 +43,7 @@ internal object ShuffleRedraw {
      */
     suspend fun redraw(
         target: Target,
-        random: Random = Random(),
+        random: Random = Shuffler.defaultJavaRandom(),
         draw: suspend (Int, Random) -> IntArray = { count, source ->
             withContext(Dispatchers.Default) { PlayOrder.randomPermutation(count, source) }
         },

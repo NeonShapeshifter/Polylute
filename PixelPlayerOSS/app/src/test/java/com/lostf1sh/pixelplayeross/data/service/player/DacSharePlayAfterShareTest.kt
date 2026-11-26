@@ -35,6 +35,7 @@ class DacSharePlayAfterShareTest {
         var level = UserPlayLevel.UNCONFIRMED
         val resumes = mutableListOf<String>()
         val refusals = mutableListOf<DacShareController.ClaimRefusal>()
+        override val usbDacPresent = true
         override val enabled = true
         override val purityInForce = false
         override fun effectiveProductMode() = com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode.APP

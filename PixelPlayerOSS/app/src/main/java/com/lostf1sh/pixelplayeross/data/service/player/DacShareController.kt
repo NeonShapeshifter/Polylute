@@ -31,6 +31,9 @@ import com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode
  */
 class DacShareController(private val host: Host) {
     interface Host {
+        /** B79: whether a USB DAC is attached (null/unknown is false: there is nothing to share without one). */
+        val usbDacPresent: Boolean
+
         /** The listener's switch (off by default). */
         val enabled: Boolean
 
@@ -102,8 +105,9 @@ class DacShareController(private val host: Host) {
 
     private var owed = Owed.NONE
 
-    /** Whether sharing is in force now: the switch is on and [DacSharePolicy] allows it for this Purity choice and product mode. */
-    val active: Boolean get() = DacSharePolicy.shareAllowed(host.enabled, host.purityInForce) { host.effectiveProductMode() }
+    /** Whether sharing is in force now: a USB DAC is attached, the switch is on, and [DacSharePolicy] allows it. */
+    val active: Boolean
+        get() = host.usbDacPresent && DacSharePolicy.shareAllowed(host.enabled, host.purityInForce) { host.effectiveProductMode() }
 
     /**
      * Another app took audio focus; [permanent] is `AUDIOFOCUS_LOSS`, otherwise `AUDIOFOCUS_LOSS_TRANSIENT`. The engine has already paused
@@ -121,6 +125,12 @@ class DacShareController(private val host: Host) {
      */
     fun onFocusGained(resumeOwedByTheEngine: Boolean): Boolean {
         if (!released) return false
+        if (!host.usbDacPresent) {
+            released = false
+            conclude()
+            host.setReleased(false)
+            return false
+        }
         if (!resumeOwedByTheEngine) return true   // stays paused and released: nothing was playing
         claim(owed = Owed.AUTOMATIC)
         return true
@@ -144,6 +154,14 @@ class DacShareController(private val host: Host) {
      * ([Owed.LISTENER], which also takes over a resume the engine owed), and a DAC that is already back and confirmed lets it through at once.
      */
     fun onPlayRequested(): Boolean {
+        if (!host.usbDacPresent) {
+            if (released || claiming) {
+                released = false
+                conclude()
+                host.setReleased(false)
+            }
+            return true
+        }
         if (claiming) {
             if (host.userPlayReady()) {
                 conclude()
@@ -198,6 +216,17 @@ class DacShareController(private val host: Host) {
         owed = Owed.NONE
         host.setReleased(false)
         host.releaseNotConfirmed()
+    }
+
+    /**
+     * B79: the USB DAC went away while [released] or [claiming]: clear both and cancel any pending claim timeout.
+     * Nothing is resumed and nothing pauses.
+     */
+    fun onDacDetached() {
+        if (!released && !claiming) return
+        released = false
+        conclude()
+        host.setReleased(false)
     }
 
     /**

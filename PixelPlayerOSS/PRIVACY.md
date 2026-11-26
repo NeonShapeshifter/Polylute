@@ -2,7 +2,7 @@
 
 Polylute plays the music stored on your device. It has no accounts, no ads, no analytics and no crash-reporting service. It has no server of its own and never contacts one.
 
-This page describes version 1.4.0.
+This page describes version 1.4.1.
 
 ## What is stored, and where
 

@@ -22,7 +22,6 @@ import com.lostf1sh.pixelplayeross.data.equalizer.EqualizerPreset
 import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneEqMode
 import com.lostf1sh.pixelplayeross.data.model.TransitionMode
 import com.lostf1sh.pixelplayeross.data.model.TransitionSettings
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.service.player.DacSharePolicy
 import com.lostf1sh.pixelplayeross.dap.mode.EffectiveProductMode
 import com.lostf1sh.pixelplayeross.data.volume.DeviceVolumeAnswer
@@ -36,7 +35,6 @@ import com.lostf1sh.pixelplayeross.presentation.components.AndroidRouteHintLine
 import com.lostf1sh.pixelplayeross.presentation.components.FeatureStatusLine
 import com.lostf1sh.pixelplayeross.presentation.components.NotificationsOffNotice
 import com.lostf1sh.pixelplayeross.presentation.components.PristineFrozenFeature
-import com.lostf1sh.pixelplayeross.presentation.model.labelRes
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.AudioStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacLiveStatus
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.DacProfileUiItem
@@ -158,7 +156,6 @@ data class AudioSettingsState(
     val smartCrossfadeEnabled: Boolean,
     val crossfade: CrossfadeSummary?,
     val playbackSpeed: Float,
-    val randomMode: RandomMode,
     val persistentShuffleEnabled: Boolean,
     val audio: AudioStatus,
     /** B39-S1: the DAC attached, when it has no volume the app can set (the row that lets the listener read the notice again). */
@@ -222,7 +219,6 @@ data class AudioSettingsState(
                 smartCrossfadeEnabled = ui.smartCrossfadeEnabled,
                 crossfade = transition?.let { CrossfadeSummary(it.durationMs, it.mode) },
                 playbackSpeed = playbackSpeed,
-                randomMode = ui.randomMode,
                 persistentShuffleEnabled = ui.persistentShuffleEnabled,
                 audio = audio,
                 fixedOutputDac = fixedOutputDac,
@@ -258,7 +254,6 @@ interface AudioSettingsActions {
     fun onCrossfadeEnabledChange(value: Boolean)
     fun onSmartCrossfadeEnabledChange(value: Boolean)
     fun onPlaybackSpeedChange(value: Float)
-    fun onRandomModeChange(value: RandomMode)
     fun onPersistentShuffleEnabledChange(value: Boolean)
     fun onOpenDacProfile(profileId: String)
     fun onOpenKnownDacs()
@@ -737,15 +732,7 @@ private fun FrozenAlphaBox(frozen: Boolean, content: @Composable () -> Unit) {
 @Composable
 private fun QueueSection(state: AudioSettingsState, actions: AudioSettingsActions) {
     DapRuledSection(title = stringResource(R.string.audio_section_queue)) {
-        // Random mode and the persistent mix live here (B22): the same preferences and the same actions as before.
-        val randomLabels = RandomMode.entries.associateWith { stringResource(it.labelRes) }
-        DapSegmentedRow(
-            label = stringResource(R.string.setcat_random_mode_title),
-            options = RandomMode.entries.toList(),
-            selected = state.randomMode,
-            onSelect = actions::onRandomModeChange,
-            optionLabel = { randomLabels.getValue(it) },
-        )
+        // Persistent mix lives here (B22); B79 unified shuffle to one central SecureRandom draw.
         DapSwitchRow(
             label = stringResource(R.string.audio_persistent_mix_title),
             description = stringResource(R.string.audio_persistent_mix_sub),

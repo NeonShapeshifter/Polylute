@@ -27,7 +27,6 @@ import com.lostf1sh.pixelplayeross.data.headphones.HeadphoneSafetyPolicy
 import com.lostf1sh.pixelplayeross.data.headphones.SafetyMaxCalibration
 import com.lostf1sh.pixelplayeross.data.headphones.SafetyVolumeBackendKind
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.preferences.UserPreferencesRepository
 import com.lostf1sh.pixelplayeross.data.volume.SafetyMaxCalibrationResult
 import com.lostf1sh.pixelplayeross.data.volume.SafetyVolumeController
@@ -298,7 +297,6 @@ class B72SafetyMaxNotificationPromptTest {
                         override fun onCrossfadeEnabledChange(value: Boolean) {}
                         override fun onSmartCrossfadeEnabledChange(value: Boolean) {}
                         override fun onPlaybackSpeedChange(value: Float) {}
-                        override fun onRandomModeChange(value: RandomMode) {}
                         override fun onPersistentShuffleEnabledChange(value: Boolean) {}
                         override fun onOpenDacProfile(profileId: String) {}
                         override fun onOpenKnownDacs() {}

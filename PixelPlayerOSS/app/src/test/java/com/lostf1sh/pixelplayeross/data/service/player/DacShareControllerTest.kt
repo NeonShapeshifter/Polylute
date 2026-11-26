@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
  */
 class DacShareControllerTest {
     private class FakeHost : DacShareController.Host {
+        override var usbDacPresent = true
         override var enabled = true
         override var purityInForce = false
         var mode: EffectiveProductMode? = EffectiveProductMode.APP
@@ -533,5 +534,81 @@ class DacShareControllerTest {
         host.enabled = true
         share.onPaused()
         assertThat(host.modeReads).isAtLeast(1)
+    }
+
+    // ── B79: no USB DAC attached -> nothing to share ─────────────────────────────────────────────
+
+    @Test
+    fun `B79 - no DAC and pause grace - not released`() {
+        host.usbDacPresent = false
+        assertThat(share.active).isFalse()
+        assertThat(share.onPaused()).isEqualTo(PauseOutcome.NONE)
+        share.onPauseGraceElapsed(playing = false)
+        assertThat(share.released).isFalse()
+        assertThat(host.released).isNull()
+        assertThat(host.events).isEmpty()
+    }
+
+    @Test
+    fun `B79 - no DAC and focus loss - not released`() {
+        host.usbDacPresent = false
+        share.onFocusLost(permanent = false)
+        share.onFocusLost(permanent = true)
+        assertThat(share.released).isFalse()
+        assertThat(host.released).isNull()
+        assertThat(host.events).isEmpty()
+        assertThat(share.onFocusGained(resumeOwedByTheEngine = true)).isFalse()
+        assertThat(share.onPlayRequested()).isTrue()
+    }
+
+    @Test
+    fun `B79 - released then DAC detached - released and claiming false, timeout gone`() {
+        share.onFocusLost(permanent = false)
+        assertThat(share.released).isTrue()
+        host.events.clear()
+
+        host.usbDacPresent = false
+        share.onDacDetached()
+        assertThat(share.released).isFalse()
+        assertThat(share.claiming).isFalse()
+        assertThat(host.released).isFalse()
+        share.onClaimTimeout(directActive = false)
+        assertThat(host.refusals).isEmpty()
+    }
+
+    @Test
+    fun `B79 - claiming then DAC detached - released and claiming false, timeout gone, nothing resumed`() {
+        share.onFocusLost(permanent = false)
+        assertThat(share.onPlayRequested()).isFalse()
+        assertThat(share.claiming).isTrue()
+        host.events.clear()
+
+        host.usbDacPresent = false
+        share.onDacDetached()
+        assertThat(share.released).isFalse()
+        assertThat(share.claiming).isFalse()
+        assertThat(host.released).isFalse()
+        share.onClaimTimeout(directActive = false)
+        assertThat(host.refusals).isEmpty()
+        host.becomeSafe()
+        share.onRouteState()
+        assertThat(host.events).doesNotContain("resume")
+    }
+
+    @Test
+    fun `B79 - released with no DAC and play - returns true, drops released, no focus request, no claim, no refused`() {
+        share.onFocusLost(permanent = false)
+        assertThat(share.released).isTrue()
+        host.events.clear()
+
+        host.usbDacPresent = false
+        assertThat(share.onPlayRequested()).isTrue()
+        assertThat(share.released).isFalse()
+        assertThat(share.claiming).isFalse()
+        assertThat(host.released).isFalse()
+        assertThat(host.events).doesNotContain("focus:granted")
+        assertThat(host.events).doesNotContain("focus:refused")
+        share.onClaimTimeout(directActive = false)
+        assertThat(host.refusals).isEmpty()
     }
 }

@@ -285,9 +285,6 @@ constructor(
         val REPEAT_MODE = intPreferencesKey("repeat_mode")
         val IS_SHUFFLE_ON = booleanPreferencesKey("is_shuffle_on")
         val PERSISTENT_SHUFFLE_ENABLED = booleanPreferencesKey("persistent_shuffle_enabled")
-
-        /** What switching shuffle on does to the order (B18-R1). Stored as the [RandomMode] id; absent means the default (classic). */
-        val RANDOM_MODE = stringPreferencesKey("random_mode")
         val RESUME_ON_HEADSET_RECONNECT = booleanPreferencesKey("resume_on_headset_reconnect")
         val SHOW_QUEUE_HISTORY = booleanPreferencesKey("show_queue_history")
 
@@ -595,18 +592,6 @@ constructor(
 
     suspend fun setPersistentShuffleEnabled(enabled: Boolean) {
         dataStore.edit { preferences -> preferences[PreferencesKeys.PERSISTENT_SHUFFLE_ENABLED] = enabled }
-    }
-
-    /**
-     * What switching shuffle on does to the order: a new random order each time (classic, the default) or a flag only (fast).
-     * Nothing is written on upgrade: an install with no stored value reads [RandomMode.DEFAULT].
-     */
-    val randomModeFlow: Flow<RandomMode> = dataStore.data
-        .map { preferences -> RandomMode.fromId(preferences[PreferencesKeys.RANDOM_MODE]) }
-        .distinctUntilChanged()
-
-    suspend fun setRandomMode(mode: RandomMode) {
-        dataStore.edit { preferences -> preferences[PreferencesKeys.RANDOM_MODE] = mode.id }
     }
 
     /** Queue items and cursor in separate keys, so a skip does not re-encode the queue (AUD-113). */

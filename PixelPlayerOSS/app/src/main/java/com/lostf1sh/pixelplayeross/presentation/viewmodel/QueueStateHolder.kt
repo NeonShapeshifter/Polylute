@@ -2,6 +2,7 @@ package com.lostf1sh.pixelplayeross.presentation.viewmodel
 
 import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.utils.QueueUtils
+import com.lostf1sh.pixelplayeross.utils.Shuffler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -51,7 +52,7 @@ class QueueStateHolder @Inject constructor() {
      */
     suspend fun dealShuffledQueue(songs: List<Song>, startAtZero: Boolean = false): ShuffleDeal? {
         if (songs.isEmpty()) return null
-        val startIndex = kotlin.random.Random.Default.nextInt(songs.size)
+        val startIndex = Shuffler.nextIndex(songs.size)
         setOriginalQueueOrder(songs)
         val order = withContext(Dispatchers.Default) { QueueUtils.dealOrder(songs.size, startIndex, startAtZero) }
         return ShuffleDeal(songs[startIndex], startIndex, order)
@@ -63,10 +64,10 @@ class QueueStateHolder @Inject constructor() {
     ): Pair<List<Song>, Song>? {
         if (songs.isEmpty()) return null
 
-        val startSong = songs.random()
+        val startIndex = Shuffler.nextIndex(songs.size)
+        val startSong = songs[startIndex]
         setOriginalQueueOrder(songs)
 
-        val startIndex = songs.indexOfFirst { it.id == startSong.id }.coerceAtLeast(0)
         val shuffledQueue = withContext(Dispatchers.Default) {
             QueueUtils.buildAnchoredShuffleQueueSuspending(songs, startIndex, startAtZero)
         }

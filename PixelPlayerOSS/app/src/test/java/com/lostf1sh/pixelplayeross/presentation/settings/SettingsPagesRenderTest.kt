@@ -26,7 +26,6 @@ import com.lostf1sh.pixelplayeross.data.model.Song
 import com.lostf1sh.pixelplayeross.data.preferences.AlbumArtQuality
 import com.lostf1sh.pixelplayeross.data.preferences.AppColorSource
 import com.lostf1sh.pixelplayeross.data.preferences.BackNavigationMode
-import com.lostf1sh.pixelplayeross.data.preferences.RandomMode
 import com.lostf1sh.pixelplayeross.data.service.player.AudioBackend
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteReason
 import com.lostf1sh.pixelplayeross.data.service.player.AudioRouteState
@@ -116,8 +115,7 @@ class SettingsPagesRenderTest {
             R.string.setcat_back_navigation, R.string.setcat_background_playback, R.string.setcat_queue_behaviour,
             R.string.setcat_folders, R.string.setcat_player_gestures, R.string.setcat_haptics,
         )
-        // B22: the random mode and the persistent mix moved to Audio (Queue); they are not here any more.
-        compose.onAllNodesWithText(s(R.string.setcat_random_mode_title)).assertCountEquals(0)
+        // B22: the persistent mix moved to Audio (Queue); it is not here any more.
         compose.onAllNodesWithText(s(R.string.audio_persistent_mix_title)).assertCountEquals(0)
 
         // B41: "DAP lock screen" is Appearance's now. Six switches, in page order; each one reaches its own action with the value it was

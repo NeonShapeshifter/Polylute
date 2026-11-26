@@ -3,6 +3,7 @@ package com.lostf1sh.pixelplayeross.utils
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import kotlin.random.asKotlinRandom
 
 /**
  * The order songs play in, and the arithmetic around it (B17-H1).
@@ -53,17 +54,9 @@ object PlayOrder {
         return true
     }
 
-    /** A uniformly random permutation of `0 until count` (Fisher-Yates): a fresh shuffle order (B18-R1). */
-    fun randomPermutation(count: Int, random: java.util.Random): IntArray {
-        val order = identity(count)
-        for (i in count - 1 downTo 1) {
-            val j = random.nextInt(i + 1)
-            val swap = order[i]
-            order[i] = order[j]
-            order[j] = swap
-        }
-        return order
-    }
+    /** A uniformly random permutation of `0 until count` via [Shuffler]: a fresh shuffle order (B79). */
+    fun randomPermutation(count: Int, random: java.util.Random = Shuffler.defaultJavaRandom()): IntArray =
+        Shuffler.deal(count, random = random.asKotlinRandom())
 
     /**
      * [order] with the song at [first] moved to position 0, the others keeping their relative order. A new random order made
